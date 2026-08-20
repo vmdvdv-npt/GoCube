@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { GroupStatus } from '../core/endgame/EndgameClassifier';
 import { TorusGameController } from './TorusGameController';
 
 describe('TorusGameController result model', () => {
@@ -12,8 +13,11 @@ describe('TorusGameController result model', () => {
     expect(controller.resultModel()).toBeNull();
 
     const groups = controller.endgameGroups();
-    const decisions = Object.fromEntries(
-      groups.map((group) => [group.id, group.color === 'black' ? 'dead' : 'alive']),
+    const decisions: Record<string, GroupStatus> = Object.fromEntries(
+      groups.map((group): [string, GroupStatus] => [
+        group.id,
+        group.color === 'black' ? 'dead' : 'alive',
+      ]),
     );
     await controller.finishEndgame(decisions);
 
