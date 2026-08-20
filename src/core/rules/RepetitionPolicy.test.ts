@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GameState, PointOccupancy } from '../game/types';
-import { boardsEqual, SimpleKoPolicy } from './RepetitionPolicy';
+import { boardsEqual, SimpleKoPolicy, SuperkoPolicy } from './RepetitionPolicy';
 
 const gameState = (board: Record<string, PointOccupancy>): GameState => ({ board });
 
@@ -48,5 +48,55 @@ describe('SimpleKoPolicy', () => {
     expect(
       policy.isAllowed({ states: [oldPosition, previous, current] }, candidate),
     ).toBe(true);
+  });
+});
+
+describe('SuperkoPolicy', () => {
+  const policy = new SuperkoPolicy();
+
+  it('rejects recreation of an older position after several intervening states', () => {
+    const oldPosition = gameState({ a: 'black', b: 'empty', c: 'white' });
+    const interveningOne = gameState({ a: 'empty', b: 'black', c: 'white' });
+    const interveningTwo = gameState({ a: 'empty', b: 'white', c: 'black' });
+    const current = gameState({ a: 'white', b: 'empty', c: 'black' });
+    const candidate = gameState({ a: 'black', b: 'empty', c: 'white' });
+
+    expect(
+      policy.isAllowed(
+        { states: [oldPosition, interveningOne, interveningTwo, current] },
+        candidate,
+      ),
+    ).toBe(false);
+  });
+
+  it('remains distinct from SimpleKoPolicy for an older repetition', () => {
+    const oldPosition = gameState({ a: 'black', b: 'empty' });
+    const previous = gameState({ a: 'white', b: 'empty' });
+    const current = gameState({ a: 'empty', b: 'white' });
+    const candidate = gameState({ a: 'black', b: 'empty' });
+
+    expect(
+      new SimpleKoPolicy().isAllowed({ states: [oldPosition, previous, current] }, candidate),
+    ).toBe(true);
+    expect(
+      policy.isAllowed({ states: [oldPosition, previous, current] }, candidate),
+    ).toBe(false);
+  });
+
+  it('allows a candidate when no historical board matches exactly', () => {
+    const history = [
+      gameState({ a: 'black', b: 'empty', c: 'white' }),
+      gameState({ a: 'empty', b: 'black', c: 'white' }),
+      gameState({ a: 'empty', b: 'white', c: 'black' }),
+    ];
+    const candidate = gameState({ a: 'black', b: 'white', c: 'empty' });
+
+    expect(policy.isAllowed({ states: history }, candidate)).toBe(true);
+  });
+
+  it('allows any candidate when the supplied history is empty', () => {
+    const candidate = gameState({ a: 'black' });
+
+    expect(policy.isAllowed({ states: [] }, candidate)).toBe(true);
   });
 });
