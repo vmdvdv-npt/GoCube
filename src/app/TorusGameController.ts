@@ -26,6 +26,10 @@ import {
   type TorusSize,
 } from '../core/topology/TorusTopology';
 import {
+  createGameResultModel,
+  type GameResultViewModel,
+} from '../presentation/GameResultModel';
+import {
   PresentationModel,
   type GameViewModel,
 } from '../presentation/PresentationModel';
@@ -159,6 +163,10 @@ export class TorusGameController {
 
   snapshot(): GameSessionSnapshot {
     return this.session.snapshot();
+  }
+
+  resultModel(): GameResultViewModel | null {
+    return createGameResultModel(this.session.snapshot(), this.size);
   }
 
   endgameGroups(): readonly TorusEndgameGroup[] {

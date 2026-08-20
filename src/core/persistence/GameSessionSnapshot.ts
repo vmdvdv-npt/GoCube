@@ -1,3 +1,4 @@
+import type { EndgameClassification } from '../endgame/EndgameClassifier';
 import type { GameState, RuleSet } from '../game/types';
 import type { FinalScore } from '../scoring/Scoring';
 
@@ -11,5 +12,7 @@ export interface GameSessionSnapshot {
   readonly ruleSet: RuleSet;
   readonly komi: number;
   readonly history: readonly GameState[];
+  /** Final classification used for scoring. Optional only for v1 backward compatibility. */
+  readonly endgameClassification?: EndgameClassification | null;
   readonly finalScore: FinalScore | null;
 }

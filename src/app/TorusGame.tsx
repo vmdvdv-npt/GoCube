@@ -5,6 +5,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import type { GroupStatus } from '../core/endgame/EndgameClassifier';
+import { GameResultDialog } from './GameResultDialog';
 import {
   Torus2DRenderer,
   type Torus2DPanDirection,
@@ -52,6 +53,9 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     controller.viewModel().phase === 'endgame' ? controller.endgameGroups() : [],
   );
   const [decisions, setDecisions] = useState<TorusEndgameDecisions>({});
+  const [resultOpen, setResultOpen] = useState(
+    () => controller.viewModel().phase === 'finished',
+  );
   const svgRef = useRef<SVGSVGElement>(null);
   const rendererRef = useRef<Torus2DRenderer | null>(null);
   const actionInFlight = useRef(false);
@@ -62,6 +66,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     setViewModel(nextViewModel);
     setFeedback(null);
     setDecisions({});
+    setResultOpen(nextViewModel.phase === 'finished');
     setEndgameGroups(
       nextViewModel.phase === 'endgame' ? controller.endgameGroups() : [],
     );
@@ -79,6 +84,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const applyResult = (result: TorusGameActionResult): void => {
     setViewModel(result.viewModel);
     setFeedback(result.accepted ? null : rejectionLabel(result.reason));
+    setResultOpen(result.viewModel.phase === 'finished' && Boolean(result.viewModel.finalScore));
 
     if (result.viewModel.phase === 'endgame') {
       setEndgameGroups(controller.endgameGroups());
@@ -151,7 +157,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   };
 
   const allGroupsClassified = endgameGroups.every((group) => Boolean(decisions[group.id]));
-  const score = viewModel.finalScore;
+  const gameResult = viewModel.phase === 'finished' ? controller.resultModel() : null;
   const stageLabel =
     viewModel.phase === 'playing'
       ? `${viewModel.currentPlayer === 'black' ? 'Black' : 'White'} to move`
@@ -240,6 +246,15 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         >
           Undo
         </button>
+        {gameResult && !resultOpen ? (
+          <button
+            className="game-result-control"
+            type="button"
+            onClick={() => setResultOpen(true)}
+          >
+            Game result
+          </button>
+        ) : null}
         <button className="new-game-control" type="button" onClick={onRequestNewGame}>
           New game
         </button>
@@ -303,21 +318,8 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         </section>
       ) : null}
 
-      {score ? (
-        <section className="final-score" aria-labelledby="final-score-title">
-          <div>
-            <h2 id="final-score-title">Final score</h2>
-            <p>
-              {score.winner === 'draw'
-                ? 'Draw'
-                : `${score.winner === 'black' ? 'Black' : 'White'} wins by ${score.margin}`}
-            </p>
-          </div>
-          <div className="final-score__totals">
-            <strong>Black {score.black}</strong>
-            <strong>White {score.white}</strong>
-          </div>
-        </section>
+      {gameResult && resultOpen ? (
+        <GameResultDialog result={gameResult} onClose={() => setResultOpen(false)} />
       ) : null}
 
       {feedback ? <p className="game-feedback">{feedback}</p> : null}

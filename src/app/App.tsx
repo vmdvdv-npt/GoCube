@@ -85,9 +85,9 @@ export function App() {
   return (
     <main className="app-shell">
       <header className="app-header">
-        <p className="app-kicker">Game Cube Go · 0.1.17</p>
+        <p className="app-kicker">Game Cube Go · 0.1.18</p>
         <h1>GoCube</h1>
-        <p>Torus 2D · local save/load · Chinese and Japanese scoring.</p>
+        <p>Torus 2D · local save/load · result statistics · Chinese and Japanese scoring.</p>
       </header>
 
       {screen === 'loading' ? <p className="startup-status">Loading local game…</p> : null}
