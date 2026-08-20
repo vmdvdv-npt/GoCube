@@ -8,6 +8,7 @@ const gameState = (board: Record<string, PointOccupancy>): GameState => ({
   moveNumber: 0,
   consecutivePasses: 0,
   phase: 'playing',
+  captures: { black: 0, white: 0 },
 });
 
 describe('boardsEqual', () => {

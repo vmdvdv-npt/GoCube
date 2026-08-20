@@ -2,6 +2,7 @@ import type { RepetitionContext, RepetitionPolicy } from '../rules/RepetitionPol
 import type { PointId, Topology } from '../topology/Topology';
 import type {
   BoardOccupancy,
+  CaptureCounts,
   GamePhase,
   GameState,
   PointOccupancy,
@@ -33,9 +34,7 @@ export interface RejectedPlaceStoneResult {
   readonly reason: MoveRejectionReason;
 }
 
-export type PlaceStoneResult =
-  | AcceptedPlaceStoneResult
-  | RejectedPlaceStoneResult;
+export type PlaceStoneResult = AcceptedPlaceStoneResult | RejectedPlaceStoneResult;
 
 export interface AcceptedPassResult {
   readonly ok: true;
@@ -54,12 +53,16 @@ export type PassResult = AcceptedPassResult | RejectedPassResult;
 const opponentOf = (color: StoneColor): StoneColor =>
   color === 'black' ? 'white' : 'black';
 
+const freezeCaptures = (captures: CaptureCounts): CaptureCounts =>
+  Object.freeze({ black: captures.black, white: captures.white });
+
 const freezeState = (
   board: BoardOccupancy,
   currentPlayer: StoneColor,
   moveNumber: number,
   consecutivePasses: number,
   phase: GamePhase,
+  captures: CaptureCounts,
 ): GameState =>
   Object.freeze({
     board,
@@ -67,46 +70,31 @@ const freezeState = (
     moveNumber,
     consecutivePasses,
     phase,
+    captures: freezeCaptures(captures),
   });
 
 const rejectedMove = (
   state: GameState,
   reason: MoveRejectionReason,
 ): RejectedPlaceStoneResult =>
-  Object.freeze({
-    ok: false,
-    state,
-    reason,
-  });
+  Object.freeze({ ok: false, state, reason });
 
 const rejectedPass = (state: GameState): RejectedPassResult =>
-  Object.freeze({
-    ok: false,
-    state,
-    reason: 'not-playing',
-  });
+  Object.freeze({ ok: false, state, reason: 'not-playing' });
 
 export class GameEngine {
   constructor(private readonly topology: Topology) {}
 
   createInitialState(): GameState {
     const board: Record<PointId, PointOccupancy> = {};
-
-    for (const point of this.topology.points()) {
-      board[point] = 'empty';
-    }
-
-    return freezeState(Object.freeze(board), 'black', 0, 0, 'playing');
+    for (const point of this.topology.points()) board[point] = 'empty';
+    return freezeState(Object.freeze(board), 'black', 0, 0, 'playing', { black: 0, white: 0 });
   }
 
   groupAt(state: GameState, point: PointId): StoneGroup | null {
     this.assertKnownPoint(point);
     const color = state.board[point];
-
-    if (color === 'empty') {
-      return null;
-    }
-
+    if (color === 'empty') return null;
     return this.collectGroup(state.board, point, color);
   }
 
@@ -118,18 +106,9 @@ export class GameEngine {
     repetitionContext?: RepetitionContext,
   ): PlaceStoneResult {
     this.assertKnownPoint(point);
-
-    if (state.phase !== 'playing') {
-      return rejectedMove(state, 'not-playing');
-    }
-
-    if (color !== state.currentPlayer) {
-      return rejectedMove(state, 'wrong-player');
-    }
-
-    if (state.board[point] !== 'empty') {
-      return rejectedMove(state, 'occupied');
-    }
+    if (state.phase !== 'playing') return rejectedMove(state, 'not-playing');
+    if (color !== state.currentPlayer) return rejectedMove(state, 'wrong-player');
+    if (state.board[point] !== 'empty') return rejectedMove(state, 'occupied');
 
     const board: Record<PointId, PointOccupancy> = { ...state.board };
     board[point] = color;
@@ -139,30 +118,21 @@ export class GameEngine {
     const captured: PointId[] = [];
 
     for (const neighbor of this.topology.neighbors(point)) {
-      if (board[neighbor] !== opponent || visitedOpponentPoints.has(neighbor)) {
-        continue;
-      }
-
+      if (board[neighbor] !== opponent || visitedOpponentPoints.has(neighbor)) continue;
       const group = this.collectGroup(board, neighbor, opponent);
-
-      for (const groupPoint of group.points) {
-        visitedOpponentPoints.add(groupPoint);
-      }
-
-      if (group.liberties.length === 0) {
-        captured.push(...group.points);
-      }
+      for (const groupPoint of group.points) visitedOpponentPoints.add(groupPoint);
+      if (group.liberties.length === 0) captured.push(...group.points);
     }
 
-    for (const capturedPoint of captured) {
-      board[capturedPoint] = 'empty';
-    }
+    for (const capturedPoint of captured) board[capturedPoint] = 'empty';
 
     const ownGroup = this.collectGroup(board, point, color);
+    if (ownGroup.liberties.length === 0) return rejectedMove(state, 'suicide');
 
-    if (ownGroup.liberties.length === 0) {
-      return rejectedMove(state, 'suicide');
-    }
+    const captures = {
+      ...state.captures,
+      [color]: state.captures[color] + captured.length,
+    } satisfies CaptureCounts;
 
     const candidateState = freezeState(
       Object.freeze(board),
@@ -170,6 +140,7 @@ export class GameEngine {
       state.moveNumber + 1,
       0,
       'playing',
+      captures,
     );
 
     if (
@@ -190,9 +161,7 @@ export class GameEngine {
   }
 
   pass(state: GameState): PassResult {
-    if (state.phase !== 'playing') {
-      return rejectedPass(state);
-    }
+    if (state.phase !== 'playing') return rejectedPass(state);
 
     const consecutivePasses = state.consecutivePasses + 1;
     const nextPhase: GamePhase = consecutivePasses >= 2 ? 'endgame' : 'playing';
@@ -207,6 +176,7 @@ export class GameEngine {
         state.moveNumber + 1,
         consecutivePasses,
         nextPhase,
+        state.captures,
       ),
     });
   }
@@ -224,15 +194,12 @@ export class GameEngine {
     while (pending.length > 0) {
       const point = pending.pop()!;
       points.push(point);
-
       for (const neighbor of this.topology.neighbors(point)) {
         const occupancy = board[neighbor];
-
         if (occupancy === 'empty') {
           liberties.add(neighbor);
           continue;
         }
-
         if (occupancy === color && !visited.has(neighbor)) {
           visited.add(neighbor);
           pending.push(neighbor);
@@ -248,8 +215,6 @@ export class GameEngine {
   }
 
   private assertKnownPoint(point: PointId): void {
-    if (!this.topology.has(point)) {
-      throw new Error(`Unknown point: ${point}`);
-    }
+    if (!this.topology.has(point)) throw new Error(`Unknown point: ${point}`);
   }
 }
