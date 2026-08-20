@@ -24,6 +24,17 @@ const clickPoint = async (page: Page, logicalPointId: string): Promise<void> => 
   await target.click();
 };
 
+const classifyPoint = async (
+  page: Page,
+  logicalPointId: string,
+  status: 'Alive' | 'Dead' | 'Seki',
+): Promise<void> => {
+  await clickPoint(page, logicalPointId);
+  const controls = page.getByRole('group', { name: 'Selected group status' });
+  await expect(controls).toBeVisible();
+  await controls.getByRole('button', { name: status, exact: true }).click();
+};
+
 test('new game exposes every supported 0.1 torus size', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'New game' })).toBeVisible();
@@ -34,7 +45,7 @@ test('new game exposes every supported 0.1 torus size', async ({ page }) => {
   ]);
 });
 
-test('release acceptance covers capture, Pass/Undo and all manual endgame statuses', async ({ page }) => {
+test('release acceptance covers capture, Pass/Undo and board-first manual endgame statuses', async ({ page }) => {
   await startGame(page, { size: '9', rules: 'chinese', komi: '7.5' });
 
   for (const point of ['1,1', '0,1', '5,5', '1,0', '5,6', '2,1', '6,5', '1,2']) {
@@ -65,6 +76,7 @@ test('release acceptance covers capture, Pass/Undo and all manual endgame status
   await page.getByRole('button', { name: 'Pass' }).click();
   await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
+  await expect(page.getByText(/Group 1/)).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(page.getByText('White to move')).toBeVisible();
@@ -74,14 +86,22 @@ test('release acceptance covers capture, Pass/Undo and all manual endgame status
   await page.getByRole('button', { name: 'Pass' }).click();
   await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
 
-  const statusGroups = page.locator('.endgame-statuses');
-  await expect(statusGroups).toHaveCount(5);
-  await statusGroups.nth(0).getByRole('button', { name: 'Alive', exact: true }).click();
-  await statusGroups.nth(1).getByRole('button', { name: 'Dead', exact: true }).click();
-  await statusGroups.nth(2).getByRole('button', { name: 'Seki', exact: true }).click();
-  await statusGroups.nth(3).getByRole('button', { name: 'Alive', exact: true }).click();
-  await statusGroups.nth(4).getByRole('button', { name: 'Alive', exact: true }).click();
+  // The black group is connected through 5,5-5,6-6,5 and can be reclassified freely.
+  await clickPoint(page, '5,5');
+  const selectedStatus = page.getByRole('group', { name: 'Selected group status' });
+  await selectedStatus.getByRole('button', { name: 'Alive', exact: true }).click();
+  await expect(page.locator('.torus-board__endgame-line[data-endgame-status="alive"]')).not.toHaveCount(0);
+  await selectedStatus.getByRole('button', { name: 'Dead', exact: true }).click();
+  await expect(page.locator('.torus-board__endgame-line[data-endgame-status="dead"]')).not.toHaveCount(0);
+  await selectedStatus.getByRole('button', { name: 'Seki', exact: true }).click();
+  await expect(page.locator('.torus-board__endgame-line[data-endgame-status="seki"]')).not.toHaveCount(0);
 
+  await classifyPoint(page, '0,1', 'Dead');
+  await classifyPoint(page, '1,0', 'Seki');
+  await classifyPoint(page, '2,1', 'Alive');
+  await classifyPoint(page, '1,2', 'Alive');
+
+  await expect(page.getByText('Classified 5 of 5')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Calculate final score' })).toBeEnabled();
   await page.getByRole('button', { name: 'Calculate final score' }).click();
 

@@ -1,11 +1,17 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import type { GroupStatus } from '../core/endgame/EndgameClassifier';
+import {
+  endgameGroupForPoint,
+  type EndgameGroupRenderState,
+} from '../presentation/EndgameGroupPresentation';
 import { GameResultDialog } from './GameResultDialog';
+import './manual-endgame.css';
 import {
   Torus2DRenderer,
   type Torus2DPanDirection,
@@ -53,6 +59,8 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     controller.viewModel().phase === 'endgame' ? controller.endgameGroups() : [],
   );
   const [decisions, setDecisions] = useState<TorusEndgameDecisions>({});
+  const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [resultOpen, setResultOpen] = useState(
     () => controller.viewModel().phase === 'finished',
   );
@@ -61,12 +69,35 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const rendererRef = useRef<Torus2DRenderer | null>(null);
   const actionInFlight = useRef(false);
 
+  const renderGroups = useMemo<readonly EndgameGroupRenderState[]>(
+    () =>
+      endgameGroups.map((group) =>
+        Object.freeze({
+          ...group,
+          status: decisions[group.id] ?? null,
+        }),
+      ),
+    [decisions, endgameGroups],
+  );
+
+  const selectedGroup = useMemo(
+    () => endgameGroups.find((group) => group.id === selectedGroupId) ?? null,
+    [endgameGroups, selectedGroupId],
+  );
+
+  const classifiedCount = useMemo(
+    () => endgameGroups.filter((group) => Boolean(decisions[group.id])).length,
+    [decisions, endgameGroups],
+  );
+
   useEffect(() => {
     rendererRef.current = null;
     const nextViewModel = controller.viewModel();
     setViewModel(nextViewModel);
     setFeedback(null);
     setDecisions({});
+    setHoveredGroupId(null);
+    setSelectedGroupId(null);
     setShowDuplicateRegions(false);
     setResultOpen(nextViewModel.phase === 'finished');
     setEndgameGroups(
@@ -81,8 +112,24 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     const renderer = rendererRef.current ?? new Torus2DRenderer(svg, controller.size);
     rendererRef.current = renderer;
     renderer.setDuplicateRegionsVisible(showDuplicateRegions);
+    renderer.setEndgameOverlay(
+      viewModel.phase === 'endgame'
+        ? {
+            groups: renderGroups,
+            hoveredGroupId,
+            selectedGroupId,
+          }
+        : null,
+    );
     renderer.render(viewModel);
-  }, [controller, showDuplicateRegions, viewModel]);
+  }, [
+    controller,
+    hoveredGroupId,
+    renderGroups,
+    selectedGroupId,
+    showDuplicateRegions,
+    viewModel,
+  ]);
 
   const applyResult = (result: TorusGameActionResult): void => {
     setViewModel(result.viewModel);
@@ -91,16 +138,49 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
 
     if (result.viewModel.phase === 'endgame') {
       setEndgameGroups(controller.endgameGroups());
+      setHoveredGroupId(null);
+      setSelectedGroupId(null);
     } else {
       setEndgameGroups([]);
       setDecisions({});
+      setHoveredGroupId(null);
+      setSelectedGroupId(null);
     }
+  };
+
+  const groupAtClientPosition = (
+    event: ReactMouseEvent<SVGSVGElement>,
+  ): TorusEndgameGroup | null => {
+    const renderer = rendererRef.current;
+    if (!renderer) return null;
+
+    const lineGroupId = renderer.endgameGroupFromClientPosition(
+      event.clientX,
+      event.clientY,
+    );
+    if (lineGroupId) {
+      return endgameGroups.find((group) => group.id === lineGroupId) ?? null;
+    }
+
+    const point = renderer.pointFromClientPosition(event.clientX, event.clientY);
+    return point ? endgameGroupForPoint(endgameGroups, point) : null;
   };
 
   const handleBoardClick = async (
     event: ReactMouseEvent<SVGSVGElement>,
   ): Promise<void> => {
-    if (actionInFlight.current || viewModel.phase !== 'playing') return;
+    if (actionInFlight.current) return;
+
+    if (viewModel.phase === 'endgame') {
+      const group = groupAtClientPosition(event);
+      if (group) {
+        setSelectedGroupId(group.id);
+        setHoveredGroupId(group.id);
+      }
+      return;
+    }
+
+    if (viewModel.phase !== 'playing') return;
 
     const point = rendererRef.current?.pointFromClientPosition(
       event.clientX,
@@ -113,6 +193,19 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
       applyResult(await controller.placeStone(point));
     } finally {
       actionInFlight.current = false;
+    }
+  };
+
+  const handleBoardMouseMove = (event: ReactMouseEvent<SVGSVGElement>): void => {
+    if (viewModel.phase !== 'endgame') {
+      if (hoveredGroupId !== null) setHoveredGroupId(null);
+      return;
+    }
+
+    const group = groupAtClientPosition(event);
+    const nextHoveredGroupId = group?.id ?? null;
+    if (nextHoveredGroupId !== hoveredGroupId) {
+      setHoveredGroupId(nextHoveredGroupId);
     }
   };
 
@@ -210,8 +303,10 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         </button>
         <svg
           ref={svgRef}
-          className={`torus-board${viewModel.phase === 'playing' ? '' : ' torus-board--inactive'}`}
+          className={`torus-board${viewModel.phase === 'playing' ? '' : viewModel.phase === 'endgame' ? ' torus-board--endgame' : ' torus-board--inactive'}`}
           onClick={(event) => void handleBoardClick(event)}
+          onMouseMove={handleBoardMouseMove}
+          onMouseLeave={() => setHoveredGroupId(null)}
         />
         <button
           className="torus-pan torus-pan--right"
@@ -280,44 +375,52 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
           <div>
             <h2 id="endgame-title">Manual endgame classification</h2>
             <p>
-              Mark every stone group as alive, dead, or seki. Your decisions are final for scoring.
+              Hover a stone to highlight its whole logical group. Click a stone or an existing group line to select it, then choose Alive, Dead, or Seki.
             </p>
           </div>
 
           {endgameGroups.length > 0 ? (
-            <div className="endgame-groups">
-              {endgameGroups.map((group, index) => (
-                <div className="endgame-group" key={group.id}>
-                  <div className="endgame-group__identity">
+            <>
+              <div className="endgame-progress" aria-live="polite">
+                Classified {classifiedCount} of {endgameGroups.length}
+              </div>
+
+              {selectedGroup ? (
+                <div className="endgame-selection">
+                  <div className="endgame-selection__identity">
                     <span
-                      className={`stone-chip stone-chip--${group.color}`}
+                      className={`stone-chip stone-chip--${selectedGroup.color}`}
                       aria-hidden="true"
                     />
                     <div>
-                      <strong>Group {index + 1}</strong>
-                      <span>{group.points.join(' · ')}</span>
+                      <strong>Selected group</strong>
+                      <span>
+                        {selectedGroup.points.length} {selectedGroup.points.length === 1 ? 'stone' : 'stones'}
+                      </span>
                     </div>
                   </div>
                   <div
                     className="endgame-statuses"
                     role="group"
-                    aria-label={`Group ${index + 1} status`}
+                    aria-label="Selected group status"
                   >
                     {ENDGAME_STATUSES.map((status) => (
                       <button
                         type="button"
                         key={status}
-                        className={decisions[group.id] === status ? 'is-selected' : undefined}
-                        aria-pressed={decisions[group.id] === status}
-                        onClick={() => setGroupStatus(group, status)}
+                        className={decisions[selectedGroup.id] === status ? 'is-selected' : undefined}
+                        aria-pressed={decisions[selectedGroup.id] === status}
+                        onClick={() => setGroupStatus(selectedGroup, status)}
                       >
                         {statusLabel(status)}
                       </button>
                     ))}
                   </div>
                 </div>
-              ))}
-            </div>
+              ) : (
+                <p className="endgame-empty">Select a stone group directly on the board.</p>
+              )}
+            </>
           ) : (
             <p className="endgame-empty">There are no stone groups to classify.</p>
           )}

@@ -13,7 +13,7 @@ import {
   type GameSessionPersistenceConfig,
   type GameSessionRejectionReason,
 } from '../core/game/GameSession';
-import type { RuleSet, StoneColor } from '../core/game/types';
+import type { RuleSet } from '../core/game/types';
 import type { GameSessionSnapshot } from '../core/persistence/GameSessionSnapshot';
 import { SimpleKoPolicy } from '../core/rules/RepetitionPolicy';
 import { ChineseScoring } from '../core/scoring/ChineseScoring';
@@ -25,6 +25,11 @@ import {
   TorusTopology,
   type TorusSize,
 } from '../core/topology/TorusTopology';
+import {
+  buildEndgameGroupEdges,
+  endgameGroupId,
+  type EndgameGroupPresentation,
+} from '../presentation/EndgameGroupPresentation';
 import {
   createGameResultModel,
   type GameResultViewModel,
@@ -48,17 +53,11 @@ export interface TorusGameActionResult {
   readonly viewModel: GameViewModel;
 }
 
-export interface TorusEndgameGroup {
-  readonly id: string;
-  readonly points: readonly PointId[];
-  readonly color: StoneColor;
-}
+export type TorusEndgameGroup = EndgameGroupPresentation;
 
 export type TorusEndgameDecisions = Readonly<
   Partial<Record<string, GroupStatus>>
 >;
-
-const groupId = (points: readonly PointId[]): string => JSON.stringify(points);
 
 const isTorusSize = (value: number): value is TorusSize =>
   TORUS_SIZES.some((size) => size === value);
@@ -201,9 +200,10 @@ export class TorusGameController {
         }
 
         return Object.freeze({
-          id: groupId(points),
+          id: endgameGroupId(points),
           points: Object.freeze([...points]),
           color: occupancy,
+          edges: buildEndgameGroupEdges(points, this.topology),
         });
       }),
     );
@@ -247,9 +247,9 @@ export class TorusGameController {
     }
 
     const manualDecisions: ManualGroupDecision[] = groups.map((points) => {
-      const status = decisions[groupId(points)];
+      const status = decisions[endgameGroupId(points)];
       if (!status) {
-        throw new Error(`Missing manual endgame decision for group: ${groupId(points)}`);
+        throw new Error(`Missing manual endgame decision for group: ${endgameGroupId(points)}`);
       }
 
       return Object.freeze({
