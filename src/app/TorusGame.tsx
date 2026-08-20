@@ -6,7 +6,10 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import type { GroupStatus } from '../core/endgame/EndgameClassifier';
-import { Torus2DRenderer } from '../renderer2d/Torus2DRenderer';
+import {
+  Torus2DRenderer,
+  type Torus2DPanDirection,
+} from '../renderer2d/Torus2DRenderer';
 import {
   TorusGameController,
   type TorusEndgameDecisions,
@@ -88,6 +91,10 @@ export function TorusGame() {
     }
   };
 
+  const handlePan = (direction: Torus2DPanDirection): void => {
+    rendererRef.current?.pan(direction);
+  };
+
   const handlePass = async (): Promise<void> => {
     if (actionInFlight.current || viewModel.phase !== 'playing') return;
 
@@ -158,11 +165,48 @@ export function TorusGame() {
         </div>
       </div>
 
-      <svg
-        ref={svgRef}
-        className={`torus-board${viewModel.phase === 'playing' ? '' : ' torus-board--inactive'}`}
-        onClick={(event) => void handleBoardClick(event)}
-      />
+      <div className="torus-board-shell" aria-label="Infinite torus view">
+        <button
+          className="torus-pan torus-pan--up"
+          type="button"
+          aria-label="Shift torus view up"
+          onClick={() => handlePan('up')}
+        >
+          ↑
+        </button>
+        <button
+          className="torus-pan torus-pan--left"
+          type="button"
+          aria-label="Shift torus view left"
+          onClick={() => handlePan('left')}
+        >
+          ←
+        </button>
+        <svg
+          ref={svgRef}
+          className={`torus-board${viewModel.phase === 'playing' ? '' : ' torus-board--inactive'}`}
+          onClick={(event) => void handleBoardClick(event)}
+        />
+        <button
+          className="torus-pan torus-pan--right"
+          type="button"
+          aria-label="Shift torus view right"
+          onClick={() => handlePan('right')}
+        >
+          →
+        </button>
+        <button
+          className="torus-pan torus-pan--down"
+          type="button"
+          aria-label="Shift torus view down"
+          onClick={() => handlePan('down')}
+        >
+          ↓
+        </button>
+      </div>
+      <p className="torus-view-hint">
+        Wrapped rows and columns are visual copies of the same logical points. Shift the view in any direction to follow the torus through a seam.
+      </p>
 
       <div className="game-controls">
         <button

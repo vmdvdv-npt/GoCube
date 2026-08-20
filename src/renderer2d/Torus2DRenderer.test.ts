@@ -4,6 +4,7 @@ import {
   Torus2DRenderer,
   buildTorus2DScene,
   pointFromTorusViewBoxPosition,
+  shiftTorus2DViewState,
   type Torus2DSize,
 } from './Torus2DRenderer';
 
@@ -79,87 +80,149 @@ const fakeSvg = () => {
   return { root, svg: root as unknown as SVGSVGElement };
 };
 
-describe('Torus2DRenderer', () => {
-  it('builds deterministic row-major geometry independently of ViewModel point order', () => {
+describe('Torus2DRenderer infinite presentation', () => {
+  it('builds deterministic canonical points plus wrapped border copies', () => {
     const normal = buildTorus2DScene(viewModel(9), 9);
     const reversed = buildTorus2DScene(viewModel(9, {}, true), 9);
 
     expect(normal).toEqual(reversed);
     expect(normal.points).toHaveLength(81);
-    expect(normal.points[0]).toMatchObject({ logicalPointId: '0,0', x: 60, y: 60 });
-    expect(normal.points.at(-1)).toMatchObject({ logicalPointId: '8,8', x: 940, y: 940 });
-    expect(normal.gridLines).toHaveLength(18);
+    expect(normal.visualPoints).toHaveLength(121);
+    expect(normal.visualPoints.filter((point) => point.duplicate)).toHaveLength(40);
+    expect(normal.points[0]).toMatchObject({
+      logicalPointId: '0,0',
+      x: 120,
+      y: 120,
+      duplicate: false,
+    });
+    expect(normal.visualPoints[0]).toMatchObject({
+      logicalPointId: '8,8',
+      visualColumn: -1,
+      visualRow: -1,
+      duplicate: true,
+    });
+    expect(normal.gridLines).toHaveLength(22);
   });
 
-  it('maps black, white and empty logical points into the scene without changing occupancy', () => {
+  it('keeps every visible copy of a logical point synchronized', () => {
     const scene = buildTorus2DScene(
       viewModel(9, { '0,0': 'black', '4,5': 'white' }),
       9,
     );
 
-    expect(scene.points.find((point) => point.logicalPointId === '0,0')?.occupancy).toBe('black');
-    expect(scene.points.find((point) => point.logicalPointId === '4,5')?.occupancy).toBe('white');
-    expect(scene.points.find((point) => point.logicalPointId === '8,8')?.occupancy).toBe('empty');
+    const cornerCopies = scene.visualPoints.filter((point) => point.logicalPointId === '0,0');
+    expect(cornerCopies).toHaveLength(4);
+    expect(cornerCopies.every((point) => point.occupancy === 'black')).toBe(true);
+
+    expect(scene.visualPoints.find((point) => point.logicalPointId === '4,5')?.occupancy).toBe(
+      'white',
+    );
   });
 
-  it.each([9, 13, 19] as const)('supports a %ix%i torus', (size) => {
+  it.each([9, 13, 19] as const)('supports repeating border regions on a %ix%i torus', (size) => {
     const scene = buildTorus2DScene(viewModel(size), size);
     expect(scene.points).toHaveLength(size * size);
-    expect(scene.gridLines).toHaveLength(size * 2);
+    expect(scene.visualPoints).toHaveLength((size + 2) ** 2);
+    expect(scene.gridLines).toHaveLength((size + 2) * 2);
   });
 
-  it('hit-tests viewBox coordinates to logical PointId and rejects space between intersections', () => {
+  it('shifts the logical view cyclically in all four directions', () => {
+    expect(shiftTorus2DViewState({ offsetX: 0, offsetY: 0 }, 'left', 9)).toEqual({
+      offsetX: 8,
+      offsetY: 0,
+    });
+    expect(shiftTorus2DViewState({ offsetX: 0, offsetY: 0 }, 'up', 9)).toEqual({
+      offsetX: 0,
+      offsetY: 8,
+    });
+    expect(shiftTorus2DViewState({ offsetX: 8, offsetY: 8 }, 'right', 9)).toEqual({
+      offsetX: 0,
+      offsetY: 8,
+    });
+    expect(shiftTorus2DViewState({ offsetX: 8, offsetY: 8 }, 'down', 9)).toEqual({
+      offsetX: 8,
+      offsetY: 0,
+    });
+  });
+
+  it('repositions logical points without changing their identities or occupancy', () => {
+    const source = viewModel(9, { '1,2': 'black' });
+    const shifted = buildTorus2DScene(source, 9, { offsetX: 1, offsetY: 2 });
+
+    expect(shifted.points[0]).toMatchObject({
+      logicalPointId: '1,2',
+      occupancy: 'black',
+      visualColumn: 0,
+      visualRow: 0,
+    });
+    expect(new Set(shifted.points.map((point) => point.logicalPointId))).toEqual(
+      new Set(source.points.map((point) => point.logicalPointId)),
+    );
+  });
+
+  it('hit-tests both primary and duplicate copies back to one logical PointId', () => {
     const scene = buildTorus2DScene(viewModel(9), 9);
-    const center = scene.points.find((point) => point.logicalPointId === '4,3')!;
+    const primary = scene.points.find((point) => point.logicalPointId === '0,0')!;
+    const duplicate = scene.visualPoints.find(
+      (point) => point.logicalPointId === '8,0' && point.visualColumn === -1,
+    )!;
 
-    expect(pointFromTorusViewBoxPosition(scene, center.x, center.y)).toBe('4,3');
+    expect(pointFromTorusViewBoxPosition(scene, primary.x, primary.y)).toBe('0,0');
+    expect(pointFromTorusViewBoxPosition(scene, duplicate.x, duplicate.y)).toBe('8,0');
     expect(
-      pointFromTorusViewBoxPosition(scene, center.x + scene.spacing / 2, center.y),
+      pointFromTorusViewBoxPosition(scene, primary.x + scene.spacing / 2, primary.y),
     ).toBeNull();
-    expect(pointFromTorusViewBoxPosition(scene, -100, -100)).toBeNull();
-    expect(pointFromTorusViewBoxPosition(scene, Number.NaN, center.y)).toBeNull();
+    expect(pointFromTorusViewBoxPosition(scene, Number.NaN, primary.y)).toBeNull();
   });
 
-  it('renders SVG groups and stones from GameViewModel only', () => {
+  it('renders duplicate stones and semantic hit targets from one GameViewModel', () => {
     const { root, svg } = fakeSvg();
     const renderer = new Torus2DRenderer(svg, 9);
 
     renderer.render(viewModel(9, { '0,0': 'black', '8,8': 'white' }));
 
     expect(root.attributes.get('viewBox')).toBe('0 0 1000 1000');
+    expect(root.attributes.get('data-view-offset-x')).toBe('0');
     expect(root.children.map((child) => child.attributes.get('class'))).toEqual([
       'torus-board__background',
       'torus-board__grid',
       'torus-board__hit-targets',
       'torus-board__stones',
     ]);
-    expect(root.children[1]?.children).toHaveLength(18);
-    expect(root.children[2]?.children).toHaveLength(81);
-    expect(root.children[3]?.children).toHaveLength(2);
-    expect(root.children[3]?.children[0]?.attributes.get('data-logical-point-id')).toBe('0,0');
-    expect(root.children[3]?.children[1]?.attributes.get('data-logical-point-id')).toBe('8,8');
+    expect(root.children[1]?.children).toHaveLength(22);
+    expect(root.children[2]?.children).toHaveLength(121);
+    expect(root.children[3]?.children).toHaveLength(8);
+    expect(
+      root.children[3]?.children.filter(
+        (child) => child.attributes.get('data-logical-point-id') === '0,0',
+      ),
+    ).toHaveLength(4);
   });
 
-  it('maps client coordinates back to a logical point after render', () => {
+  it('pans indefinitely while preserving semantic hit testing', () => {
+    const { root, svg } = fakeSvg();
+    const renderer = new Torus2DRenderer(svg, 9);
+    renderer.render(viewModel(9));
+
+    for (let index = 0; index < 10; index += 1) renderer.pan('right');
+    expect(renderer.viewState()).toEqual({ offsetX: 1, offsetY: 0 });
+    expect(root.attributes.get('data-view-offset-x')).toBe('1');
+
+    // viewBox (120, 120) maps to client (160, 110); after the shift it is logical point 1,0.
+    expect(renderer.pointFromClientPosition(160, 110)).toBe('1,0');
+  });
+
+  it('does not mutate the input GameViewModel while building or panning the view', () => {
+    const source = viewModel(9, { '2,3': 'black' }, true);
+    const before = JSON.stringify(source);
     const { svg } = fakeSvg();
     const renderer = new Torus2DRenderer(svg, 9);
 
-    expect(renderer.pointFromClientPosition(130, 80)).toBeNull();
-    renderer.render(viewModel(9));
-
-    // viewBox (60, 60) maps to client (130, 80) in the fake 500x500 SVG.
-    expect(renderer.pointFromClientPosition(130, 80)).toBe('0,0');
-    expect(renderer.pointFromClientPosition(100, 50)).toBeNull();
-  });
-
-  it('does not mutate the input GameViewModel', () => {
-    const source = viewModel(9, { '2,3': 'black' }, true);
-    const before = JSON.stringify(source);
-
-    const scene = buildTorus2DScene(source, 9);
+    renderer.render(source);
+    renderer.pan('left');
+    renderer.pan('up');
 
     expect(JSON.stringify(source)).toBe(before);
-    expect(scene.points).not.toBe(source.points);
   });
 
   it('rejects incomplete or duplicate logical boards instead of inventing renderer state', () => {
@@ -172,6 +235,12 @@ describe('Torus2DRenderer', () => {
     duplicate[80] = duplicate[0]!;
     expect(() => buildTorus2DScene({ ...source, points: duplicate }, 9)).toThrow(
       'Duplicate logical point',
+    );
+  });
+
+  it('rejects fractional view offsets because navigation is in logical steps', () => {
+    expect(() => buildTorus2DScene(viewModel(9), 9, { offsetX: 0.5, offsetY: 0 })).toThrow(
+      'integer logical steps',
     );
   });
 });

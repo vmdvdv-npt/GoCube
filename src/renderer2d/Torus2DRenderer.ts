@@ -4,12 +4,21 @@ import type { GameViewModel } from '../presentation/PresentationModel';
 import type { Renderer2D } from './Renderer2D';
 
 export type Torus2DSize = 9 | 13 | 19;
+export type Torus2DPanDirection = 'left' | 'right' | 'up' | 'down';
+
+export interface Torus2DViewState {
+  readonly offsetX: number;
+  readonly offsetY: number;
+}
 
 export interface Torus2DScenePoint {
   readonly logicalPointId: PointId;
   readonly occupancy: PointOccupancy;
   readonly x: number;
   readonly y: number;
+  readonly visualColumn: number;
+  readonly visualRow: number;
+  readonly duplicate: boolean;
 }
 
 export interface Torus2DGridLine {
@@ -21,19 +30,24 @@ export interface Torus2DGridLine {
 
 export interface Torus2DScene {
   readonly size: Torus2DSize;
+  readonly viewState: Torus2DViewState;
   readonly viewBoxSize: number;
   readonly padding: number;
   readonly spacing: number;
   readonly hitRadius: number;
   readonly stoneRadius: number;
-  readonly gridLines: readonly Torus2DGridLine[];
+  /** One canonical visual position for every logical point in the current view. */
   readonly points: readonly Torus2DScenePoint[];
+  /** Canonical points plus one wrapped duplicate row/column around every edge. */
+  readonly visualPoints: readonly Torus2DScenePoint[];
+  readonly gridLines: readonly Torus2DGridLine[];
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const VIEW_BOX_SIZE = 1000;
-const BOARD_PADDING = 60;
+const BOARD_PADDING = 120;
 const SUPPORTED_SIZES: readonly Torus2DSize[] = Object.freeze([9, 13, 19]);
+const DEFAULT_VIEW_STATE: Torus2DViewState = Object.freeze({ offsetX: 0, offsetY: 0 });
 
 const assertSupportedSize: (size: number) => asserts size is Torus2DSize = (size) => {
   if (!SUPPORTED_SIZES.includes(size as Torus2DSize)) {
@@ -42,14 +56,50 @@ const assertSupportedSize: (size: number) => asserts size is Torus2DSize = (size
 };
 
 const pointId = (x: number, y: number): PointId => `${x},${y}`;
+const wrap = (value: number, size: number): number => ((value % size) + size) % size;
+
+const normalizeViewState = (
+  viewState: Torus2DViewState,
+  size: Torus2DSize,
+): Torus2DViewState => {
+  if (!Number.isInteger(viewState.offsetX) || !Number.isInteger(viewState.offsetY)) {
+    throw new Error('Torus2D view offsets must be integer logical steps');
+  }
+
+  return Object.freeze({
+    offsetX: wrap(viewState.offsetX, size),
+    offsetY: wrap(viewState.offsetY, size),
+  });
+};
+
+export const shiftTorus2DViewState = (
+  viewState: Torus2DViewState,
+  direction: Torus2DPanDirection,
+  size: Torus2DSize,
+): Torus2DViewState => {
+  const normalized = normalizeViewState(viewState, size);
+
+  switch (direction) {
+    case 'left':
+      return normalizeViewState({ ...normalized, offsetX: normalized.offsetX - 1 }, size);
+    case 'right':
+      return normalizeViewState({ ...normalized, offsetX: normalized.offsetX + 1 }, size);
+    case 'up':
+      return normalizeViewState({ ...normalized, offsetY: normalized.offsetY - 1 }, size);
+    case 'down':
+      return normalizeViewState({ ...normalized, offsetY: normalized.offsetY + 1 }, size);
+  }
+};
 
 const freezeLine = (line: Torus2DGridLine): Torus2DGridLine => Object.freeze(line);
 
 export const buildTorus2DScene = (
   viewModel: GameViewModel,
   size: Torus2DSize,
+  viewState: Torus2DViewState = DEFAULT_VIEW_STATE,
 ): Torus2DScene => {
   assertSupportedSize(size);
+  const normalizedViewState = normalizeViewState(viewState, size);
 
   const expectedPointCount = size * size;
   if (viewModel.points.length !== expectedPointCount) {
@@ -68,30 +118,46 @@ export const buildTorus2DScene = (
 
   const spacing = (VIEW_BOX_SIZE - BOARD_PADDING * 2) / (size - 1);
   const coordinate = (index: number): number => BOARD_PADDING + index * spacing;
-  const points: Torus2DScenePoint[] = [];
 
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const logicalPointId = pointId(x, y);
-      const occupancy = byId.get(logicalPointId);
-      if (!occupancy) {
-        throw new Error(`GameViewModel is missing torus point: ${logicalPointId}`);
-      }
-      points.push(
-        Object.freeze({
-          logicalPointId,
-          occupancy,
-          x: coordinate(x),
-          y: coordinate(y),
-        }),
-      );
+  const scenePoint = (visualColumn: number, visualRow: number): Torus2DScenePoint => {
+    const logicalX = wrap(visualColumn + normalizedViewState.offsetX, size);
+    const logicalY = wrap(visualRow + normalizedViewState.offsetY, size);
+    const logicalPointId = pointId(logicalX, logicalY);
+    const occupancy = byId.get(logicalPointId);
+    if (!occupancy) {
+      throw new Error(`GameViewModel is missing torus point: ${logicalPointId}`);
+    }
+
+    return Object.freeze({
+      logicalPointId,
+      occupancy,
+      x: coordinate(visualColumn),
+      y: coordinate(visualRow),
+      visualColumn,
+      visualRow,
+      duplicate:
+        visualColumn < 0 || visualColumn >= size || visualRow < 0 || visualRow >= size,
+    });
+  };
+
+  const points: Torus2DScenePoint[] = [];
+  for (let row = 0; row < size; row += 1) {
+    for (let column = 0; column < size; column += 1) {
+      points.push(scenePoint(column, row));
+    }
+  }
+
+  const visualPoints: Torus2DScenePoint[] = [];
+  for (let row = -1; row <= size; row += 1) {
+    for (let column = -1; column <= size; column += 1) {
+      visualPoints.push(scenePoint(column, row));
     }
   }
 
   const gridLines: Torus2DGridLine[] = [];
-  const start = coordinate(0);
-  const end = coordinate(size - 1);
-  for (let index = 0; index < size; index += 1) {
+  const start = coordinate(-1);
+  const end = coordinate(size);
+  for (let index = -1; index <= size; index += 1) {
     const position = coordinate(index);
     gridLines.push(freezeLine({ x1: position, y1: start, x2: position, y2: end }));
     gridLines.push(freezeLine({ x1: start, y1: position, x2: end, y2: position }));
@@ -99,13 +165,15 @@ export const buildTorus2DScene = (
 
   return Object.freeze({
     size,
+    viewState: normalizedViewState,
     viewBoxSize: VIEW_BOX_SIZE,
     padding: BOARD_PADDING,
     spacing,
-    hitRadius: spacing * 0.4,
+    hitRadius: spacing * 0.38,
     stoneRadius: spacing * 0.42,
-    gridLines: Object.freeze(gridLines),
     points: Object.freeze(points),
+    visualPoints: Object.freeze(visualPoints),
+    gridLines: Object.freeze(gridLines),
   });
 };
 
@@ -118,14 +186,17 @@ export const pointFromTorusViewBoxPosition = (
 
   const column = Math.round((x - scene.padding) / scene.spacing);
   const row = Math.round((y - scene.padding) / scene.spacing);
-  if (column < 0 || column >= scene.size || row < 0 || row >= scene.size) return null;
+  if (column < -1 || column > scene.size || row < -1 || row > scene.size) return null;
 
   const centerX = scene.padding + column * scene.spacing;
   const centerY = scene.padding + row * scene.spacing;
   const distanceSquared = (x - centerX) ** 2 + (y - centerY) ** 2;
   if (distanceSquared > scene.hitRadius ** 2) return null;
 
-  return pointId(column, row);
+  return pointId(
+    wrap(column + scene.viewState.offsetX, scene.size),
+    wrap(row + scene.viewState.offsetY, scene.size),
+  );
 };
 
 const setAttributes = (element: Element, attributes: Readonly<Record<string, string>>): void => {
@@ -134,6 +205,8 @@ const setAttributes = (element: Element, attributes: Readonly<Record<string, str
 
 export class Torus2DRenderer implements Renderer2D {
   private scene: Torus2DScene | null = null;
+  private currentViewModel: GameViewModel | null = null;
+  private currentViewState: Torus2DViewState = DEFAULT_VIEW_STATE;
 
   constructor(
     private readonly svg: SVGSVGElement,
@@ -142,14 +215,27 @@ export class Torus2DRenderer implements Renderer2D {
     assertSupportedSize(size);
   }
 
+  viewState(): Torus2DViewState {
+    return this.currentViewState;
+  }
+
+  pan(direction: Torus2DPanDirection): Torus2DViewState {
+    this.currentViewState = shiftTorus2DViewState(this.currentViewState, direction, this.size);
+    if (this.currentViewModel) this.render(this.currentViewModel);
+    return this.currentViewState;
+  }
+
   render(viewModel: GameViewModel): void {
-    const scene = buildTorus2DScene(viewModel, this.size);
+    this.currentViewModel = viewModel;
+    const scene = buildTorus2DScene(viewModel, this.size, this.currentViewState);
     this.scene = scene;
 
     this.svg.setAttribute('viewBox', `0 0 ${scene.viewBoxSize} ${scene.viewBoxSize}`);
     this.svg.setAttribute('preserveAspectRatio', 'none');
     this.svg.setAttribute('role', 'img');
-    this.svg.setAttribute('aria-label', `${scene.size} by ${scene.size} torus Go board`);
+    this.svg.setAttribute('aria-label', `${scene.size} by ${scene.size} repeating torus Go board`);
+    this.svg.setAttribute('data-view-offset-x', String(scene.viewState.offsetX));
+    this.svg.setAttribute('data-view-offset-y', String(scene.viewState.offsetY));
 
     const document = this.svg.ownerDocument;
     const background = document.createElementNS(SVG_NS, 'rect');
@@ -180,7 +266,7 @@ export class Torus2DRenderer implements Renderer2D {
 
     const hitTargets = document.createElementNS(SVG_NS, 'g');
     hitTargets.setAttribute('class', 'torus-board__hit-targets');
-    for (const point of scene.points) {
+    for (const point of scene.visualPoints) {
       const target = document.createElementNS(SVG_NS, 'circle');
       setAttributes(target, {
         cx: String(point.x),
@@ -189,14 +275,15 @@ export class Torus2DRenderer implements Renderer2D {
         fill: 'transparent',
         'pointer-events': 'all',
         'data-logical-point-id': point.logicalPointId,
-        class: 'torus-board__hit-target',
+        'data-copy-role': point.duplicate ? 'duplicate' : 'primary',
+        class: `torus-board__hit-target${point.duplicate ? ' torus-board__hit-target--duplicate' : ''}`,
       });
       hitTargets.appendChild(target);
     }
 
     const stones = document.createElementNS(SVG_NS, 'g');
     stones.setAttribute('class', 'torus-board__stones');
-    for (const point of scene.points) {
+    for (const point of scene.visualPoints) {
       if (point.occupancy === 'empty') continue;
 
       const stone = document.createElementNS(SVG_NS, 'circle');
@@ -211,7 +298,8 @@ export class Torus2DRenderer implements Renderer2D {
         'pointer-events': 'none',
         'data-logical-point-id': point.logicalPointId,
         'data-occupancy': point.occupancy,
-        class: `torus-board__stone torus-board__stone--${point.occupancy}`,
+        'data-copy-role': point.duplicate ? 'duplicate' : 'primary',
+        class: `torus-board__stone torus-board__stone--${point.occupancy}${point.duplicate ? ' torus-board__stone--duplicate' : ''}`,
       });
       stones.appendChild(stone);
     }
