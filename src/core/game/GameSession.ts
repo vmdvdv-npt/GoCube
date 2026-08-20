@@ -70,6 +70,22 @@ export type GameSessionResult =
 const comparePointIds = (left: PointId, right: PointId): number =>
   left < right ? -1 : left > right ? 1 : 0;
 
+const cloneEndgameClassification = (
+  classification: EndgameClassification | null | undefined,
+): EndgameClassification | null => {
+  if (!classification) return null;
+
+  return Object.freeze(
+    classification.map((group) =>
+      Object.freeze({
+        points: Object.freeze([...group.points]),
+        status: group.status,
+        source: group.source,
+      }),
+    ),
+  );
+};
+
 const cloneFinalScore = (score: FinalScore | null): FinalScore | null => {
   if (!score) return null;
 
@@ -99,6 +115,7 @@ export class GameSession {
   private history: LinearHistory;
   private readonly config: GameSessionConfig;
   private currentFinalScore: FinalScore | null = null;
+  private currentEndgameClassification: EndgameClassification | null = null;
 
   constructor(
     private readonly engine: GameEngine,
@@ -137,6 +154,9 @@ export class GameSession {
     const session = new GameSession(engine, repetitionPolicy, config, initialState);
     session.history = LinearHistory.fromStates(snapshot.history);
     session.currentFinalScore = cloneFinalScore(snapshot.finalScore);
+    session.currentEndgameClassification = cloneEndgameClassification(
+      snapshot.endgameClassification,
+    );
     return session;
   }
 
@@ -176,6 +196,7 @@ export class GameSession {
       ruleSet: this.config.scoringStrategy.ruleSet,
       komi: this.config.komi,
       history: this.history.states(),
+      endgameClassification: cloneEndgameClassification(this.currentEndgameClassification),
       finalScore: cloneFinalScore(this.currentFinalScore),
     });
   }
@@ -280,6 +301,7 @@ export class GameSession {
     }
 
     this.currentFinalScore = null;
+    this.currentEndgameClassification = null;
     await this.persist();
     return Object.freeze({
       ok: true,
@@ -314,6 +336,7 @@ export class GameSession {
       ...state,
       phase: 'finished',
     });
+    this.currentEndgameClassification = cloneEndgameClassification(classification);
     this.currentFinalScore = finalScore;
     await this.persist();
   }
@@ -384,6 +407,13 @@ export class GameSession {
     }
     if (currentState.phase !== 'finished' && snapshot.finalScore) {
       throw new Error('Unfinished saved game must not include FinalScore');
+    }
+    if (
+      currentState.phase !== 'finished' &&
+      snapshot.endgameClassification !== undefined &&
+      snapshot.endgameClassification !== null
+    ) {
+      throw new Error('Unfinished saved game must not include endgame classification');
     }
     if (
       snapshot.finalScore &&
