@@ -5,6 +5,7 @@ const snapshotState = (state: GameState): GameState =>
   Object.freeze({
     ...state,
     board: Object.freeze({ ...state.board }),
+    captures: Object.freeze({ ...state.captures }),
   });
 
 export class LinearHistory {

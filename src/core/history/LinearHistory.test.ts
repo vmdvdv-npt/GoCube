@@ -5,10 +5,11 @@ import { TorusTopology } from '../topology/TorusTopology';
 import { LinearHistory } from './LinearHistory';
 
 describe('LinearHistory', () => {
-  it('stores full state snapshots and isolates board data from later mutation', () => {
+  it('stores full state snapshots and isolates nested rule data from later mutation', () => {
     const engine = new GameEngine(new TorusTopology(9));
     const initial = engine.createInitialState();
     const mutableBoard = { ...initial.board };
+    const mutableCaptures = { black: 3, white: 2 };
     const state: GameState = {
       ...initial,
       board: mutableBoard,
@@ -16,17 +17,20 @@ describe('LinearHistory', () => {
       moveNumber: 7,
       consecutivePasses: 1,
       phase: 'playing',
+      captures: mutableCaptures,
     };
     const history = new LinearHistory(initial);
 
     history.push(state);
     mutableBoard['4,4'] = 'black';
+    mutableCaptures.black = 99;
 
     expect(history.current()).toMatchObject({
       currentPlayer: 'white',
       moveNumber: 7,
       consecutivePasses: 1,
       phase: 'playing',
+      captures: { black: 3, white: 2 },
     });
     expect(history.current().board['4,4']).toBe('empty');
   });
