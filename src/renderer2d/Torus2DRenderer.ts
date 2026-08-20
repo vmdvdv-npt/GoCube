@@ -35,7 +35,7 @@ const VIEW_BOX_SIZE = 1000;
 const BOARD_PADDING = 60;
 const SUPPORTED_SIZES: readonly Torus2DSize[] = Object.freeze([9, 13, 19]);
 
-const assertSupportedSize = (size: number): asserts size is Torus2DSize => {
+const assertSupportedSize: (size: number) => asserts size is Torus2DSize = (size) => {
   if (!SUPPORTED_SIZES.includes(size as Torus2DSize)) {
     throw new Error(`Unsupported Torus2DRenderer size: ${size}`);
   }
