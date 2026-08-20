@@ -1,3 +1,4 @@
+import type { RepetitionContext, RepetitionPolicy } from '../rules/RepetitionPolicy';
 import type { PointId, Topology } from '../topology/Topology';
 import type {
   BoardOccupancy,
@@ -12,7 +13,7 @@ export interface StoneGroup {
   readonly liberties: readonly PointId[];
 }
 
-export type MoveRejectionReason = 'occupied' | 'suicide';
+export type MoveRejectionReason = 'occupied' | 'suicide' | 'repetition';
 
 export interface AcceptedPlaceStoneResult {
   readonly ok: true;
@@ -74,6 +75,8 @@ export class GameEngine {
     state: GameState,
     point: PointId,
     color: StoneColor,
+    repetitionPolicy?: RepetitionPolicy,
+    repetitionContext?: RepetitionContext,
   ): PlaceStoneResult {
     this.assertKnownPoint(point);
 
@@ -114,9 +117,21 @@ export class GameEngine {
       return rejectedMove(state, 'suicide');
     }
 
+    const candidateState = freezeState(board);
+
+    if (
+      repetitionPolicy &&
+      !repetitionPolicy.isAllowed(
+        repetitionContext ?? { states: Object.freeze([state]) },
+        candidateState,
+      )
+    ) {
+      return rejectedMove(state, 'repetition');
+    }
+
     return Object.freeze({
       ok: true,
-      state: freezeState(board),
+      state: candidateState,
       captured: Object.freeze(captured),
     });
   }
