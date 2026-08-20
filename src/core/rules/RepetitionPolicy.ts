@@ -31,7 +31,7 @@ export const boardsEqual = (
  *
  * RepetitionContext.states is ordered and ends in the current state, so the
  * prohibited position is the second-to-last state. Older repetitions remain
- * legal here and can be handled later by another RepetitionPolicy, e.g. superko.
+ * legal here and can be handled by another RepetitionPolicy, e.g. superko.
  */
 export class SimpleKoPolicy implements RepetitionPolicy {
   isAllowed(context: RepetitionContext, candidateState: GameState): boolean {
@@ -41,5 +41,21 @@ export class SimpleKoPolicy implements RepetitionPolicy {
 
     const prohibitedState = context.states[context.states.length - 2];
     return !boardsEqual(prohibitedState.board, candidateState.board);
+  }
+}
+
+/**
+ * Positional superko: reject recreation of any board position supplied in the
+ * repetition history, not just the position immediately before the last move.
+ *
+ * At the current GameState level, repetition is intentionally board-based: the
+ * state contains only logical point occupancy, so player-to-move is not part of
+ * this policy yet.
+ */
+export class SuperkoPolicy implements RepetitionPolicy {
+  isAllowed(context: RepetitionContext, candidateState: GameState): boolean {
+    return context.states.every(
+      (historicalState) => !boardsEqual(historicalState.board, candidateState.board),
+    );
   }
 }
