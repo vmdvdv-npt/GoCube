@@ -1,5 +1,10 @@
 import type { EndgameClassifier } from '../endgame/EndgameClassifier';
 import { LinearHistory } from '../history/LinearHistory';
+import type { GameRepository } from '../persistence/GameRepository';
+import {
+  GAME_SESSION_SNAPSHOT_VERSION,
+  type GameSessionSnapshot,
+} from '../persistence/GameSessionSnapshot';
 import type { RepetitionPolicy } from '../rules/RepetitionPolicy';
 import type { FinalScore, ScoringStrategy } from '../scoring/Scoring';
 import type { PointId } from '../topology/Topology';
@@ -14,10 +19,17 @@ export type GameCommand =
   | Readonly<{ type: 'pass' }>
   | Readonly<{ type: 'undo' }>;
 
+export interface GameSessionPersistenceConfig {
+  readonly repository: GameRepository<GameSessionSnapshot>;
+  readonly gameId: string;
+  readonly now?: () => string;
+}
+
 export interface GameSessionConfig {
   readonly endgameClassifier: EndgameClassifier;
   readonly scoringStrategy: ScoringStrategy;
   readonly komi: number;
+  readonly persistence?: GameSessionPersistenceConfig;
 }
 
 export type GameSessionRejectionReason = MoveRejectionReason | 'nothing-to-undo';
@@ -57,8 +69,27 @@ export type GameSessionResult =
 const comparePointIds = (left: PointId, right: PointId): number =>
   left < right ? -1 : left > right ? 1 : 0;
 
+const cloneFinalScore = (score: FinalScore | null): FinalScore | null => {
+  if (!score) return null;
+
+  return Object.freeze({
+    ...score,
+    territory: Object.freeze({ ...score.territory }),
+    territoryPoints: Object.freeze({
+      black: Object.freeze([...score.territoryPoints.black]),
+      white: Object.freeze([...score.territoryPoints.white]),
+      neutral: Object.freeze([...score.territoryPoints.neutral]),
+      seki: Object.freeze([...score.territoryPoints.seki]),
+    }),
+    stonesOnBoard: Object.freeze({ ...score.stonesOnBoard }),
+    captures: Object.freeze({ ...score.captures }),
+    prisoners: score.prisoners ? Object.freeze({ ...score.prisoners }) : null,
+    deadStones: Object.freeze({ ...score.deadStones }),
+  });
+};
+
 export class GameSession {
-  private readonly history: LinearHistory;
+  private history: LinearHistory;
   private readonly config: GameSessionConfig;
   private currentFinalScore: FinalScore | null = null;
 
@@ -72,8 +103,49 @@ export class GameSession {
       endgameClassifier: config.endgameClassifier,
       scoringStrategy: config.scoringStrategy,
       komi: config.komi,
+      persistence: config.persistence
+        ? Object.freeze({
+            repository: config.persistence.repository,
+            gameId: config.persistence.gameId,
+            now: config.persistence.now,
+          })
+        : undefined,
     });
     this.history = new LinearHistory(initialState);
+  }
+
+  static fromSnapshot(
+    engine: GameEngine,
+    repetitionPolicy: RepetitionPolicy,
+    config: GameSessionConfig,
+    snapshot: GameSessionSnapshot,
+  ): GameSession {
+    GameSession.assertCompatibleSnapshot(config, snapshot);
+
+    const [initialState] = snapshot.history;
+    if (!initialState) throw new Error('Saved game history must not be empty');
+
+    const session = new GameSession(engine, repetitionPolicy, config, initialState);
+    session.history = LinearHistory.fromStates(snapshot.history);
+    session.currentFinalScore = cloneFinalScore(snapshot.finalScore);
+    return session;
+  }
+
+  static async load(
+    engine: GameEngine,
+    repetitionPolicy: RepetitionPolicy,
+    config: GameSessionConfig,
+  ): Promise<GameSession | null> {
+    const persistence = config.persistence;
+    if (!persistence) throw new Error('GameSession persistence is not configured');
+
+    const saved = await persistence.repository.load(persistence.gameId);
+    if (!saved) return null;
+    if (saved.id !== persistence.gameId) {
+      throw new Error(`Saved game id mismatch: expected ${persistence.gameId}, got ${saved.id}`);
+    }
+
+    return GameSession.fromSnapshot(engine, repetitionPolicy, config, saved.state);
   }
 
   state(): GameState {
@@ -88,6 +160,16 @@ export class GameSession {
     return this.history.length();
   }
 
+  snapshot(): GameSessionSnapshot {
+    return Object.freeze({
+      version: GAME_SESSION_SNAPSHOT_VERSION,
+      ruleSet: this.config.scoringStrategy.ruleSet,
+      komi: this.config.komi,
+      history: this.history.states(),
+      finalScore: cloneFinalScore(this.currentFinalScore),
+    });
+  }
+
   async execute(command: GameCommand): Promise<GameSessionResult> {
     switch (command.type) {
       case 'place-stone':
@@ -99,7 +181,7 @@ export class GameSession {
     }
   }
 
-  private placeStone(point: PointId): GameSessionResult {
+  private async placeStone(point: PointId): Promise<GameSessionResult> {
     const currentState = this.history.current();
     const result = this.engine.placeStone(
       currentState,
@@ -118,6 +200,7 @@ export class GameSession {
     }
 
     const state = this.history.push(result.state);
+    await this.persist();
     return Object.freeze({
       ok: true,
       action: 'place-stone',
@@ -140,6 +223,7 @@ export class GameSession {
 
     const state = this.history.push(result.state);
     if (state.phase !== 'endgame') {
+      await this.persist();
       return Object.freeze({
         ok: true,
         action: 'pass',
@@ -161,6 +245,7 @@ export class GameSession {
       phase: 'finished',
     });
     this.currentFinalScore = finalScore;
+    await this.persist();
 
     return Object.freeze({
       ok: true,
@@ -170,7 +255,7 @@ export class GameSession {
     });
   }
 
-  private undo(): GameSessionResult {
+  private async undo(): Promise<GameSessionResult> {
     const state = this.history.undo();
 
     if (!state) {
@@ -182,10 +267,22 @@ export class GameSession {
     }
 
     this.currentFinalScore = null;
+    await this.persist();
     return Object.freeze({
       ok: true,
       action: 'undo',
       state,
+    });
+  }
+
+  private async persist(): Promise<void> {
+    const persistence = this.config.persistence;
+    if (!persistence) return;
+
+    await persistence.repository.save({
+      id: persistence.gameId,
+      savedAt: (persistence.now ?? (() => new Date().toISOString()))(),
+      state: this.snapshot(),
     });
   }
 
@@ -207,5 +304,39 @@ export class GameSession {
     }
 
     return Object.freeze(groups);
+  }
+
+  private static assertCompatibleSnapshot(
+    config: GameSessionConfig,
+    snapshot: GameSessionSnapshot,
+  ): void {
+    if (snapshot.version !== GAME_SESSION_SNAPSHOT_VERSION) {
+      throw new Error(`Unsupported saved game version: ${String(snapshot.version)}`);
+    }
+    if (snapshot.ruleSet !== config.scoringStrategy.ruleSet) {
+      throw new Error(
+        `Saved rule set mismatch: expected ${config.scoringStrategy.ruleSet}, got ${snapshot.ruleSet}`,
+      );
+    }
+    if (snapshot.komi !== config.komi) {
+      throw new Error(`Saved komi mismatch: expected ${config.komi}, got ${snapshot.komi}`);
+    }
+    if (snapshot.history.length === 0) {
+      throw new Error('Saved game history must not be empty');
+    }
+
+    const currentState = snapshot.history[snapshot.history.length - 1]!;
+    if (currentState.phase === 'finished' && !snapshot.finalScore) {
+      throw new Error('Finished saved game must include FinalScore');
+    }
+    if (currentState.phase !== 'finished' && snapshot.finalScore) {
+      throw new Error('Unfinished saved game must not include FinalScore');
+    }
+    if (
+      snapshot.finalScore &&
+      (snapshot.finalScore.ruleSet !== snapshot.ruleSet || snapshot.finalScore.komi !== snapshot.komi)
+    ) {
+      throw new Error('Saved FinalScore does not match saved game configuration');
+    }
   }
 }
