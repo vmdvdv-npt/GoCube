@@ -6,7 +6,7 @@ The project starts with a fully playable 2D torus and is deliberately structured
 
 ## Planned versions
 
-- **0.1 — Torus 2D**: complete playable toroidal Go, Chinese and Japanese scoring modes, history, undo, save/load, endgame flow.
+- **0.1.0 — Torus 2D**: first complete playable release with Chinese and Japanese scoring modes, manual alive/dead/seki classification, history/undo, save/load, and final results.
 - **0.2 — Cube 2D**: cube topology and flat unfolding using the same game engine.
 - **0.3 — Cube 3D**: Three.js renderer over the same logical model.
 
@@ -21,7 +21,7 @@ The project starts with a fully playable 2D torus and is deliberately structured
 - GitHub Actions
 - localStorage through a persistence interface for the first version
 
-Version 0.1 has no server or database requirement. Network play is a future extension and must not be coupled to the core engine.
+Version 0.1.0 has no server or database requirement. Network play is a future extension and must not be coupled to the core engine.
 
 ## Architectural rule
 
@@ -47,6 +47,8 @@ npm run test:e2e
 
 ## Current status
 
-Version **0.1 — Torus 2D** is in release hardening. The full local game flow is implemented, including 9×9 / 13×13 / 19×19 boards, Chinese and Japanese scoring, manual endgame classification, Undo, local save/restore, and the final result dialog.
+Version **0.1.0 — Torus 2D** is the first release candidate for a complete local game. It supports 9×9 / 13×13 / 19×19 boards, Chinese and Japanese scoring, configurable komi, captures, Pass and Undo, manual alive/dead/seki endgame classification, local save/restore, and a reopenable final result dialog.
 
-Pull requests must pass TypeScript validation, Vitest, the production build, and Playwright end-to-end release scenarios before merge. The next planned product version after the 0.1 release gate is **0.2 — Cube 2D**.
+The release gate requires TypeScript validation, Vitest, the production build, Playwright end-to-end release scenarios, and a final manual browser smoke-test before `v0.1.0` is tagged on `main`.
+
+The next planned development milestone after the 0.1.0 release is **0.2.1 — CubeTopology / Cube 2D foundation**.
