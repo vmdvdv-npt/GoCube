@@ -1,11 +1,14 @@
+import { TorusGame } from './TorusGame';
+
 export function App() {
   return (
     <main className="app-shell">
-      <h1>GoCube</h1>
-      <p>Game Cube Go development scaffold</p>
-      <section>
-        <strong>Milestone 0.1:</strong> Torus 2D
-      </section>
+      <header className="app-header">
+        <p className="app-kicker">Game Cube Go · 0.1.14</p>
+        <h1>Torus 2D</h1>
+        <p>Interactive GameSession → PresentationModel → Torus2DRenderer integration.</p>
+      </header>
+      <TorusGame />
     </main>
   );
 }
