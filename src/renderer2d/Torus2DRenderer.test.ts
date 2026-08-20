@@ -238,7 +238,7 @@ describe('Torus2DRenderer presentation', () => {
     expect(root.attributes.get('data-duplicate-regions-visible')).toBe('true');
     expect(root.children[1]?.children).toHaveLength(34);
     expect(root.children[2]?.children).toHaveLength(289);
-    expect(root.children[3]?.children.toHaveLength(8));
+    expect(root.children[3]?.children).toHaveLength(8);
     expect(
       root.children[3]?.children.filter(
         (child) => child.attributes.get('data-logical-point-id') === '0,0',
