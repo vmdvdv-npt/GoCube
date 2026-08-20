@@ -16,6 +16,14 @@ const startGame = async (page: Page, options: StartOptions): Promise<void> => {
   await expect(page.locator('.torus-game')).toBeVisible();
 };
 
+const clickPoint = async (page: Page, logicalPointId: string): Promise<void> => {
+  const target = page.locator(
+    `.torus-board__hit-target[data-logical-point-id="${logicalPointId}"][data-copy-role="primary"]`,
+  );
+  await expect(target).toHaveCount(1);
+  await target.click();
+};
+
 test('new game exposes every supported 0.1 torus size', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'New game' })).toBeVisible();
@@ -24,6 +32,79 @@ test('new game exposes every supported 0.1 torus size', async ({ page }) => {
     '13×13',
     '19×19',
   ]);
+});
+
+test('release acceptance covers capture, Pass/Undo and all manual endgame statuses', async ({ page }) => {
+  await startGame(page, { size: '9', rules: 'chinese', komi: '7.5' });
+
+  for (const point of ['1,1', '0,1', '5,5', '1,0', '5,6', '2,1', '6,5', '1,2']) {
+    await clickPoint(page, point);
+  }
+
+  await expect(page.getByText('Black to move')).toBeVisible();
+  await expect(page.getByText('Move 8')).toBeVisible();
+  await expect(page.getByText('White captures 1')).toBeVisible();
+  await expect(
+    page.locator(
+      '.torus-board__stone[data-logical-point-id="1,1"][data-copy-role="primary"]',
+    ),
+  ).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Pass' }).click();
+  await expect(page.getByText('White to move')).toBeVisible();
+  await expect(page.getByText('Move 9')).toBeVisible();
+  await expect(page.getByText('Passes 1')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByText('Black to move')).toBeVisible();
+  await expect(page.getByText('Move 8')).toBeVisible();
+  await expect(page.getByText('Passes 0')).toBeVisible();
+  await expect(page.getByText('White captures 1')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Pass' }).click();
+  await page.getByRole('button', { name: 'Pass' }).click();
+  await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
+
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByText('White to move')).toBeVisible();
+  await expect(page.getByText('Move 9')).toBeVisible();
+  await expect(page.getByText('Passes 1')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Pass' }).click();
+  await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
+
+  const statusGroups = page.locator('.endgame-statuses');
+  await expect(statusGroups).toHaveCount(5);
+  await statusGroups.nth(0).getByRole('button', { name: 'Alive', exact: true }).click();
+  await statusGroups.nth(1).getByRole('button', { name: 'Dead', exact: true }).click();
+  await statusGroups.nth(2).getByRole('button', { name: 'Seki', exact: true }).click();
+  await statusGroups.nth(3).getByRole('button', { name: 'Alive', exact: true }).click();
+  await statusGroups.nth(4).getByRole('button', { name: 'Alive', exact: true }).click();
+
+  await expect(page.getByRole('button', { name: 'Calculate final score' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Calculate final score' }).click();
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('Chinese', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('9×9', { exact: true })).toBeVisible();
+  await expect(
+    dialog.getByText('Black stones captured by White').locator('..').getByText('1', { exact: true }),
+  ).toBeVisible();
+
+  await dialog.getByRole('button', { name: 'Close game result' }).click();
+  await expect(page.getByRole('button', { name: 'Game result' })).toBeVisible();
+  await page.getByRole('button', { name: 'Game result' }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByRole('dialog').getByRole('button', { name: 'Close game result' }).click();
+
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByText('White to move')).toBeVisible();
+  await expect(page.getByText('Move 9')).toBeVisible();
+  await expect(page.getByText('Passes 1')).toBeVisible();
+  await expect(page.getByText('White captures 1')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Game result' })).toHaveCount(0);
 });
 
 test('board input, persistence and restore work through the browser UI', async ({ page }) => {
