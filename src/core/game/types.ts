@@ -1,21 +1,11 @@
 import type { PointId } from '../topology/Topology';
 
 export type StoneColor = 'black' | 'white';
+export type PointOccupancy = StoneColor | 'empty';
 export type RuleSet = 'chinese' | 'japanese';
 
-export interface Stone {
-  point: PointId;
-  color: StoneColor;
-}
+export type BoardOccupancy = Readonly<Record<PointId, PointOccupancy>>;
 
 export interface GameState {
-  readonly stones: ReadonlyMap<PointId, StoneColor>;
-  readonly toMove: StoneColor;
-  readonly consecutivePasses: number;
-  readonly moveNumber: number;
+  readonly board: BoardOccupancy;
 }
-
-export type GameCommand =
-  | { type: 'play'; point: PointId }
-  | { type: 'pass' }
-  | { type: 'undo' };
