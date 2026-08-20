@@ -1,0 +1,80 @@
+.startup-status {
+  color: #66666c;
+}
+
+.startup-card,
+.confirmation-card {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid #d8d8dc;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.startup-card {
+  width: min(520px, 100%);
+  margin: 0 auto;
+}
+
+.startup-card h2,
+.startup-card p,
+.confirmation-card h2,
+.confirmation-card p {
+  margin: 0;
+}
+
+.startup-card p,
+.confirmation-card p {
+  color: #66666c;
+}
+
+.startup-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.startup-actions button,
+.new-game-form button,
+.new-game-form select,
+.new-game-form input,
+.confirmation-card button {
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid #b9b9bf;
+  border-radius: 8px;
+  background: #ffffff;
+  font: inherit;
+}
+
+.startup-actions button,
+.new-game-form button,
+.confirmation-card button {
+  cursor: pointer;
+}
+
+.new-game-form label {
+  display: grid;
+  gap: 6px;
+  color: #55555a;
+  font-size: 14px;
+}
+
+.new-game-control {
+  margin-left: 18px;
+}
+
+.confirmation-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 28%);
+}
+
+.confirmation-card {
+  width: min(440px, 100%);
+  box-shadow: 0 18px 60px rgb(0 0 0 / 18%);
+}

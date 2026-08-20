@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useMemo,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -41,19 +40,36 @@ const rejectionLabel = (reason: TorusGameActionResult['reason']): string | null 
 const statusLabel = (status: GroupStatus): string =>
   status === 'alive' ? 'Alive' : status === 'dead' ? 'Dead' : 'Seki';
 
-export function TorusGame() {
-  const controller = useMemo(() => new TorusGameController(), []);
+export interface TorusGameProps {
+  readonly controller: TorusGameController;
+  readonly onRequestNewGame: () => void;
+}
+
+export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const [viewModel, setViewModel] = useState(() => controller.viewModel());
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [endgameGroups, setEndgameGroups] = useState<readonly TorusEndgameGroup[]>([]);
+  const [endgameGroups, setEndgameGroups] = useState<readonly TorusEndgameGroup[]>(() =>
+    controller.viewModel().phase === 'endgame' ? controller.endgameGroups() : [],
+  );
   const [decisions, setDecisions] = useState<TorusEndgameDecisions>({});
   const svgRef = useRef<SVGSVGElement>(null);
   const rendererRef = useRef<Torus2DRenderer | null>(null);
   const actionInFlight = useRef(false);
 
   useEffect(() => {
+    rendererRef.current = null;
+    const nextViewModel = controller.viewModel();
+    setViewModel(nextViewModel);
+    setFeedback(null);
+    setDecisions({});
+    setEndgameGroups(
+      nextViewModel.phase === 'endgame' ? controller.endgameGroups() : [],
+    );
+  }, [controller]);
+
+  useEffect(() => {
     const svg = svgRef.current;
-    if (!svg) return;
+    if (!svg || viewModel.points.length !== controller.size * controller.size) return;
 
     const renderer = rendererRef.current ?? new Torus2DRenderer(svg, controller.size);
     rendererRef.current = renderer;
@@ -156,6 +172,7 @@ export function TorusGame() {
           <strong>{stageLabel}</strong>
         </div>
         <div className="game-statistics">
+          <span>{controller.size}×{controller.size}</span>
           <span>Move {viewModel.moveNumber}</span>
           <span>Passes {viewModel.consecutivePasses}</span>
           <span>Black captures {viewModel.captures.black}</span>
@@ -222,6 +239,9 @@ export function TorusGame() {
           disabled={viewModel.moveNumber === 0 || viewModel.phase === 'endgame'}
         >
           Undo
+        </button>
+        <button className="new-game-control" type="button" onClick={onRequestNewGame}>
+          New game
         </button>
       </div>
 

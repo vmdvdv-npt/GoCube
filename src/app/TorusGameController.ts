@@ -10,16 +10,21 @@ import {
 import { GameEngine } from '../core/game/GameEngine';
 import {
   GameSession,
+  type GameSessionPersistenceConfig,
   type GameSessionRejectionReason,
-  type GameSessionResult,
 } from '../core/game/GameSession';
 import type { RuleSet, StoneColor } from '../core/game/types';
+import type { GameSessionSnapshot } from '../core/persistence/GameSessionSnapshot';
 import { SimpleKoPolicy } from '../core/rules/RepetitionPolicy';
 import { ChineseScoring } from '../core/scoring/ChineseScoring';
 import { JapaneseScoring } from '../core/scoring/JapaneseScoring';
 import type { ScoringStrategy } from '../core/scoring/Scoring';
 import type { PointId } from '../core/topology/Topology';
-import { TorusTopology, type TorusSize } from '../core/topology/TorusTopology';
+import {
+  TORUS_SIZES,
+  TorusTopology,
+  type TorusSize,
+} from '../core/topology/TorusTopology';
 import {
   PresentationModel,
   type GameViewModel,
@@ -29,6 +34,8 @@ export interface TorusGameControllerOptions {
   readonly size?: TorusSize;
   readonly ruleSet?: RuleSet;
   readonly komi?: number;
+  readonly persistence?: GameSessionPersistenceConfig;
+  readonly snapshot?: GameSessionSnapshot;
 }
 
 export interface TorusGameActionResult {
@@ -48,6 +55,9 @@ export type TorusEndgameDecisions = Readonly<
 >;
 
 const groupId = (points: readonly PointId[]): string => JSON.stringify(points);
+
+const isTorusSize = (value: number): value is TorusSize =>
+  TORUS_SIZES.some((size) => size === value);
 
 class DeferredEndgameClassifier implements EndgameClassifier {
   private groups: readonly (readonly PointId[])[] | null = null;
@@ -105,29 +115,50 @@ export class TorusGameController {
   private readonly endgameClassifier = new DeferredEndgameClassifier();
   private readonly session: GameSession;
   private readonly presentation = new PresentationModel();
-  private pendingEndgameCompletion: Promise<GameSessionResult> | null = null;
+  private pendingEndgameCompletion: Promise<void> | null = null;
 
   constructor(options: TorusGameControllerOptions = {}) {
-    this.size = options.size ?? 9;
-    const ruleSet = options.ruleSet ?? 'chinese';
-    const komi = options.komi ?? 7.5;
+    const snapshot = options.snapshot;
+    const requestedSize = snapshot?.boardSize ?? options.size ?? 9;
+    if (!isTorusSize(requestedSize)) {
+      throw new Error(`Unsupported saved torus size: ${String(requestedSize)}`);
+    }
 
+    this.size = requestedSize;
+    const ruleSet = snapshot?.ruleSet ?? options.ruleSet ?? 'chinese';
+    const komi = snapshot?.komi ?? options.komi ?? 7.5;
+
+    if (ruleSet !== 'chinese' && ruleSet !== 'japanese') {
+      throw new Error(`Unsupported rule set: ${String(ruleSet)}`);
+    }
     if (!Number.isFinite(komi)) throw new Error('Komi must be a finite number');
 
     this.topology = new TorusTopology(this.size);
-    this.session = new GameSession(
-      new GameEngine(this.topology),
-      new SimpleKoPolicy(),
-      {
-        endgameClassifier: this.endgameClassifier,
-        scoringStrategy: scoringFor(ruleSet, this.topology),
-        komi,
-      },
-    );
+    const engine = new GameEngine(this.topology);
+    const repetitionPolicy = new SimpleKoPolicy();
+    const config = {
+      endgameClassifier: this.endgameClassifier,
+      scoringStrategy: scoringFor(ruleSet, this.topology),
+      boardSize: this.size,
+      komi,
+      persistence: options.persistence,
+    } as const;
+
+    this.session = snapshot
+      ? GameSession.fromSnapshot(engine, repetitionPolicy, config, snapshot)
+      : new GameSession(engine, repetitionPolicy, config);
+
+    if (this.session.state().phase === 'endgame') {
+      this.pendingEndgameCompletion = this.session.resumeEndgame();
+    }
   }
 
   viewModel(): GameViewModel {
     return this.presentation.fromSession(this.session);
+  }
+
+  snapshot(): GameSessionSnapshot {
+    return this.session.snapshot();
   }
 
   endgameGroups(): readonly TorusEndgameGroup[] {
@@ -168,10 +199,14 @@ export class TorusGameController {
     const completion = this.session.execute({ type: 'pass' });
 
     // GameSession pushes the second Pass and invokes the classifier synchronously
-    // before awaiting its Promise, so the intermediate endgame state is available
-    // here without exposing GameEngine or GameState to the UI.
+    // before awaiting persistence/classification, so the intermediate endgame state
+    // is immediately available without exposing GameEngine or GameState to the UI.
     if (this.session.state().phase === 'endgame') {
-      this.pendingEndgameCompletion = completion;
+      this.pendingEndgameCompletion = completion.then((result) => {
+        if (!result.ok) {
+          throw new Error(`Endgame Pass was rejected: ${result.reason}`);
+        }
+      });
       return this.present(true, null);
     }
 
@@ -209,8 +244,8 @@ export class TorusGameController {
     this.endgameClassifier.resolve(classification);
 
     try {
-      const result = await completion;
-      return this.present(result.ok, result.ok ? null : result.reason);
+      await completion;
+      return this.present(true, null);
     } finally {
       this.pendingEndgameCompletion = null;
     }
