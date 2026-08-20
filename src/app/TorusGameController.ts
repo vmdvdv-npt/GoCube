@@ -68,11 +68,12 @@ class DeferredEndgameClassifier implements EndgameClassifier {
   private resolvePending:
     | ((classification: EndgameClassification) => void)
     | null = null;
+  private rejectPending: ((reason?: unknown) => void) | null = null;
 
   classify(
     groups: readonly (readonly PointId[])[],
   ): Promise<EndgameClassification> {
-    if (this.resolvePending) {
+    if (this.resolvePending || this.rejectPending) {
       return Promise.reject(new Error('Endgame classification is already pending'));
     }
 
@@ -80,8 +81,9 @@ class DeferredEndgameClassifier implements EndgameClassifier {
       groups.map((group) => Object.freeze([...group])),
     );
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       this.resolvePending = resolve;
+      this.rejectPending = reject;
     });
   }
 
@@ -97,7 +99,20 @@ class DeferredEndgameClassifier implements EndgameClassifier {
 
     this.groups = null;
     this.resolvePending = null;
+    this.rejectPending = null;
     resolve(classification);
+  }
+
+  cancel(): void {
+    const reject = this.rejectPending;
+    if (!reject || !this.groups) {
+      throw new Error('No endgame classification is pending');
+    }
+
+    this.groups = null;
+    this.resolvePending = null;
+    this.rejectPending = null;
+    reject(new Error('Endgame classification cancelled'));
   }
 }
 
@@ -260,7 +275,16 @@ export class TorusGameController {
   }
 
   async undo(): Promise<TorusGameActionResult> {
-    if (this.pendingEndgameCompletion) return this.present(false, 'not-playing');
+    const pendingCompletion = this.pendingEndgameCompletion;
+    if (pendingCompletion) {
+      if (this.session.state().phase !== 'endgame') {
+        return this.present(false, 'not-playing');
+      }
+
+      this.endgameClassifier.cancel();
+      this.pendingEndgameCompletion = null;
+      void pendingCompletion.catch(() => undefined);
+    }
 
     const result = await this.session.execute({ type: 'undo' });
     return this.present(result.ok, result.ok ? null : result.reason);
