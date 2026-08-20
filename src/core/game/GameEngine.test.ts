@@ -12,9 +12,13 @@ import type { GameState, StoneColor } from './types';
 const stateWith = (
   engine: GameEngine,
   stones: Record<PointId, StoneColor>,
-): GameState => ({
-  board: { ...engine.createInitialState().board, ...stones },
-});
+): GameState => {
+  const initial = engine.createInitialState();
+  return {
+    ...initial,
+    board: { ...initial.board, ...stones },
+  };
+};
 
 const expectSamePoints = (actual: readonly PointId[], expected: readonly PointId[]) => {
   expect(new Set(actual)).toEqual(new Set(expected));

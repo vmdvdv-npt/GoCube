@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { GameState, PointOccupancy } from '../game/types';
 import { boardsEqual, SimpleKoPolicy, SuperkoPolicy } from './RepetitionPolicy';
 
-const gameState = (board: Record<string, PointOccupancy>): GameState => ({ board });
+const gameState = (board: Record<string, PointOccupancy>): GameState => ({
+  board,
+  currentPlayer: 'black',
+  moveNumber: 0,
+  consecutivePasses: 0,
+  phase: 'playing',
+});
 
 describe('boardsEqual', () => {
   it('compares logical occupancy rather than object identity or key order', () => {

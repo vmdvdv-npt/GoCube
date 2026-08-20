@@ -2,6 +2,7 @@ import type { RepetitionContext, RepetitionPolicy } from '../rules/RepetitionPol
 import type { PointId, Topology } from '../topology/Topology';
 import type {
   BoardOccupancy,
+  GamePhase,
   GameState,
   PointOccupancy,
   StoneColor,
@@ -13,7 +14,12 @@ export interface StoneGroup {
   readonly liberties: readonly PointId[];
 }
 
-export type MoveRejectionReason = 'occupied' | 'suicide' | 'repetition';
+export type MoveRejectionReason =
+  | 'occupied'
+  | 'suicide'
+  | 'repetition'
+  | 'wrong-player'
+  | 'not-playing';
 
 export interface AcceptedPlaceStoneResult {
   readonly ok: true;
@@ -31,11 +37,37 @@ export type PlaceStoneResult =
   | AcceptedPlaceStoneResult
   | RejectedPlaceStoneResult;
 
+export interface AcceptedPassResult {
+  readonly ok: true;
+  readonly state: GameState;
+  readonly passedBy: StoneColor;
+}
+
+export interface RejectedPassResult {
+  readonly ok: false;
+  readonly state: GameState;
+  readonly reason: 'not-playing';
+}
+
+export type PassResult = AcceptedPassResult | RejectedPassResult;
+
 const opponentOf = (color: StoneColor): StoneColor =>
   color === 'black' ? 'white' : 'black';
 
-const freezeState = (board: Record<PointId, PointOccupancy>): GameState =>
-  Object.freeze({ board: Object.freeze(board) });
+const freezeState = (
+  board: BoardOccupancy,
+  currentPlayer: StoneColor,
+  moveNumber: number,
+  consecutivePasses: number,
+  phase: GamePhase,
+): GameState =>
+  Object.freeze({
+    board,
+    currentPlayer,
+    moveNumber,
+    consecutivePasses,
+    phase,
+  });
 
 const rejectedMove = (
   state: GameState,
@@ -45,6 +77,13 @@ const rejectedMove = (
     ok: false,
     state,
     reason,
+  });
+
+const rejectedPass = (state: GameState): RejectedPassResult =>
+  Object.freeze({
+    ok: false,
+    state,
+    reason: 'not-playing',
   });
 
 export class GameEngine {
@@ -57,7 +96,7 @@ export class GameEngine {
       board[point] = 'empty';
     }
 
-    return freezeState(board);
+    return freezeState(Object.freeze(board), 'black', 0, 0, 'playing');
   }
 
   groupAt(state: GameState, point: PointId): StoneGroup | null {
@@ -79,6 +118,14 @@ export class GameEngine {
     repetitionContext?: RepetitionContext,
   ): PlaceStoneResult {
     this.assertKnownPoint(point);
+
+    if (state.phase !== 'playing') {
+      return rejectedMove(state, 'not-playing');
+    }
+
+    if (color !== state.currentPlayer) {
+      return rejectedMove(state, 'wrong-player');
+    }
 
     if (state.board[point] !== 'empty') {
       return rejectedMove(state, 'occupied');
@@ -117,7 +164,13 @@ export class GameEngine {
       return rejectedMove(state, 'suicide');
     }
 
-    const candidateState = freezeState(board);
+    const candidateState = freezeState(
+      Object.freeze(board),
+      opponent,
+      state.moveNumber + 1,
+      0,
+      'playing',
+    );
 
     if (
       repetitionPolicy &&
@@ -133,6 +186,28 @@ export class GameEngine {
       ok: true,
       state: candidateState,
       captured: Object.freeze(captured),
+    });
+  }
+
+  pass(state: GameState): PassResult {
+    if (state.phase !== 'playing') {
+      return rejectedPass(state);
+    }
+
+    const consecutivePasses = state.consecutivePasses + 1;
+    const nextPhase: GamePhase = consecutivePasses >= 2 ? 'endgame' : 'playing';
+    const passedBy = state.currentPlayer;
+
+    return Object.freeze({
+      ok: true,
+      passedBy,
+      state: freezeState(
+        state.board,
+        opponentOf(state.currentPlayer),
+        state.moveNumber + 1,
+        consecutivePasses,
+        nextPhase,
+      ),
     });
   }
 
