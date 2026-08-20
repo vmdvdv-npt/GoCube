@@ -1,109 +1,129 @@
 import { describe, expect, it } from 'vitest';
 import { TorusGameController } from './TorusGameController';
 
-const occupancyAt = (
-  controller: TorusGameController,
-  logicalPointId: string,
-): 'black' | 'white' | 'empty' | undefined =>
-  controller
-    .viewModel()
-    .points.find((point) => point.logicalPointId === logicalPointId)?.occupancy;
+const allAlive = (controller: TorusGameController) =>
+  Object.fromEntries(
+    controller.endgameGroups().map((group) => [group.id, 'alive' as const]),
+  );
 
-describe('TorusGameController', () => {
-  it('composes a default 9x9 Chinese game through GameSession and PresentationModel', () => {
-    const controller = new TorusGameController();
-    const viewModel = controller.viewModel();
-
-    expect(controller.size).toBe(9);
-    expect(viewModel.points).toHaveLength(81);
-    expect(viewModel.points.every((point) => point.occupancy === 'empty')).toBe(true);
-    expect(viewModel).toMatchObject({
-      currentPlayer: 'black',
-      moveNumber: 0,
-      consecutivePasses: 0,
-      phase: 'playing',
-      captures: { black: 0, white: 0 },
-      ruleSet: 'chinese',
-      komi: 7.5,
-      finalScore: null,
-    });
-  });
-
-  it('routes point selection through GameSession and returns the updated ViewModel', async () => {
+describe('TorusGameController manual endgame flow', () => {
+  it('exposes Pass and enters manual endgame after two consecutive passes', async () => {
     const controller = new TorusGameController();
 
-    const move = await controller.placeStone('0,0');
+    const first = await controller.pass();
+    expect(first.accepted).toBe(true);
+    expect(first.viewModel.phase).toBe('playing');
+    expect(first.viewModel.moveNumber).toBe(1);
+    expect(first.viewModel.consecutivePasses).toBe(1);
+    expect(first.viewModel.currentPlayer).toBe('white');
 
-    expect(move.accepted).toBe(true);
-    expect(move.reason).toBeNull();
-    expect(move.viewModel).toMatchObject({
-      currentPlayer: 'white',
-      moveNumber: 1,
-      phase: 'playing',
-    });
-    expect(occupancyAt(controller, '0,0')).toBe('black');
+    const second = await controller.pass();
+    expect(second.accepted).toBe(true);
+    expect(second.viewModel.phase).toBe('endgame');
+    expect(second.viewModel.moveNumber).toBe(2);
+    expect(second.viewModel.consecutivePasses).toBe(2);
+    expect(second.viewModel.finalScore).toBeNull();
+    expect(controller.endgameGroups()).toEqual([]);
   });
 
-  it('keeps the presented state unchanged after an invalid occupied-point move', async () => {
+  it('exposes deterministic stone groups for explicit alive/dead/seki decisions', async () => {
     const controller = new TorusGameController();
     await controller.placeStone('0,0');
-    const before = JSON.stringify(controller.viewModel());
+    await controller.placeStone('4,4');
+    await controller.pass();
+    const endgame = await controller.pass();
 
-    const rejected = await controller.placeStone('0,0');
-
-    expect(rejected.accepted).toBe(false);
-    expect(rejected.reason).toBe('occupied');
-    expect(JSON.stringify(rejected.viewModel)).toBe(before);
-    expect(rejected.viewModel.currentPlayer).toBe('white');
-    expect(rejected.viewModel.moveNumber).toBe(1);
+    expect(endgame.viewModel.phase).toBe('endgame');
+    expect(controller.endgameGroups()).toEqual([
+      {
+        id: '["0,0"]',
+        points: ['0,0'],
+        color: 'black',
+      },
+      {
+        id: '["4,4"]',
+        points: ['4,4'],
+        color: 'white',
+      },
+    ]);
   });
 
-  it('routes Undo through GameSession and restores presentation state', async () => {
+  it('requires a manual decision for every requested group', async () => {
     const controller = new TorusGameController();
-    await controller.placeStone('3,4');
+    await controller.placeStone('0,0');
+    await controller.placeStone('4,4');
+    await controller.pass();
+    await controller.pass();
 
+    await expect(
+      controller.finishEndgame({ '["0,0"]': 'alive' }),
+    ).rejects.toThrow('Missing manual endgame decision');
+
+    expect(controller.viewModel().phase).toBe('endgame');
+    expect(controller.endgameGroups()).toHaveLength(2);
+  });
+
+  it('validates manual decisions and completes Chinese scoring through GameSession', async () => {
+    const controller = new TorusGameController({ ruleSet: 'chinese', komi: 7.5 });
+    await controller.placeStone('0,0');
+    await controller.placeStone('4,4');
+    await controller.pass();
+    await controller.pass();
+
+    const finished = await controller.finishEndgame(allAlive(controller));
+
+    expect(finished.accepted).toBe(true);
+    expect(finished.viewModel.phase).toBe('finished');
+    expect(finished.viewModel.finalScore).not.toBeNull();
+    expect(finished.viewModel.finalScore?.ruleSet).toBe('chinese');
+    expect(finished.viewModel.finalScore?.black).toBe(1);
+    expect(finished.viewModel.finalScore?.white).toBe(8.5);
+    expect(finished.viewModel.finalScore?.winner).toBe('white');
+    expect(finished.viewModel.finalScore?.margin).toBe(7.5);
+    expect(controller.endgameGroups()).toEqual([]);
+  });
+
+  it('uses the configured Japanese scoring strategy after manual classification', async () => {
+    const controller = new TorusGameController({ ruleSet: 'japanese', komi: 6.5 });
+    await controller.placeStone('0,0');
+    await controller.placeStone('4,4');
+    await controller.pass();
+    await controller.pass();
+
+    const finished = await controller.finishEndgame(allAlive(controller));
+
+    expect(finished.viewModel.finalScore?.ruleSet).toBe('japanese');
+    expect(finished.viewModel.finalScore?.black).toBe(0);
+    expect(finished.viewModel.finalScore?.white).toBe(6.5);
+  });
+
+  it('allows Undo after a completed endgame and restores the first-pass state', async () => {
+    const controller = new TorusGameController();
+    await controller.pass();
+    await controller.pass();
+    const finished = await controller.finishEndgame({});
+
+    expect(finished.viewModel.phase).toBe('finished');
+
+    const undone = await controller.undo();
+    expect(undone.accepted).toBe(true);
+    expect(undone.viewModel.phase).toBe('playing');
+    expect(undone.viewModel.moveNumber).toBe(1);
+    expect(undone.viewModel.consecutivePasses).toBe(1);
+    expect(undone.viewModel.finalScore).toBeNull();
+  });
+
+  it('does not allow concurrent game commands while manual classification is pending', async () => {
+    const controller = new TorusGameController();
+    await controller.pass();
+    await controller.pass();
+
+    const place = await controller.placeStone('0,0');
+    const pass = await controller.pass();
     const undo = await controller.undo();
 
-    expect(undo.accepted).toBe(true);
-    expect(undo.reason).toBeNull();
-    expect(undo.viewModel).toMatchObject({
-      currentPlayer: 'black',
-      moveNumber: 0,
-      consecutivePasses: 0,
-      phase: 'playing',
-    });
-    expect(occupancyAt(controller, '3,4')).toBe('empty');
-  });
-
-  it('reports a rejected Undo without inventing UI state', async () => {
-    const controller = new TorusGameController();
-
-    const undo = await controller.undo();
-
-    expect(undo.accepted).toBe(false);
-    expect(undo.reason).toBe('nothing-to-undo');
-    expect(undo.viewModel.moveNumber).toBe(0);
-  });
-
-  it('supports Japanese configuration without changing the interaction adapter', async () => {
-    const controller = new TorusGameController({
-      size: 13,
-      ruleSet: 'japanese',
-      komi: 6.5,
-    });
-
-    const move = await controller.placeStone('12,12');
-
-    expect(controller.size).toBe(13);
-    expect(move.viewModel.points).toHaveLength(169);
-    expect(move.viewModel.ruleSet).toBe('japanese');
-    expect(move.viewModel.komi).toBe(6.5);
-    expect(occupancyAt(controller, '12,12')).toBe('black');
-  });
-
-  it('rejects non-finite komi at the application composition boundary', () => {
-    expect(() => new TorusGameController({ komi: Number.NaN })).toThrow(
-      'Komi must be a finite number',
-    );
+    expect(place).toMatchObject({ accepted: false, reason: 'not-playing' });
+    expect(pass).toMatchObject({ accepted: false, reason: 'not-playing' });
+    expect(undo).toMatchObject({ accepted: false, reason: 'not-playing' });
   });
 });

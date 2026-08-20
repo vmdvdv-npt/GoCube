@@ -88,6 +88,7 @@ button {
   border: 1px solid #111111;
   border-radius: 50%;
   display: inline-block;
+  flex: 0 0 auto;
 }
 
 .stone-chip--black {
@@ -109,11 +110,16 @@ button {
   cursor: crosshair;
 }
 
+.torus-board--inactive {
+  cursor: default;
+}
+
 .game-controls {
   justify-content: center;
 }
 
-.game-controls button {
+.game-controls button,
+.endgame-panel button {
   min-width: 96px;
   padding: 9px 16px;
   border: 1px solid #b9b9bf;
@@ -122,18 +128,138 @@ button {
   cursor: pointer;
 }
 
-.game-controls button:disabled {
+.game-controls button:disabled,
+.endgame-panel button:disabled {
   cursor: default;
   opacity: 0.45;
 }
 
-.game-stage-note,
 .game-feedback {
   margin: 0;
   color: #66666c;
   font-size: 13px;
+  text-align: center;
 }
 
-.game-feedback {
-  text-align: center;
+.endgame-panel,
+.final-score {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid #d8d8dc;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.endgame-panel h2,
+.endgame-panel p,
+.final-score h2,
+.final-score p {
+  margin: 0;
+}
+
+.endgame-panel > div:first-child p,
+.endgame-empty {
+  margin-top: 6px;
+  color: #66666c;
+  font-size: 14px;
+}
+
+.endgame-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.endgame-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid #e1e1e5;
+  border-radius: 10px;
+}
+
+.endgame-group__identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.endgame-group__identity > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.endgame-group__identity span:last-child {
+  overflow-wrap: anywhere;
+  color: #66666c;
+  font-size: 12px;
+}
+
+.endgame-statuses {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.endgame-statuses button {
+  min-width: 72px;
+  padding: 7px 10px;
+}
+
+.endgame-statuses button.is-selected {
+  border-color: #1d1d1f;
+  background: #1d1d1f;
+  color: #ffffff;
+}
+
+.finish-game-button {
+  justify-self: end;
+}
+
+.final-score {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.final-score > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.final-score__totals {
+  display: flex;
+  gap: 16px;
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    width: min(100% - 24px, 1040px);
+    padding-top: 20px;
+  }
+
+  .game-summary,
+  .endgame-group,
+  .final-score {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .game-summary,
+  .endgame-group {
+    display: flex;
+  }
+
+  .game-statistics,
+  .endgame-statuses {
+    justify-content: flex-start;
+  }
+
+  .final-score {
+    grid-template-columns: 1fr;
+  }
 }
