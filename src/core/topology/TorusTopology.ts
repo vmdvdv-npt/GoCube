@@ -1,20 +1,28 @@
 import type { PointId, Topology } from './Topology';
 
+export const TORUS_SIZES = [9, 13, 19] as const;
+export type TorusSize = (typeof TORUS_SIZES)[number];
+
 const pointId = (x: number, y: number): PointId => `${x},${y}`;
+
+const isSupportedTorusSize = (size: number): size is TorusSize =>
+  TORUS_SIZES.some((supportedSize) => supportedSize === size);
 
 export class TorusTopology implements Topology {
   readonly id: string;
-  private readonly pointSet: Set<PointId>;
-  private readonly allPoints: PointId[];
+  private readonly pointSet: ReadonlySet<PointId>;
+  private readonly allPoints: readonly PointId[];
 
-  constructor(readonly size: number) {
-    if (!Number.isInteger(size) || size < 2) {
-      throw new Error('Torus size must be an integer >= 2');
+  constructor(readonly size: TorusSize) {
+    if (!isSupportedTorusSize(size)) {
+      throw new Error(`Unsupported torus size: ${size}. Expected one of: ${TORUS_SIZES.join(', ')}`);
     }
 
     this.id = `torus-${size}x${size}`;
-    this.allPoints = Array.from({ length: size * size }, (_, index) =>
-      pointId(index % size, Math.floor(index / size)),
+    this.allPoints = Object.freeze(
+      Array.from({ length: size * size }, (_, index) =>
+        pointId(index % size, Math.floor(index / size)),
+      ),
     );
     this.pointSet = new Set(this.allPoints);
   }
@@ -28,7 +36,9 @@ export class TorusTopology implements Topology {
   }
 
   neighbors(point: PointId): readonly PointId[] {
-    if (!this.has(point)) throw new Error(`Unknown point: ${point}`);
+    if (!this.has(point)) {
+      throw new Error(`Unknown point: ${point}`);
+    }
 
     const [x, y] = point.split(',').map(Number);
     const wrap = (value: number) => (value + this.size) % this.size;
