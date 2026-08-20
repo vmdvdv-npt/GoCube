@@ -84,12 +84,34 @@ test('manual endgame is board-first, reclassifiable, seam-safe and duplicate-awa
     'true',
   );
 
-  // All visible copies of the same logical group inherit the same status when duplicate regions are enabled.
+  // Duplicate mode redraws the seam copies while preserving one synchronized status for the logical group.
   const cleanLineCount = await blackLines.count();
+  const cleanGeometry = await blackLines.evaluateAll((lines) =>
+    lines.map((line) => [
+      line.getAttribute('x1'),
+      line.getAttribute('y1'),
+      line.getAttribute('x2'),
+      line.getAttribute('y2'),
+    ]),
+  );
   await page.getByLabel('Показывать дублирующие области').check();
+  await expect(page.locator('.torus-board')).toHaveAttribute('data-duplicate-regions-visible', 'true');
   blackLines = page.locator('.torus-board__endgame-line[data-endgame-status="seki"]');
-  expect(await blackLines.count()).toBeGreaterThan(cleanLineCount);
-  await expect(blackLines.first()).toHaveAttribute('stroke', '#7a7a7a');
+  await expect(blackLines).toHaveCount(cleanLineCount);
+  const duplicateGeometry = await blackLines.evaluateAll((lines) =>
+    lines.map((line) => [
+      line.getAttribute('x1'),
+      line.getAttribute('y1'),
+      line.getAttribute('x2'),
+      line.getAttribute('y2'),
+    ]),
+  );
+  expect(duplicateGeometry).not.toEqual(cleanGeometry);
+  expect(
+    await blackLines.evaluateAll((lines) =>
+      lines.every((line) => line.getAttribute('stroke') === '#7a7a7a'),
+    ),
+  ).toBe(true);
 
   // White Alive uses a solid black line.
   await point(page, '4,4').click();
