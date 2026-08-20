@@ -13,9 +13,13 @@ import type { GameState, StoneColor } from './types';
 const stateWith = (
   engine: GameEngine,
   stones: Record<PointId, StoneColor>,
-): GameState => ({
-  board: { ...engine.createInitialState().board, ...stones },
-});
+): GameState => {
+  const initial = engine.createInitialState();
+  return {
+    ...initial,
+    board: { ...initial.board, ...stones },
+  };
+};
 
 const expectAccepted = (result: PlaceStoneResult): AcceptedPlaceStoneResult => {
   expect(result.ok).toBe(true);
@@ -34,6 +38,7 @@ const expectRejected = (
 };
 
 const withInterveningStone = (state: GameState): GameState => ({
+  ...state,
   board: { ...state.board, '2,2': 'black' },
 });
 

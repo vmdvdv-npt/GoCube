@@ -14,9 +14,13 @@ import { SimpleKoPolicy } from '../rules/RepetitionPolicy';
 const stateWith = (
   engine: GameEngine,
   stones: Record<PointId, StoneColor>,
-): GameState => ({
-  board: { ...engine.createInitialState().board, ...stones },
-});
+): GameState => {
+  const initial = engine.createInitialState();
+  return {
+    ...initial,
+    board: { ...initial.board, ...stones },
+  };
+};
 
 const expectAccepted = (result: PlaceStoneResult): AcceptedPlaceStoneResult => {
   expect(result.ok).toBe(true);

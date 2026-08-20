@@ -48,9 +48,9 @@ export class SimpleKoPolicy implements RepetitionPolicy {
  * Positional superko: reject recreation of any board position supplied in the
  * repetition history, not just the position immediately before the last move.
  *
- * At the current GameState level, repetition is intentionally board-based: the
- * state contains only logical point occupancy, so player-to-move is not part of
- * this policy yet.
+ * GameState also contains turn-flow metadata, but positional superko intentionally
+ * compares logical board occupancy only. Turn/player information therefore does
+ * not change the repetition identity used by this policy.
  */
 export class SuperkoPolicy implements RepetitionPolicy {
   isAllowed(context: RepetitionContext, candidateState: GameState): boolean {
