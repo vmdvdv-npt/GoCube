@@ -1,0 +1,186 @@
+import { describe, expect, it } from 'vitest';
+import type { EndgameClassification, EndgameClassifier } from '../endgame/EndgameClassifier';
+import type { GameRepository, SavedGame } from '../persistence/GameRepository';
+import type { GameSessionSnapshot } from '../persistence/GameSessionSnapshot';
+import { SimpleKoPolicy } from '../rules/RepetitionPolicy';
+import { ChineseScoring } from '../scoring/ChineseScoring';
+import { JapaneseScoring } from '../scoring/JapaneseScoring';
+import { TorusTopology } from '../topology/TorusTopology';
+import { GameEngine } from './GameEngine';
+import { GameSession, type GameSessionConfig } from './GameSession';
+
+const emptyClassification: EndgameClassification = Object.freeze([]);
+
+class EmptyClassifier implements EndgameClassifier {
+  async classify(): Promise<EndgameClassification> {
+    return emptyClassification;
+  }
+}
+
+class MemoryRepository implements GameRepository<GameSessionSnapshot> {
+  readonly saves: SavedGame<GameSessionSnapshot>[] = [];
+  private readonly games = new Map<string, SavedGame<GameSessionSnapshot>>();
+
+  async save(game: SavedGame<GameSessionSnapshot>): Promise<void> {
+    const copy = JSON.parse(JSON.stringify(game)) as SavedGame<GameSessionSnapshot>;
+    this.saves.push(copy);
+    this.games.set(copy.id, copy);
+  }
+
+  async load(id: string): Promise<SavedGame<GameSessionSnapshot> | null> {
+    const game = this.games.get(id);
+    return game ? (JSON.parse(JSON.stringify(game)) as SavedGame<GameSessionSnapshot>) : null;
+  }
+
+  async remove(id: string): Promise<void> {
+    this.games.delete(id);
+  }
+}
+
+const persistentConfig = (
+  repository: GameRepository<GameSessionSnapshot>,
+  scoringStrategy: GameSessionConfig['scoringStrategy'],
+  komi = 7.5,
+): GameSessionConfig => ({
+  endgameClassifier: new EmptyClassifier(),
+  scoringStrategy,
+  komi,
+  persistence: {
+    repository,
+    gameId: 'current',
+    now: () => '2026-08-20T18:00:00.000Z',
+  },
+});
+
+describe('GameSession persistence', () => {
+  it('autosaves every accepted action but never a rejected move', async () => {
+    const topology = new TorusTopology(9);
+    const repository = new MemoryRepository();
+    const session = new GameSession(
+      new GameEngine(topology),
+      new SimpleKoPolicy(),
+      persistentConfig(repository, new ChineseScoring(topology)),
+    );
+
+    const move = await session.execute({ type: 'place-stone', point: '0,0' });
+    expect(move.ok).toBe(true);
+    expect(repository.saves).toHaveLength(1);
+    expect(repository.saves[0]).toMatchObject({
+      id: 'current',
+      savedAt: '2026-08-20T18:00:00.000Z',
+      state: {
+        version: 1,
+        ruleSet: 'chinese',
+        komi: 7.5,
+      },
+    });
+    expect(repository.saves[0]?.state.history).toHaveLength(2);
+
+    const rejected = await session.execute({ type: 'place-stone', point: '0,0' });
+    expect(rejected).toMatchObject({ ok: false, reason: 'occupied' });
+    expect(repository.saves).toHaveLength(1);
+
+    await session.execute({ type: 'pass' });
+    expect(repository.saves).toHaveLength(2);
+    expect(repository.saves[1]?.state.history.at(-1)).toMatchObject({
+      moveNumber: 2,
+      consecutivePasses: 1,
+      phase: 'playing',
+    });
+  });
+
+  it('restores the full linear history and can continue with Undo', async () => {
+    const topology = new TorusTopology(9);
+    const repository = new MemoryRepository();
+    const config = persistentConfig(repository, new ChineseScoring(topology), 6.5);
+    const engine = new GameEngine(topology);
+    const session = new GameSession(engine, new SimpleKoPolicy(), config);
+
+    await session.execute({ type: 'place-stone', point: '0,0' });
+    await session.execute({ type: 'pass' });
+    await session.execute({ type: 'place-stone', point: '1,1' });
+
+    const beforeRestore = JSON.stringify(session.snapshot());
+    const restored = await GameSession.load(engine, new SimpleKoPolicy(), config);
+
+    expect(restored).not.toBeNull();
+    expect(restored?.historyLength()).toBe(4);
+    expect(JSON.stringify(restored?.snapshot())).toBe(beforeRestore);
+    expect(restored?.state()).toEqual(session.state());
+
+    const undo = await restored!.execute({ type: 'undo' });
+    expect(undo.ok).toBe(true);
+    expect(restored?.state()).toMatchObject({
+      moveNumber: 2,
+      consecutivePasses: 1,
+      phase: 'playing',
+    });
+    expect(repository.saves).toHaveLength(4);
+  });
+
+  it('persists and restores a finished result, then Undo clears that result', async () => {
+    const topology = new TorusTopology(9);
+    const repository = new MemoryRepository();
+    const config = persistentConfig(repository, new ChineseScoring(topology), 5.5);
+    const engine = new GameEngine(topology);
+    const session = new GameSession(engine, new SimpleKoPolicy(), config);
+
+    await session.execute({ type: 'pass' });
+    await session.execute({ type: 'pass' });
+
+    const stored = repository.saves.at(-1)?.state;
+    expect(stored?.history.at(-1)?.phase).toBe('finished');
+    expect(stored?.finalScore).toEqual(session.finalScore());
+    expect(JSON.parse(JSON.stringify(stored))).toEqual(stored);
+
+    const restored = await GameSession.load(engine, new SimpleKoPolicy(), config);
+    expect(restored?.state().phase).toBe('finished');
+    expect(restored?.finalScore()).toEqual(session.finalScore());
+
+    const undo = await restored!.execute({ type: 'undo' });
+    expect(undo.ok).toBe(true);
+    expect(restored?.state()).toMatchObject({
+      moveNumber: 1,
+      consecutivePasses: 1,
+      phase: 'playing',
+    });
+    expect(restored?.finalScore()).toBeNull();
+    expect(repository.saves.at(-1)?.state.finalScore).toBeNull();
+  });
+
+  it('rejects restoration through a different rule set or komi', async () => {
+    const topology = new TorusTopology(9);
+    const repository = new MemoryRepository();
+    const engine = new GameEngine(topology);
+    const chinese = persistentConfig(repository, new ChineseScoring(topology), 7.5);
+    const session = new GameSession(engine, new SimpleKoPolicy(), chinese);
+
+    await session.execute({ type: 'place-stone', point: '0,0' });
+
+    await expect(
+      GameSession.load(
+        engine,
+        new SimpleKoPolicy(),
+        persistentConfig(repository, new JapaneseScoring(topology), 7.5),
+      ),
+    ).rejects.toThrow('Saved rule set mismatch');
+
+    await expect(
+      GameSession.load(
+        engine,
+        new SimpleKoPolicy(),
+        persistentConfig(repository, new ChineseScoring(topology), 6.5),
+      ),
+    ).rejects.toThrow('Saved komi mismatch');
+  });
+
+  it('returns null when there is no saved current game', async () => {
+    const topology = new TorusTopology(9);
+    const repository = new MemoryRepository();
+    const config = persistentConfig(repository, new ChineseScoring(topology));
+
+    await expect(
+      GameSession.load(new GameEngine(topology), new SimpleKoPolicy(), config),
+    ).resolves.toBeNull();
+  });
+});

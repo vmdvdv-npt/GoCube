@@ -15,6 +15,15 @@ export class LinearHistory {
     this.snapshots = [snapshotState(initialState)];
   }
 
+  static fromStates(states: readonly GameState[]): LinearHistory {
+    const [initialState, ...rest] = states;
+    if (!initialState) throw new Error('History must contain at least one state');
+
+    const history = new LinearHistory(initialState);
+    for (const state of rest) history.push(state);
+    return history;
+  }
+
   current(): GameState {
     return this.snapshots[this.snapshots.length - 1];
   }
