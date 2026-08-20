@@ -1,4 +1,4 @@
-import type { EndgameClassifier } from '../endgame/EndgameClassifier';
+import type { EndgameClassification, EndgameClassifier } from '../endgame/EndgameClassifier';
 import { LinearHistory } from '../history/LinearHistory';
 import type { GameRepository } from '../persistence/GameRepository';
 import {
@@ -28,6 +28,7 @@ export interface GameSessionPersistenceConfig {
 export interface GameSessionConfig {
   readonly endgameClassifier: EndgameClassifier;
   readonly scoringStrategy: ScoringStrategy;
+  readonly boardSize?: number;
   readonly komi: number;
   readonly persistence?: GameSessionPersistenceConfig;
 }
@@ -88,6 +89,12 @@ const cloneFinalScore = (score: FinalScore | null): FinalScore | null => {
   });
 };
 
+const assertBoardSize = (boardSize: number): void => {
+  if (!Number.isInteger(boardSize) || boardSize <= 0) {
+    throw new Error(`Board size must be a positive integer, got ${String(boardSize)}`);
+  }
+};
+
 export class GameSession {
   private history: LinearHistory;
   private readonly config: GameSessionConfig;
@@ -99,9 +106,11 @@ export class GameSession {
     config: GameSessionConfig,
     initialState: GameState = engine.createInitialState(),
   ) {
+    if (config.boardSize !== undefined) assertBoardSize(config.boardSize);
     this.config = Object.freeze({
       endgameClassifier: config.endgameClassifier,
       scoringStrategy: config.scoringStrategy,
+      boardSize: config.boardSize,
       komi: config.komi,
       persistence: config.persistence
         ? Object.freeze({
@@ -163,6 +172,7 @@ export class GameSession {
   snapshot(): GameSessionSnapshot {
     return Object.freeze({
       version: GAME_SESSION_SNAPSHOT_VERSION,
+      boardSize: this.config.boardSize,
       ruleSet: this.config.scoringStrategy.ruleSet,
       komi: this.config.komi,
       history: this.history.states(),
@@ -179,6 +189,17 @@ export class GameSession {
       case 'undo':
         return this.undo();
     }
+  }
+
+  /** Restarts the application-level endgame orchestration after an endgame snapshot is restored. */
+  async resumeEndgame(): Promise<void> {
+    const state = this.history.current();
+    if (state.phase !== 'endgame') {
+      throw new Error('Only an endgame snapshot can resume endgame classification');
+    }
+
+    const classification = this.startEndgameClassification(state);
+    await this.completeEndgame(state, classification);
   }
 
   private async placeStone(point: PointId): Promise<GameSessionResult> {
@@ -232,25 +253,17 @@ export class GameSession {
       });
     }
 
-    const classification = await this.config.endgameClassifier.classify(
-      this.groupsForClassification(state),
-    );
-    const finalScore = this.config.scoringStrategy.score(
-      state,
-      classification,
-      this.config.komi,
-    );
-    const finishedState = this.history.replaceCurrent({
-      ...state,
-      phase: 'finished',
-    });
-    this.currentFinalScore = finalScore;
+    // Start classification synchronously so the UI can immediately expose the
+    // manual endgame groups, then persist the accepted second Pass before waiting
+    // for user classification. Closing the page here must still restore endgame.
+    const classification = this.startEndgameClassification(state);
     await this.persist();
+    await this.completeEndgame(state, classification);
 
     return Object.freeze({
       ok: true,
       action: 'pass',
-      state: finishedState,
+      state: this.history.current(),
       passedBy: result.passedBy,
     });
   }
@@ -273,6 +286,36 @@ export class GameSession {
       action: 'undo',
       state,
     });
+  }
+
+  private startEndgameClassification(
+    state: GameState,
+  ): Promise<EndgameClassification> {
+    return Promise.resolve(
+      this.config.endgameClassifier.classify(this.groupsForClassification(state)),
+    );
+  }
+
+  private async completeEndgame(
+    state: GameState,
+    classificationPromise: Promise<EndgameClassification>,
+  ): Promise<void> {
+    const classification = await classificationPromise;
+    if (this.history.current() !== state || state.phase !== 'endgame') {
+      throw new Error('Endgame state changed while classification was pending');
+    }
+
+    const finalScore = this.config.scoringStrategy.score(
+      state,
+      classification,
+      this.config.komi,
+    );
+    this.history.replaceCurrent({
+      ...state,
+      phase: 'finished',
+    });
+    this.currentFinalScore = finalScore;
+    await this.persist();
   }
 
   private async persist(): Promise<void> {
@@ -312,6 +355,16 @@ export class GameSession {
   ): void {
     if (snapshot.version !== GAME_SESSION_SNAPSHOT_VERSION) {
       throw new Error(`Unsupported saved game version: ${String(snapshot.version)}`);
+    }
+    if (snapshot.boardSize !== undefined) assertBoardSize(snapshot.boardSize);
+    if (
+      config.boardSize !== undefined &&
+      snapshot.boardSize !== undefined &&
+      snapshot.boardSize !== config.boardSize
+    ) {
+      throw new Error(
+        `Saved board size mismatch: expected ${config.boardSize}, got ${snapshot.boardSize}`,
+      );
     }
     if (snapshot.ruleSet !== config.scoringStrategy.ruleSet) {
       throw new Error(
