@@ -25,6 +25,12 @@ export class LinearHistory {
     return snapshot;
   }
 
+  replaceCurrent(state: GameState): GameState {
+    const snapshot = snapshotState(state);
+    this.snapshots[this.snapshots.length - 1] = snapshot;
+    return snapshot;
+  }
+
   undo(): GameState | null {
     if (this.snapshots.length <= 1) {
       return null;

@@ -1,5 +1,7 @@
+import type { EndgameClassifier } from '../endgame/EndgameClassifier';
 import { LinearHistory } from '../history/LinearHistory';
 import type { RepetitionPolicy } from '../rules/RepetitionPolicy';
+import type { FinalScore, ScoringStrategy } from '../scoring/Scoring';
 import type { PointId } from '../topology/Topology';
 import {
   GameEngine,
@@ -11,6 +13,12 @@ export type GameCommand =
   | Readonly<{ type: 'place-stone'; point: PointId }>
   | Readonly<{ type: 'pass' }>
   | Readonly<{ type: 'undo' }>;
+
+export interface GameSessionConfig {
+  readonly endgameClassifier: EndgameClassifier;
+  readonly scoringStrategy: ScoringStrategy;
+  readonly komi: number;
+}
 
 export type GameSessionRejectionReason = MoveRejectionReason | 'nothing-to-undo';
 
@@ -46,14 +54,25 @@ export type GameSessionResult =
   | AcceptedUndoSessionResult
   | RejectedGameSessionResult;
 
+const comparePointIds = (left: PointId, right: PointId): number =>
+  left < right ? -1 : left > right ? 1 : 0;
+
 export class GameSession {
   private readonly history: LinearHistory;
+  private readonly config: GameSessionConfig;
+  private currentFinalScore: FinalScore | null = null;
 
   constructor(
     private readonly engine: GameEngine,
     private readonly repetitionPolicy: RepetitionPolicy,
+    config: GameSessionConfig,
     initialState: GameState = engine.createInitialState(),
   ) {
+    this.config = Object.freeze({
+      endgameClassifier: config.endgameClassifier,
+      scoringStrategy: config.scoringStrategy,
+      komi: config.komi,
+    });
     this.history = new LinearHistory(initialState);
   }
 
@@ -61,11 +80,15 @@ export class GameSession {
     return this.history.current();
   }
 
+  finalScore(): FinalScore | null {
+    return this.currentFinalScore;
+  }
+
   historyLength(): number {
     return this.history.length();
   }
 
-  execute(command: GameCommand): GameSessionResult {
+  async execute(command: GameCommand): Promise<GameSessionResult> {
     switch (command.type) {
       case 'place-stone':
         return this.placeStone(command.point);
@@ -103,7 +126,7 @@ export class GameSession {
     });
   }
 
-  private pass(): GameSessionResult {
+  private async pass(): Promise<GameSessionResult> {
     const currentState = this.history.current();
     const result = this.engine.pass(currentState);
 
@@ -116,10 +139,33 @@ export class GameSession {
     }
 
     const state = this.history.push(result.state);
+    if (state.phase !== 'endgame') {
+      return Object.freeze({
+        ok: true,
+        action: 'pass',
+        state,
+        passedBy: result.passedBy,
+      });
+    }
+
+    const classification = await this.config.endgameClassifier.classify(
+      this.groupsForClassification(state),
+    );
+    const finalScore = this.config.scoringStrategy.score(
+      state,
+      classification,
+      this.config.komi,
+    );
+    const finishedState = this.history.replaceCurrent({
+      ...state,
+      phase: 'finished',
+    });
+    this.currentFinalScore = finalScore;
+
     return Object.freeze({
       ok: true,
       action: 'pass',
-      state,
+      state: finishedState,
       passedBy: result.passedBy,
     });
   }
@@ -135,10 +181,31 @@ export class GameSession {
       });
     }
 
+    this.currentFinalScore = null;
     return Object.freeze({
       ok: true,
       action: 'undo',
       state,
     });
+  }
+
+  private groupsForClassification(
+    state: GameState,
+  ): readonly (readonly PointId[])[] {
+    const visited = new Set<PointId>();
+    const groups: (readonly PointId[])[] = [];
+
+    for (const point of Object.keys(state.board).sort(comparePointIds)) {
+      if (visited.has(point) || state.board[point] === 'empty') continue;
+
+      const group = this.engine.groupAt(state, point);
+      if (!group) continue;
+
+      const points = [...group.points].sort(comparePointIds);
+      for (const groupPoint of points) visited.add(groupPoint);
+      groups.push(Object.freeze(points));
+    }
+
+    return Object.freeze(groups);
   }
 }
