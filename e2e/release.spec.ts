@@ -128,7 +128,7 @@ test('board input, persistence and restore work through the browser UI', async (
 
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByText('White to move')).toBeVisible();
-  await expect(page.getByText('19×19')).toBeVisible();
+  await expect(page.getByText('19×19', { exact: true })).toBeVisible();
   await expect(page.getByText('Japanese rules')).toBeVisible();
   await expect(page.getByText('Komi 5.5')).toBeVisible();
 });
