@@ -53,6 +53,11 @@ export interface TorusGameActionResult {
   readonly viewModel: GameViewModel;
 }
 
+export interface TorusMoveAvailability {
+  readonly allowed: boolean;
+  readonly reason: GameSessionRejectionReason | null;
+}
+
 export type TorusEndgameGroup = EndgameGroupPresentation;
 
 export type TorusEndgameDecisions = Readonly<
@@ -207,6 +212,18 @@ export class TorusGameController {
         });
       }),
     );
+  }
+
+  moveAvailability(point: PointId): TorusMoveAvailability {
+    if (this.pendingEndgameCompletion) {
+      return Object.freeze({ allowed: false, reason: 'not-playing' });
+    }
+
+    const result = this.session.queryPlaceStone(point);
+    return Object.freeze({
+      allowed: result.allowed,
+      reason: result.reason,
+    });
   }
 
   async placeStone(point: PointId): Promise<TorusGameActionResult> {

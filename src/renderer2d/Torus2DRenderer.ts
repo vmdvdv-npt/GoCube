@@ -54,6 +54,29 @@ export interface Torus2DEndgameOverlay {
   readonly selectedGroupId: string | null;
 }
 
+export interface Torus2DVisualHit {
+  readonly logicalPointId: PointId;
+  readonly visualColumn: number;
+  readonly visualRow: number;
+  readonly pointerX: number;
+  readonly pointerY: number;
+}
+
+export type Torus2DMovePreview =
+  | Readonly<{
+      kind: 'legal';
+      logicalPointId: PointId;
+      color: StoneColor;
+    }>
+  | Readonly<{
+      kind: 'forbidden';
+      logicalPointId: PointId;
+      visualColumn: number;
+      visualRow: number;
+      pointerX: number;
+      pointerY: number;
+    }>;
+
 export interface Torus2DEndgameSegment {
   readonly groupId: string;
   readonly groupColor: StoneColor;
@@ -76,6 +99,7 @@ const VIEW_BOX_SIZE = 1000;
 const BOARD_PADDING = 120;
 const DUPLICATE_MARGIN = 4;
 export const TORUS_ENDGAME_LINE_WIDTH_PX = 2;
+export const TORUS_FORBIDDEN_MARKER_SCALE = 1 / 2.25;
 const ENDGAME_HIT_TOLERANCE_PX = 8;
 const SUPPORTED_SIZES: readonly Torus2DSize[] = Object.freeze([9, 13, 19]);
 const DEFAULT_VIEW_STATE: Torus2DViewState = Object.freeze({ offsetX: 0, offsetY: 0 });
@@ -218,11 +242,11 @@ export const buildTorus2DScene = (
   });
 };
 
-export const pointFromTorusViewBoxPosition = (
+export const visualPointFromTorusViewBoxPosition = (
   scene: Torus2DScene,
   x: number,
   y: number,
-): PointId | null => {
+): Torus2DScenePoint | null => {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
 
   const column = Math.round((x - scene.padding) / scene.spacing);
@@ -241,11 +265,17 @@ export const pointFromTorusViewBoxPosition = (
   const distanceSquared = (x - centerX) ** 2 + (y - centerY) ** 2;
   if (distanceSquared > scene.hitRadius ** 2) return null;
 
-  return pointId(
-    wrap(column + scene.viewState.offsetX, scene.size),
-    wrap(row + scene.viewState.offsetY, scene.size),
-  );
+  const span = scene.size + scene.duplicateMargin * 2;
+  const index = (row + scene.duplicateMargin) * span + column + scene.duplicateMargin;
+  return scene.visualPoints[index] ?? null;
 };
+
+export const pointFromTorusViewBoxPosition = (
+  scene: Torus2DScene,
+  x: number,
+  y: number,
+): PointId | null =>
+  visualPointFromTorusViewBoxPosition(scene, x, y)?.logicalPointId ?? null;
 
 const logicalPointAtVisualPosition = (
   scene: Torus2DScene,
@@ -437,6 +467,8 @@ export class Torus2DRenderer implements Renderer2D {
   private currentViewModel: GameViewModel | null = null;
   private currentViewState: Torus2DViewState = DEFAULT_VIEW_STATE;
   private showDuplicateRegions = false;
+  private movePreview: Torus2DMovePreview | null = null;
+  private movePreviewLayer: Element | null = null;
   private endgameOverlay: Torus2DEndgameOverlay = EMPTY_ENDGAME_OVERLAY;
   private endgameSegments: readonly Torus2DEndgameSegment[] = Object.freeze([]);
 
@@ -461,6 +493,11 @@ export class Torus2DRenderer implements Renderer2D {
 
   setEndgameOverlay(overlay: Torus2DEndgameOverlay | null): void {
     this.endgameOverlay = overlay ?? EMPTY_ENDGAME_OVERLAY;
+  }
+
+  setMovePreview(preview: Torus2DMovePreview | null): void {
+    this.movePreview = preview;
+    this.renderMovePreview();
   }
 
   pan(direction: Torus2DPanDirection): Torus2DViewState {
@@ -588,6 +625,7 @@ export class Torus2DRenderer implements Renderer2D {
       endgameLines.appendChild(line);
     }
 
+    this.movePreviewLayer = null;
     this.svg.replaceChildren(
       background,
       grid,
@@ -595,6 +633,24 @@ export class Torus2DRenderer implements Renderer2D {
       stones,
       ...(this.endgameSegments.length > 0 ? [endgameLines] : []),
     );
+    this.renderMovePreview();
+  }
+
+  visualPointFromClientPosition(x: number, y: number): Torus2DVisualHit | null {
+    if (!this.scene) return null;
+
+    const local = this.clientToViewBox(x, y);
+    if (!local) return null;
+    const point = visualPointFromTorusViewBoxPosition(this.scene, local.x, local.y);
+    if (!point) return null;
+
+    return Object.freeze({
+      logicalPointId: point.logicalPointId,
+      visualColumn: point.visualColumn,
+      visualRow: point.visualRow,
+      pointerX: local.x,
+      pointerY: local.y,
+    });
   }
 
   pointFromClientPosition(x: number, y: number): PointId | null {
@@ -609,6 +665,75 @@ export class Torus2DRenderer implements Renderer2D {
     const local = this.clientToViewBox(x, y);
     if (!local) return null;
     return endgameGroupFromTorusViewBoxPosition(this.endgameSegments, local.x, local.y);
+  }
+
+  private renderMovePreview(): void {
+    if (this.movePreviewLayer) {
+      this.movePreviewLayer.replaceChildren();
+    }
+
+    const scene = this.scene;
+    const preview = this.movePreview;
+    if (!scene || !preview) return;
+
+    const document = this.svg.ownerDocument;
+    const layer =
+      this.movePreviewLayer ?? document.createElementNS(SVG_NS, 'g');
+    if (!this.movePreviewLayer) {
+      layer.setAttribute('class', 'torus-board__move-preview');
+      layer.setAttribute('pointer-events', 'none');
+      this.svg.appendChild(layer);
+      this.movePreviewLayer = layer;
+    }
+
+    if (preview.kind === 'legal') {
+      for (const point of scene.visualPoints) {
+        if (point.logicalPointId !== preview.logicalPointId || point.occupancy !== 'empty') {
+          continue;
+        }
+
+        const stone = document.createElementNS(SVG_NS, 'circle');
+        setAttributes(stone, {
+          cx: String(point.x),
+          cy: String(point.y),
+          r: String(scene.stoneRadius),
+          fill: preview.color === 'black' ? '#111111' : '#f5f5f2',
+          stroke: '#111111',
+          'stroke-width': '2',
+          'vector-effect': 'non-scaling-stroke',
+          'pointer-events': 'none',
+          opacity: '0.5',
+          'data-logical-point-id': point.logicalPointId,
+          'data-copy-role': point.duplicate ? 'duplicate' : 'primary',
+          class: `torus-board__preview-stone torus-board__preview-stone--${preview.color}`,
+        });
+        layer.appendChild(stone);
+      }
+      return;
+    }
+
+    const hoveredCopy = scene.visualPoints.find(
+      (point) =>
+        point.logicalPointId === preview.logicalPointId &&
+        point.visualColumn === preview.visualColumn &&
+        point.visualRow === preview.visualRow,
+    );
+    if (!hoveredCopy || hoveredCopy.occupancy !== 'empty') return;
+
+    const marker = document.createElementNS(SVG_NS, 'circle');
+    setAttributes(marker, {
+      cx: String(preview.pointerX),
+      cy: String(preview.pointerY),
+      r: String(scene.stoneRadius * TORUS_FORBIDDEN_MARKER_SCALE),
+      fill: '#ff0000',
+      stroke: 'none',
+      opacity: '1',
+      'pointer-events': 'none',
+      'data-logical-point-id': preview.logicalPointId,
+      'data-copy-role': hoveredCopy.duplicate ? 'duplicate' : 'primary',
+      class: 'torus-board__forbidden-marker',
+    });
+    layer.appendChild(marker);
   }
 
   private clientToViewBox(x: number, y: number): Readonly<{ x: number; y: number }> | null {

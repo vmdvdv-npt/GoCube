@@ -132,6 +132,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   ]);
 
   const applyResult = (result: TorusGameActionResult): void => {
+    rendererRef.current?.setMovePreview(null);
     setViewModel(result.viewModel);
     setFeedback(result.accepted ? null : rejectionLabel(result.reason));
     setResultOpen(result.viewModel.phase === 'finished' && Boolean(result.viewModel.finalScore));
@@ -182,21 +183,64 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
 
     if (viewModel.phase !== 'playing') return;
 
-    const point = rendererRef.current?.pointFromClientPosition(
-      event.clientX,
-      event.clientY,
-    );
-    if (!point) return;
+    const renderer = rendererRef.current;
+    const hit = renderer?.visualPointFromClientPosition(event.clientX, event.clientY);
+    if (!renderer || !hit) return;
 
+    const availability = controller.moveAvailability(hit.logicalPointId);
+    if (!availability.allowed) {
+      // Forbidden and occupied clicks are intentionally silent and state-neutral.
+      return;
+    }
+
+    renderer.setMovePreview(null);
     actionInFlight.current = true;
     try {
-      applyResult(await controller.placeStone(point));
+      applyResult(await controller.placeStone(hit.logicalPointId));
     } finally {
       actionInFlight.current = false;
     }
   };
 
   const handleBoardMouseMove = (event: ReactMouseEvent<SVGSVGElement>): void => {
+    const renderer = rendererRef.current;
+
+    if (viewModel.phase === 'playing') {
+      if (hoveredGroupId !== null) setHoveredGroupId(null);
+      if (!renderer || actionInFlight.current) {
+        renderer?.setMovePreview(null);
+        return;
+      }
+
+      const hit = renderer.visualPointFromClientPosition(event.clientX, event.clientY);
+      if (!hit) {
+        renderer.setMovePreview(null);
+        return;
+      }
+
+      const availability = controller.moveAvailability(hit.logicalPointId);
+      if (availability.allowed) {
+        renderer.setMovePreview({
+          kind: 'legal',
+          logicalPointId: hit.logicalPointId,
+          color: viewModel.currentPlayer,
+        });
+      } else if (availability.reason === 'occupied') {
+        renderer.setMovePreview(null);
+      } else {
+        renderer.setMovePreview({
+          kind: 'forbidden',
+          logicalPointId: hit.logicalPointId,
+          visualColumn: hit.visualColumn,
+          visualRow: hit.visualRow,
+          pointerX: hit.pointerX,
+          pointerY: hit.pointerY,
+        });
+      }
+      return;
+    }
+
+    renderer?.setMovePreview(null);
     if (viewModel.phase !== 'endgame') {
       if (hoveredGroupId !== null) setHoveredGroupId(null);
       return;
@@ -209,8 +253,15 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     }
   };
 
+  const handleBoardMouseLeave = (): void => {
+    rendererRef.current?.setMovePreview(null);
+    if (hoveredGroupId !== null) setHoveredGroupId(null);
+  };
+
   const handlePan = (direction: Torus2DPanDirection): void => {
-    rendererRef.current?.pan(direction);
+    const renderer = rendererRef.current;
+    renderer?.setMovePreview(null);
+    renderer?.pan(direction);
   };
 
   const handlePass = async (): Promise<void> => {
@@ -306,7 +357,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
           className={`torus-board${viewModel.phase === 'playing' ? '' : viewModel.phase === 'endgame' ? ' torus-board--endgame' : ' torus-board--inactive'}`}
           onClick={(event) => void handleBoardClick(event)}
           onMouseMove={handleBoardMouseMove}
-          onMouseLeave={() => setHoveredGroupId(null)}
+          onMouseLeave={handleBoardMouseLeave}
         />
         <button
           className="torus-pan torus-pan--right"
