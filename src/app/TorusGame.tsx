@@ -129,7 +129,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   };
 
   const handleUndo = async (): Promise<void> => {
-    if (actionInFlight.current || viewModel.phase === 'endgame') return;
+    if (actionInFlight.current) return;
 
     actionInFlight.current = true;
     try {
@@ -242,7 +242,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         <button
           type="button"
           onClick={() => void handleUndo()}
-          disabled={viewModel.moveNumber === 0 || viewModel.phase === 'endgame'}
+          disabled={viewModel.moveNumber === 0}
         >
           Undo
         </button>
