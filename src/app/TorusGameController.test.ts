@@ -113,17 +113,27 @@ describe('TorusGameController manual endgame flow', () => {
     expect(undone.viewModel.finalScore).toBeNull();
   });
 
-  it('does not allow concurrent game commands while manual classification is pending', async () => {
+  it('blocks move/Pass while manual classification is pending but allows Undo', async () => {
     const controller = new TorusGameController();
     await controller.pass();
     await controller.pass();
 
     const place = await controller.placeStone('0,0');
     const pass = await controller.pass();
-    const undo = await controller.undo();
 
     expect(place).toMatchObject({ accepted: false, reason: 'not-playing' });
     expect(pass).toMatchObject({ accepted: false, reason: 'not-playing' });
-    expect(undo).toMatchObject({ accepted: false, reason: 'not-playing' });
+
+    const undo = await controller.undo();
+    expect(undo).toMatchObject({
+      accepted: true,
+      reason: null,
+      viewModel: {
+        phase: 'playing',
+        moveNumber: 1,
+        consecutivePasses: 1,
+        currentPlayer: 'white',
+      },
+    });
   });
 });
