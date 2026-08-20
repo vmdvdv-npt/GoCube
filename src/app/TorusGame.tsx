@@ -56,6 +56,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const [resultOpen, setResultOpen] = useState(
     () => controller.viewModel().phase === 'finished',
   );
+  const [showDuplicateRegions, setShowDuplicateRegions] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const rendererRef = useRef<Torus2DRenderer | null>(null);
   const actionInFlight = useRef(false);
@@ -66,6 +67,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     setViewModel(nextViewModel);
     setFeedback(null);
     setDecisions({});
+    setShowDuplicateRegions(false);
     setResultOpen(nextViewModel.phase === 'finished');
     setEndgameGroups(
       nextViewModel.phase === 'endgame' ? controller.endgameGroups() : [],
@@ -78,8 +80,9 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
 
     const renderer = rendererRef.current ?? new Torus2DRenderer(svg, controller.size);
     rendererRef.current = renderer;
+    renderer.setDuplicateRegionsVisible(showDuplicateRegions);
     renderer.render(viewModel);
-  }, [controller, viewModel]);
+  }, [controller, showDuplicateRegions, viewModel]);
 
   const applyResult = (result: TorusGameActionResult): void => {
     setViewModel(result.viewModel);
@@ -227,8 +230,20 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
           ↓
         </button>
       </div>
+
+      <label className="torus-duplicates-control">
+        <input
+          type="checkbox"
+          checked={showDuplicateRegions}
+          onChange={(event) => setShowDuplicateRegions(event.target.checked)}
+        />
+        Показывать дублирующие области
+      </label>
+
       <p className="torus-view-hint">
-        Wrapped rows and columns are visual copies of the same logical points. Shift the view in any direction to follow the torus through a seam.
+        {showDuplicateRegions
+          ? 'Four wrapped rows and columns on every side are visual copies of the same logical points.'
+          : `Duplicate regions are hidden. The board shows exactly ${controller.size}×${controller.size} intersections.`}
       </p>
 
       <div className="game-controls">

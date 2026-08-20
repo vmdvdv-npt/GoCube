@@ -80,34 +80,52 @@ const fakeSvg = () => {
   return { root, svg: root as unknown as SVGSVGElement };
 };
 
-describe('Torus2DRenderer infinite presentation', () => {
-  it('builds deterministic canonical points plus wrapped border copies', () => {
+describe('Torus2DRenderer presentation', () => {
+  it('builds a deterministic clean NxN board by default', () => {
     const normal = buildTorus2DScene(viewModel(9), 9);
     const reversed = buildTorus2DScene(viewModel(9, {}, true), 9);
 
     expect(normal).toEqual(reversed);
     expect(normal.points).toHaveLength(81);
-    expect(normal.visualPoints).toHaveLength(121);
-    expect(normal.visualPoints.filter((point) => point.duplicate)).toHaveLength(40);
+    expect(normal.visualPoints).toHaveLength(81);
+    expect(normal.visualPoints.filter((point) => point.duplicate)).toHaveLength(0);
+    expect(normal.duplicateMargin).toBe(0);
     expect(normal.points[0]).toMatchObject({
       logicalPointId: '0,0',
       x: 120,
       y: 120,
       duplicate: false,
     });
-    expect(normal.visualPoints[0]).toMatchObject({
-      logicalPointId: '8,8',
-      visualColumn: -1,
-      visualRow: -1,
-      duplicate: true,
-    });
-    expect(normal.gridLines).toHaveLength(22);
+    expect(normal.gridLines).toHaveLength(18);
   });
 
-  it('keeps every visible copy of a logical point synchronized', () => {
+  it('adds exactly four wrapped duplicate rows and columns on every side when enabled', () => {
+    const scene = buildTorus2DScene(viewModel(9), 9, { offsetX: 0, offsetY: 0 }, true);
+
+    expect(scene.points).toHaveLength(81);
+    expect(scene.visualPoints).toHaveLength(289);
+    expect(scene.visualPoints.filter((point) => point.duplicate)).toHaveLength(208);
+    expect(scene.duplicateMargin).toBe(4);
+    expect(scene.visualPoints[0]).toMatchObject({
+      logicalPointId: '5,5',
+      visualColumn: -4,
+      visualRow: -4,
+      duplicate: true,
+    });
+    expect(scene.visualPoints.at(-1)).toMatchObject({
+      visualColumn: 12,
+      visualRow: 12,
+      duplicate: true,
+    });
+    expect(scene.gridLines).toHaveLength(34);
+  });
+
+  it('keeps every visible duplicate of a logical point synchronized', () => {
     const scene = buildTorus2DScene(
       viewModel(9, { '0,0': 'black', '4,5': 'white' }),
       9,
+      { offsetX: 0, offsetY: 0 },
+      true,
     );
 
     const cornerCopies = scene.visualPoints.filter((point) => point.logicalPointId === '0,0');
@@ -119,11 +137,22 @@ describe('Torus2DRenderer infinite presentation', () => {
     );
   });
 
-  it.each([9, 13, 19] as const)('supports repeating border regions on a %ix%i torus', (size) => {
-    const scene = buildTorus2DScene(viewModel(size), size);
-    expect(scene.points).toHaveLength(size * size);
-    expect(scene.visualPoints).toHaveLength((size + 2) ** 2);
-    expect(scene.gridLines).toHaveLength((size + 2) * 2);
+  it.each([9, 13, 19] as const)('supports clean and 4-cell duplicate regions on a %ix%i torus', (size) => {
+    const clean = buildTorus2DScene(viewModel(size), size);
+    const repeated = buildTorus2DScene(
+      viewModel(size),
+      size,
+      { offsetX: 0, offsetY: 0 },
+      true,
+    );
+
+    expect(clean.points).toHaveLength(size * size);
+    expect(clean.visualPoints).toHaveLength(size * size);
+    expect(clean.gridLines).toHaveLength(size * 2);
+
+    expect(repeated.points).toHaveLength(size * size);
+    expect(repeated.visualPoints).toHaveLength((size + 8) ** 2);
+    expect(repeated.gridLines).toHaveLength((size + 8) * 2);
   });
 
   it('shifts the logical view cyclically in all four directions', () => {
@@ -160,37 +189,55 @@ describe('Torus2DRenderer infinite presentation', () => {
     );
   });
 
-  it('hit-tests both primary and duplicate copies back to one logical PointId', () => {
-    const scene = buildTorus2DScene(viewModel(9), 9);
-    const primary = scene.points.find((point) => point.logicalPointId === '0,0')!;
-    const duplicate = scene.visualPoints.find(
+  it('hit-tests primary and enabled duplicate copies back to one logical PointId', () => {
+    const clean = buildTorus2DScene(viewModel(9), 9);
+    const primary = clean.points.find((point) => point.logicalPointId === '0,0')!;
+
+    expect(pointFromTorusViewBoxPosition(clean, primary.x, primary.y)).toBe('0,0');
+    expect(
+      pointFromTorusViewBoxPosition(clean, primary.x + clean.spacing / 2, primary.y),
+    ).toBeNull();
+    expect(pointFromTorusViewBoxPosition(clean, Number.NaN, primary.y)).toBeNull();
+
+    const repeated = buildTorus2DScene(
+      viewModel(9),
+      9,
+      { offsetX: 0, offsetY: 0 },
+      true,
+    );
+    const duplicate = repeated.visualPoints.find(
       (point) => point.logicalPointId === '8,0' && point.visualColumn === -1,
     )!;
-
-    expect(pointFromTorusViewBoxPosition(scene, primary.x, primary.y)).toBe('0,0');
-    expect(pointFromTorusViewBoxPosition(scene, duplicate.x, duplicate.y)).toBe('8,0');
-    expect(
-      pointFromTorusViewBoxPosition(scene, primary.x + scene.spacing / 2, primary.y),
-    ).toBeNull();
-    expect(pointFromTorusViewBoxPosition(scene, Number.NaN, primary.y)).toBeNull();
+    expect(pointFromTorusViewBoxPosition(repeated, duplicate.x, duplicate.y)).toBe('8,0');
   });
 
-  it('renders duplicate stones and semantic hit targets from one GameViewModel', () => {
+  it('renders only the clean board until duplicate regions are explicitly enabled', () => {
     const { root, svg } = fakeSvg();
     const renderer = new Torus2DRenderer(svg, 9);
+    const source = viewModel(9, { '0,0': 'black', '8,8': 'white' });
 
-    renderer.render(viewModel(9, { '0,0': 'black', '8,8': 'white' }));
+    renderer.render(source);
 
+    expect(renderer.duplicateRegionsVisible()).toBe(false);
     expect(root.attributes.get('viewBox')).toBe('0 0 1000 1000');
-    expect(root.attributes.get('data-view-offset-x')).toBe('0');
+    expect(root.attributes.get('data-duplicate-regions-visible')).toBe('false');
     expect(root.children.map((child) => child.attributes.get('class'))).toEqual([
       'torus-board__background',
       'torus-board__grid',
       'torus-board__hit-targets',
       'torus-board__stones',
     ]);
-    expect(root.children[1]?.children).toHaveLength(22);
-    expect(root.children[2]?.children).toHaveLength(121);
+    expect(root.children[1]?.children).toHaveLength(18);
+    expect(root.children[2]?.children).toHaveLength(81);
+    expect(root.children[3]?.children).toHaveLength(2);
+
+    renderer.setDuplicateRegionsVisible(true);
+    renderer.render(source);
+
+    expect(renderer.duplicateRegionsVisible()).toBe(true);
+    expect(root.attributes.get('data-duplicate-regions-visible')).toBe('true');
+    expect(root.children[1]?.children).toHaveLength(34);
+    expect(root.children[2]?.children).toHaveLength(289);
     expect(root.children[3]?.children).toHaveLength(8);
     expect(
       root.children[3]?.children.filter(
@@ -218,6 +265,8 @@ describe('Torus2DRenderer infinite presentation', () => {
     const { svg } = fakeSvg();
     const renderer = new Torus2DRenderer(svg, 9);
 
+    renderer.render(source);
+    renderer.setDuplicateRegionsVisible(true);
     renderer.render(source);
     renderer.pan('left');
     renderer.pan('up');

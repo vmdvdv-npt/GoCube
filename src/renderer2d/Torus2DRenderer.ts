@@ -34,11 +34,12 @@ export interface Torus2DScene {
   readonly viewBoxSize: number;
   readonly padding: number;
   readonly spacing: number;
+  readonly duplicateMargin: number;
   readonly hitRadius: number;
   readonly stoneRadius: number;
   /** One canonical visual position for every logical point in the current view. */
   readonly points: readonly Torus2DScenePoint[];
-  /** Canonical points plus one wrapped duplicate row/column around every edge. */
+  /** Canonical points plus optional wrapped duplicate regions around every edge. */
   readonly visualPoints: readonly Torus2DScenePoint[];
   readonly gridLines: readonly Torus2DGridLine[];
 }
@@ -46,6 +47,7 @@ export interface Torus2DScene {
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const VIEW_BOX_SIZE = 1000;
 const BOARD_PADDING = 120;
+const DUPLICATE_MARGIN = 4;
 const SUPPORTED_SIZES: readonly Torus2DSize[] = Object.freeze([9, 13, 19]);
 const DEFAULT_VIEW_STATE: Torus2DViewState = Object.freeze({ offsetX: 0, offsetY: 0 });
 
@@ -97,6 +99,7 @@ export const buildTorus2DScene = (
   viewModel: GameViewModel,
   size: Torus2DSize,
   viewState: Torus2DViewState = DEFAULT_VIEW_STATE,
+  showDuplicateRegions = false,
 ): Torus2DScene => {
   assertSupportedSize(size);
   const normalizedViewState = normalizeViewState(viewState, size);
@@ -116,8 +119,11 @@ export const buildTorus2DScene = (
     byId.set(point.logicalPointId, point.occupancy);
   }
 
-  const spacing = (VIEW_BOX_SIZE - BOARD_PADDING * 2) / (size - 1);
-  const coordinate = (index: number): number => BOARD_PADDING + index * spacing;
+  const duplicateMargin = showDuplicateRegions ? DUPLICATE_MARGIN : 0;
+  const visibleSpan = size - 1 + duplicateMargin * 2;
+  const spacing = (VIEW_BOX_SIZE - BOARD_PADDING * 2) / visibleSpan;
+  const canonicalOrigin = BOARD_PADDING + duplicateMargin * spacing;
+  const coordinate = (index: number): number => canonicalOrigin + index * spacing;
 
   const scenePoint = (visualColumn: number, visualRow: number): Torus2DScenePoint => {
     const logicalX = wrap(visualColumn + normalizedViewState.offsetX, size);
@@ -148,16 +154,16 @@ export const buildTorus2DScene = (
   }
 
   const visualPoints: Torus2DScenePoint[] = [];
-  for (let row = -1; row <= size; row += 1) {
-    for (let column = -1; column <= size; column += 1) {
+  for (let row = -duplicateMargin; row < size + duplicateMargin; row += 1) {
+    for (let column = -duplicateMargin; column < size + duplicateMargin; column += 1) {
       visualPoints.push(scenePoint(column, row));
     }
   }
 
   const gridLines: Torus2DGridLine[] = [];
-  const start = coordinate(-1);
-  const end = coordinate(size);
-  for (let index = -1; index <= size; index += 1) {
+  const start = coordinate(-duplicateMargin);
+  const end = coordinate(size - 1 + duplicateMargin);
+  for (let index = -duplicateMargin; index < size + duplicateMargin; index += 1) {
     const position = coordinate(index);
     gridLines.push(freezeLine({ x1: position, y1: start, x2: position, y2: end }));
     gridLines.push(freezeLine({ x1: start, y1: position, x2: end, y2: position }));
@@ -167,8 +173,9 @@ export const buildTorus2DScene = (
     size,
     viewState: normalizedViewState,
     viewBoxSize: VIEW_BOX_SIZE,
-    padding: BOARD_PADDING,
+    padding: canonicalOrigin,
     spacing,
+    duplicateMargin,
     hitRadius: spacing * 0.38,
     stoneRadius: spacing * 0.42,
     points: Object.freeze(points),
@@ -186,7 +193,14 @@ export const pointFromTorusViewBoxPosition = (
 
   const column = Math.round((x - scene.padding) / scene.spacing);
   const row = Math.round((y - scene.padding) / scene.spacing);
-  if (column < -1 || column > scene.size || row < -1 || row > scene.size) return null;
+  if (
+    column < -scene.duplicateMargin ||
+    column >= scene.size + scene.duplicateMargin ||
+    row < -scene.duplicateMargin ||
+    row >= scene.size + scene.duplicateMargin
+  ) {
+    return null;
+  }
 
   const centerX = scene.padding + column * scene.spacing;
   const centerY = scene.padding + row * scene.spacing;
@@ -207,6 +221,7 @@ export class Torus2DRenderer implements Renderer2D {
   private scene: Torus2DScene | null = null;
   private currentViewModel: GameViewModel | null = null;
   private currentViewState: Torus2DViewState = DEFAULT_VIEW_STATE;
+  private showDuplicateRegions = false;
 
   constructor(
     private readonly svg: SVGSVGElement,
@@ -219,6 +234,14 @@ export class Torus2DRenderer implements Renderer2D {
     return this.currentViewState;
   }
 
+  duplicateRegionsVisible(): boolean {
+    return this.showDuplicateRegions;
+  }
+
+  setDuplicateRegionsVisible(visible: boolean): void {
+    this.showDuplicateRegions = visible;
+  }
+
   pan(direction: Torus2DPanDirection): Torus2DViewState {
     this.currentViewState = shiftTorus2DViewState(this.currentViewState, direction, this.size);
     if (this.currentViewModel) this.render(this.currentViewModel);
@@ -227,7 +250,12 @@ export class Torus2DRenderer implements Renderer2D {
 
   render(viewModel: GameViewModel): void {
     this.currentViewModel = viewModel;
-    const scene = buildTorus2DScene(viewModel, this.size, this.currentViewState);
+    const scene = buildTorus2DScene(
+      viewModel,
+      this.size,
+      this.currentViewState,
+      this.showDuplicateRegions,
+    );
     this.scene = scene;
 
     this.svg.setAttribute('viewBox', `0 0 ${scene.viewBoxSize} ${scene.viewBoxSize}`);
@@ -236,6 +264,10 @@ export class Torus2DRenderer implements Renderer2D {
     this.svg.setAttribute('aria-label', `${scene.size} by ${scene.size} repeating torus Go board`);
     this.svg.setAttribute('data-view-offset-x', String(scene.viewState.offsetX));
     this.svg.setAttribute('data-view-offset-y', String(scene.viewState.offsetY));
+    this.svg.setAttribute(
+      'data-duplicate-regions-visible',
+      this.showDuplicateRegions ? 'true' : 'false',
+    );
 
     const document = this.svg.ownerDocument;
     const background = document.createElementNS(SVG_NS, 'rect');
