@@ -12,16 +12,39 @@ export interface StoneGroup {
   readonly liberties: readonly PointId[];
 }
 
-export interface PlaceStoneResult {
+export type MoveRejectionReason = 'occupied' | 'suicide';
+
+export interface AcceptedPlaceStoneResult {
+  readonly ok: true;
   readonly state: GameState;
   readonly captured: readonly PointId[];
 }
+
+export interface RejectedPlaceStoneResult {
+  readonly ok: false;
+  readonly state: GameState;
+  readonly reason: MoveRejectionReason;
+}
+
+export type PlaceStoneResult =
+  | AcceptedPlaceStoneResult
+  | RejectedPlaceStoneResult;
 
 const opponentOf = (color: StoneColor): StoneColor =>
   color === 'black' ? 'white' : 'black';
 
 const freezeState = (board: Record<PointId, PointOccupancy>): GameState =>
   Object.freeze({ board: Object.freeze(board) });
+
+const rejectedMove = (
+  state: GameState,
+  reason: MoveRejectionReason,
+): RejectedPlaceStoneResult =>
+  Object.freeze({
+    ok: false,
+    state,
+    reason,
+  });
 
 export class GameEngine {
   constructor(private readonly topology: Topology) {}
@@ -55,7 +78,7 @@ export class GameEngine {
     this.assertKnownPoint(point);
 
     if (state.board[point] !== 'empty') {
-      throw new Error(`Point is occupied: ${point}`);
+      return rejectedMove(state, 'occupied');
     }
 
     const board: Record<PointId, PointOccupancy> = { ...state.board };
@@ -85,7 +108,14 @@ export class GameEngine {
       board[capturedPoint] = 'empty';
     }
 
+    const ownGroup = this.collectGroup(board, point, color);
+
+    if (ownGroup.liberties.length === 0) {
+      return rejectedMove(state, 'suicide');
+    }
+
     return Object.freeze({
+      ok: true,
       state: freezeState(board),
       captured: Object.freeze(captured),
     });
