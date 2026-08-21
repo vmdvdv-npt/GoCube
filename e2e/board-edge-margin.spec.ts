@@ -36,9 +36,10 @@ const edgeMarginInGridSteps = async (page: Page): Promise<number> =>
     return edgeMargin / spacing;
   });
 
-test.each(['9', '13', '19'] as const)(
-  '%sx%s board keeps the visible wooden edge slightly smaller than one grid step',
-  async ({ page }, size) => {
+for (const size of ['9', '13', '19'] as const) {
+  test(`${size}x${size} board keeps the visible wooden edge slightly smaller than one grid step`, async ({
+    page,
+  }) => {
     await startGame(page, size);
 
     await expect.poll(() => edgeMarginInGridSteps(page)).toBeGreaterThan(0.72);
@@ -52,5 +53,5 @@ test.each(['9', '13', '19'] as const)(
 
     await expect.poll(() => edgeMarginInGridSteps(page)).toBeGreaterThan(0.72);
     await expect.poll(() => edgeMarginInGridSteps(page)).toBeLessThan(0.88);
-  },
-);
+  });
+}
