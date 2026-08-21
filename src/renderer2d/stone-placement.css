@@ -1,0 +1,23 @@
+.torus-board__stone--placing {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: torus-stone-placement 100ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes torus-stone-placement {
+  from {
+    opacity: 0.82;
+    transform: scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .torus-board__stone--placing {
+    animation: none;
+  }
+}
