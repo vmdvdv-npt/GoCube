@@ -39,26 +39,6 @@
   transform-origin: top left;
 }
 
-/*
- * Cube 2D uses one continuous wood texture beneath the entire 4x3 slot field.
- * Individual faces stay transparent, so the same image remains visually
- * continuous through face boundaries and empty layout slots.
- */
-.cube-2d-game .cube-2d-renderer {
-  background-image: url('/assets/board/board-bg.jpg');
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: cover;
-}
-
-.cube-2d-game .cube-2d-board {
-  background: transparent;
-}
-
-.cube-2d-game .cube-2d-board__surface {
-  fill: transparent;
-}
-
 .cube-2d-game .torus-pan:disabled {
   cursor: default;
   opacity: 0.38;
