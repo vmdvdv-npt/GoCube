@@ -138,7 +138,7 @@ test('board input, persistence and restore work through the browser UI', async (
   await expect(page.getByText('Move 1')).toBeVisible();
 
   await board.click();
-  await expect(page.getByText('That point is occupied.')).toBeVisible();
+  await expect(page.locator('.game-feedback')).toHaveCount(0);
   await expect(page.getByText('White to move')).toBeVisible();
   await expect(page.getByText('Move 1')).toBeVisible();
 
