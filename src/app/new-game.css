@@ -64,6 +64,76 @@
   font-size: 14px;
 }
 
+.board-size-fieldset {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: #aeb7bf;
+}
+
+.board-size-fieldset legend {
+  margin: 0 0 6px;
+  padding: 0;
+  font-size: 14px;
+}
+
+.board-size-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.board-size-options button {
+  width: 100%;
+  min-height: 42px;
+  border-color: rgb(255 255 255 / 12%);
+  background: linear-gradient(180deg, #151f29, #0a1118);
+  color: #c7cdd2;
+  font-weight: 700;
+}
+
+.board-size-options button:hover {
+  border-color: rgb(203 140 50 / 34%);
+}
+
+.board-size-options button.is-selected {
+  border-color: rgb(203 140 50 / 52%);
+  background: linear-gradient(180deg, #1a242d, #0e151c);
+  color: #f0f2f4;
+  box-shadow: inset 0 0 0 1px rgb(203 140 50 / 8%);
+}
+
+.board-size-native-select {
+  position: absolute;
+  left: -10000px;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+}
+
+.new-game-form .start-game-button {
+  min-height: 42px;
+  border-color: rgb(65 187 121 / 46%);
+  background: linear-gradient(180deg, #167a49, #0d5834);
+  color: #effff7;
+  font-weight: 800;
+  box-shadow:
+    inset 0 1px 0 rgb(196 255 221 / 12%),
+    0 0 18px rgb(29 147 86 / 10%);
+}
+
+.new-game-form .start-game-button:hover {
+  border-color: rgb(89 220 149 / 64%);
+  background: linear-gradient(180deg, #198852, #0f613a);
+}
+
 .new-game-control {
   margin-left: 0;
 }

@@ -5,7 +5,50 @@
 }
 
 .game-statistics {
+  grid-template-rows: auto auto auto auto;
   border: 1px solid rgb(203 140 50 / 36%);
+}
+
+/* Pass count is represented by Pass (1); keep the old text only as an off-screen state hook. */
+.game-statistics span:nth-child(3) {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+}
+
+.game-statistics span:nth-child(4) {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.game-statistics span:nth-child(5) {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.game-statistics span:nth-child(1) {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.game-statistics span:nth-child(2) {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.game-statistics span:nth-child(6) {
+  grid-column: 1;
+  grid-row: 4;
+}
+
+.game-statistics span:nth-child(7) {
+  grid-column: 2;
+  grid-row: 4;
 }
 
 .turn-indicator {
@@ -82,12 +125,12 @@
 
 .game-controls .pass-control {
   grid-column: 1 / -1;
-  min-height: 52px;
-  padding: 12px 14px;
+  min-height: 42px;
+  padding: 9px 12px;
   border-color: rgb(219 146 48 / 55%);
   background: linear-gradient(180deg, #9b5c18, #6e3d0d);
   color: #fff5e7;
-  font-size: 15px;
+  font-size: inherit;
   box-shadow:
     inset 0 1px 0 rgb(255 219 154 / 18%),
     0 0 18px rgb(211 132 35 / 10%);
@@ -101,6 +144,12 @@
 
 .game-controls .history-controls button {
   width: 100%;
+  min-height: 42px;
+}
+
+.game-controls .history-controls button:not(:disabled) {
+  border-color: rgb(203 140 50 / 52%);
+  box-shadow: inset 0 0 0 1px rgb(203 140 50 / 5%);
 }
 
 .game-controls .game-result-control,
@@ -109,6 +158,7 @@
 }
 
 .game-controls .new-game-control {
+  min-height: 42px;
   margin-left: 0;
   border-color: rgb(103 103 103 / 24%);
   background: linear-gradient(180deg, #07313a, #05242b);
