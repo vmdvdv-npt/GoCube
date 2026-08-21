@@ -26,7 +26,7 @@ describe('TorusGameController manual endgame flow', () => {
     expect(controller.endgameGroups()).toEqual([]);
   });
 
-  it('exposes deterministic stone groups for explicit alive/dead/seki decisions', async () => {
+  it('exposes deterministic stone groups and their topology edges for board classification', async () => {
     const controller = new TorusGameController();
     await controller.placeStone('0,0');
     await controller.placeStone('4,4');
@@ -39,13 +39,30 @@ describe('TorusGameController manual endgame flow', () => {
         id: '["0,0"]',
         points: ['0,0'],
         color: 'black',
+        edges: [],
       },
       {
         id: '["4,4"]',
         points: ['4,4'],
         color: 'white',
+        edges: [],
       },
     ]);
+  });
+
+  it('exposes a seam-connected group as one logical group with one topology edge', async () => {
+    const controller = new TorusGameController();
+    await controller.placeStone('0,0');
+    await controller.placeStone('4,4');
+    await controller.placeStone('8,0');
+    await controller.pass();
+    await controller.pass();
+
+    const black = controller.endgameGroups().find((group) => group.color === 'black');
+    expect(black).toMatchObject({
+      points: ['0,0', '8,0'],
+      edges: [{ from: '0,0', to: '8,0' }],
+    });
   });
 
   it('requires a manual decision for every requested group', async () => {

@@ -1,0 +1,48 @@
+.torus-board--endgame {
+  cursor: pointer;
+}
+
+.endgame-progress {
+  color: #66666c;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.endgame-selection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid #e1e1e5;
+  border-radius: 10px;
+}
+
+.endgame-selection__identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.endgame-selection__identity > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.endgame-selection__identity span:last-child {
+  color: #66666c;
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .endgame-selection {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .endgame-statuses {
+    justify-content: flex-start;
+  }
+}

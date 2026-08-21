@@ -35,6 +35,11 @@ export interface GameSessionConfig {
 
 export type GameSessionRejectionReason = MoveRejectionReason | 'nothing-to-undo';
 
+export interface GameSessionMoveQueryResult {
+  readonly allowed: boolean;
+  readonly reason: MoveRejectionReason | null;
+}
+
 export interface AcceptedPlaceStoneSessionResult {
   readonly ok: true;
   readonly action: 'place-stone';
@@ -187,6 +192,23 @@ export class GameSession {
 
   historyLength(): number {
     return this.history.length();
+  }
+
+  /** Read-only legality query for presentation/hover feedback. */
+  queryPlaceStone(point: PointId): GameSessionMoveQueryResult {
+    const currentState = this.history.current();
+    const result = this.engine.placeStone(
+      currentState,
+      point,
+      currentState.currentPlayer,
+      this.repetitionPolicy,
+      this.history.repetitionContext(),
+    );
+
+    return Object.freeze({
+      allowed: result.ok,
+      reason: result.ok ? null : result.reason,
+    });
   }
 
   snapshot(): GameSessionSnapshot {
