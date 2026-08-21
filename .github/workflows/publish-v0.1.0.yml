@@ -1,0 +1,86 @@
+name: Publish GoCube 0.1.0
+
+on:
+  push:
+    branches:
+      - chore/v0.1-final-audit
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-release:
+    if: github.repository == 'vmdvdv-npt/GoCube'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RELEASE_TAG: v0.1.0
+      TARGET_SHA: a15da49c4107e48efb4c5bcbae90b01e1d0e5260
+    steps:
+      - name: Check out frozen release commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TARGET_SHA }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npm run lint
+
+      - name: Unit and integration tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      - name: Verify exact release commit
+        run: test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+
+      - name: Prepare release notes
+        run: |
+          cat > /tmp/release-notes.md <<'EOF'
+          GoCube 0.1.0 is the frozen baseline release of the project.
+
+          Highlights:
+          - Torus 2D gameplay on 9x9, 13x13 and 19x19 boards
+          - Japanese rules with komi 7.5, captures, suicide prevention and ko handling
+          - Pass flow, manual endgame classification and final territory visualization
+          - Undo and Redo
+          - Save/load persistence
+          - move numbers, last-move marker, hover preview and capture/placement animations
+          - smooth torus navigation, zoom and one-line duplicate edge regions
+          - finalized dark desktop UI for the 0.1 milestone
+
+          Release verification on the frozen commit:
+          - npm ci
+          - TypeScript check
+          - Vitest suite
+          - production build
+          - Playwright end-to-end suite
+
+          Frozen release commit: a15da49c4107e48efb4c5bcbae90b01e1d0e5260
+          EOF
+
+      - name: Create GitHub release and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$TARGET_SHA" \
+            --title "GoCube 0.1.0" \
+            --notes-file /tmp/release-notes.md \
+            --latest
