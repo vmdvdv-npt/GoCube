@@ -6,6 +6,15 @@
   border: 1px solid rgb(203 140 50 / 30%);
 }
 
+/* Match the warm current-turn halo behind both captured-stone icons. */
+.game-statistics span:nth-child(4)::before,
+.game-statistics span:nth-child(5)::before {
+  box-shadow:
+    0 4px 8px rgb(0 0 0 / 32%),
+    0 0 0 3px rgb(211 144 46 / 8%),
+    0 0 18px rgb(211 144 46 / 28%);
+}
+
 .torus-duplicates-control {
   display: grid;
   align-items: stretch;
@@ -46,6 +55,31 @@
 /* Let the board texture show through the renderer's former solid SVG background. */
 .torus-board__background {
   fill: transparent;
+}
+
+/*
+ * Black stones use the same restrained top-left highlight and dark falloff as
+ * the Black-to-move chip. The shared SVG paint server keeps the look consistent
+ * for normal stones, legal move previews and captured-stone flight animations.
+ */
+.torus-board__stone--black,
+.torus-board__preview-stone--black,
+.torus-board__captured-stone--black {
+  fill: url(#torus-black-stone-gradient);
+}
+
+/*
+ * Keep the familiar 2px grid on 9x9, make 13x13 only slightly lighter,
+ * and use a deliberately fine hairline grid on the dense 19x19 board.
+ * The same grid class is used during pan animation, so thickness stays stable
+ * while the board moves.
+ */
+.torus-board[aria-label^='13 by 13'] .torus-board__grid line {
+  stroke-width: 1.5px;
+}
+
+.torus-board[aria-label^='19 by 19'] .torus-board__grid line {
+  stroke-width: 0.8px;
 }
 
 .torus-board[aria-label^='9 by 9'][data-duplicate-regions-visible='false'] {
