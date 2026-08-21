@@ -1,10 +1,10 @@
-import { expect, test, type Locator } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 const waitForIdle = async (renderer: Locator) => {
   await expect(renderer).toHaveAttribute('data-animating', 'false', { timeout: 2_000 });
 };
 
-const verticalSnapshot = async (page: Parameters<typeof test>[0] extends never ? never : any) => {
+const verticalSnapshot = async (page: Page) => {
   const top = page.locator('.cube-2d-board[data-face="top"]');
   const bottom = page.locator('.cube-2d-board[data-face="bottom"]');
   return {
