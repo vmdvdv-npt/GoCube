@@ -83,12 +83,14 @@ export function App() {
   };
 
   return (
-    <main className="app-shell">
-      <header className="app-header">
-        <p className="app-kicker">Game Cube Go · 0.1.0</p>
-        <h1>GoCube</h1>
-        <p>Torus 2D · first playable release · local save/load · Chinese and Japanese scoring.</p>
-      </header>
+    <main className={`app-shell${screen === 'game' ? ' app-shell--game' : ''}`}>
+      {screen !== 'game' ? (
+        <header className="app-header">
+          <p className="app-kicker">Game Cube Go · 0.1.0</p>
+          <h1>GoCube</h1>
+          <p>Torus 2D · first playable release · local save/load · Chinese and Japanese scoring.</p>
+        </header>
+      ) : null}
 
       {screen === 'loading' ? <p className="startup-status">Loading local game…</p> : null}
 
