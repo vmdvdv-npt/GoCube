@@ -17,6 +17,7 @@ import {
   Torus2DRenderer,
   type Torus2DPanDirection,
 } from '../renderer2d/Torus2DRenderer';
+import { renderTorus2DStoneAnnotations } from '../renderer2d/Torus2DStoneAnnotations';
 import {
   TorusGameController,
   type TorusEndgameDecisions,
@@ -80,6 +81,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     () => initialViewModel.phase === 'finished',
   );
   const [showDuplicateRegions, setShowDuplicateRegions] = useState(false);
+  const [showMoveNumbers, setShowMoveNumbers] = useState(false);
   const [viewZoom, setViewZoom] = useState(1);
   const [previousPassPlayer, setPreviousPassPlayer] = useState<PlayerColor | null>(() =>
     initialViewModel.phase === 'playing' && initialViewModel.consecutivePasses === 1
@@ -122,6 +124,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     setHoveredGroupId(null);
     setSelectedGroupId(null);
     setShowDuplicateRegions(false);
+    setShowMoveNumbers(false);
     setViewZoom(1);
     setPassGuardUntil(null);
     setPassGuardRemainingMs(0);
@@ -189,14 +192,28 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         : null,
     );
     renderer.render(viewModel);
+    renderTorus2DStoneAnnotations(svg, viewModel, showMoveNumbers);
   }, [
     controller,
     hoveredGroupId,
     renderGroups,
     selectedGroupId,
     showDuplicateRegions,
+    showMoveNumbers,
     viewModel,
   ]);
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    const Observer = svg?.ownerDocument.defaultView?.MutationObserver;
+    if (!svg || !Observer) return;
+
+    const observer = new Observer(() => {
+      renderTorus2DStoneAnnotations(svg, viewModel, showMoveNumbers);
+    });
+    observer.observe(svg, { childList: true });
+    return () => observer.disconnect();
+  }, [controller, showMoveNumbers, viewModel]);
 
   const applyResult = (result: TorusGameActionResult): void => {
     rendererRef.current?.setMovePreview(null);
@@ -455,6 +472,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
             ref={svgRef}
             className={`torus-board${viewModel.phase === 'playing' ? '' : viewModel.phase === 'endgame' ? ' torus-board--endgame' : ' torus-board--inactive'}`}
             data-view-zoom={viewZoom.toFixed(3)}
+            data-move-numbers-visible={showMoveNumbers ? 'true' : 'false'}
             style={{ transform: `scale(${viewZoom})` }}
             onClick={(event) => void handleBoardClick(event)}
             onMouseMove={handleBoardMouseMove}
@@ -495,6 +513,13 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
       </p>
 
       <div className="game-controls">
+        <button
+          type="button"
+          aria-pressed={showMoveNumbers}
+          onClick={() => setShowMoveNumbers((visible) => !visible)}
+        >
+          Номера ходов
+        </button>
         <button
           type="button"
           onClick={() => void handlePass()}
