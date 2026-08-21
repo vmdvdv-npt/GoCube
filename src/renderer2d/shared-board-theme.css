@@ -4,19 +4,16 @@
   --go-board-surface: #d8ad68;
 }
 
-.torus-board {
+.torus-board,
+.cube-2d-game .cube-2d-board {
   background-image: var(--go-board-texture);
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
 }
 
-/*
- * Cube 2D samples the shared texture from one renderer-level ground layer.
- * Individual faces must stay transparent or the texture restarts on every face.
- */
 .cube-2d-game .cube-2d-board {
-  background: transparent;
+  background-color: var(--go-board-surface);
 }
 
 .cube-2d-game .cube-2d-board__surface {
