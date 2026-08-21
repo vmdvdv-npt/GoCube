@@ -183,7 +183,7 @@ export class GameApplication {
         controller: new TorusGameController({
           size: snapshot.boardSize as TorusSize,
           ruleSet: snapshot.ruleSet,
-          komi: snapshot.komh°
+          komi: snapshot.komi,
           persistence,
           snapshot,
         }),
