@@ -30,6 +30,15 @@ test('new game uses board-size buttons and keeps Japanese rules as the default',
   await size13.click();
   await expect(size13).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByLabel('Board size')).toHaveValue('13');
+  await page.mouse.move(0, 0);
+  const selectedBackground = await size13.evaluate((element) => getComputedStyle(element).backgroundImage);
+  expect(selectedBackground).toContain('rgb(52, 66, 79)');
+
+  const idleBackground = await size19.evaluate((element) => getComputedStyle(element).backgroundImage);
+  await size19.hover();
+  const hoverBackground = await size19.evaluate((element) => getComputedStyle(element).backgroundImage);
+  expect(hoverBackground).not.toBe(idleBackground);
+  expect(hoverBackground).toContain('rgb(39, 53, 66)');
 
   const rules = page.getByLabel('Rules');
   await expect(rules.locator('option')).toHaveText(['Japanese', 'Chinese']);
@@ -37,16 +46,23 @@ test('new game uses board-size buttons and keeps Japanese rules as the default',
 
   const startGame = page.getByRole('button', { name: 'Start game' });
   const startBackground = await startGame.evaluate((element) => getComputedStyle(element).backgroundImage);
-  expect(startBackground).toContain('rgb(22, 122, 73)');
+  expect(startBackground).toContain('rgb(7, 49, 58)');
 
   await rules.selectOption('chinese');
   await startGame.click();
   await expect(page.getByText('Chinese rules')).toBeVisible();
   await expect(page.getByText('13×13', { exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: 'New game', exact: true }).click();
+  const inGameNewGame = page.getByRole('button', { name: 'New game', exact: true });
+  const inGameBackground = await inGameNewGame.evaluate((element) => getComputedStyle(element).backgroundImage);
+  expect(inGameBackground).toBe(startBackground);
+
+  await inGameNewGame.click();
   await expect(page.getByRole('heading', { name: 'Start a new game?' })).toBeVisible();
-  await page.getByRole('button', { name: 'New Game', exact: true }).click();
+  const confirmNewGame = page.getByRole('button', { name: 'New Game', exact: true });
+  const confirmBackground = await confirmNewGame.evaluate((element) => getComputedStyle(element).backgroundImage);
+  expect(confirmBackground).toBe(inGameBackground);
+  await confirmNewGame.click();
 
   await expect(page.getByRole('heading', { name: 'New game' })).toBeVisible();
   await expect(page.getByLabel('Rules').locator('option')).toHaveText(['Japanese', 'Chinese']);
