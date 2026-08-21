@@ -18,7 +18,12 @@ const viewModel = (
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
       const logicalPointId = pointId(x, y);
-      const occupancy = occupied[logicalPointId] ?? 'empty';
+      const occupancy: GameViewPoint['occupancy'] = Object.prototype.hasOwnProperty.call(
+        occupied,
+        logicalPointId,
+      )
+        ? occupied[logicalPointId]!
+        : 'empty';
       points.push({
         logicalPointId,
         occupancy,
