@@ -24,6 +24,12 @@ import {
 } from './TorusGameController';
 
 const ENDGAME_STATUSES: readonly GroupStatus[] = ['alive', 'dead', 'seki'];
+const TORUS_ZOOM_MIN = 0.7;
+const TORUS_ZOOM_MAX = 2.5;
+const TORUS_ZOOM_WHEEL_SENSITIVITY = 0.0015;
+
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(max, Math.max(min, value));
 
 const rejectionLabel = (reason: TorusGameActionResult['reason']): string | null => {
   if (!reason) return null;
@@ -65,6 +71,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     () => controller.viewModel().phase === 'finished',
   );
   const [showDuplicateRegions, setShowDuplicateRegions] = useState(false);
+  const [viewZoom, setViewZoom] = useState(1);
   const svgRef = useRef<SVGSVGElement>(null);
   const rendererRef = useRef<Torus2DRenderer | null>(null);
   const actionInFlight = useRef(false);
@@ -99,10 +106,30 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     setHoveredGroupId(null);
     setSelectedGroupId(null);
     setShowDuplicateRegions(false);
+    setViewZoom(1);
     setResultOpen(nextViewModel.phase === 'finished');
     setEndgameGroups(
       nextViewModel.phase === 'endgame' ? controller.endgameGroups() : [],
     );
+  }, [controller]);
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const handleWheel = (event: WheelEvent): void => {
+      event.preventDefault();
+      setViewZoom((current) =>
+        clamp(
+          current * Math.exp(-event.deltaY * TORUS_ZOOM_WHEEL_SENSITIVITY),
+          TORUS_ZOOM_MIN,
+          TORUS_ZOOM_MAX,
+        ),
+      );
+    };
+
+    svg.addEventListener('wheel', handleWheel, { passive: false });
+    return () => svg.removeEventListener('wheel', handleWheel);
   }, [controller]);
 
   useEffect(() => {
@@ -352,13 +379,17 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         >
           ←
         </button>
-        <svg
-          ref={svgRef}
-          className={`torus-board${viewModel.phase === 'playing' ? '' : viewModel.phase === 'endgame' ? ' torus-board--endgame' : ' torus-board--inactive'}`}
-          onClick={(event) => void handleBoardClick(event)}
-          onMouseMove={handleBoardMouseMove}
-          onMouseLeave={handleBoardMouseLeave}
-        />
+        <div className="torus-board-viewport">
+          <svg
+            ref={svgRef}
+            className={`torus-board${viewModel.phase === 'playing' ? '' : viewModel.phase === 'endgame' ? ' torus-board--endgame' : ' torus-board--inactive'}`}
+            data-view-zoom={viewZoom.toFixed(3)}
+            style={{ transform: `scale(${viewZoom})` }}
+            onClick={(event) => void handleBoardClick(event)}
+            onMouseMove={handleBoardMouseMove}
+            onMouseLeave={handleBoardMouseLeave}
+          />
+        </div>
         <button
           className="torus-pan torus-pan--right"
           type="button"
