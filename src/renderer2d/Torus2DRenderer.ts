@@ -374,6 +374,37 @@ export const visualPointFromTorusViewBoxPosition = (
   return scene.visualPoints[index] ?? null;
 };
 
+export const nearestVisualPointFromTorusViewBoxPosition = (
+  scene: Torus2DScene,
+  x: number,
+  y: number,
+): Torus2DScenePoint | null => {
+  if (
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    x < 0 ||
+    x > scene.viewBoxSize ||
+    y < 0 ||
+    y > scene.viewBoxSize
+  ) {
+    return null;
+  }
+
+  const minimum = -scene.duplicateMargin;
+  const maximum = scene.size + scene.duplicateMargin - 1;
+  const column = Math.min(
+    maximum,
+    Math.max(minimum, Math.round((x - scene.padding) / scene.spacing)),
+  );
+  const row = Math.min(
+    maximum,
+    Math.max(minimum, Math.round((y - scene.padding) / scene.spacing)),
+  );
+  const span = scene.size + scene.duplicateMargin * 2;
+  const index = (row + scene.duplicateMargin) * span + column + scene.duplicateMargin;
+  return scene.visualPoints[index] ?? null;
+};
+
 export const pointFromTorusViewBoxPosition = (
   scene: Torus2DScene,
   x: number,
@@ -875,6 +906,23 @@ export class Torus2DRenderer implements Renderer2D {
     const local = this.clientToViewBox(x, y);
     if (!local) return null;
     const point = visualPointFromTorusViewBoxPosition(this.scene, local.x, local.y);
+    if (!point) return null;
+
+    return Object.freeze({
+      logicalPointId: point.logicalPointId,
+      visualColumn: point.visualColumn,
+      visualRow: point.visualRow,
+      pointerX: local.x,
+      pointerY: local.y,
+    });
+  }
+
+  hoverVisualPointFromClientPosition(x: number, y: number): Torus2DVisualHit | null {
+    if (!this.scene) return null;
+
+    const local = this.clientToViewBox(x, y);
+    if (!local) return null;
+    const point = nearestVisualPointFromTorusViewBoxPosition(this.scene, local.x, local.y);
     if (!point) return null;
 
     return Object.freeze({
