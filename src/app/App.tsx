@@ -18,7 +18,7 @@ export function App() {
   const [controller, setController] = useState<TorusGameController | null>(null);
   const [confirmNewGame, setConfirmNewGame] = useState(false);
   const [size, setSize] = useState<TorusSize>(9);
-  const [ruleSet, setRuleSet] = useState<RuleSet>('chinese');
+  const [ruleSet, setRuleSet] = useState<RuleSet>('japanese');
   const [komi, setKomi] = useState('7.5');
   const [error, setError] = useState<string | null>(null);
 
@@ -57,6 +57,7 @@ export function App() {
       setController(null);
       setSavedGame(null);
       setConfirmNewGame(false);
+      setRuleSet('japanese');
       setScreen('settings');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not reset saved game.');
@@ -140,8 +141,8 @@ export function App() {
               value={ruleSet}
               onChange={(event) => setRuleSet(event.target.value as RuleSet)}
             >
-              <option value="chinese">Chinese</option>
               <option value="japanese">Japanese</option>
+              <option value="chinese">Chinese</option>
             </select>
           </label>
 
