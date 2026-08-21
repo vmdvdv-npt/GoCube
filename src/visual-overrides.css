@@ -68,7 +68,6 @@
  * the user's ViewState zoom; the independent `scale` property composes with it.
  */
 .torus-board {
-  background-color: #d8ad68;
   background-image: url('/assets/board/board-bg.jpg');
   background-position: center;
   background-repeat: no-repeat;
