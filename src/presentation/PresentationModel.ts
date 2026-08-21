@@ -1,3 +1,7 @@
+import type {
+  EndgameClassification,
+  GroupStatus,
+} from '../core/endgame/EndgameClassifier';
 import type { CaptureCounts, GamePhase, GameState, PointOccupancy, RuleSet, StoneColor } from '../core/game/types';
 import type { GameSessionSnapshot } from '../core/persistence/GameSessionSnapshot';
 import type { FinalScore } from '../core/scoring/Scoring';
@@ -8,6 +12,8 @@ export interface GameViewPoint {
   readonly occupancy: PointOccupancy;
   /** Action number that placed the currently visible stone. Present when history is available. */
   readonly moveNumber?: number | null;
+  /** Final semantic group status. Present only for a finished, classified position. */
+  readonly endgameStatus?: GroupStatus | null;
 }
 
 export interface GameViewModel {
@@ -28,6 +34,8 @@ export interface PresentationContext {
   readonly ruleSet: RuleSet;
   readonly komi: number;
   readonly finalScore: FinalScore | null;
+  /** Optional final semantic classification used only to derive presentation status. */
+  readonly endgameClassification?: EndgameClassification | null;
   /** Optional session history used only to derive presentation metadata such as stone numbers. */
   readonly history?: readonly GameState[];
 }
@@ -116,6 +124,19 @@ const deriveStoneMoveMetadata = (
   return Object.freeze({ moveNumbers, lastMovePointId });
 };
 
+const deriveEndgameStatuses = (
+  state: GameState,
+  classification: EndgameClassification | null | undefined,
+): ReadonlyMap<PointId, GroupStatus> | null => {
+  if (state.phase !== 'finished' || !classification) return null;
+
+  const statuses = new Map<PointId, GroupStatus>();
+  for (const group of classification) {
+    for (const point of group.points) statuses.set(point, group.status);
+  }
+  return statuses;
+};
+
 export class PresentationModel {
   fromSession(session: PresentationSessionSource): GameViewModel {
     const snapshot = session.snapshot();
@@ -123,6 +144,7 @@ export class PresentationModel {
       ruleSet: snapshot.ruleSet,
       komi: snapshot.komi,
       finalScore: snapshot.finalScore,
+      endgameClassification: snapshot.endgameClassification ?? null,
       history: snapshot.history,
     });
   }
@@ -131,6 +153,7 @@ export class PresentationModel {
     const stoneMetadata = context.history
       ? deriveStoneMoveMetadata(context.history, state)
       : null;
+    const endgameStatuses = deriveEndgameStatuses(state, context.endgameClassification);
     const points = Object.keys(state.board)
       .sort(comparePointIds)
       .map((logicalPointId) => {
@@ -138,16 +161,22 @@ export class PresentationModel {
           logicalPointId,
           occupancy: state.board[logicalPointId]!,
         };
+        const withEndgameStatus = endgameStatuses
+          ? {
+              ...point,
+              endgameStatus: endgameStatuses.get(logicalPointId) ?? null,
+            }
+          : point;
         return Object.freeze(
           stoneMetadata
             ? {
-                ...point,
+                ...withEndgameStatus,
                 moveNumber:
                   state.board[logicalPointId] === 'empty'
                     ? null
                     : stoneMetadata.moveNumbers.get(logicalPointId) ?? null,
               }
-            : point,
+            : withEndgameStatus,
         );
       });
 

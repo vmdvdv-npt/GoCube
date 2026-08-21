@@ -3,7 +3,10 @@ import type { GroupStatus } from '../core/endgame/EndgameClassifier';
 import type { RuleSet } from '../core/game/types';
 import { CUBE_SIZES, type CubeSize } from '../core/topology/CubeTopology';
 import type { PointId } from '../core/topology/Topology';
-import { endgameGroupForPoint } from '../presentation/EndgameGroupPresentation';
+import {
+  endgameGroupForPoint,
+  type EndgameGroupRenderState,
+} from '../presentation/EndgameGroupPresentation';
 import { createCube2DLayout, type Cube2DLayoutColumn } from '../presentation/cube/Cube2DLayout';
 import {
   createCube2DViewState,
@@ -19,6 +22,11 @@ import {
   type Cube2DRendererTransition,
 } from '../renderer2d/Cube2DRenderer';
 import {
+  buildCube2DCaptureEffects,
+  Cube2DVisualEffects,
+  type Cube2DCaptureEffect,
+} from '../renderer2d/Cube2DVisualEffects';
+import {
   Cube2DGameController,
   type Cube2DEndgameDecisions,
   type Cube2DEndgameGroup,
@@ -28,6 +36,7 @@ import { GameResultDialog } from './GameResultDialog';
 import './manual-endgame.css';
 import './cube2d-preview.css';
 import './cube2d-game-flow.css';
+import './cube2d-visual-effects.css';
 
 const PLACEMENT_ANIMATION_MS = 120;
 const PASS_GUARD_DURATION_MS = 1000;
@@ -52,9 +61,11 @@ export function Cube2DPreview() {
   const [hoveredPointId, setHoveredPointId] = useState<PointId | null>(null);
   const [hoverStatus, setHoverStatus] = useState<Cube2DHoverStatus>(null);
   const [recentlyPlacedPointId, setRecentlyPlacedPointId] = useState<PointId | null>(null);
+  const [captureEffects, setCaptureEffects] = useState<readonly Cube2DCaptureEffect[]>([]);
   const [showMoveNumbers, setShowMoveNumbers] = useState(false);
   const [endgameGroups, setEndgameGroups] = useState<readonly Cube2DEndgameGroup[]>([]);
   const [decisions, setDecisions] = useState<Cube2DEndgameDecisions>({});
+  const [hoveredEndgameGroupId, setHoveredEndgameGroupId] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [resultOpen, setResultOpen] = useState(false);
   const [passGuarded, setPassGuarded] = useState(false);
@@ -62,6 +73,7 @@ export function Cube2DPreview() {
   const transitionId = useRef(0);
   const transitionTimer = useRef<number | null>(null);
   const placementTimer = useRef<number | null>(null);
+  const captureTimer = useRef<number | null>(null);
   const passGuardTimer = useRef<number | null>(null);
   const actionInFlight = useRef(false);
 
@@ -79,8 +91,28 @@ export function Cube2DPreview() {
     () => endgameGroups.filter((group) => Boolean(decisions[group.id])).length,
     [decisions, endgameGroups],
   );
+  const endgameRenderGroups = useMemo<readonly EndgameGroupRenderState[]>(
+    () =>
+      Object.freeze(
+        endgameGroups.map((group) =>
+          Object.freeze({
+            ...group,
+            status: decisions[group.id] ?? null,
+          }),
+        ),
+      ),
+    [decisions, endgameGroups],
+  );
   const allGroupsClassified = endgameGroups.every((group) => Boolean(decisions[group.id]));
   const gameResult = viewModel.phase === 'finished' ? controller.resultModel() : null;
+
+  const clearCaptureEffects = () => {
+    setCaptureEffects([]);
+    if (captureTimer.current !== null) {
+      window.clearTimeout(captureTimer.current);
+      captureTimer.current = null;
+    }
+  };
 
   useEffect(() => {
     const nextViewModel = controller.viewModel();
@@ -89,12 +121,18 @@ export function Cube2DPreview() {
     setHoveredPointId(null);
     setHoverStatus(null);
     setRecentlyPlacedPointId(null);
+    setCaptureEffects([]);
     setEndgameGroups(nextViewModel.phase === 'endgame' ? controller.endgameGroups() : []);
     setDecisions({});
+    setHoveredEndgameGroupId(null);
     setSelectedGroupId(null);
     setResultOpen(nextViewModel.phase === 'finished');
     setPassGuarded(false);
     setFeedback(null);
+    if (captureTimer.current !== null) {
+      window.clearTimeout(captureTimer.current);
+      captureTimer.current = null;
+    }
     if (passGuardTimer.current !== null) {
       window.clearTimeout(passGuardTimer.current);
       passGuardTimer.current = null;
@@ -105,6 +143,7 @@ export function Cube2DPreview() {
     () => () => {
       if (transitionTimer.current !== null) window.clearTimeout(transitionTimer.current);
       if (placementTimer.current !== null) window.clearTimeout(placementTimer.current);
+      if (captureTimer.current !== null) window.clearTimeout(captureTimer.current);
       if (passGuardTimer.current !== null) window.clearTimeout(passGuardTimer.current);
     },
     [],
@@ -113,6 +152,7 @@ export function Cube2DPreview() {
   const clearHover = () => {
     setHoveredPointId(null);
     setHoverStatus(null);
+    setHoveredEndgameGroupId(null);
   };
 
   const clearPassGuard = () => {
@@ -177,11 +217,24 @@ export function Cube2DPreview() {
   };
 
   const handlePointHover = (pointId: PointId | null) => {
-    if (!pointId || isAnimating || viewModel.phase !== 'playing') {
+    if (!pointId || isAnimating) {
       clearHover();
       return;
     }
 
+    if (viewModel.phase === 'endgame') {
+      setHoveredPointId(null);
+      setHoverStatus(null);
+      setHoveredEndgameGroupId(endgameGroupForPoint(endgameGroups, pointId)?.id ?? null);
+      return;
+    }
+
+    if (viewModel.phase !== 'playing') {
+      clearHover();
+      return;
+    }
+
+    setHoveredEndgameGroupId(null);
     const availability = controller.moveAvailability(pointId);
     setHoveredPointId(pointId);
     setHoverStatus(
@@ -210,6 +263,8 @@ export function Cube2DPreview() {
       return;
     }
 
+    const previousViewModel = viewModel;
+    const captureLayout = layout;
     actionInFlight.current = true;
     try {
       const result = await controller.placeStone(pointId);
@@ -222,6 +277,24 @@ export function Cube2DPreview() {
           setRecentlyPlacedPointId(null);
           placementTimer.current = null;
         }, PLACEMENT_ANIMATION_MS);
+
+        if (result.captured.length > 0) {
+          const effects = buildCube2DCaptureEffects(
+            previousViewModel,
+            result.captured,
+            captureLayout,
+          );
+          if (captureTimer.current !== null) window.clearTimeout(captureTimer.current);
+          setCaptureEffects(effects);
+          const effectLifetime = effects.reduce(
+            (maximum, effect) => Math.max(maximum, effect.delayMs + effect.durationMs),
+            0,
+          );
+          captureTimer.current = window.setTimeout(() => {
+            setCaptureEffects([]);
+            captureTimer.current = null;
+          }, effectLifetime + 40);
+        }
       }
     } finally {
       actionInFlight.current = false;
@@ -249,6 +322,7 @@ export function Cube2DPreview() {
 
   const handleUndo = async () => {
     if (actionInFlight.current) return;
+    clearCaptureEffects();
     actionInFlight.current = true;
     try {
       applyGameResult(await controller.undo());
@@ -259,6 +333,7 @@ export function Cube2DPreview() {
 
   const handleRedo = async () => {
     if (actionInFlight.current) return;
+    clearCaptureEffects();
     actionInFlight.current = true;
     try {
       applyGameResult(await controller.redo());
@@ -285,6 +360,7 @@ export function Cube2DPreview() {
       setFeedback('Komi must be a finite number.');
       return;
     }
+    clearCaptureEffects();
     setKomi(parsedKomi);
     setNewGameRevision((revision) => revision + 1);
   };
@@ -297,11 +373,11 @@ export function Cube2DPreview() {
     <main className="cube-2d-preview">
       <header className="cube-2d-preview__header">
         <div>
-          <p className="cube-2d-preview__kicker">Game Cube Go · 0.2 · task 01.06</p>
-          <h1>Cube 2D gameplay integration</h1>
+          <p className="cube-2d-preview__kicker">Game Cube Go · 0.2 · task 01.07</p>
+          <h1>Cube 2D visual completion</h1>
           <p>
-            Six physical faces backed by one GameSession: PlaceStone, captures, Pass, Undo/Redo,
-            manual endgame classification, Chinese/Japanese scoring, and the shared result dialog.
+            Six physical faces backed by one GameSession, with capture flight effects,
+            endgame group presentation, persistent final territory shading, and dead-stone marking.
           </p>
         </div>
 
@@ -393,20 +469,31 @@ export function Cube2DPreview() {
       </section>
 
       <div className="cube-2d-preview__viewport">
-        <Cube2DRenderer
-          layout={layout}
-          diagnostics
-          transition={transition ?? undefined}
-          onVerticalAnchorColumnChange={moveVerticalAnchor}
-          viewModel={viewModel}
-          hoveredPointId={hoveredPointId}
-          hoverStatus={hoverStatus}
-          recentlyPlacedPointId={recentlyPlacedPointId}
-          showMoveNumbers={showMoveNumbers}
-          inputDisabled={isAnimating || viewModel.phase === 'finished'}
-          onPointHover={handlePointHover}
-          onPointActivate={(pointId) => void handlePointActivate(pointId)}
-        />
+        <div className="cube-2d-visual-stack">
+          <Cube2DRenderer
+            layout={layout}
+            diagnostics
+            transition={transition ?? undefined}
+            onVerticalAnchorColumnChange={moveVerticalAnchor}
+            viewModel={viewModel}
+            hoveredPointId={hoveredPointId}
+            hoverStatus={hoverStatus}
+            recentlyPlacedPointId={recentlyPlacedPointId}
+            showMoveNumbers={showMoveNumbers}
+            inputDisabled={isAnimating || viewModel.phase === 'finished'}
+            onPointHover={handlePointHover}
+            onPointActivate={(pointId) => void handlePointActivate(pointId)}
+          />
+          <Cube2DVisualEffects
+            layout={layout}
+            viewModel={viewModel}
+            endgameGroups={endgameRenderGroups}
+            hoveredGroupId={hoveredEndgameGroupId}
+            selectedGroupId={selectedGroupId}
+            captureEffects={captureEffects}
+            transition={transition ?? undefined}
+          />
+        </div>
       </div>
 
       <div className="cube-2d-preview__game-controls" role="group" aria-label="Cube game controls">

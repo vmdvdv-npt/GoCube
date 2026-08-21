@@ -1,0 +1,92 @@
+.cube-2d-visual-stack {
+  position: relative;
+  width: max-content;
+  height: max-content;
+}
+
+.cube-2d-visual-effects {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.cube-2d-territory-cell {
+  shape-rendering: crispEdges;
+}
+
+.cube-2d-territory-cell--black {
+  fill: #000;
+  opacity: 0.2;
+}
+
+.cube-2d-territory-cell--white {
+  fill: #fff;
+  opacity: 0.2;
+}
+
+.cube-2d-endgame-link,
+.cube-2d-endgame-status-ring,
+.cube-2d-endgame-group-hover,
+.cube-2d-endgame-group-selected {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.cube-2d-endgame-link {
+  stroke-width: 2px;
+  opacity: 0.72;
+}
+
+.cube-2d-endgame-link--alive,
+.cube-2d-endgame-status-ring--alive {
+  stroke: #9ed5af;
+}
+
+.cube-2d-endgame-link--dead,
+.cube-2d-endgame-status-ring--dead {
+  stroke: #cf5a5a;
+}
+
+.cube-2d-endgame-link--seki,
+.cube-2d-endgame-status-ring--seki {
+  stroke: #b7bcc1;
+  stroke-dasharray: 4 3;
+}
+
+.cube-2d-endgame-link--hovered {
+  opacity: 0.94;
+}
+
+.cube-2d-endgame-link--selected {
+  stroke-width: 3px;
+  opacity: 1;
+}
+
+.cube-2d-dead-stone {
+  fill: #ccb47d;
+  opacity: 0.62;
+}
+
+.cube-2d-endgame-status-ring {
+  stroke-width: 2px;
+  opacity: 0.82;
+}
+
+.cube-2d-endgame-group-hover {
+  stroke: rgb(240 244 247 / 72%);
+  stroke-width: 2px;
+}
+
+.cube-2d-endgame-group-selected {
+  stroke: #d0a35c;
+  stroke-width: 3px;
+}
+
+.cube-2d-capture-stone {
+  filter: drop-shadow(0 0.9px 1.2px rgb(0 0 0 / 42%));
+}
