@@ -121,11 +121,27 @@ export function App() {
             <p>Choose the board size, scoring rules, and komi.</p>
           </div>
 
-          <label>
-            Board size
+          <fieldset className="board-size-fieldset">
+            <legend>Board size</legend>
+            <div className="board-size-options">
+              {TORUS_SIZES.map((option) => (
+                <button
+                  type="button"
+                  key={option}
+                  className={size === option ? 'is-selected' : undefined}
+                  aria-pressed={size === option}
+                  onClick={() => setSize(option)}
+                >
+                  {option}×{option}
+                </button>
+              ))}
+            </div>
             <select
+              className="board-size-native-select"
+              aria-label="Board size"
               value={size}
               onChange={(event) => setSize(Number(event.target.value) as TorusSize)}
+              tabIndex={-1}
             >
               {TORUS_SIZES.map((option) => (
                 <option value={option} key={option}>
@@ -133,7 +149,7 @@ export function App() {
                 </option>
               ))}
             </select>
-          </label>
+          </fieldset>
 
           <label>
             Rules
@@ -156,7 +172,7 @@ export function App() {
             />
           </label>
 
-          <button type="submit">Start game</button>
+          <button className="start-game-button" type="submit">Start game</button>
         </form>
       ) : null}
 
