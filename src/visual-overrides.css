@@ -48,6 +48,20 @@
   fill: transparent;
 }
 
+/*
+ * Keep the familiar 2px grid on 9x9, make 13x13 only slightly lighter,
+ * and use a deliberately fine hairline grid on the dense 19x19 board.
+ * The same grid class is used during pan animation, so thickness stays stable
+ * while the board moves.
+ */
+.torus-board[aria-label^='13 by 13'] .torus-board__grid line {
+  stroke-width: 1.5px;
+}
+
+.torus-board[aria-label^='19 by 19'] .torus-board__grid line {
+  stroke-width: 0.8px;
+}
+
 .torus-board[aria-label^='9 by 9'][data-duplicate-regions-visible='false'] {
   --torus-board-edge-fit-scale: 1.09649;
 }
