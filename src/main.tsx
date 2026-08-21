@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './app/App';
 import './styles.css';
+import './visual-overrides.css';
 import './renderer2d/stone-placement.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
