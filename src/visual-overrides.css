@@ -6,6 +6,19 @@
   border: 1px solid rgb(203 140 50 / 30%);
 }
 
+/* Remove the old beige viewport frame so the app's dark background surrounds the board. */
+.torus-board-viewport {
+  border: 0;
+  background: transparent;
+}
+
+/* Make all classified endgame group markers twice as thick. */
+.torus-board__endgame-line[data-endgame-status='alive'],
+.torus-board__endgame-line[data-endgame-status='dead'],
+.torus-board__endgame-line[data-endgame-status='seki'] {
+  stroke-width: 4px;
+}
+
 /* Match the warm current-turn halo behind both captured-stone icons. */
 .game-statistics span:nth-child(4)::before,
 .game-statistics span:nth-child(5)::before {
