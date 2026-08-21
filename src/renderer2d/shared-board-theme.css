@@ -1,12 +1,20 @@
 :root {
   --go-board-texture: url('/assets/board/board-bg.jpg');
+  --cube-board-texture: url('/assets/board/cube.jpg');
   --go-board-grid: #3f3325;
   --go-board-surface: #d8ad68;
 }
 
+.torus-board {
+  background-image: var(--go-board-texture);
+}
+
+.cube-2d-game .cube-2d-board {
+  background-image: var(--cube-board-texture);
+}
+
 .torus-board,
 .cube-2d-game .cube-2d-board {
-  background-image: var(--go-board-texture);
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
