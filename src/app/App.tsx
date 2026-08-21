@@ -171,7 +171,7 @@ export function App() {
                 Cancel
               </button>
               <button type="button" onClick={() => void discardAndChooseSettings()}>
-                Choose settings
+                New Game
               </button>
             </div>
           </section>
