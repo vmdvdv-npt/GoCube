@@ -23,3 +23,41 @@
   padding-top: 7px;
   border-top: 1px solid rgb(255 255 255 / 5%);
 }
+
+/*
+ * The renderer keeps a fixed internal SVG padding, which made the wooden margin
+ * look progressively wider relative to one grid step on 13x13 and 19x19 boards.
+ * Scale the whole SVG inside its clipped viewport so the visible edge margin is
+ * consistently about 0.8 of one grid step. The existing inline transform remains
+ * the user's ViewState zoom; the independent `scale` property composes with it.
+ */
+.torus-board {
+  scale: var(--torus-board-edge-fit-scale, 1);
+  transition:
+    transform 120ms ease-out,
+    scale 120ms ease-out;
+}
+
+.torus-board[aria-label^='9 by 9'][data-duplicate-regions-visible='false'] {
+  --torus-board-edge-fit-scale: 1.09649;
+}
+
+.torus-board[aria-label^='9 by 9'][data-duplicate-regions-visible='true'] {
+  --torus-board-edge-fit-scale: 1.19617;
+}
+
+.torus-board[aria-label^='13 by 13'][data-duplicate-regions-visible='false'] {
+  --torus-board-edge-fit-scale: 1.16099;
+}
+
+.torus-board[aria-label^='13 by 13'][data-duplicate-regions-visible='true'] {
+  --torus-board-edge-fit-scale: 1.21832;
+}
+
+.torus-board[aria-label^='19 by 19'][data-duplicate-regions-visible='false'] {
+  --torus-board-edge-fit-scale: 1.20838;
+}
+
+.torus-board[aria-label^='19 by 19'][data-duplicate-regions-visible='true'] {
+  --torus-board-edge-fit-scale: 1.23951;
+}
