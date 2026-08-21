@@ -39,6 +39,52 @@
   transform-origin: top left;
 }
 
+/*
+ * One fixed board texture sits beneath the complete 4x3 Cube 2D coordinate field,
+ * but a two-part mask reveals it only through the six occupied face slots:
+ * the four-face horizontal row plus the current top/center/bottom anchor column.
+ * Empty slots therefore remain the application's dark background.
+ */
+.cube-2d-game .cube-2d-renderer {
+  --cube-texture-anchor-x: 190px;
+}
+
+.cube-2d-game .cube-2d-renderer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: var(--go-board-texture);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  -webkit-mask-image: linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+  -webkit-mask-position: 0 190px, var(--cube-texture-anchor-x) 0;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 190px, 190px 100%;
+  mask-image: linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+  mask-position: 0 190px, var(--cube-texture-anchor-x) 0;
+  mask-repeat: no-repeat;
+  mask-size: 100% 190px, 190px 100%;
+}
+
+.cube-2d-game .cube-2d-renderer[data-vertical-anchor-column='0'] {
+  --cube-texture-anchor-x: 0px;
+}
+
+.cube-2d-game .cube-2d-renderer[data-vertical-anchor-column='1'] {
+  --cube-texture-anchor-x: 190px;
+}
+
+.cube-2d-game .cube-2d-renderer[data-vertical-anchor-column='2'] {
+  --cube-texture-anchor-x: 380px;
+}
+
+.cube-2d-game .cube-2d-renderer[data-vertical-anchor-column='3'] {
+  --cube-texture-anchor-x: 570px;
+}
+
 .cube-2d-game .torus-pan:disabled {
   cursor: default;
   opacity: 0.38;
