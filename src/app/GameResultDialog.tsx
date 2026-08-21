@@ -42,37 +42,72 @@ export function GameResultDialog({ result, onClose }: GameResultDialogProps) {
     black: score.territory.black + prisoners.black,
     white: score.territory.white + prisoners.white,
   };
+  const boardLabel = statistics.boardSize
+    ? `${statistics.boardSize}×${statistics.boardSize}`
+    : 'Board size unavailable';
 
   return (
     <div className="result-dialog-backdrop" role="presentation">
       <section
         ref={dialogRef}
         className="result-dialog"
+        data-winner={score.winner}
         role="dialog"
         aria-modal="true"
         aria-labelledby="game-result-title"
         tabIndex={-1}
       >
-        <header className="result-dialog__header">
-          <div>
-            <p className="result-dialog__eyebrow">Final result</p>
-            <h2 id="game-result-title">{winnerLabel(result)}</h2>
-            <p>
-              Black {score.black} · White {score.white}
-            </p>
+        <div className="result-dialog__hero">
+          <header className="result-dialog__header">
+            <div className="result-dialog__winner-mark" aria-hidden="true">
+              {score.winner === 'draw' ? (
+                <span className="result-dialog__draw-mark">=</span>
+              ) : (
+                <span className={`stone-chip stone-chip--${score.winner}`} />
+              )}
+            </div>
+            <div className="result-dialog__title-block">
+              <p className="result-dialog__eyebrow">Final result</p>
+              <h2 id="game-result-title">{winnerLabel(result)}</h2>
+              <p className="result-dialog__meta">
+                {rulesLabel(result)} scoring <span aria-hidden="true">·</span> {boardLabel}
+              </p>
+            </div>
+            <button
+              className="result-dialog__close"
+              type="button"
+              aria-label="Close game result"
+              onClick={onClose}
+            >
+              ×
+            </button>
+          </header>
+
+          <div className="result-dialog__score-summary" aria-label="Final scores">
+            <div className={`result-score-card${score.winner === 'black' ? ' is-winner' : ''}`}>
+              <div className="result-score-card__identity">
+                <span className="stone-chip stone-chip--black" aria-hidden="true" />
+                <span>Black</span>
+              </div>
+              <strong>{score.black}</strong>
+              {score.winner === 'black' ? <span className="result-score-card__badge">Winner</span> : null}
+            </div>
+            <div className={`result-score-card${score.winner === 'white' ? ' is-winner' : ''}`}>
+              <div className="result-score-card__identity">
+                <span className="stone-chip stone-chip--white" aria-hidden="true" />
+                <span>White</span>
+              </div>
+              <strong>{score.white}</strong>
+              {score.winner === 'white' ? <span className="result-score-card__badge">Winner</span> : null}
+            </div>
           </div>
-          <button
-            className="result-dialog__close"
-            type="button"
-            aria-label="Close game result"
-            onClick={onClose}
-          >
-            ×
-          </button>
-        </header>
+        </div>
 
         <section className="result-dialog__section" aria-labelledby="score-breakdown-title">
-          <h3 id="score-breakdown-title">Score breakdown</h3>
+          <div className="result-dialog__section-heading">
+            <p className="result-dialog__section-kicker">Scoring</p>
+            <h3 id="score-breakdown-title">Score breakdown</h3>
+          </div>
           <div className="result-score-table" role="table" aria-label="Final score breakdown">
             <div className="result-score-table__row result-score-table__header" role="row">
               <span role="columnheader">Component</span>
@@ -137,7 +172,10 @@ export function GameResultDialog({ result, onClose }: GameResultDialogProps) {
         </section>
 
         <section className="result-dialog__section" aria-labelledby="match-statistics-title">
-          <h3 id="match-statistics-title">Game statistics</h3>
+          <div className="result-dialog__section-heading">
+            <p className="result-dialog__section-kicker">Match</p>
+            <h3 id="match-statistics-title">Game statistics</h3>
+          </div>
           <dl className="result-statistics-grid">
             <div>
               <dt>Actions</dt>
@@ -183,6 +221,7 @@ export function GameResultDialog({ result, onClose }: GameResultDialogProps) {
         </section>
 
         <footer className="result-dialog__footer">
+          <span>Final position remains available for review after closing.</span>
           <button type="button" onClick={onClose}>Close</button>
         </footer>
       </section>
