@@ -6,6 +6,15 @@
   border: 1px solid rgb(203 140 50 / 30%);
 }
 
+/* Match the warm current-turn halo behind both captured-stone icons. */
+.game-statistics span:nth-child(4)::before,
+.game-statistics span:nth-child(5)::before {
+  box-shadow:
+    0 4px 8px rgb(0 0 0 / 32%),
+    0 0 0 3px rgb(211 144 46 / 8%),
+    0 0 18px rgb(211 144 46 / 28%);
+}
+
 .torus-duplicates-control {
   display: grid;
   align-items: stretch;
