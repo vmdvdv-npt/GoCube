@@ -68,3 +68,39 @@ test('new game uses board-size buttons and keeps Japanese rules as the default',
   await expect(page.getByLabel('Rules').locator('option')).toHaveText(['Japanese', 'Chinese']);
   await expect(page.getByLabel('Rules')).toHaveValue('japanese');
 });
+
+test('Cube 2D adds 6×6 and 7×7 beside 5×5 in the second size row', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
+
+  const size5 = page.getByRole('button', { name: '5×5', exact: true });
+  const size6 = page.getByRole('button', { name: '6×6', exact: true });
+  const size7 = page.getByRole('button', { name: '7×7', exact: true });
+
+  await expect(size5).toBeVisible();
+  await expect(size6).toBeVisible();
+  await expect(size7).toBeVisible();
+
+  const [size5Box, size6Box, size7Box] = await Promise.all([
+    size5.boundingBox(),
+    size6.boundingBox(),
+    size7.boundingBox(),
+  ]);
+  expect(size5Box).not.toBeNull();
+  expect(size6Box).not.toBeNull();
+  expect(size7Box).not.toBeNull();
+  if (size5Box && size6Box && size7Box) {
+    expect(size5Box.y).toBeCloseTo(size6Box.y, 0);
+    expect(size6Box.y).toBeCloseTo(size7Box.y, 0);
+    expect(size5Box.x).toBeLessThan(size6Box.x);
+    expect(size6Box.x).toBeLessThan(size7Box.x);
+  }
+
+  await size6.click();
+  await expect(size6).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('Board size')).toHaveValue('6');
+
+  await size7.click();
+  await expect(size7).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('Board size')).toHaveValue('7');
+});

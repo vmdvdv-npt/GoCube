@@ -1,6 +1,6 @@
 import type { PointId, Topology } from './Topology';
 
-export const CUBE_SIZES = [2, 3, 4, 5] as const;
+export const CUBE_SIZES = [2, 3, 4, 5, 6, 7] as const;
 export type CubeSize = (typeof CUBE_SIZES)[number];
 
 export const CUBE_FACES = ['front', 'back', 'left', 'right', 'top', 'bottom'] as const;

@@ -159,8 +159,8 @@ describe.each(CUBE_SIZES)('CubeTopology %dx%d', (size: CubeSize) => {
 });
 
 describe('CubeTopology validation', () => {
-  it('rejects sizes outside 2x2, 3x3, 4x4, and 5x5 at runtime', () => {
-    for (const size of [0, 1, 6, 9, 2.5]) {
+  it('rejects sizes outside 2x2 through 7x7 at runtime', () => {
+    for (const size of [0, 1, 8, 9, 2.5]) {
       expect(() => new CubeTopology(size as CubeSize)).toThrow(/Unsupported cube size/);
     }
   });
