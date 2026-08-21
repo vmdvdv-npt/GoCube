@@ -31,10 +31,10 @@ test('last stone keeps a contrast dot while move numbers preserve pass gaps', as
   await expect(marker(page, '1,0')).toHaveCount(1);
   await expect(marker(page, '1,0')).toHaveAttribute('fill', '#111111');
 
-  const toggle = page.getByRole('button', { name: 'Номера ходов' });
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
-  await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  const toggle = page.getByLabel('Номера ходов');
+  await expect(toggle).not.toBeChecked();
+  await toggle.check();
+  await expect(toggle).toBeChecked();
   await expect(moveNumber(page, '0,0')).toHaveText('1');
   await expect(moveNumber(page, '1,0')).toHaveCount(0);
   await expect(marker(page, '1,0')).toHaveCount(1);
@@ -59,7 +59,7 @@ test('annotations are synchronized to duplicate copies and survive smooth pan', 
   await startGame(page);
   await point(page, '0,0').click();
   await point(page, '1,0').click();
-  await page.getByRole('button', { name: 'Номера ходов' }).click();
+  await page.getByLabel('Номера ходов').check();
   await page.getByLabel('Показывать дублирующие области').check();
 
   const stoneCopies = page.locator('.torus-board__stone[data-logical-point-id="1,0"]');
