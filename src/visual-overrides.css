@@ -5,3 +5,16 @@
 .turn-indicator {
   border: 1px solid rgb(203 140 50 / 30%);
 }
+
+.torus-duplicates-control {
+  display: grid;
+  align-items: stretch;
+  gap: 7px;
+}
+
+.torus-duplicates-control label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
