@@ -57,13 +57,21 @@
   clip-path: inset(9.25%);
 }
 
+.cube-2d-game .cube-2d-renderer[data-cube-size='6'] .cube-2d-board__grid {
+  clip-path: inset(7.5833%);
+}
+
+.cube-2d-game .cube-2d-renderer[data-cube-size='7'] .cube-2d-board__grid {
+  clip-path: inset(6.3929%);
+}
+
 /*
  * Cube 2D only: tune the playable content independently from the JPEG face.
- * 2x2 and 3x3 use the current baseline. 4x4 shrinks slightly and 5x5 shrinks
- * further inward so the outer stones stay clear of the bevel in the board
- * artwork. The JPEG itself and the physical face size do not change. Scaling
- * the hit-area group together with the visible content keeps hover/click
- * targeting aligned with the rendered intersections.
+ * 2x2 and 3x3 use the current baseline. Larger boards shrink progressively so
+ * the outer stones stay clear of the bevel in the board artwork. The JPEG itself
+ * and the physical face size do not change. Scaling the hit-area group together
+ * with the visible content keeps hover/click targeting aligned with the rendered
+ * intersections.
  */
 .cube-2d-game .cube-2d-renderer[data-cube-size='2'] {
   --cube-2d-content-scale: 1;
@@ -79,6 +87,14 @@
 
 .cube-2d-game .cube-2d-renderer[data-cube-size='5'] {
   --cube-2d-content-scale: 0.85;
+}
+
+.cube-2d-game .cube-2d-renderer[data-cube-size='6'] {
+  --cube-2d-content-scale: 0.8;
+}
+
+.cube-2d-game .cube-2d-renderer[data-cube-size='7'] {
+  --cube-2d-content-scale: 0.78;
 }
 
 .cube-2d-game .cube-2d-board__grid,
