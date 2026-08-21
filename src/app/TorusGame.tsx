@@ -93,6 +93,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const rendererRef = useRef<Torus2DRenderer | null>(null);
   const actionInFlight = useRef(false);
+  const previewedMovePointRef = useRef<string | null>(null);
 
   const renderGroups = useMemo<readonly EndgameGroupRenderState[]>(
     () =>
@@ -117,6 +118,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
 
   useEffect(() => {
     rendererRef.current = null;
+    previewedMovePointRef.current = null;
     const nextViewModel = controller.viewModel();
     setViewModel(nextViewModel);
     setFeedback(null);
@@ -216,6 +218,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   }, [controller, showMoveNumbers, viewModel]);
 
   const applyResult = (result: TorusGameActionResult): void => {
+    previewedMovePointRef.current = null;
     rendererRef.current?.setMovePreview(null);
     setViewModel(result.viewModel);
     setFeedback(result.accepted ? null : rejectionLabel(result.reason));
@@ -280,19 +283,24 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     if (viewModel.phase !== 'playing') return;
 
     const renderer = rendererRef.current;
-    const hit = renderer?.visualPointFromClientPosition(event.clientX, event.clientY);
-    if (!renderer || !hit) return;
+    if (!renderer) return;
 
-    const availability = controller.moveAvailability(hit.logicalPointId);
+    const exactHit = renderer.visualPointFromClientPosition(event.clientX, event.clientY);
+    const logicalPointId = previewedMovePointRef.current ?? exactHit?.logicalPointId ?? null;
+    if (!logicalPointId) return;
+
+    const availability = controller.moveAvailability(logicalPointId);
     if (!availability.allowed) {
-      // Forbidden and occupied clicks are intentionally silent and state-neutral.
+      previewedMovePointRef.current = null;
+      renderer.setMovePreview(null);
       return;
     }
 
+    previewedMovePointRef.current = null;
     renderer.setMovePreview(null);
     actionInFlight.current = true;
     try {
-      applyResult(await controller.placeStone(hit.logicalPointId));
+      applyResult(await controller.placeStone(logicalPointId));
     } finally {
       actionInFlight.current = false;
     }
@@ -304,26 +312,31 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     if (viewModel.phase === 'playing') {
       if (hoveredGroupId !== null) setHoveredGroupId(null);
       if (!renderer || actionInFlight.current) {
+        previewedMovePointRef.current = null;
         renderer?.setMovePreview(null);
         return;
       }
 
       const hit = renderer.hoverVisualPointFromClientPosition(event.clientX, event.clientY);
       if (!hit) {
+        previewedMovePointRef.current = null;
         renderer.setMovePreview(null);
         return;
       }
 
       const availability = controller.moveAvailability(hit.logicalPointId);
       if (availability.allowed) {
+        previewedMovePointRef.current = hit.logicalPointId;
         renderer.setMovePreview({
           kind: 'legal',
           logicalPointId: hit.logicalPointId,
           color: viewModel.currentPlayer,
         });
       } else if (availability.reason === 'occupied') {
+        previewedMovePointRef.current = null;
         renderer.setMovePreview(null);
       } else {
+        previewedMovePointRef.current = null;
         renderer.setMovePreview({
           kind: 'forbidden',
           logicalPointId: hit.logicalPointId,
@@ -336,6 +349,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
       return;
     }
 
+    previewedMovePointRef.current = null;
     renderer?.setMovePreview(null);
     if (viewModel.phase !== 'endgame') {
       if (hoveredGroupId !== null) setHoveredGroupId(null);
@@ -350,12 +364,14 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   };
 
   const handleBoardMouseLeave = (): void => {
+    previewedMovePointRef.current = null;
     rendererRef.current?.setMovePreview(null);
     if (hoveredGroupId !== null) setHoveredGroupId(null);
   };
 
   const handlePan = (direction: Torus2DPanDirection): void => {
     const renderer = rendererRef.current;
+    previewedMovePointRef.current = null;
     renderer?.setMovePreview(null);
     renderer?.pan(direction);
   };
