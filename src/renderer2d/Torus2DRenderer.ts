@@ -94,11 +94,27 @@ export interface Torus2DEndgameLineStyle {
   readonly opacity: number;
 }
 
+export interface Torus2DCaptureEffect {
+  readonly kind: 'flight' | 'fade';
+  readonly logicalPointId: PointId;
+  readonly color: StoneColor;
+  readonly x: number;
+  readonly y: number;
+  readonly targetX: number;
+  readonly targetY: number;
+  readonly delayMs: number;
+  readonly durationMs: number;
+  readonly duplicate: boolean;
+}
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const VIEW_BOX_SIZE = 1000;
 const BOARD_PADDING = 120;
 const DUPLICATE_MARGIN = 4;
 export const TORUS_PAN_ANIMATION_DURATION_MS = 240;
+export const TORUS_CAPTURE_FLIGHT_STAGGER_MS = 150;
+export const TORUS_CAPTURE_FLIGHT_DURATION_MS = 460;
+export const TORUS_CAPTURE_DUPLICATE_FADE_DURATION_MS = 180;
 export const TORUS_ENDGAME_LINE_WIDTH_PX = 2;
 export const TORUS_FORBIDDEN_MARKER_SCALE = 1 / 2.25;
 const ENDGAME_HIT_TOLERANCE_PX = 8;
@@ -177,6 +193,8 @@ const easeInOutCubic = (progress: number): number =>
   progress < 0.5
     ? 4 * progress * progress * progress
     : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+const easeOutCubic = (progress: number): number => 1 - Math.pow(1 - progress, 3);
 
 const freezeLine = (line: Torus2DGridLine): Torus2DGridLine => Object.freeze(line);
 
@@ -508,6 +526,93 @@ export const endgameLineStyle = (
   });
 };
 
+export const buildTorus2DCaptureEffects = (
+  previousViewModel: GameViewModel | null,
+  nextViewModel: GameViewModel,
+  previousScene: Torus2DScene | null,
+): readonly Torus2DCaptureEffect[] => {
+  if (!previousViewModel || !previousScene) return Object.freeze([]);
+  if (nextViewModel.moveNumber !== previousViewModel.moveNumber + 1) {
+    return Object.freeze([]);
+  }
+
+  const blackCaptureDelta = nextViewModel.captures.black - previousViewModel.captures.black;
+  const whiteCaptureDelta = nextViewModel.captures.white - previousViewModel.captures.white;
+  if (blackCaptureDelta < 0 || whiteCaptureDelta < 0) return Object.freeze([]);
+
+  const totalCaptureDelta = blackCaptureDelta + whiteCaptureDelta;
+  if (totalCaptureDelta <= 0) return Object.freeze([]);
+
+  const nextOccupancy = new Map(
+    nextViewModel.points.map((point) => [point.logicalPointId, point.occupancy]),
+  );
+  const removed = previousViewModel.points
+    .filter(
+      (point) =>
+        point.occupancy !== 'empty' && nextOccupancy.get(point.logicalPointId) === 'empty',
+    )
+    .map((point) => ({ logicalPointId: point.logicalPointId, color: point.occupancy as StoneColor }))
+    .sort((left, right) => left.logicalPointId.localeCompare(right.logicalPointId));
+
+  if (removed.length !== totalCaptureDelta) return Object.freeze([]);
+  if (
+    removed.some((stone) =>
+      stone.color === 'white' ? blackCaptureDelta <= 0 : whiteCaptureDelta <= 0,
+    )
+  ) {
+    return Object.freeze([]);
+  }
+  if (
+    removed.filter((stone) => stone.color === 'white').length !== blackCaptureDelta ||
+    removed.filter((stone) => stone.color === 'black').length !== whiteCaptureDelta
+  ) {
+    return Object.freeze([]);
+  }
+
+  const sequence = new Map<PointId, number>(
+    removed.map((stone, index) => [stone.logicalPointId, index]),
+  );
+  const removedColor = new Map<PointId, StoneColor>(
+    removed.map((stone) => [stone.logicalPointId, stone.color]),
+  );
+  const effects: Torus2DCaptureEffect[] = [];
+
+  for (const point of previousScene.visualPoints) {
+    const color = removedColor.get(point.logicalPointId);
+    const sequenceIndex = sequence.get(point.logicalPointId);
+    if (!color || sequenceIndex === undefined) continue;
+
+    const targetX =
+      color === 'white'
+        ? -previousScene.stoneRadius * 1.5
+        : previousScene.viewBoxSize + previousScene.stoneRadius * 1.5;
+    const horizontalDistance = Math.abs(targetX - point.x);
+    const upwardDistance = Math.min(
+      previousScene.spacing * 1.1,
+      Math.max(previousScene.spacing * 0.3, horizontalDistance * 0.16),
+    );
+
+    effects.push(
+      Object.freeze({
+        kind: point.duplicate ? 'fade' : 'flight',
+        logicalPointId: point.logicalPointId,
+        color,
+        x: point.x,
+        y: point.y,
+        targetX,
+        targetY: point.y - upwardDistance,
+        delayMs: sequenceIndex * TORUS_CAPTURE_FLIGHT_STAGGER_MS,
+        durationMs: point.duplicate
+          ? TORUS_CAPTURE_DUPLICATE_FADE_DURATION_MS
+          : TORUS_CAPTURE_FLIGHT_DURATION_MS,
+        duplicate: point.duplicate,
+      }),
+    );
+  }
+
+  return Object.freeze(effects);
+};
+
 const distanceSquaredToSegment = (
   x: number,
   y: number,
@@ -553,6 +658,7 @@ let torusRendererInstanceCounter = 0;
 export class Torus2DRenderer implements Renderer2D {
   private scene: Torus2DScene | null = null;
   private currentViewModel: GameViewModel | null = null;
+  private renderedViewModel: GameViewModel | null = null;
   private currentViewState: Torus2DViewState = DEFAULT_VIEW_STATE;
   private showDuplicateRegions = false;
   private movePreview: Torus2DMovePreview | null = null;
@@ -560,6 +666,7 @@ export class Torus2DRenderer implements Renderer2D {
   private endgameOverlay: Torus2DEndgameOverlay = EMPTY_ENDGAME_OVERLAY;
   private endgameSegments: readonly Torus2DEndgameSegment[] = Object.freeze([]);
   private panAnimating = false;
+  private captureAnimationGeneration = 0;
   private readonly panClipPrefix: string;
 
   constructor(
@@ -623,13 +730,21 @@ export class Torus2DRenderer implements Renderer2D {
     this.currentViewModel = viewModel;
     if (this.panAnimating) return;
 
+    const previousScene = this.scene;
+    const previousRenderedViewModel = this.renderedViewModel;
     const scene = buildTorus2DScene(
       viewModel,
       this.size,
       this.currentViewState,
       this.showDuplicateRegions,
     );
+    const captureEffects = buildTorus2DCaptureEffects(
+      previousRenderedViewModel,
+      viewModel,
+      previousScene,
+    );
     this.scene = scene;
+    this.renderedViewModel = viewModel;
     this.endgameSegments = buildTorus2DEndgameSegments(scene, this.endgameOverlay);
 
     this.svg.setAttribute('viewBox', `0 0 ${scene.viewBoxSize} ${scene.viewBoxSize}`);
@@ -751,6 +866,7 @@ export class Torus2DRenderer implements Renderer2D {
       ...(this.endgameSegments.length > 0 ? [endgameLines] : []),
     );
     this.renderMovePreview();
+    this.startCaptureAnimation(captureEffects);
   }
 
   visualPointFromClientPosition(x: number, y: number): Torus2DVisualHit | null {
@@ -782,6 +898,98 @@ export class Torus2DRenderer implements Renderer2D {
     const local = this.clientToViewBox(x, y);
     if (!local) return null;
     return endgameGroupFromTorusViewBoxPosition(this.endgameSegments, local.x, local.y);
+  }
+
+  private startCaptureAnimation(effects: readonly Torus2DCaptureEffect[]): void {
+    if (effects.length === 0 || !this.scene) {
+      this.svg.setAttribute('data-capture-animating', 'false');
+      return;
+    }
+
+    const animationWindow = this.svg.ownerDocument.defaultView;
+    if (!animationWindow || typeof animationWindow.requestAnimationFrame !== 'function') {
+      this.svg.setAttribute('data-capture-animating', 'false');
+      return;
+    }
+
+    const generation = this.captureAnimationGeneration + 1;
+    this.captureAnimationGeneration = generation;
+    const document = this.svg.ownerDocument;
+    const layer = document.createElementNS(SVG_NS, 'g');
+    layer.setAttribute('class', 'torus-board__capture-effects');
+    layer.setAttribute('pointer-events', 'none');
+    const animated = effects.map((effect) => {
+      const stone = document.createElementNS(SVG_NS, 'circle');
+      setAttributes(stone, {
+        cx: String(effect.x),
+        cy: String(effect.y),
+        r: String(this.scene!.stoneRadius),
+        fill: effect.color === 'black' ? '#111111' : '#f5f5f2',
+        stroke: '#111111',
+        'stroke-width': '2',
+        'vector-effect': 'non-scaling-stroke',
+        'pointer-events': 'none',
+        opacity: '1',
+        'data-logical-point-id': effect.logicalPointId,
+        'data-occupancy': effect.color,
+        'data-copy-role': effect.duplicate ? 'duplicate' : 'primary',
+        'data-capture-effect': effect.kind,
+        'data-capture-direction': effect.color === 'white' ? 'left' : 'right',
+        'data-capture-delay-ms': String(effect.delayMs),
+        class: `torus-board__captured-stone torus-board__captured-stone--${effect.kind} torus-board__captured-stone--${effect.color}`,
+      });
+      layer.appendChild(stone);
+      return Object.freeze({ effect, stone });
+    });
+
+    this.svg.appendChild(layer);
+    this.svg.setAttribute('data-capture-animating', 'true');
+    this.svg.setAttribute(
+      'data-capture-count',
+      String(new Set(effects.map((effect) => effect.logicalPointId)).size),
+    );
+
+    const animationEnd = Math.max(
+      ...effects.map((effect) => effect.delayMs + effect.durationMs),
+    );
+    let startedAt: number | null = null;
+
+    const frame = (timestamp: number): void => {
+      if (generation !== this.captureAnimationGeneration) {
+        layer.remove();
+        return;
+      }
+      if (startedAt === null) startedAt = timestamp;
+      const elapsed = timestamp - startedAt;
+
+      for (const { effect, stone } of animated) {
+        const localElapsed = elapsed - effect.delayMs;
+        const progress = Math.max(0, Math.min(1, localElapsed / effect.durationMs));
+        if (effect.kind === 'fade') {
+          stone.setAttribute('opacity', String(1 - easeInOutCubic(progress)));
+          continue;
+        }
+
+        const eased = easeOutCubic(progress);
+        const dx = (effect.targetX - effect.x) * eased;
+        const dy = (effect.targetY - effect.y) * eased;
+        stone.setAttribute('transform', `translate(${dx} ${dy})`);
+        const fadeProgress = progress <= 0.78 ? 0 : (progress - 0.78) / 0.22;
+        stone.setAttribute('opacity', String(1 - Math.min(1, fadeProgress)));
+      }
+
+      if (elapsed < animationEnd) {
+        animationWindow.requestAnimationFrame(frame);
+        return;
+      }
+
+      layer.remove();
+      if (generation === this.captureAnimationGeneration) {
+        this.svg.setAttribute('data-capture-animating', 'false');
+      }
+    };
+
+    animationWindow.requestAnimationFrame(frame);
   }
 
   private startPanAnimation(
