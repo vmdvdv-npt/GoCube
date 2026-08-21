@@ -12,7 +12,6 @@ import {
 } from '../presentation/EndgameGroupPresentation';
 import { GameResultDialog } from './GameResultDialog';
 import './manual-endgame.css';
-import './pass-guard.css';
 import {
   isTorus2DPrimaryBoardClientPosition,
   renderTorus2DEdgeDuplicates,
@@ -33,16 +32,11 @@ const ENDGAME_STATUSES: readonly GroupStatus[] = ['alive', 'dead', 'seki'];
 const TORUS_ZOOM_MIN = 0.7;
 const TORUS_ZOOM_MAX = 2.5;
 const TORUS_ZOOM_WHEEL_SENSITIVITY = 0.0015;
-const PASS_GUARD_DURATION_MS = 3000;
+const PASS_GUARD_DURATION_MS = 1000;
 const PASS_GUARD_TICK_MS = 100;
-
-type PlayerColor = 'black' | 'white';
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
-
-const previousPlayer = (currentPlayer: PlayerColor): PlayerColor =>
-  currentPlayer === 'black' ? 'white' : 'black';
 
 const rejectionLabel = (reason: TorusGameActionResult['reason']): string | null => {
   if (!reason) return null;
@@ -60,6 +54,8 @@ const rejectionLabel = (reason: TorusGameActionResult['reason']): string | null 
       return 'The game is not accepting moves.';
     case 'nothing-to-undo':
       return 'There is no action to undo.';
+    case 'nothing-to-redo':
+      return 'There is no action to redo.';
   }
 };
 
@@ -87,11 +83,6 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const [showDuplicateRegions, setShowDuplicateRegions] = useState(false);
   const [showMoveNumbers, setShowMoveNumbers] = useState(false);
   const [viewZoom, setViewZoom] = useState(1);
-  const [previousPassPlayer, setPreviousPassPlayer] = useState<PlayerColor | null>(() =>
-    initialViewModel.phase === 'playing' && initialViewModel.consecutivePasses === 1
-      ? previousPlayer(initialViewModel.currentPlayer)
-      : null,
-  );
   const [passGuardUntil, setPassGuardUntil] = useState<number | null>(null);
   const [passGuardRemainingMs, setPassGuardRemainingMs] = useState(0);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -134,11 +125,6 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     setViewZoom(1);
     setPassGuardUntil(null);
     setPassGuardRemainingMs(0);
-    setPreviousPassPlayer(
-      nextViewModel.phase === 'playing' && nextViewModel.consecutivePasses === 1
-        ? previousPlayer(nextViewModel.currentPlayer)
-        : null,
-    );
     setResultOpen(nextViewModel.phase === 'finished');
     setEndgameGroups(
       nextViewModel.phase === 'endgame' ? controller.endgameGroups() : [],
@@ -248,15 +234,10 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     setFeedback(result.accepted ? null : rejectionLabel(result.reason));
     setResultOpen(result.viewModel.phase === 'finished' && Boolean(result.viewModel.finalScore));
 
-    if (result.viewModel.phase === 'playing') {
-      if (result.viewModel.consecutivePasses === 0) {
-        setPreviousPassPlayer(null);
-        setPassGuardUntil(null);
-      } else if (result.viewModel.consecutivePasses === 1) {
-        setPreviousPassPlayer(previousPlayer(result.viewModel.currentPlayer));
-      }
-    } else {
-      setPreviousPassPlayer(null);
+    if (
+      result.viewModel.phase !== 'playing' ||
+      result.viewModel.consecutivePasses === 0
+    ) {
       setPassGuardUntil(null);
     }
 
@@ -439,7 +420,6 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
       return;
     }
 
-    const passingPlayer = viewModel.currentPlayer;
     actionInFlight.current = true;
     try {
       const result = await controller.pass();
@@ -449,7 +429,6 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         result.viewModel.phase === 'playing' &&
         result.viewModel.consecutivePasses === 1
       ) {
-        setPreviousPassPlayer(passingPlayer);
         setPassGuardRemainingMs(PASS_GUARD_DURATION_MS);
         setPassGuardUntil(Date.now() + PASS_GUARD_DURATION_MS);
       }
@@ -464,6 +443,17 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     actionInFlight.current = true;
     try {
       applyResult(await controller.undo());
+    } finally {
+      actionInFlight.current = false;
+    }
+  };
+
+  const handleRedo = async (): Promise<void> => {
+    if (actionInFlight.current) return;
+
+    actionInFlight.current = true;
+    try {
+      applyResult(await controller.redo());
     } finally {
       actionInFlight.current = false;
     }
@@ -489,7 +479,6 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const allGroupsClassified = endgameGroups.every((group) => Boolean(decisions[group.id]));
   const gameResult = viewModel.phase === 'finished' ? controller.resultModel() : null;
   const passGuardActive = passGuardRemainingMs > 0;
-  const passGuardProgress = PASS_GUARD_DURATION_MS - passGuardRemainingMs;
   const stageLabel =
     viewModel.phase === 'playing'
       ? `${viewModel.currentPlayer === 'black' ? 'Black' : 'White'} to move`
@@ -594,41 +583,29 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
 
       <div className="game-controls">
         <button
+          className="pass-control"
           type="button"
           onClick={() => void handlePass()}
           disabled={viewModel.phase !== 'playing' || passGuardActive}
         >
-          Pass
+          {viewModel.phase === 'playing' && viewModel.consecutivePasses === 1 ? 'Pass (1)' : 'Pass'}
         </button>
-        {previousPassPlayer && viewModel.phase === 'playing' ? (
-          <div className="pass-guard" aria-live="polite">
-            <div className="pass-guard__label">
-              <strong>
-                Previous pass: {previousPassPlayer === 'black' ? 'Black' : 'White'}
-              </strong>
-              {passGuardActive ? (
-                <span className="pass-guard__countdown">
-                  {(passGuardRemainingMs / 1000).toFixed(1)}s
-                </span>
-              ) : null}
-            </div>
-            {passGuardActive ? (
-              <progress
-                className="pass-guard__progress"
-                aria-label="Pass cooldown"
-                max={PASS_GUARD_DURATION_MS}
-                value={passGuardProgress}
-              />
-            ) : null}
-          </div>
-        ) : null}
-        <button
-          type="button"
-          onClick={() => void handleUndo()}
-          disabled={viewModel.moveNumber === 0}
-        >
-          Undo
-        </button>
+        <div className="history-controls" role="group" aria-label="Move history controls">
+          <button
+            type="button"
+            onClick={() => void handleRedo()}
+            disabled={!controller.canRedo()}
+          >
+            Redo
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleUndo()}
+            disabled={!controller.canUndo()}
+          >
+            Undo
+          </button>
+        </div>
         {gameResult && !resultOpen ? (
           <button
             className="game-result-control"
