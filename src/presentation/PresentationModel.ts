@@ -6,6 +6,8 @@ import type { PointId } from '../core/topology/Topology';
 export interface GameViewPoint {
   readonly logicalPointId: PointId;
   readonly occupancy: PointOccupancy;
+  /** Action number that placed the currently visible stone. Present when history is available. */
+  readonly moveNumber?: number | null;
 }
 
 export interface GameViewModel {
@@ -18,12 +20,16 @@ export interface GameViewModel {
   readonly ruleSet: RuleSet;
   readonly komi: number;
   readonly finalScore: FinalScore | null;
+  /** Logical point of the most recently placed stone. Passes do not change it. */
+  readonly lastMovePointId?: PointId | null;
 }
 
 export interface PresentationContext {
   readonly ruleSet: RuleSet;
   readonly komi: number;
   readonly finalScore: FinalScore | null;
+  /** Optional session history used only to derive presentation metadata such as stone numbers. */
+  readonly history?: readonly GameState[];
 }
 
 export interface PresentationSessionSource {
@@ -69,6 +75,47 @@ const cloneFinalScore = (score: FinalScore): FinalScore =>
     margin: score.margin,
   });
 
+interface StoneMoveMetadata {
+  readonly moveNumbers: ReadonlyMap<PointId, number>;
+  readonly lastMovePointId: PointId | null;
+}
+
+const deriveStoneMoveMetadata = (
+  history: readonly GameState[],
+  currentState: GameState,
+): StoneMoveMetadata => {
+  const moveNumbers = new Map<PointId, number>();
+  let lastMovePointId: PointId | null = null;
+
+  for (let index = 1; index < history.length; index += 1) {
+    const previous = history[index - 1]!;
+    const next = history[index]!;
+    const placedPoints = Object.keys(next.board).filter(
+      (point) => previous.board[point] === 'empty' && next.board[point] !== 'empty',
+    );
+
+    if (next.moveNumber === previous.moveNumber + 1 && placedPoints.length === 1) {
+      const placedPoint = placedPoints[0]!;
+      moveNumbers.set(placedPoint, next.moveNumber);
+      lastMovePointId = placedPoint;
+    }
+
+    for (const point of Object.keys(next.board)) {
+      if (next.board[point] === 'empty') moveNumbers.delete(point);
+    }
+  }
+
+  for (const point of Object.keys(currentState.board)) {
+    if (currentState.board[point] === 'empty') moveNumbers.delete(point);
+  }
+
+  if (lastMovePointId && currentState.board[lastMovePointId] === 'empty') {
+    lastMovePointId = null;
+  }
+
+  return Object.freeze({ moveNumbers, lastMovePointId });
+};
+
 export class PresentationModel {
   fromSession(session: PresentationSessionSource): GameViewModel {
     const snapshot = session.snapshot();
@@ -76,20 +123,35 @@ export class PresentationModel {
       ruleSet: snapshot.ruleSet,
       komi: snapshot.komi,
       finalScore: snapshot.finalScore,
+      history: snapshot.history,
     });
   }
 
   create(state: GameState, context: PresentationContext): GameViewModel {
+    const stoneMetadata = context.history
+      ? deriveStoneMoveMetadata(context.history, state)
+      : null;
     const points = Object.keys(state.board)
       .sort(comparePointIds)
-      .map((logicalPointId) =>
-        Object.freeze({
+      .map((logicalPointId) => {
+        const point = {
           logicalPointId,
           occupancy: state.board[logicalPointId]!,
-        }),
-      );
+        };
+        return Object.freeze(
+          stoneMetadata
+            ? {
+                ...point,
+                moveNumber:
+                  state.board[logicalPointId] === 'empty'
+                    ? null
+                    : stoneMetadata.moveNumbers.get(logicalPointId) ?? null,
+              }
+            : point,
+        );
+      });
 
-    return Object.freeze({
+    const viewModel = {
       points: Object.freeze(points),
       currentPlayer: state.currentPlayer,
       moveNumber: state.moveNumber,
@@ -102,6 +164,12 @@ export class PresentationModel {
         state.phase === 'finished' && context.finalScore
           ? cloneFinalScore(context.finalScore)
           : null,
-    });
+    };
+
+    return Object.freeze(
+      stoneMetadata
+        ? { ...viewModel, lastMovePointId: stoneMetadata.lastMovePointId }
+        : viewModel,
+    );
   }
 }
