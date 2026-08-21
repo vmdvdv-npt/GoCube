@@ -6,6 +6,8 @@ const STONE_ARTWORK_SELECTOR = [
   '.torus-board__captured-stone',
   '.torus-board__preview-stone',
 ].join(', ');
+const FORBIDDEN_MARKER_SELECTOR = '.torus-board__forbidden-marker';
+const HIT_TARGET_SELECTOR = '.torus-board__hit-target';
 
 interface StoneArtworkIds {
   readonly blackPatternId: string;
@@ -14,6 +16,7 @@ interface StoneArtworkIds {
 
 let stoneArtworkInstanceCounter = 0;
 const stoneArtworkIdsBySvg = new WeakMap<SVGSVGElement, StoneArtworkIds>();
+const dynamicOverlayObserversBySvg = new WeakMap<SVGSVGElement, MutationObserver>();
 
 const setAttributes = (element: Element, attributes: Readonly<Record<string, string>>): void => {
   for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
@@ -121,23 +124,113 @@ const stoneColor = (stone: SVGCircleElement): StoneColor | null => {
   return null;
 };
 
+const applyStoneArtworkToCircle = (
+  stone: SVGCircleElement,
+  ids: StoneArtworkIds,
+): void => {
+  const color = stoneColor(stone);
+  if (!color) return;
+
+  stone.setAttribute(
+    'fill',
+    `url(#${color === 'black' ? ids.blackPatternId : ids.whitePatternId})`,
+  );
+  stone.setAttribute('stroke', 'none');
+  stone.removeAttribute('stroke-width');
+  stone.setAttribute('data-stone-artwork', 'custom-svg');
+};
+
+const stoneCirclesWithin = (root: Element): readonly SVGCircleElement[] => {
+  const stones: SVGCircleElement[] = [];
+  if (root.matches(STONE_ARTWORK_SELECTOR)) stones.push(root as SVGCircleElement);
+  stones.push(...root.querySelectorAll<SVGCircleElement>(STONE_ARTWORK_SELECTOR));
+  return stones;
+};
+
+const forbiddenMarkersWithin = (root: Element): readonly SVGCircleElement[] => {
+  const markers: SVGCircleElement[] = [];
+  if (root.matches(FORBIDDEN_MARKER_SELECTOR)) markers.push(root as SVGCircleElement);
+  markers.push(...root.querySelectorAll<SVGCircleElement>(FORBIDDEN_MARKER_SELECTOR));
+  return markers;
+};
+
+const snapForbiddenMarkerToIntersection = (
+  svg: SVGSVGElement,
+  marker: SVGCircleElement,
+): void => {
+  const logicalPointId = marker.getAttribute('data-logical-point-id');
+  const markerX = Number(marker.getAttribute('cx'));
+  const markerY = Number(marker.getAttribute('cy'));
+  if (!logicalPointId || !Number.isFinite(markerX) || !Number.isFinite(markerY)) return;
+
+  let closestTarget: SVGCircleElement | null = null;
+  let closestDistanceSquared = Number.POSITIVE_INFINITY;
+  for (const target of svg.querySelectorAll<SVGCircleElement>(HIT_TARGET_SELECTOR)) {
+    if (target.getAttribute('data-logical-point-id') !== logicalPointId) continue;
+
+    const targetX = Number(target.getAttribute('cx'));
+    const targetY = Number(target.getAttribute('cy'));
+    if (!Number.isFinite(targetX) || !Number.isFinite(targetY)) continue;
+
+    const distanceSquared = (markerX - targetX) ** 2 + (markerY - targetY) ** 2;
+    if (distanceSquared >= closestDistanceSquared) continue;
+
+    closestTarget = target;
+    closestDistanceSquared = distanceSquared;
+  }
+
+  if (!closestTarget) return;
+  const targetX = closestTarget.getAttribute('cx');
+  const targetY = closestTarget.getAttribute('cy');
+  if (targetX === null || targetY === null) return;
+
+  marker.setAttribute('cx', targetX);
+  marker.setAttribute('cy', targetY);
+  marker.setAttribute('data-snapped-to-intersection', 'true');
+};
+
+const polishDynamicOverlayWithin = (
+  svg: SVGSVGElement,
+  root: Element,
+  ids: StoneArtworkIds,
+): void => {
+  for (const stone of stoneCirclesWithin(root)) applyStoneArtworkToCircle(stone, ids);
+  for (const marker of forbiddenMarkersWithin(root)) snapForbiddenMarkerToIntersection(svg, marker);
+};
+
+const ensureDynamicOverlayObserver = (
+  svg: SVGSVGElement,
+  ids: StoneArtworkIds,
+): void => {
+  if (dynamicOverlayObserversBySvg.has(svg)) return;
+
+  const MutationObserverConstructor = svg.ownerDocument.defaultView?.MutationObserver;
+  if (!MutationObserverConstructor) return;
+
+  const observer = new MutationObserverConstructor((records) => {
+    for (const record of records) {
+      for (const node of record.addedNodes) {
+        if (node.nodeType !== 1) continue;
+        polishDynamicOverlayWithin(svg, node as Element, ids);
+      }
+    }
+  });
+  observer.observe(svg, { childList: true, subtree: true });
+  dynamicOverlayObserversBySvg.set(svg, observer);
+};
+
 /**
  * Applies the supplied lightweight SVG artwork to the existing renderer circles.
  * Keeping the circle itself as the stone preserves move markers, move numbers,
  * placement/capture animations, dead-stone opacity and all existing selectors.
+ *
+ * Move previews are created after the normal annotation pass, so a small DOM observer
+ * applies the same artwork to newly-created translucent previews. It also snaps the
+ * forbidden marker to the nearest matching board intersection instead of leaving it
+ * at the raw pointer coordinates.
  */
 export const applyTorus2DStoneArtwork = (svg: SVGSVGElement): void => {
   const ids = ensureStoneArtwork(svg);
-  for (const stone of svg.querySelectorAll<SVGCircleElement>(STONE_ARTWORK_SELECTOR)) {
-    const color = stoneColor(stone);
-    if (!color) continue;
-
-    stone.setAttribute(
-      'fill',
-      `url(#${color === 'black' ? ids.blackPatternId : ids.whitePatternId})`,
-    );
-    stone.setAttribute('stroke', 'none');
-    stone.removeAttribute('stroke-width');
-    stone.setAttribute('data-stone-artwork', 'custom-svg');
-  }
+  polishDynamicOverlayWithin(svg, svg, ids);
+  ensureDynamicOverlayObserver(svg, ids);
 };

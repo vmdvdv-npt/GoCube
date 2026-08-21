@@ -41,5 +41,39 @@ test('uses the supplied gradient-and-highlight SVG artwork for black and white s
   const preview = page.locator('.torus-board__preview-stone--black').first();
   await expect(preview).toHaveAttribute('data-stone-artwork', 'custom-svg');
   await expect(preview).toHaveAttribute('fill', /url\(#torus-stone-artwork-\d+-black\)/);
+  await expect(preview).toHaveAttribute('stroke', 'none');
   await expect(preview).toHaveAttribute('opacity', '0.5');
+});
+
+test('snaps the forbidden marker to the illegal intersection instead of the pointer', async ({ page }) => {
+  await startGame(page);
+
+  await point(page, '0,0').click();
+  await point(page, '4,3').click();
+  await point(page, '0,1').click();
+  await point(page, '3,4').click();
+  await point(page, '0,2').click();
+  await point(page, '5,4').click();
+  await point(page, '0,3').click();
+  await point(page, '4,5').click();
+
+  const forbiddenPoint = point(page, '4,4');
+  const rightPoint = point(page, '5,4');
+  const forbiddenBox = await forbiddenPoint.boundingBox();
+  const rightBox = await rightPoint.boundingBox();
+  if (!forbiddenBox || !rightBox) throw new Error('Expected board hit targets to be visible');
+
+  const forbiddenCenterX = forbiddenBox.x + forbiddenBox.width / 2;
+  const forbiddenCenterY = forbiddenBox.y + forbiddenBox.height / 2;
+  const rightCenterX = rightBox.x + rightBox.width / 2;
+  await page.mouse.move(
+    forbiddenCenterX + (rightCenterX - forbiddenCenterX) * 0.3,
+    forbiddenCenterY,
+  );
+
+  const marker = page.locator('.torus-board__forbidden-marker').first();
+  await expect(marker).toHaveAttribute('data-logical-point-id', '4,4');
+  await expect(marker).toHaveAttribute('data-snapped-to-intersection', 'true');
+  await expect(marker).toHaveAttribute('cx', await forbiddenPoint.getAttribute('cx') ?? '');
+  await expect(marker).toHaveAttribute('cy', await forbiddenPoint.getAttribute('cy') ?? '');
 });

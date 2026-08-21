@@ -513,14 +513,24 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         </button>
       </div>
 
-      <label className="torus-duplicates-control">
-        <input
-          type="checkbox"
-          checked={showDuplicateRegions}
-          onChange={(event) => setShowDuplicateRegions(event.target.checked)}
-        />
-        Показывать дублирующие области
-      </label>
+      <div className="torus-duplicates-control" role="group" aria-label="Board display options">
+        <label>
+          <input
+            type="checkbox"
+            checked={showDuplicateRegions}
+            onChange={(event) => setShowDuplicateRegions(event.target.checked)}
+          />
+          Показывать дублирующие области
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={showMoveNumbers}
+            onChange={(event) => setShowMoveNumbers(event.target.checked)}
+          />
+          Номера ходов
+        </label>
+      </div>
 
       <p className="torus-view-hint">
         {showDuplicateRegions
@@ -529,13 +539,6 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
       </p>
 
       <div className="game-controls">
-        <button
-          type="button"
-          aria-pressed={showMoveNumbers}
-          onClick={() => setShowMoveNumbers((visible) => !visible)}
-        >
-          Номера ходов
-        </button>
         <button
           type="button"
           onClick={() => void handlePass()}
