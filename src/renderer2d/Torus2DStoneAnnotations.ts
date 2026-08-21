@@ -1,6 +1,7 @@
 import type { StoneColor } from '../core/game/types';
 import type { PointId } from '../core/topology/Topology';
 import type { GameViewModel } from '../presentation/PresentationModel';
+import { applyTorus2DStoneArtwork } from './Torus2DStoneArtwork';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const ANNOTATION_CLASS = 'torus-board__stone-annotation';
@@ -288,6 +289,7 @@ export const renderTorus2DStoneAnnotations = (
   const placementPointId = stonePlacementPointFromTransition(previousViewModel, viewModel);
   previousViewModelBySvg.set(svg, viewModel);
 
+  applyTorus2DStoneArtwork(svg);
   renderFinalTerritory(svg, viewModel);
   const deadStonePointIds = finalDeadStonePointIds(viewModel);
   const moveNumbers = pointMoveNumbers(viewModel);
