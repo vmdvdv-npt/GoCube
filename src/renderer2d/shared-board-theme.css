@@ -31,6 +31,30 @@
 .cube-2d-game .cube-2d-board__grid line {
   stroke: var(--go-board-grid);
   stroke-width: 1.5px;
+  stroke-linecap: butt;
+}
+
+/*
+ * Cube 2D only: hide the old grid tails beyond the outermost intersections.
+ * The inset stops each internal line at the outside edge of the perimeter grid
+ * stroke, so every face reads as a clean bounded square instead of a grid whose
+ * line ends stick out past its border. The values follow the renderer's current
+ * half-cell point spacing for each supported Cube face size.
+ */
+.cube-2d-game .cube-2d-renderer[data-cube-size='2'] .cube-2d-board__grid {
+  clip-path: inset(24.25%);
+}
+
+.cube-2d-game .cube-2d-renderer[data-cube-size='3'] .cube-2d-board__grid {
+  clip-path: inset(15.9167%);
+}
+
+.cube-2d-game .cube-2d-renderer[data-cube-size='4'] .cube-2d-board__grid {
+  clip-path: inset(11.75%);
+}
+
+.cube-2d-game .cube-2d-renderer[data-cube-size='5'] .cube-2d-board__grid {
+  clip-path: inset(9.25%);
 }
 
 .cube-2d-game .cube-2d-board--central {
