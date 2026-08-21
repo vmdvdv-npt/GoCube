@@ -85,10 +85,9 @@ test('finished board keeps territory and dead stones visible until Undo', async 
   await expect(blackTerritoryAtDeadStone).not.toHaveCount(0);
   await expect(deadWhiteStone).not.toHaveCount(0);
 
-  // Every visible wrapped copy receives the same logical final result.
+  // Duplicate-region mode preserves the same final styling. A central logical point
+  // has only one visible copy until the view shifts close enough to a wrapped margin.
   await page.getByLabel('Показывать дублирующие области').check();
-  await expect(blackTerritoryAtDeadStone).not.toHaveCount(1);
-  await expect(deadWhiteStone).not.toHaveCount(1);
   expect(
     await blackTerritoryAtDeadStone.evaluateAll((nodes) =>
       nodes.every((node) => node.getAttribute('opacity') === '0.2'),
@@ -108,6 +107,20 @@ test('finished board keeps territory and dead stones visible until Undo', async 
   await expect(board).toHaveAttribute('data-pan-animating', 'false', { timeout: 2_000 });
   await expect(blackTerritoryAtDeadStone).not.toHaveCount(0);
   await expect(deadWhiteStone).not.toHaveCount(0);
+
+  // After the shift, 4,4 is close enough to the enabled wrapped margin to have synchronized copies.
+  await expect.poll(() => blackTerritoryAtDeadStone.count()).toBeGreaterThan(1);
+  await expect.poll(() => deadWhiteStone.count()).toBeGreaterThan(1);
+  expect(
+    await blackTerritoryAtDeadStone.evaluateAll((nodes) =>
+      nodes.every((node) => node.getAttribute('opacity') === '0.2'),
+    ),
+  ).toBe(true);
+  expect(
+    await deadWhiteStone.evaluateAll((nodes) =>
+      nodes.every((node) => node.getAttribute('opacity') === '0.38'),
+    ),
+  ).toBe(true);
 
   // Undo of the finishing second Pass restores the pre-finish ViewModel, so no final markings remain.
   await page.getByRole('button', { name: 'Undo' }).click();
