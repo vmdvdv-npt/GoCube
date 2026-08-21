@@ -1,0 +1,90 @@
+import { expect, test, type Page } from '@playwright/test';
+
+const start9x9Game = async (page: Page): Promise<void> => {
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'New game' })).toBeVisible();
+  await page.getByLabel('Board size').selectOption('9');
+  await page.getByRole('button', { name: 'Start game' }).click();
+  await expect(page.locator('.torus-game')).toBeVisible();
+};
+
+const captureShiftStart = async (
+  page: Page,
+  direction: 'left' | 'right' | 'up' | 'down',
+) =>
+  page.evaluate((panDirection) => {
+    const board = document.querySelector<SVGSVGElement>('.torus-board');
+    const button = document.querySelector<HTMLButtonElement>(
+      `[aria-label="Shift torus view ${panDirection}"]`,
+    );
+    if (!board || !button) throw new Error('Torus board controls are missing');
+
+    button.click();
+
+    const grid = board.querySelector<SVGGElement>('.torus-board__pan-content--grid');
+    const pieces = board.querySelector<SVGGElement>('.torus-board__pan-content--pieces');
+    return {
+      animating: board.getAttribute('data-pan-animating'),
+      panDirection: board.getAttribute('data-pan-direction'),
+      pointerEvents: board.style.pointerEvents,
+      gridTransform: grid?.getAttribute('transform') ?? null,
+      piecesTransform: pieces?.getAttribute('transform') ?? null,
+      gridOpacity: grid?.getAttribute('opacity') ?? null,
+      piecesOpacity: pieces?.getAttribute('opacity') ?? null,
+      stoneCopies: board.querySelectorAll(
+        '.torus-board__stone[data-logical-point-id="0,0"]',
+      ).length,
+    };
+  }, direction);
+
+const expectShift = async (
+  page: Page,
+  direction: 'left' | 'right' | 'up' | 'down',
+  expectedOffsetX: number,
+  expectedOffsetY: number,
+): Promise<void> => {
+  const snapshot = await captureShiftStart(page, direction);
+
+  expect(snapshot.animating).toBe('true');
+  expect(snapshot.panDirection).toBe(direction);
+  expect(snapshot.pointerEvents).toBe('none');
+  expect(snapshot.gridTransform).toMatch(/^translate\(/);
+  expect(snapshot.gridTransform).not.toBe('translate(0 0)');
+  expect(snapshot.piecesTransform).toBe(snapshot.gridTransform);
+  expect(snapshot.gridOpacity).toBeNull();
+  expect(snapshot.piecesOpacity).toBeNull();
+  expect(snapshot.stoneCopies).toBeGreaterThan(1);
+
+  const board = page.locator('.torus-board');
+  await expect(board).toHaveAttribute('data-pan-animating', 'false', { timeout: 2_000 });
+  await expect(board).toHaveAttribute('data-view-offset-x', String(expectedOffsetX));
+  await expect(board).toHaveAttribute('data-view-offset-y', String(expectedOffsetY));
+};
+
+test('Torus 2D arrows physically slide grid and stones with seamless wrap', async ({ page }) => {
+  await start9x9Game(page);
+
+  const firstPoint = page.locator(
+    '.torus-board__hit-target[data-logical-point-id="0,0"][data-copy-role="primary"]',
+  );
+  await firstPoint.click();
+  await expect(page.getByText('White to move')).toBeVisible();
+
+  await page.getByLabel('Показывать дублирующие области').check();
+  await expect(page.locator('.torus-board')).toHaveAttribute(
+    'data-duplicate-regions-visible',
+    'true',
+  );
+
+  await expectShift(page, 'right', 1, 0);
+  await expectShift(page, 'left', 0, 0);
+  await expectShift(page, 'down', 0, 1);
+  await expectShift(page, 'up', 0, 0);
+
+  const secondPoint = page.locator(
+    '.torus-board__hit-target[data-logical-point-id="4,4"][data-copy-role="primary"]',
+  );
+  await secondPoint.click();
+  await expect(page.getByText('Black to move')).toBeVisible();
+  await expect(page.getByText('Move 2')).toBeVisible();
+});
