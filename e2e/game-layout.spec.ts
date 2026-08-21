@@ -11,7 +11,10 @@ test('game screen uses compact statistics and uniform history controls', async (
   await expect(page.getByText('Black Captured 0')).toBeVisible();
   await expect(page.getByText('White Captured 0')).toBeVisible();
   await expect(page.getByText('Move 0')).toBeVisible();
-  await expect(page.getByText('Passes 0')).not.toBeVisible();
+  const passStateHook = page.getByText('Passes 0');
+  const passStateBox = await passStateHook.boundingBox();
+  expect(passStateBox).not.toBeNull();
+  expect(passStateBox?.x ?? 0).toBeLessThan(-1000);
   await expect(page.getByText('Japanese rules')).toBeVisible();
   await expect(page.getByText('Komi 7.5')).toBeVisible();
   await expect(page.getByLabel('Показывать дублирующие области')).toBeVisible();
