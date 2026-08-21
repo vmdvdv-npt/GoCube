@@ -89,9 +89,9 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
         onShowMoveNumbersChange={g.setShowMoveNumbers}
         showDuplicateRegions={false}
         duplicateRegionsDisabled
-        passDisabled={g.vm.phase !== 'playing' || g.passGuarded || Boolean(g.transition)}
-        canRedo={!g.transition && controller.canRedo()}
-        canUndo={!g.transition && controller.canUndo()}
+        passDisabled={g.vm.phase !== 'playing' || g.passGuarded || Boolean(g.transition) || g.captureAnimating}
+        canRedo={!g.transition && !g.captureAnimating && controller.canRedo()}
+        canUndo={!g.transition && !g.captureAnimating && controller.canUndo()}
         onPass={() => void g.pass()}
         onRedo={() => void g.run(() => controller.redo())}
         onUndo={() => void g.run(() => controller.undo())}
@@ -107,7 +107,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
           className="torus-pan torus-pan--up"
           type="button"
           aria-label="Move cube up"
-          disabled={Boolean(g.transition)}
+          disabled={Boolean(g.transition) || g.captureAnimating}
           onClick={() => g.navigate('up')}
         >
           ↑
@@ -116,7 +116,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
           className="torus-pan torus-pan--left"
           type="button"
           aria-label="Move cube left"
-          disabled={Boolean(g.transition)}
+          disabled={Boolean(g.transition) || g.captureAnimating}
           onClick={() => g.navigate('left')}
         >
           ←
@@ -143,7 +143,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
                 hoveredPointId={g.hoveredPoint}
                 hoverStatus={g.hoverStatus}
                 showMoveNumbers={g.showMoveNumbers}
-                inputDisabled={Boolean(g.transition) || g.vm.phase === 'finished'}
+                inputDisabled={Boolean(g.transition) || g.captureAnimating || g.vm.phase === 'finished'}
                 onPointHover={g.hover}
                 onPointActivate={(point) => void g.activate(point)}
               />
@@ -155,7 +155,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
                 decisions={g.decisions}
                 selectedGroupId={g.selectedGroup}
                 hoveredGroupId={g.hoveredGroup}
-                capturedStones={[]}
+                capturedStones={g.capturedEffects}
               />
             </div>
           </div>
@@ -165,7 +165,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
           className="torus-pan torus-pan--right"
           type="button"
           aria-label="Move cube right"
-          disabled={Boolean(g.transition)}
+          disabled={Boolean(g.transition) || g.captureAnimating}
           onClick={() => g.navigate('right')}
         >
           →
@@ -174,7 +174,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
           className="torus-pan torus-pan--down"
           type="button"
           aria-label="Move cube down"
-          disabled={Boolean(g.transition)}
+          disabled={Boolean(g.transition) || g.captureAnimating}
           onClick={() => g.navigate('down')}
         >
           ↓
