@@ -37,7 +37,7 @@ const edgeMarginInGridSteps = async (page: Page): Promise<number> =>
   });
 
 for (const size of ['9', '13', '19'] as const) {
-  test(`${size}x${size} board keeps the visible wooden edge slightly smaller than one grid step`, async ({
+  test(`${size}x${size} keeps its normal edge margin and reserves room for one duplicate strip`, async ({
     page,
   }) => {
     await startGame(page, size);
@@ -51,7 +51,15 @@ for (const size of ['9', '13', '19'] as const) {
       'true',
     );
 
-    await expect.poll(() => edgeMarginInGridSteps(page)).toBeGreaterThan(0.72);
-    await expect.poll(() => edgeMarginInGridSteps(page)).toBeLessThan(0.88);
+    // Duplicate mode deliberately reserves the former wooden margin for a single
+    // renderer-only wrapped strip. The playable hit geometry itself stays size×size.
+    await expect(page.locator('.torus-board__hit-target[data-copy-role="primary"]')).toHaveCount(
+      Number(size) ** 2,
+    );
+    await expect(page.locator('.torus-board__hit-target[data-copy-role="duplicate"]')).toHaveCount(0);
+    await expect(page.locator('.torus-board__edge-duplicate-band')).toHaveCount(4);
+    await expect(page.locator('.torus-board__edge-duplicate-grid-line')).toHaveCount(
+      Number(size) * 4 + 4,
+    );
   });
 }

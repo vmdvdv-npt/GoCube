@@ -52,6 +52,11 @@
     scale 120ms ease-out;
 }
 
+/* Let the one-step duplicate stones use the room created by the duplicate-on fit. */
+.torus-board[data-duplicate-regions-visible='true'] {
+  overflow: visible;
+}
+
 /* Let the board texture show through the renderer's former solid SVG background. */
 .torus-board__background {
   fill: transparent;
@@ -87,7 +92,7 @@
 }
 
 .torus-board[aria-label^='9 by 9'][data-duplicate-regions-visible='true'] {
-  --torus-board-edge-fit-scale: 1.19617;
+  --torus-board-edge-fit-scale: 0.95;
 }
 
 .torus-board[aria-label^='13 by 13'][data-duplicate-regions-visible='false'] {
@@ -95,7 +100,7 @@
 }
 
 .torus-board[aria-label^='13 by 13'][data-duplicate-regions-visible='true'] {
-  --torus-board-edge-fit-scale: 1.21832;
+  --torus-board-edge-fit-scale: 1.04;
 }
 
 .torus-board[aria-label^='19 by 19'][data-duplicate-regions-visible='false'] {
@@ -103,5 +108,5 @@
 }
 
 .torus-board[aria-label^='19 by 19'][data-duplicate-regions-visible='true'] {
-  --torus-board-edge-fit-scale: 1.23951;
+  --torus-board-edge-fit-scale: 1.11;
 }

@@ -84,7 +84,8 @@ test('manual endgame is board-first, reclassifiable, seam-safe and duplicate-awa
     'true',
   );
 
-  // Duplicate mode redraws the seam copies while preserving one synchronized status for the logical group.
+  // The new duplicate mode is a renderer-only edge overlay: it must not move or
+  // duplicate the interactive endgame geometry. It only mirrors the seam stones.
   const cleanLineCount = await blackLines.count();
   const cleanGeometry = await blackLines.evaluateAll((lines) =>
     lines.map((line) => [
@@ -106,7 +107,13 @@ test('manual endgame is board-first, reclassifiable, seam-safe and duplicate-awa
       line.getAttribute('y2'),
     ]),
   );
-  expect(duplicateGeometry).not.toEqual(cleanGeometry);
+  expect(duplicateGeometry).toEqual(cleanGeometry);
+  await expect(
+    page.locator('.torus-board__edge-duplicate-stone[data-logical-point-id="8,4"]'),
+  ).toHaveCount(1);
+  await expect(
+    page.locator('.torus-board__edge-duplicate-stone[data-logical-point-id="0,4"]'),
+  ).toHaveCount(1);
   expect(
     await blackLines.evaluateAll((lines) =>
       lines.every((line) => line.getAttribute('stroke') === '#7a7a7a'),

@@ -85,8 +85,8 @@ test('finished board keeps territory and dead stones visible until Undo', async 
   await expect(blackTerritoryAtDeadStone).not.toHaveCount(0);
   await expect(deadWhiteStone).not.toHaveCount(0);
 
-  // Duplicate-region mode preserves the same final styling. A central logical point
-  // has only one visible copy until the view shifts close enough to a wrapped margin.
+  // Duplicate mode now shows only the immediately wrapped row/column. A central
+  // point therefore has one copy until navigation brings it to a visible edge.
   await page.getByLabel('Показывать дублирующие области').check();
   expect(
     await blackTerritoryAtDeadStone.evaluateAll((nodes) =>
@@ -99,16 +99,17 @@ test('finished board keeps territory and dead stones visible until Undo', async 
     ),
   ).toBe(true);
 
-  // Final-result overlays move with the physical torus pan rather than disappearing mid-shift.
-  await page.getByRole('button', { name: 'Shift torus view right' }).click();
-  await expect(board).toHaveAttribute('data-pan-animating', 'true');
-  await expect(blackTerritoryAtDeadStone).not.toHaveCount(0);
-  await expect(deadWhiteStone).not.toHaveCount(0);
-  await expect(board).toHaveAttribute('data-pan-animating', 'false', { timeout: 2_000 });
-  await expect(blackTerritoryAtDeadStone).not.toHaveCount(0);
-  await expect(deadWhiteStone).not.toHaveCount(0);
+  const shiftRight = page.getByRole('button', { name: 'Shift torus view right' });
+  for (let index = 0; index < 4; index += 1) {
+    await shiftRight.click();
+    await expect(board).toHaveAttribute('data-pan-animating', 'true');
+    await expect(blackTerritoryAtDeadStone).not.toHaveCount(0);
+    await expect(deadWhiteStone).not.toHaveCount(0);
+    await expect(board).toHaveAttribute('data-pan-animating', 'false', { timeout: 2_000 });
+  }
 
-  // After the shift, 4,4 is close enough to the enabled wrapped margin to have synchronized copies.
+  // After four steps logical 4,4 reaches the current left edge. The right-side
+  // one-line strip must now show the synchronized wrapped territory and dead stone.
   await expect.poll(() => blackTerritoryAtDeadStone.count()).toBeGreaterThan(1);
   await expect.poll(() => deadWhiteStone.count()).toBeGreaterThan(1);
   expect(

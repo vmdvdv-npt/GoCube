@@ -14,6 +14,10 @@ import { GameResultDialog } from './GameResultDialog';
 import './manual-endgame.css';
 import './pass-guard.css';
 import {
+  isTorus2DPrimaryBoardClientPosition,
+  renderTorus2DEdgeDuplicates,
+} from '../renderer2d/Torus2DEdgeDuplicates';
+import {
   Torus2DRenderer,
   type Torus2DPanDirection,
 } from '../renderer2d/Torus2DRenderer';
@@ -183,7 +187,10 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
 
     const renderer = rendererRef.current ?? new Torus2DRenderer(svg, controller.size);
     rendererRef.current = renderer;
-    renderer.setDuplicateRegionsVisible(showDuplicateRegions);
+
+    // The legacy renderer expansion is deliberately kept disabled. The opt-in
+    // duplicate view is now a separate one-line, non-interactive edge overlay.
+    renderer.setDuplicateRegionsVisible(false);
     renderer.setEndgameOverlay(
       viewModel.phase === 'endgame'
         ? {
@@ -194,6 +201,13 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         : null,
     );
     renderer.render(viewModel);
+    renderTorus2DEdgeDuplicates(
+      svg,
+      viewModel,
+      controller.size,
+      renderer.viewState(),
+      showDuplicateRegions,
+    );
     renderTorus2DStoneAnnotations(svg, viewModel, showMoveNumbers);
   }, [
     controller,
@@ -211,11 +225,21 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     if (!svg || !Observer) return;
 
     const observer = new Observer(() => {
+      const renderer = rendererRef.current;
+      if (renderer && svg.getAttribute('data-pan-animating') !== 'true') {
+        renderTorus2DEdgeDuplicates(
+          svg,
+          viewModel,
+          controller.size,
+          renderer.viewState(),
+          showDuplicateRegions,
+        );
+      }
       renderTorus2DStoneAnnotations(svg, viewModel, showMoveNumbers);
     });
     observer.observe(svg, { childList: true });
     return () => observer.disconnect();
-  }, [controller, showMoveNumbers, viewModel]);
+  }, [controller, showDuplicateRegions, showMoveNumbers, viewModel]);
 
   const applyResult = (result: TorusGameActionResult): void => {
     previewedMovePointRef.current = null;
@@ -252,7 +276,14 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     event: ReactMouseEvent<SVGSVGElement>,
   ): TorusEndgameGroup | null => {
     const renderer = rendererRef.current;
-    if (!renderer) return null;
+    const svg = svgRef.current;
+    if (!renderer || !svg) return null;
+    if (
+      showDuplicateRegions &&
+      !isTorus2DPrimaryBoardClientPosition(svg, event.clientX, event.clientY)
+    ) {
+      return null;
+    }
 
     const lineGroupId = renderer.endgameGroupFromClientPosition(
       event.clientX,
@@ -270,6 +301,17 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     event: ReactMouseEvent<SVGSVGElement>,
   ): Promise<void> => {
     if (actionInFlight.current) return;
+
+    const svg = svgRef.current;
+    if (
+      showDuplicateRegions &&
+      svg &&
+      !isTorus2DPrimaryBoardClientPosition(svg, event.clientX, event.clientY)
+    ) {
+      previewedMovePointRef.current = null;
+      rendererRef.current?.setMovePreview(null);
+      return;
+    }
 
     if (viewModel.phase === 'endgame') {
       const group = groupAtClientPosition(event);
@@ -308,6 +350,18 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
 
   const handleBoardMouseMove = (event: ReactMouseEvent<SVGSVGElement>): void => {
     const renderer = rendererRef.current;
+    const svg = svgRef.current;
+
+    if (
+      showDuplicateRegions &&
+      svg &&
+      !isTorus2DPrimaryBoardClientPosition(svg, event.clientX, event.clientY)
+    ) {
+      previewedMovePointRef.current = null;
+      renderer?.setMovePreview(null);
+      if (hoveredGroupId !== null) setHoveredGroupId(null);
+      return;
+    }
 
     if (viewModel.phase === 'playing') {
       if (hoveredGroupId !== null) setHoveredGroupId(null);
@@ -534,7 +588,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
 
       <p className="torus-view-hint">
         {showDuplicateRegions
-          ? 'Four wrapped rows and columns on every side are visual copies of the same logical points.'
+          ? 'One wrapped row or column is shown on each side as a non-interactive visual copy.'
           : `Duplicate regions are hidden. The board shows exactly ${controller.size}×${controller.size} intersections.`}
       </p>
 
