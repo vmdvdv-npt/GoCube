@@ -308,7 +308,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         return;
       }
 
-      const hit = renderer.visualPointFromClientPosition(event.clientX, event.clientY);
+      const hit = renderer.hoverVisualPointFromClientPosition(event.clientX, event.clientY);
       if (!hit) {
         renderer.setMovePreview(null);
         return;
@@ -473,7 +473,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
             className={`torus-board${viewModel.phase === 'playing' ? '' : viewModel.phase === 'endgame' ? ' torus-board--endgame' : ' torus-board--inactive'}`}
             data-view-zoom={viewZoom.toFixed(3)}
             data-move-numbers-visible={showMoveNumbers ? 'true' : 'false'}
-            style={{ transform: `scale(${viewZoom})` }}
+            style={{ transform: `scale(${viewZoom})`, cursor: 'default' }}
             onClick={(event) => void handleBoardClick(event)}
             onMouseMove={handleBoardMouseMove}
             onMouseLeave={handleBoardMouseLeave}
