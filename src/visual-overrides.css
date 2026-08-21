@@ -58,6 +58,17 @@
 }
 
 /*
+ * Black stones use the same restrained top-left highlight and dark falloff as
+ * the Black-to-move chip. The shared SVG paint server keeps the look consistent
+ * for normal stones, legal move previews and captured-stone flight animations.
+ */
+.torus-board__stone--black,
+.torus-board__preview-stone--black,
+.torus-board__captured-stone--black {
+  fill: url(#torus-black-stone-gradient);
+}
+
+/*
  * Keep the familiar 2px grid on 9x9, make 13x13 only slightly lighter,
  * and use a deliberately fine hairline grid on the dense 19x19 board.
  * The same grid class is used during pan animation, so thickness stays stable
