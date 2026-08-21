@@ -32,10 +32,20 @@
  * the user's ViewState zoom; the independent `scale` property composes with it.
  */
 .torus-board {
+  background-color: #d8ad68;
+  background-image: url('/assets/board/board-bg.jpg');
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
   scale: var(--torus-board-edge-fit-scale, 1);
   transition:
     transform 120ms ease-out,
     scale 120ms ease-out;
+}
+
+/* Let the board texture show through the renderer's former solid SVG background. */
+.torus-board__background {
+  fill: transparent;
 }
 
 .torus-board[aria-label^='9 by 9'][data-duplicate-regions-visible='false'] {
