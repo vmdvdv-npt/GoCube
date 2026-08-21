@@ -35,22 +35,44 @@
 }
 
 .torus-duplicates-control {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: grid;
+  align-items: stretch;
+  gap: 0;
   border: 1px solid rgb(203 140 50 / 36%);
 }
 
 .torus-duplicates-control label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  min-height: 34px;
+  gap: 10px;
+  padding: 2px 4px;
   cursor: pointer;
+  font-size: 0;
 }
 
-.torus-duplicates-control label + label {
-  padding-top: 7px;
-  border-top: 1px solid rgb(255 255 255 / 5%);
+/* Show move numbers first, then duplicate regions, matching the compact sidebar layout. */
+.torus-duplicates-control label:nth-child(2) {
+  order: 1;
+}
+
+.torus-duplicates-control label:nth-child(1) {
+  order: 2;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgb(255 255 255 / 7%);
+}
+
+.torus-duplicates-control label:nth-child(2)::after {
+  content: 'Move numbers';
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.torus-duplicates-control label:nth-child(1)::after {
+  content: 'Show duplicate regions';
+  font-size: 11px;
+  line-height: 1.25;
 }
 
 .game-controls .new-game-control {
