@@ -1,0 +1,61 @@
+.cube-2d-preview__controls {
+  flex-wrap: wrap;
+}
+
+.cube-2d-preview__control input {
+  box-sizing: border-box;
+  min-height: 36px;
+  border: 1px solid #44515d;
+  border-radius: 6px;
+  padding: 0 10px;
+  color: #eef3f7;
+  background: #111b24;
+}
+
+.cube-2d-preview__game-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 760px;
+  margin: 12px 0 18px;
+}
+
+.cube-2d-preview__action {
+  min-height: 38px;
+  border: 1px solid #44515d;
+  border-radius: 6px;
+  padding: 0 14px;
+  color: #eef3f7;
+  background: #111b24;
+  font: inherit;
+  cursor: pointer;
+}
+
+.cube-2d-preview__action:not(:disabled):hover,
+.cube-2d-preview__action:not(:disabled):focus-visible {
+  border-color: #d0a35c;
+  background: #17232d;
+  outline: none;
+}
+
+.cube-2d-preview__action--primary {
+  min-width: 160px;
+  border-color: rgb(208 163 92 / 60%);
+}
+
+.cube-2d-preview__action:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.cube-2d-preview__endgame {
+  box-sizing: border-box;
+  max-width: 760px;
+  margin: 18px 0;
+}
+
+.cube-2d-preview__feedback {
+  max-width: 760px;
+  margin: 12px 0 0;
+  color: #ffb0b0;
+}
