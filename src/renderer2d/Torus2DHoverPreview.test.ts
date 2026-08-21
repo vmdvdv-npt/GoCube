@@ -31,7 +31,7 @@ const viewModel = (): GameViewModel => {
 };
 
 describe('Torus2D hover preview hit testing', () => {
-  it('snaps hover to the nearest point across gaps while click hit testing stays strict', () => {
+  it('snaps hover to the nearest point across gaps without changing the exact-hit helper', () => {
     const scene = buildTorus2DScene(viewModel(), 9);
     const first = scene.points[0]!;
     const betweenX = first.x + scene.spacing / 2;
