@@ -25,10 +25,10 @@ const classify = async (
 };
 
 const passTwice = async (page: Page): Promise<void> => {
-  const pass = page.getByRole('button', { name: 'Pass', exact: true });
+  const pass = page.getByRole('button', { name: /^Pass(?: \(1\))?$/ });
   await pass.click();
   await expect(pass).toBeDisabled();
-  await expect(pass).toBeEnabled({ timeout: 4_000 });
+  await expect(pass).toBeEnabled({ timeout: 2_200 });
   await pass.click();
 };
 

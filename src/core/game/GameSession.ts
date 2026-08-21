@@ -17,7 +17,8 @@ import type { GameState, StoneColor } from './types';
 export type GameCommand =
   | Readonly<{ type: 'place-stone'; point: PointId }>
   | Readonly<{ type: 'pass' }>
-  | Readonly<{ type: 'undo' }>;
+  | Readonly<{ type: 'undo' }>
+  | Readonly<{ type: 'redo' }>;
 
 export interface GameSessionPersistenceConfig {
   readonly repository: GameRepository<GameSessionSnapshot>;
@@ -33,7 +34,10 @@ export interface GameSessionConfig {
   readonly persistence?: GameSessionPersistenceConfig;
 }
 
-export type GameSessionRejectionReason = MoveRejectionReason | 'nothing-to-undo';
+export type GameSessionRejectionReason =
+  | MoveRejectionReason
+  | 'nothing-to-undo'
+  | 'nothing-to-redo';
 
 export interface GameSessionMoveQueryResult {
   readonly allowed: boolean;
@@ -60,6 +64,12 @@ export interface AcceptedUndoSessionResult {
   readonly state: GameState;
 }
 
+export interface AcceptedRedoSessionResult {
+  readonly ok: true;
+  readonly action: 'redo';
+  readonly state: GameState;
+}
+
 export interface RejectedGameSessionResult {
   readonly ok: false;
   readonly state: GameState;
@@ -70,7 +80,13 @@ export type GameSessionResult =
   | AcceptedPlaceStoneSessionResult
   | AcceptedPassSessionResult
   | AcceptedUndoSessionResult
+  | AcceptedRedoSessionResult
   | RejectedGameSessionResult;
+
+type HistoryMetadata = Readonly<{
+  endgameClassification: EndgameClassification | null;
+  finalScore: FinalScore | null;
+}>;
 
 const comparePointIds = (left: PointId, right: PointId): number =>
   left < right ? -1 : left > right ? 1 : 0;
@@ -121,6 +137,7 @@ export class GameSession {
   private readonly config: GameSessionConfig;
   private currentFinalScore: FinalScore | null = null;
   private currentEndgameClassification: EndgameClassification | null = null;
+  private readonly futureMetadata: HistoryMetadata[] = [];
 
   constructor(
     private readonly engine: GameEngine,
@@ -194,6 +211,14 @@ export class GameSession {
     return this.history.length();
   }
 
+  canUndo(): boolean {
+    return this.history.canUndo();
+  }
+
+  canRedo(): boolean {
+    return this.history.canRedo();
+  }
+
   /** Read-only legality query for presentation/hover feedback. */
   queryPlaceStone(point: PointId): GameSessionMoveQueryResult {
     const currentState = this.history.current();
@@ -231,6 +256,8 @@ export class GameSession {
         return this.pass();
       case 'undo':
         return this.undo();
+      case 'redo':
+        return this.redo();
     }
   }
 
@@ -264,6 +291,7 @@ export class GameSession {
     }
 
     const state = this.history.push(result.state);
+    this.futureMetadata.length = 0;
     await this.persist();
     return Object.freeze({
       ok: true,
@@ -286,6 +314,7 @@ export class GameSession {
     }
 
     const state = this.history.push(result.state);
+    this.futureMetadata.length = 0;
     if (state.phase !== 'endgame') {
       await this.persist();
       return Object.freeze({
@@ -312,6 +341,10 @@ export class GameSession {
   }
 
   private async undo(): Promise<GameSessionResult> {
+    const metadata = Object.freeze({
+      endgameClassification: cloneEndgameClassification(this.currentEndgameClassification),
+      finalScore: cloneFinalScore(this.currentFinalScore),
+    });
     const state = this.history.undo();
 
     if (!state) {
@@ -322,12 +355,37 @@ export class GameSession {
       });
     }
 
+    this.futureMetadata.push(metadata);
     this.currentFinalScore = null;
     this.currentEndgameClassification = null;
     await this.persist();
     return Object.freeze({
       ok: true,
       action: 'undo',
+      state,
+    });
+  }
+
+  private async redo(): Promise<GameSessionResult> {
+    const state = this.history.redo();
+
+    if (!state) {
+      return Object.freeze({
+        ok: false,
+        state: this.history.current(),
+        reason: 'nothing-to-redo',
+      });
+    }
+
+    const metadata = this.futureMetadata.pop();
+    this.currentEndgameClassification = cloneEndgameClassification(
+      metadata?.endgameClassification,
+    );
+    this.currentFinalScore = cloneFinalScore(metadata?.finalScore ?? null);
+    await this.persist();
+    return Object.freeze({
+      ok: true,
+      action: 'redo',
       state,
     });
   }

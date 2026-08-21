@@ -188,6 +188,14 @@ export class TorusGameController {
     return createGameResultModel(this.session.snapshot(), this.size);
   }
 
+  canUndo(): boolean {
+    return this.session.canUndo();
+  }
+
+  canRedo(): boolean {
+    return this.session.canRedo();
+  }
+
   endgameGroups(): readonly TorusEndgameGroup[] {
     const groups = this.endgameClassifier.pendingGroups();
     if (!groups) return Object.freeze([]);
@@ -305,6 +313,19 @@ export class TorusGameController {
 
     const result = await this.session.execute({ type: 'undo' });
     return this.present(result.ok, result.ok ? null : result.reason);
+  }
+
+  async redo(): Promise<TorusGameActionResult> {
+    if (this.pendingEndgameCompletion) return this.present(false, 'not-playing');
+
+    const result = await this.session.execute({ type: 'redo' });
+    if (!result.ok) return this.present(false, result.reason);
+
+    if (result.state.phase === 'endgame') {
+      this.pendingEndgameCompletion = this.session.resumeEndgame();
+    }
+
+    return this.present(true, null);
   }
 
   private present(

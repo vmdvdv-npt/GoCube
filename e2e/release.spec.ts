@@ -25,10 +25,11 @@ const clickPoint = async (page: Page, logicalPointId: string): Promise<void> => 
 };
 
 const waitForPassGuard = async (page: Page): Promise<void> => {
-  const pass = page.getByRole('button', { name: 'Pass' });
+  const pass = page.getByRole('button', { name: /^Pass(?: \(1\))?$/ });
+  await expect(pass).toHaveText('Pass (1)');
   await expect(pass).toBeDisabled();
-  await expect(page.getByRole('progressbar', { name: 'Pass cooldown' })).toBeVisible();
-  await expect(pass).toBeEnabled({ timeout: 4000 });
+  await expect(page.getByRole('progressbar', { name: 'Pass cooldown' })).toHaveCount(0);
+  await expect(pass).toBeEnabled({ timeout: 2200 });
 };
 
 const classifyPoint = async (

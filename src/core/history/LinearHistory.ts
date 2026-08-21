@@ -10,6 +10,7 @@ const snapshotState = (state: GameState): GameState =>
 
 export class LinearHistory {
   private readonly snapshots: GameState[];
+  private readonly futureSnapshots: GameState[] = [];
 
   constructor(initialState: GameState) {
     this.snapshots = [snapshotState(initialState)];
@@ -31,6 +32,7 @@ export class LinearHistory {
   push(state: GameState): GameState {
     const snapshot = snapshotState(state);
     this.snapshots.push(snapshot);
+    this.futureSnapshots.length = 0;
     return snapshot;
   }
 
@@ -45,8 +47,25 @@ export class LinearHistory {
       return null;
     }
 
-    this.snapshots.pop();
+    const future = this.snapshots.pop();
+    if (future) this.futureSnapshots.push(future);
     return this.current();
+  }
+
+  redo(): GameState | null {
+    const next = this.futureSnapshots.pop();
+    if (!next) return null;
+
+    this.snapshots.push(next);
+    return this.current();
+  }
+
+  canUndo(): boolean {
+    return this.snapshots.length > 1;
+  }
+
+  canRedo(): boolean {
+    return this.futureSnapshots.length > 0;
   }
 
   length(): number {
