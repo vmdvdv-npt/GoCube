@@ -30,6 +30,7 @@ test('new game uses board-size buttons and keeps Japanese rules as the default',
   await size13.click();
   await expect(size13).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByLabel('Board size')).toHaveValue('13');
+  await page.mouse.move(0, 0);
   const selectedBackground = await size13.evaluate((element) => getComputedStyle(element).backgroundImage);
   expect(selectedBackground).toContain('rgb(52, 66, 79)');
 
