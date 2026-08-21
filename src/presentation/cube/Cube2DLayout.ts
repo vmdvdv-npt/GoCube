@@ -19,15 +19,16 @@ export interface Cube2DLayoutCell {
   readonly face: CubeFace;
   readonly rotation: CubeRotation;
   readonly isCentral: boolean;
-  readonly isDuplicate: boolean;
   readonly pointIds: readonly (readonly PointId[])[];
 }
+
+export type Cube2DLayoutSlot = Cube2DLayoutCell | null;
 
 export interface Cube2DLayout {
   readonly orientation: CubeOrientation;
   readonly size: CubeSize;
   readonly cells: readonly Cube2DLayoutCell[];
-  readonly rows: readonly (readonly Cube2DLayoutCell[])[];
+  readonly rows: readonly (readonly Cube2DLayoutSlot[])[];
 }
 
 const logicalCoordinatesAt = (
@@ -78,46 +79,54 @@ const makeCell = (
     face: orientation.centerFace,
     rotation: orientation.rotation,
     isCentral: row === CUBE_2D_CENTER.row && column === CUBE_2D_CENTER.column,
-    isDuplicate: row !== 1 && column !== CUBE_2D_CENTER.column,
     pointIds: pointMatrix(orientation.centerFace, orientation.rotation, size),
   });
 
 /**
- * Builds a renderer-agnostic 4x3 gallery. The middle row is the four-face side ring;
- * the upper and lower rows show the corresponding top/bottom face in four rotations.
- * Only the extra top/bottom copies are marked as visual duplicates.
+ * Builds the renderer-agnostic Cube 2D cross inside a fixed 4x3 placement field.
+ * Exactly six positions are occupied: top above the center, the four-face side ring
+ * across the middle row, and bottom below the center. Every physical cube face occurs
+ * exactly once; the remaining six slots are empty and there are no visual duplicates.
  */
 export const createCube2DLayout = (
   orientation: CubeOrientation,
   size: CubeSize,
 ): Cube2DLayout => {
-  const middleOrientations = Object.freeze([
-    orientation.moveLeft(),
-    orientation,
-    orientation.moveRight(),
-    orientation.moveRight().moveRight(),
-  ] as const);
+  const left = orientation.moveLeft();
+  const right = orientation.moveRight();
+  const back = right.moveRight();
+  const top = orientation.moveUp();
+  const bottom = orientation.moveDown();
 
-  const orientationRows = Object.freeze([
-    Object.freeze(middleOrientations.map((entry) => entry.moveUp())),
-    middleOrientations,
-    Object.freeze(middleOrientations.map((entry) => entry.moveDown())),
-  ] as const);
+  const rows: readonly (readonly Cube2DLayoutSlot[])[] = Object.freeze([
+    Object.freeze([
+      null,
+      makeCell(0, 1, top, size),
+      null,
+      null,
+    ]),
+    Object.freeze([
+      makeCell(1, 0, left, size),
+      makeCell(1, 1, orientation, size),
+      makeCell(1, 2, right, size),
+      makeCell(1, 3, back, size),
+    ]),
+    Object.freeze([
+      null,
+      makeCell(2, 1, bottom, size),
+      null,
+      null,
+    ]),
+  ]);
 
-  const rows = Object.freeze(
-    orientationRows.map((orientationRow, row) =>
-      Object.freeze(
-        orientationRow.map((entry, column) =>
-          makeCell(row as Cube2DLayoutRow, column as Cube2DLayoutColumn, entry, size),
-        ),
-      ),
-    ),
+  const cells = Object.freeze(
+    rows.flat().filter((cell): cell is Cube2DLayoutCell => cell !== null),
   );
 
   return Object.freeze({
     orientation,
     size,
     rows,
-    cells: Object.freeze(rows.flat()),
+    cells,
   });
 };
