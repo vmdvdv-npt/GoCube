@@ -8,8 +8,8 @@ test('game screen uses a compact left service panel and a clean board area', asy
 
   await expect(page.locator('.app-header')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Shift torus view up' })).toBeVisible();
-  await expect(page.getByText('Black captures 0')).toBeVisible();
-  await expect(page.getByText('White captures 0')).toBeVisible();
+  await expect(page.getByText('Black Captured 0')).toBeVisible();
+  await expect(page.getByText('White Captured 0')).toBeVisible();
   await expect(page.getByText('Move 0')).toBeVisible();
   await expect(page.getByText('Passes 0')).toBeVisible();
   await expect(page.getByText('Chinese rules')).toBeVisible();

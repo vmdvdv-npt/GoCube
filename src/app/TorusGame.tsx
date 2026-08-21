@@ -459,8 +459,8 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
           <span>{controller.size}×{controller.size}</span>
           <span>Move {viewModel.moveNumber}</span>
           <span>Passes {viewModel.consecutivePasses}</span>
-          <span>Black captures {viewModel.captures.black}</span>
-          <span>White captures {viewModel.captures.white}</span>
+          <span>Black Captured {viewModel.captures.white}</span>
+          <span>White Captured {viewModel.captures.black}</span>
           <span>{viewModel.ruleSet === 'chinese' ? 'Chinese' : 'Japanese'} rules</span>
           <span>Komi {viewModel.komi}</span>
         </div>

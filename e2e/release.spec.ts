@@ -61,7 +61,7 @@ test('release acceptance covers capture, Pass/Undo and board-first manual endgam
 
   await expect(page.getByText('Black to move')).toBeVisible();
   await expect(page.getByText('Move 8')).toBeVisible();
-  await expect(page.getByText('White captures 1')).toBeVisible();
+  await expect(page.getByText('Black Captured 1')).toBeVisible();
   await expect(
     page.locator(
       '.torus-board__stone[data-logical-point-id="1,1"][data-copy-role="primary"]',
@@ -77,7 +77,7 @@ test('release acceptance covers capture, Pass/Undo and board-first manual endgam
   await expect(page.getByText('Black to move')).toBeVisible();
   await expect(page.getByText('Move 8')).toBeVisible();
   await expect(page.getByText('Passes 0')).toBeVisible();
-  await expect(page.getByText('White captures 1')).toBeVisible();
+  await expect(page.getByText('Black Captured 1')).toBeVisible();
 
   await page.getByRole('button', { name: 'Pass' }).click();
   await waitForPassGuard(page);
@@ -131,7 +131,7 @@ test('release acceptance covers capture, Pass/Undo and board-first manual endgam
   await expect(page.getByText('White to move')).toBeVisible();
   await expect(page.getByText('Move 9')).toBeVisible();
   await expect(page.getByText('Passes 1')).toBeVisible();
-  await expect(page.getByText('White captures 1')).toBeVisible();
+  await expect(page.getByText('Black Captured 1')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Game result' })).toHaveCount(0);
 });
 
