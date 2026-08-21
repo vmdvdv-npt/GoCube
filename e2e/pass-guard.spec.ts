@@ -17,50 +17,54 @@ const clickPoint = async (page: Page, logicalPointId: string): Promise<void> => 
     .click();
 };
 
-test('first Pass starts a three-second UI guard while board play remains available', async ({ page }) => {
+test('first Pass is shown as Pass (1), uses no visible timer and a normal move resets it', async ({ page }) => {
   await startGame(page);
 
-  const pass = page.getByRole('button', { name: 'Pass' });
+  const pass = page.getByRole('button', { name: /^Pass(?: \(1\))?$/ });
+  await expect(pass).toHaveText('Pass');
   await pass.click();
 
   await expect(page.getByText('White to move')).toBeVisible();
   await expect(page.getByText('Passes 1')).toBeVisible();
-  await expect(page.getByText('Previous pass: Black')).toBeVisible();
+  await expect(pass).toHaveText('Pass (1)');
   await expect(pass).toBeDisabled();
-  await expect(page.getByRole('progressbar', { name: 'Pass cooldown' })).toBeVisible();
+  await expect(page.getByRole('progressbar', { name: 'Pass cooldown' })).toHaveCount(0);
+  await expect(page.getByText(/Previous pass:/)).toHaveCount(0);
 
   await clickPoint(page, '4,4');
 
   await expect(page.getByText('Black to move')).toBeVisible();
   await expect(page.getByText('Passes 0')).toBeVisible();
-  await expect(page.getByText('Previous pass: Black')).toHaveCount(0);
-  await expect(page.getByRole('progressbar', { name: 'Pass cooldown' })).toHaveCount(0);
+  await expect(pass).toHaveText('Pass');
   await expect(pass).toBeEnabled();
 });
 
-test('second Pass unlocks after the guard and Undo of endgame does not restore the guard', async ({ page }) => {
+test('second Pass becomes available after about one second and Undo/Redo restores endgame', async ({ page }) => {
   await startGame(page);
 
-  const pass = page.getByRole('button', { name: 'Pass' });
+  const pass = page.getByRole('button', { name: /^Pass(?: \(1\))?$/ });
   await pass.click();
 
+  await expect(pass).toHaveText('Pass (1)');
   await expect(pass).toBeDisabled();
-  await expect(page.getByRole('progressbar', { name: 'Pass cooldown' })).toBeVisible();
-  await expect(pass).toBeEnabled({ timeout: 4000 });
-  await expect(page.getByRole('progressbar', { name: 'Pass cooldown' })).toHaveCount(0);
-  await expect(page.getByText('Previous pass: Black')).toBeVisible();
+  await expect(pass).toBeEnabled({ timeout: 2200 });
 
   await pass.click();
   await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Undo' }).click();
+  const undo = page.getByRole('button', { name: 'Undo' });
+  const redo = page.getByRole('button', { name: 'Redo' });
+  await expect(undo).toBeEnabled();
+  await expect(redo).toBeDisabled();
 
+  await undo.click();
   await expect(page.getByText('White to move')).toBeVisible();
   await expect(page.getByText('Passes 1')).toBeVisible();
-  await expect(page.getByText('Previous pass: Black')).toBeVisible();
-  await expect(page.getByRole('progressbar', { name: 'Pass cooldown' })).toHaveCount(0);
+  await expect(pass).toHaveText('Pass (1)');
   await expect(pass).toBeEnabled();
+  await expect(redo).toBeEnabled();
 
-  await pass.click();
+  await redo.click();
   await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
+  await expect(redo).toBeDisabled();
 });
