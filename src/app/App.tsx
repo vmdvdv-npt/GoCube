@@ -1,23 +1,37 @@
 import './new-game.css';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { RuleSet } from '../core/game/types';
-import { TORUS_SIZES, type TorusSize } from '../core/topology/TorusTopology';
-import { TorusGame } from './TorusGame';
+import { CUBE_SIZES } from '../core/topology/CubeTopology';
+import { TORUS_SIZES } from '../core/topology/TorusTopology';
+import { Cube2DGame } from './Cube2DGame';
 import {
-  TorusGameApplication,
+  GameApplication,
+  type ActiveGame,
+  type GameMode,
+  type GameSize,
   type SavedGameSummary,
-} from './TorusGameApplication';
-import type { TorusGameController } from './TorusGameController';
+} from './GameApplication';
+import { TorusGame } from './TorusGame';
 
 type AppScreen = 'loading' | 'resume' | 'settings' | 'game';
 
+const sizesForMode = (mode: GameMode): readonly GameSize[] =>
+  mode === 'cube-2d' ? CUBE_SIZES : TORUS_SIZES;
+
+const defaultSizeForMode = (mode: GameMode): GameSize =>
+  mode === 'cube-2d' ? 4 : 9;
+
+const modeLabel = (mode: GameMode): string =>
+  mode === 'cube-2d' ? 'Cube 2D' : 'Torus 2D';
+
 export function App() {
-  const application = useMemo(() => new TorusGameApplication(), []);
+  const application = useMemo(() => new GameApplication(), []);
   const [screen, setScreen] = useState<AppScreen>('loading');
   const [savedGame, setSavedGame] = useState<SavedGameSummary | null>(null);
-  const [controller, setController] = useState<TorusGameController | null>(null);
+  const [activeGame, setActiveGame] = useState<ActiveGame | null>(null);
   const [confirmNewGame, setConfirmNewGame] = useState(false);
-  const [size, setSize] = useState<TorusSize>(9);
+  const [gameMode, setGameMode] = useState<GameMode>('torus-2d');
+  const [size, setSize] = useState<GameSize>(9);
   const [ruleSet, setRuleSet] = useState<RuleSet>('japanese');
   const [komi, setKomi] = useState('7.5');
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +39,7 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
 
-    void application.findUnfinishedGame().then((summary) => {
+    void application.findSavedGame().then((summary) => {
       if (cancelled) return;
       setSavedGame(summary);
       setScreen(summary ? 'resume' : 'settings');
@@ -39,14 +53,14 @@ export function App() {
   const continueSavedGame = async (): Promise<void> => {
     setScreen('loading');
     setError(null);
-    const restored = await application.restoreUnfinishedGame();
+    const restored = await application.restoreSavedGame();
     if (!restored) {
       setSavedGame(null);
       setScreen('settings');
       return;
     }
 
-    setController(restored);
+    setActiveGame(restored);
     setScreen('game');
   };
 
@@ -54,14 +68,22 @@ export function App() {
     setError(null);
     try {
       await application.discardSavedGame();
-      setController(null);
+      setActiveGame(null);
       setSavedGame(null);
       setConfirmNewGame(false);
+      setGameMode('torus-2d');
+      setSize(9);
       setRuleSet('japanese');
+      setKomi('7.5');
       setScreen('settings');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not reset saved game.');
     }
+  };
+
+  const chooseMode = (nextMode: GameMode) => {
+    setGameMode(nextMode);
+    setSize(defaultSizeForMode(nextMode));
   };
 
   const startNewGame = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -75,21 +97,28 @@ export function App() {
     }
 
     try {
-      const next = await application.createNewGame({ size, ruleSet, komi: parsedKomi });
-      setController(next);
+      const next = await application.createNewGame({
+        gameMode,
+        size,
+        ruleSet,
+        komi: parsedKomi,
+      });
+      setActiveGame(next);
       setScreen('game');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not start a new game.');
     }
   };
 
+  const sizes = sizesForMode(gameMode);
+
   return (
     <main className={`app-shell${screen === 'game' ? ' app-shell--game' : ''}`}>
       {screen !== 'game' ? (
         <header className="app-header">
-          <p className="app-kicker">Game Cube Go · 0.1.0</p>
+          <p className="app-kicker">Game Cube Go · 0.2.0</p>
           <h1>GoCube</h1>
-          <p>Torus 2D · first playable release · local save/load · Chinese and Japanese scoring.</p>
+          <p>Cube 2D and Torus 2D · local save/load · Chinese and Japanese scoring.</p>
         </header>
       ) : null}
 
@@ -99,9 +128,10 @@ export function App() {
         <section className="startup-card" aria-labelledby="resume-title">
           <h2 id="resume-title">Continue saved game?</h2>
           <p>
-            {savedGame.size}×{savedGame.size} ·{' '}
+            {modeLabel(savedGame.gameMode)} · {savedGame.size}×{savedGame.size} ·{' '}
             {savedGame.ruleSet === 'chinese' ? 'Chinese' : 'Japanese'} · Komi{' '}
             {savedGame.komi} · Move {savedGame.moveNumber}
+            {savedGame.phase === 'finished' ? ' · Finished' : ''}
           </p>
           <div className="startup-actions">
             <button type="button" onClick={() => void continueSavedGame()}>
@@ -118,13 +148,30 @@ export function App() {
         <form className="startup-card new-game-form" onSubmit={(event) => void startNewGame(event)}>
           <div>
             <h2>New game</h2>
-            <p>Choose the board size, scoring rules, and komi.</p>
+            <p>Choose the surface, board size, scoring rules, and komi.</p>
           </div>
+
+          <fieldset className="board-size-fieldset surface-fieldset">
+            <legend>Board</legend>
+            <div className="board-size-options surface-options">
+              {(['cube-2d', 'torus-2d'] as const).map((mode) => (
+                <button
+                  type="button"
+                  key={mode}
+                  className={gameMode === mode ? 'is-selected' : undefined}
+                  aria-pressed={gameMode === mode}
+                  onClick={() => chooseMode(mode)}
+                >
+                  {modeLabel(mode)}
+                </button>
+              ))}
+            </div>
+          </fieldset>
 
           <fieldset className="board-size-fieldset">
             <legend>Board size</legend>
             <div className="board-size-options">
-              {TORUS_SIZES.map((option) => (
+              {sizes.map((option) => (
                 <button
                   type="button"
                   key={option}
@@ -140,10 +187,10 @@ export function App() {
               className="board-size-native-select"
               aria-label="Board size"
               value={size}
-              onChange={(event) => setSize(Number(event.target.value) as TorusSize)}
+              onChange={(event) => setSize(Number(event.target.value) as GameSize)}
               tabIndex={-1}
             >
-              {TORUS_SIZES.map((option) => (
+              {sizes.map((option) => (
                 <option value={option} key={option}>
                   {option}×{option}
                 </option>
@@ -176,8 +223,18 @@ export function App() {
         </form>
       ) : null}
 
-      {screen === 'game' && controller ? (
-        <TorusGame controller={controller} onRequestNewGame={() => setConfirmNewGame(true)} />
+      {screen === 'game' && activeGame?.gameMode === 'torus-2d' ? (
+        <TorusGame
+          controller={activeGame.controller}
+          onRequestNewGame={() => setConfirmNewGame(true)}
+        />
+      ) : null}
+
+      {screen === 'game' && activeGame?.gameMode === 'cube-2d' ? (
+        <Cube2DGame
+          controller={activeGame.controller}
+          onRequestNewGame={() => setConfirmNewGame(true)}
+        />
       ) : null}
 
       {confirmNewGame ? (
