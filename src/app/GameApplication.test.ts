@@ -11,7 +11,7 @@ class MemoryRepo implements GameRepository<ApplicationSavedState> {
 }
 
 describe('GameApplication 0.2 modes', () => {
-  it.each([2, 3, 4, 5] as const)('creates Cube 2D %d×%d and persists gameMode', async (size) => {
+  it.each([2, 3, 4, 5, 6, 7] as const)('creates Cube 2D %d×%d and persists gameMode', async (size) => {
     const repo = new MemoryRepo(); const app = new GameApplication(repo, () => '2026-08-21T16:00:00.000Z');
     const active = await app.createNewGame({ gameMode: 'cube-2d', size, ruleSet: 'japanese', komi: 7.5 });
     expect(active.gameMode).toBe('cube-2d');
