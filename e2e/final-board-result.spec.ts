@@ -60,7 +60,19 @@ test('finished board keeps territory and dead stones visible until Undo', async 
 
   await expect(page.getByText('Classified 6 of 6')).toBeVisible();
   await page.getByRole('button', { name: 'Calculate final score' }).click();
-  await expect(page.getByRole('dialog')).toBeVisible();
+
+  const resultDialog = page.getByRole('dialog');
+  await expect(resultDialog).toBeVisible();
+  const dialogTheme = await resultDialog.evaluate((element) => {
+    const style = window.getComputedStyle(element);
+    return {
+      backgroundColor: style.backgroundColor,
+      color: style.color,
+    };
+  });
+  expect(dialogTheme.backgroundColor).toBe('rgb(7, 16, 24)');
+  expect(dialogTheme.color).toBe('rgb(238, 243, 247)');
+  await expect(page.locator('.result-score-card')).toHaveCount(2);
 
   const board = page.locator('.torus-board');
   const blackTerritoryAtDeadStone = page.locator(
