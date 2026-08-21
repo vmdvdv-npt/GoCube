@@ -15,29 +15,45 @@ test('game screen uses a compact left service panel and a clean board area', asy
   await expect(page.getByText('Japanese rules')).toBeVisible();
   await expect(page.getByText('Komi 7.5')).toBeVisible();
   await expect(page.getByLabel('Показывать дублирующие области')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Pass' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Undo' })).toBeVisible();
+
+  const pass = page.getByRole('button', { name: /^Pass(?: \(1\))?$/ });
+  const redo = page.getByRole('button', { name: 'Redo' });
+  const undo = page.getByRole('button', { name: 'Undo' });
+  await expect(pass).toBeVisible();
+  await expect(redo).toBeVisible();
+  await expect(undo).toBeVisible();
   await expect(page.getByRole('button', { name: 'New game' })).toBeVisible();
 
   const game = page.locator('.torus-game');
   const summary = page.locator('.game-summary');
   const board = page.locator('.torus-board-shell');
 
-  const [gameBox, summaryBox, boardBox] = await Promise.all([
+  const [gameBox, summaryBox, boardBox, passBox, redoBox, undoBox] = await Promise.all([
     game.boundingBox(),
     summary.boundingBox(),
     board.boundingBox(),
+    pass.boundingBox(),
+    redo.boundingBox(),
+    undo.boundingBox(),
   ]);
 
   expect(gameBox).not.toBeNull();
   expect(summaryBox).not.toBeNull();
   expect(boardBox).not.toBeNull();
+  expect(passBox).not.toBeNull();
+  expect(redoBox).not.toBeNull();
+  expect(undoBox).not.toBeNull();
 
-  if (!gameBox || !summaryBox || !boardBox) return;
+  if (!gameBox || !summaryBox || !boardBox || !passBox || !redoBox || !undoBox) return;
 
   expect(summaryBox.x).toBeLessThan(boardBox.x);
   expect(summaryBox.width / gameBox.width).toBeGreaterThan(0.16);
   expect(summaryBox.width / gameBox.width).toBeLessThan(0.27);
+
+  expect(passBox.y).toBeLessThan(redoBox.y);
+  expect(passBox.y).toBeLessThan(undoBox.y);
+  expect(redoBox.x).toBeLessThan(undoBox.x);
+  expect(passBox.width).toBeGreaterThan(redoBox.width * 1.8);
 
   const background = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(background).toBe('rgb(4, 9, 15)');
