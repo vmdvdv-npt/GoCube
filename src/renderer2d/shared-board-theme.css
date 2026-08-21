@@ -90,11 +90,11 @@
 }
 
 .cube-2d-game .cube-2d-renderer[data-cube-size='6'] {
-  --cube-2d-content-scale: 0.8;
+  --cube-2d-content-scale: 0.83;
 }
 
 .cube-2d-game .cube-2d-renderer[data-cube-size='7'] {
-  --cube-2d-content-scale: 0.78;
+  --cube-2d-content-scale: 0.83;
 }
 
 .cube-2d-game .cube-2d-board__grid,
