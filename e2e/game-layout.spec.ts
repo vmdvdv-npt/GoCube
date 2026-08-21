@@ -12,7 +12,7 @@ test('game screen uses a compact left service panel and a clean board area', asy
   await expect(page.getByText('White Captured 0')).toBeVisible();
   await expect(page.getByText('Move 0')).toBeVisible();
   await expect(page.getByText('Passes 0')).toBeVisible();
-  await expect(page.getByText('Chinese rules')).toBeVisible();
+  await expect(page.getByText('Japanese rules')).toBeVisible();
   await expect(page.getByText('Komi 7.5')).toBeVisible();
   await expect(page.getByLabel('Показывать дублирующие области')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Pass' })).toBeVisible();
