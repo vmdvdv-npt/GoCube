@@ -11,6 +11,7 @@ import {
   type EndgameGroupRenderState,
 } from '../presentation/EndgameGroupPresentation';
 import { GameResultDialog } from './GameResultDialog';
+import { GameSidebar } from './GameSidebar';
 import './manual-endgame.css';
 import {
   isTorus2DPrimaryBoardClientPosition,
@@ -479,35 +480,95 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const allGroupsClassified = endgameGroups.every((group) => Boolean(decisions[group.id]));
   const gameResult = viewModel.phase === 'finished' ? controller.resultModel() : null;
   const passGuardActive = passGuardRemainingMs > 0;
-  const stageLabel =
-    viewModel.phase === 'playing'
-      ? `${viewModel.currentPlayer === 'black' ? 'Black' : 'White'} to move`
-      : viewModel.phase === 'endgame'
-        ? 'Classify groups'
-        : 'Game finished';
+
+  const endgamePanel =
+    viewModel.phase === 'endgame' ? (
+      <section className="endgame-panel" aria-labelledby="endgame-title">
+        <div>
+          <h2 id="endgame-title">Manual endgame classification</h2>
+          <p>
+            Hover a stone to highlight its whole logical group. Click a stone or an existing group line to select it, then choose Alive, Dead, or Seki.
+          </p>
+        </div>
+
+        {endgameGroups.length > 0 ? (
+          <>
+            <div className="endgame-progress" aria-live="polite">
+              Classified {classifiedCount} of {endgameGroups.length}
+            </div>
+
+            {selectedGroup ? (
+              <div className="endgame-selection">
+                <div className="endgame-selection__identity">
+                  <span
+                    className={`stone-chip stone-chip--${selectedGroup.color}`}
+                    aria-hidden="true"
+                  />
+                  <div>
+                    <strong>Selected group</strong>
+                    <span>
+                      {selectedGroup.points.length} {selectedGroup.points.length === 1 ? 'stone' : 'stones'}
+                    </span>
+                  </div>
+                </div>
+                <div
+                  className="endgame-statuses"
+                  role="group"
+                  aria-label="Selected group status"
+                >
+                  {ENDGAME_STATUSES.map((status) => (
+                    <button
+                      type="button"
+                      key={status}
+                      className={decisions[selectedGroup.id] === status ? 'is-selected' : undefined}
+                      aria-pressed={decisions[selectedGroup.id] === status}
+                      onClick={() => setGroupStatus(selectedGroup, status)}
+                    >
+                      {statusLabel(status)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="endgame-empty">Select a stone group directly on the board.</p>
+            )}
+          </>
+        ) : (
+          <p className="endgame-empty">There are no stone groups to classify.</p>
+        )}
+
+        <button
+          className="finish-game-button"
+          type="button"
+          disabled={!allGroupsClassified}
+          onClick={() => void handleFinishEndgame()}
+        >
+          Calculate final score
+        </button>
+      </section>
+    ) : null;
 
   return (
     <section className="torus-game" aria-label="Torus 2D game">
-      <div className="game-summary" aria-live="polite">
-        <div className="turn-indicator">
-          {viewModel.phase === 'playing' ? (
-            <span
-              className={`stone-chip stone-chip--${viewModel.currentPlayer}`}
-              aria-hidden="true"
-            />
-          ) : null}
-          <strong>{stageLabel}</strong>
-        </div>
-        <div className="game-statistics">
-          <span>{controller.size}×{controller.size}</span>
-          <span>Move {viewModel.moveNumber}</span>
-          <span>Passes {viewModel.consecutivePasses}</span>
-          <span>Black Captured {viewModel.captures.white}</span>
-          <span>White Captured {viewModel.captures.black}</span>
-          <span>{viewModel.ruleSet === 'chinese' ? 'Chinese' : 'Japanese'} rules</span>
-          <span>Komi {viewModel.komi}</span>
-        </div>
-      </div>
+      <GameSidebar
+        size={controller.size}
+        viewModel={viewModel}
+        showMoveNumbers={showMoveNumbers}
+        onShowMoveNumbersChange={setShowMoveNumbers}
+        showDuplicateRegions={showDuplicateRegions}
+        onShowDuplicateRegionsChange={setShowDuplicateRegions}
+        passDisabled={viewModel.phase !== 'playing' || passGuardActive}
+        canRedo={controller.canRedo()}
+        canUndo={controller.canUndo()}
+        onPass={() => void handlePass()}
+        onRedo={() => void handleRedo()}
+        onUndo={() => void handleUndo()}
+        gameResultAvailable={Boolean(gameResult && !resultOpen)}
+        onOpenGameResult={() => setResultOpen(true)}
+        onRequestNewGame={onRequestNewGame}
+        endgame={endgamePanel}
+        feedback={feedback}
+      />
 
       <div className="torus-board-shell" aria-label="Infinite torus view">
         <button
@@ -556,141 +617,9 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         </button>
       </div>
 
-      <div className="torus-duplicates-control" role="group" aria-label="Board display options">
-        <label>
-          <input
-            type="checkbox"
-            checked={showDuplicateRegions}
-            onChange={(event) => setShowDuplicateRegions(event.target.checked)}
-          />
-          Показывать дублирующие области
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={showMoveNumbers}
-            onChange={(event) => setShowMoveNumbers(event.target.checked)}
-          />
-          Номера ходов
-        </label>
-      </div>
-
-      <p className="torus-view-hint">
-        {showDuplicateRegions
-          ? 'One wrapped row or column is shown on each side as a non-interactive visual copy.'
-          : `Duplicate regions are hidden. The board shows exactly ${controller.size}×${controller.size} intersections.`}
-      </p>
-
-      <div className="game-controls">
-        <button
-          className="pass-control"
-          type="button"
-          onClick={() => void handlePass()}
-          disabled={viewModel.phase !== 'playing' || passGuardActive}
-        >
-          {viewModel.phase === 'playing' && viewModel.consecutivePasses === 1 ? 'Pass (1)' : 'Pass'}
-        </button>
-        <div className="history-controls" role="group" aria-label="Move history controls">
-          <button
-            type="button"
-            onClick={() => void handleRedo()}
-            disabled={!controller.canRedo()}
-          >
-            Redo
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleUndo()}
-            disabled={!controller.canUndo()}
-          >
-            Undo
-          </button>
-        </div>
-        {gameResult && !resultOpen ? (
-          <button
-            className="game-result-control"
-            type="button"
-            onClick={() => setResultOpen(true)}
-          >
-            Game result
-          </button>
-        ) : null}
-        <button className="new-game-control" type="button" onClick={onRequestNewGame}>
-          New game
-        </button>
-      </div>
-
-      {viewModel.phase === 'endgame' ? (
-        <section className="endgame-panel" aria-labelledby="endgame-title">
-          <div>
-            <h2 id="endgame-title">Manual endgame classification</h2>
-            <p>
-              Hover a stone to highlight its whole logical group. Click a stone or an existing group line to select it, then choose Alive, Dead, or Seki.
-            </p>
-          </div>
-
-          {endgameGroups.length > 0 ? (
-            <>
-              <div className="endgame-progress" aria-live="polite">
-                Classified {classifiedCount} of {endgameGroups.length}
-              </div>
-
-              {selectedGroup ? (
-                <div className="endgame-selection">
-                  <div className="endgame-selection__identity">
-                    <span
-                      className={`stone-chip stone-chip--${selectedGroup.color}`}
-                      aria-hidden="true"
-                    />
-                    <div>
-                      <strong>Selected group</strong>
-                      <span>
-                        {selectedGroup.points.length} {selectedGroup.points.length === 1 ? 'stone' : 'stones'}
-                      </span>
-                    </div>
-                  </div>
-                  <div
-                    className="endgame-statuses"
-                    role="group"
-                    aria-label="Selected group status"
-                  >
-                    {ENDGAME_STATUSES.map((status) => (
-                      <button
-                        type="button"
-                        key={status}
-                        className={decisions[selectedGroup.id] === status ? 'is-selected' : undefined}
-                        aria-pressed={decisions[selectedGroup.id] === status}
-                        onClick={() => setGroupStatus(selectedGroup, status)}
-                      >
-                        {statusLabel(status)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <p className="endgame-empty">Select a stone group directly on the board.</p>
-              )}
-            </>
-          ) : (
-            <p className="endgame-empty">There are no stone groups to classify.</p>
-          )}
-
-          <button
-            className="finish-game-button"
-            type="button"
-            disabled={!allGroupsClassified}
-            onClick={() => void handleFinishEndgame()}
-          >
-            Calculate final score
-          </button>
-        </section>
-      ) : null}
-
       {gameResult && resultOpen ? (
         <GameResultDialog result={gameResult} onClose={() => setResultOpen(false)} />
       ) : null}
-
-      {feedback ? <p className="game-feedback">{feedback}</p> : null}
     </section>
   );
 }

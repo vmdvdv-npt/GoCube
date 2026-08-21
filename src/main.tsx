@@ -4,6 +4,7 @@ import { App } from './app/App';
 import { Cube2DPreview } from './app/Cube2DPreview';
 import './styles.css';
 import './visual-overrides.css';
+import './renderer2d/shared-board-theme.css';
 import './renderer2d/stone-placement.css';
 
 const showCube2DPreview = new URLSearchParams(window.location.search).has('cube2d-preview');

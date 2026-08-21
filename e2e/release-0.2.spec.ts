@@ -23,7 +23,8 @@ test('0.2 production Cube flow: New Game, seam capture, history, zoom, resume an
   await page.getByLabel('Komi').fill('7.5');
   await page.getByRole('button', { name: 'Start game' }).click();
 
-  await expect(page.getByText('4×4 Cube 2D', { exact: true })).toBeVisible();
+  await expect(page.locator('.cube-2d-game .game-summary')).toBeVisible();
+  await expect(page.locator('.cube-2d-game .game-statistics')).toContainText('4×4');
   await expectSixBoards(page);
 
   // White at front:1:3 is captured by a Black liberty supplied from right:1:0.
@@ -50,8 +51,11 @@ test('0.2 production Cube flow: New Game, seam capture, history, zoom, resume an
   await expect(page.locator('.cube-2d-renderer')).toHaveAttribute('data-animating', 'false', { timeout: 1000 });
   await expectSixBoards(page);
 
-  await page.getByRole('button', { name: 'Zoom in Cube 2D' }).click();
-  await expect(page.getByLabel('Cube zoom')).toHaveText('110%');
+  const cubeViewport = page.locator('.cube-2d-game__viewport');
+  await expect(cubeViewport).toHaveAttribute('data-view-zoom', '1.000');
+  await cubeViewport.hover();
+  await page.mouse.wheel(0, -250);
+  await expect(cubeViewport).not.toHaveAttribute('data-view-zoom', '1.000');
   await hit(page, 'top:3:3').click();
   await expect(stone(page, 'top:3:3')).toHaveCount(1);
 
