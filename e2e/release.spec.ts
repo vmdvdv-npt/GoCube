@@ -24,6 +24,13 @@ const clickPoint = async (page: Page, logicalPointId: string): Promise<void> => 
   await target.click();
 };
 
+const waitForPassGuard = async (page: Page): Promise<void> => {
+  const pass = page.getByRole('button', { name: 'Pass' });
+  await expect(pass).toBeDisabled();
+  await expect(page.getByRole('progressbar', { name: 'Pass cooldown' })).toBeVisible();
+  await expect(pass).toBeEnabled({ timeout: 4000 });
+};
+
 const classifyPoint = async (
   page: Page,
   logicalPointId: string,
@@ -73,6 +80,7 @@ test('release acceptance covers capture, Pass/Undo and board-first manual endgam
   await expect(page.getByText('White captures 1')).toBeVisible();
 
   await page.getByRole('button', { name: 'Pass' }).click();
+  await waitForPassGuard(page);
   await page.getByRole('button', { name: 'Pass' }).click();
   await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
@@ -158,6 +166,7 @@ test('Chinese game reaches result, can reopen it, and Undo restores play', async
 
   await page.getByRole('button', { name: 'Pass' }).click();
   await expect(page.getByText('White to move')).toBeVisible();
+  await waitForPassGuard(page);
   await page.getByRole('button', { name: 'Pass' }).click();
 
   await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
@@ -194,6 +203,7 @@ test('Japanese scoring completes with the selected board size and komi', async (
   await startGame(page, { size: '13', rules: 'japanese', komi: '6.5' });
 
   await page.getByRole('button', { name: 'Pass' }).click();
+  await waitForPassGuard(page);
   await page.getByRole('button', { name: 'Pass' }).click();
   await page.getByRole('button', { name: 'Calculate final score' }).click();
 
