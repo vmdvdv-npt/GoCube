@@ -118,7 +118,7 @@ export function App() {
         <header className="app-header">
           <p className="app-kicker">Game Cube Go · 0.2.0</p>
           <h1>GoCube</h1>
-          <p>Cube 2D and Torus 2D · local save/load · Chinese and Japanese scoring.</p>
+          <p>Two surface modes · local save/load · Chinese and Japanese scoring.</p>
         </header>
       ) : null}
 
