@@ -4,6 +4,8 @@ import type { GameViewModel } from '../presentation/PresentationModel';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const ANNOTATION_CLASS = 'torus-board__stone-annotation';
+const PLACEMENT_ANIMATION_CLASS = 'torus-board__stone--placing';
+const previousViewModelBySvg = new WeakMap<SVGSVGElement, GameViewModel>();
 
 const contrastColor = (color: StoneColor): string =>
   color === 'black' ? '#ffffff' : '#111111';
@@ -23,15 +25,51 @@ const directStoneCircles = (stoneLayer: Element): readonly SVGCircleElement[] =>
       child instanceof SVGElement && child.classList.contains('torus-board__stone'),
   );
 
+export const stonePlacementPointFromTransition = (
+  previousViewModel: GameViewModel | null,
+  nextViewModel: GameViewModel,
+): PointId | null => {
+  if (!previousViewModel || nextViewModel.moveNumber !== previousViewModel.moveNumber + 1) {
+    return null;
+  }
+
+  const logicalPointId = nextViewModel.lastMovePointId ?? null;
+  if (!logicalPointId) return null;
+
+  const previousPoint = previousViewModel.points.find(
+    (point) => point.logicalPointId === logicalPointId,
+  );
+  const nextPoint = nextViewModel.points.find((point) => point.logicalPointId === logicalPointId);
+  if (!previousPoint || !nextPoint) return null;
+  if (previousPoint.occupancy !== 'empty' || nextPoint.occupancy === 'empty') return null;
+  if (
+    typeof nextPoint.moveNumber === 'number' &&
+    nextPoint.moveNumber !== nextViewModel.moveNumber
+  ) {
+    return null;
+  }
+
+  return logicalPointId;
+};
+
 /**
  * Adds renderer-only annotations to every visible stone copy. The function works
  * for both the normal board and the temporary pan-transition stone layers.
+ *
+ * It also marks only the newly placed logical stone for the short placement
+ * animation. Tracking the previous ViewModel on the persistent SVG root avoids
+ * replaying the animation when replaceChildren rebuilds the board for unrelated
+ * presentation updates.
  */
 export const renderTorus2DStoneAnnotations = (
   svg: SVGSVGElement,
   viewModel: GameViewModel,
   showMoveNumbers: boolean,
 ): void => {
+  const previousViewModel = previousViewModelBySvg.get(svg) ?? null;
+  const placementPointId = stonePlacementPointFromTransition(previousViewModel, viewModel);
+  previousViewModelBySvg.set(svg, viewModel);
+
   const moveNumbers = pointMoveNumbers(viewModel);
   const lastMovePointId = viewModel.lastMovePointId ?? null;
 
@@ -47,6 +85,10 @@ export const renderTorus2DStoneAnnotations = (
       const cy = stone.getAttribute('cy');
       const radius = Number(stone.getAttribute('r'));
       if (!logicalPointId || !occupancy || !cx || !cy || !Number.isFinite(radius)) continue;
+
+      if (logicalPointId === placementPointId) {
+        stone.classList.add(PLACEMENT_ANIMATION_CLASS);
+      }
 
       if (logicalPointId === lastMovePointId) {
         const marker = svg.ownerDocument.createElementNS(SVG_NS, 'circle');
