@@ -98,6 +98,7 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const VIEW_BOX_SIZE = 1000;
 const BOARD_PADDING = 120;
 const DUPLICATE_MARGIN = 4;
+export const TORUS_PAN_ANIMATION_DURATION_MS = 240;
 export const TORUS_ENDGAME_LINE_WIDTH_PX = 2;
 export const TORUS_FORBIDDEN_MARKER_SCALE = 1 / 2.25;
 const ENDGAME_HIT_TOLERANCE_PX = 8;
@@ -150,6 +151,32 @@ export const shiftTorus2DViewState = (
       return normalizeViewState({ ...normalized, offsetY: normalized.offsetY + 1 }, size);
   }
 };
+
+interface Torus2DPanTranslation {
+  readonly x: number;
+  readonly y: number;
+}
+
+const panInitialTranslation = (
+  direction: Torus2DPanDirection,
+  spacing: number,
+): Torus2DPanTranslation => {
+  switch (direction) {
+    case 'left':
+      return Object.freeze({ x: -spacing, y: 0 });
+    case 'right':
+      return Object.freeze({ x: spacing, y: 0 });
+    case 'up':
+      return Object.freeze({ x: 0, y: -spacing });
+    case 'down':
+      return Object.freeze({ x: 0, y: spacing });
+  }
+};
+
+const easeInOutCubic = (progress: number): number =>
+  progress < 0.5
+    ? 4 * progress * progress * progress
+    : 1 - Math.pow(-2 * progress + 2, 3) / 2;
 
 const freezeLine = (line: Torus2DGridLine): Torus2DGridLine => Object.freeze(line);
 
@@ -237,6 +264,65 @@ export const buildTorus2DScene = (
     hitRadius: spacing * 0.38,
     stoneRadius: spacing * 0.42,
     points: Object.freeze(points),
+    visualPoints: Object.freeze(visualPoints),
+    gridLines: Object.freeze(gridLines),
+  });
+};
+
+const buildBufferedTorus2DPanScene = (
+  viewModel: GameViewModel,
+  baseScene: Torus2DScene,
+): Torus2DScene => {
+  const renderMargin = baseScene.duplicateMargin + 1;
+  const byId = new Map<PointId, PointOccupancy>(
+    viewModel.points.map((point) => [point.logicalPointId, point.occupancy]),
+  );
+  const coordinate = (index: number): number => baseScene.padding + index * baseScene.spacing;
+
+  const scenePoint = (visualColumn: number, visualRow: number): Torus2DScenePoint => {
+    const logicalPointId = pointId(
+      wrap(visualColumn + baseScene.viewState.offsetX, baseScene.size),
+      wrap(visualRow + baseScene.viewState.offsetY, baseScene.size),
+    );
+    const occupancy = byId.get(logicalPointId);
+    if (!occupancy) {
+      throw new Error(`GameViewModel is missing torus point: ${logicalPointId}`);
+    }
+
+    return Object.freeze({
+      logicalPointId,
+      occupancy,
+      x: coordinate(visualColumn),
+      y: coordinate(visualRow),
+      visualColumn,
+      visualRow,
+      duplicate:
+        visualColumn < 0 ||
+        visualColumn >= baseScene.size ||
+        visualRow < 0 ||
+        visualRow >= baseScene.size,
+    });
+  };
+
+  const visualPoints: Torus2DScenePoint[] = [];
+  for (let row = -renderMargin; row < baseScene.size + renderMargin; row += 1) {
+    for (let column = -renderMargin; column < baseScene.size + renderMargin; column += 1) {
+      visualPoints.push(scenePoint(column, row));
+    }
+  }
+
+  const gridLines: Torus2DGridLine[] = [];
+  const start = coordinate(-renderMargin);
+  const end = coordinate(baseScene.size - 1 + renderMargin);
+  for (let index = -renderMargin; index < baseScene.size + renderMargin; index += 1) {
+    const position = coordinate(index);
+    gridLines.push(freezeLine({ x1: position, y1: start, x2: position, y2: end }));
+    gridLines.push(freezeLine({ x1: start, y1: position, x2: end, y2: position }));
+  }
+
+  return Object.freeze({
+    ...baseScene,
+    duplicateMargin: renderMargin,
     visualPoints: Object.freeze(visualPoints),
     gridLines: Object.freeze(gridLines),
   });
@@ -462,6 +548,8 @@ const setAttributes = (element: Element, attributes: Readonly<Record<string, str
   for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
 };
 
+let torusRendererInstanceCounter = 0;
+
 export class Torus2DRenderer implements Renderer2D {
   private scene: Torus2DScene | null = null;
   private currentViewModel: GameViewModel | null = null;
@@ -471,12 +559,16 @@ export class Torus2DRenderer implements Renderer2D {
   private movePreviewLayer: Element | null = null;
   private endgameOverlay: Torus2DEndgameOverlay = EMPTY_ENDGAME_OVERLAY;
   private endgameSegments: readonly Torus2DEndgameSegment[] = Object.freeze([]);
+  private panAnimating = false;
+  private readonly panClipPrefix: string;
 
   constructor(
     private readonly svg: SVGSVGElement,
     readonly size: Torus2DSize,
   ) {
     assertSupportedSize(size);
+    this.panClipPrefix = `torus-pan-${torusRendererInstanceCounter}`;
+    torusRendererInstanceCounter += 1;
   }
 
   viewState(): Torus2DViewState {
@@ -496,18 +588,41 @@ export class Torus2DRenderer implements Renderer2D {
   }
 
   setMovePreview(preview: Torus2DMovePreview | null): void {
-    this.movePreview = preview;
-    this.renderMovePreview();
+    this.movePreview = this.panAnimating ? null : preview;
+    if (!this.panAnimating) this.renderMovePreview();
   }
 
   pan(direction: Torus2DPanDirection): Torus2DViewState {
-    this.currentViewState = shiftTorus2DViewState(this.currentViewState, direction, this.size);
-    if (this.currentViewModel) this.render(this.currentViewModel);
-    return this.currentViewState;
+    if (this.panAnimating) return this.currentViewState;
+
+    const nextViewState = shiftTorus2DViewState(
+      this.currentViewState,
+      direction,
+      this.size,
+    );
+    const viewModel = this.currentViewModel;
+    const animationWindow = this.svg.ownerDocument.defaultView;
+
+    if (!viewModel || !animationWindow || typeof animationWindow.requestAnimationFrame !== 'function') {
+      this.currentViewState = nextViewState;
+      if (viewModel) this.render(viewModel);
+      return this.currentViewState;
+    }
+
+    const finalScene = buildTorus2DScene(
+      viewModel,
+      this.size,
+      nextViewState,
+      this.showDuplicateRegions,
+    );
+    this.startPanAnimation(direction, nextViewState, finalScene, animationWindow);
+    return nextViewState;
   }
 
   render(viewModel: GameViewModel): void {
     this.currentViewModel = viewModel;
+    if (this.panAnimating) return;
+
     const scene = buildTorus2DScene(
       viewModel,
       this.size,
@@ -527,6 +642,8 @@ export class Torus2DRenderer implements Renderer2D {
       'data-duplicate-regions-visible',
       this.showDuplicateRegions ? 'true' : 'false',
     );
+    this.svg.setAttribute('data-pan-animating', 'false');
+    this.svg.setAttribute('aria-busy', 'false');
 
     const document = this.svg.ownerDocument;
     const background = document.createElementNS(SVG_NS, 'rect');
@@ -665,6 +782,226 @@ export class Torus2DRenderer implements Renderer2D {
     const local = this.clientToViewBox(x, y);
     if (!local) return null;
     return endgameGroupFromTorusViewBoxPosition(this.endgameSegments, local.x, local.y);
+  }
+
+  private startPanAnimation(
+    direction: Torus2DPanDirection,
+    nextViewState: Torus2DViewState,
+    finalScene: Torus2DScene,
+    animationWindow: Window,
+  ): void {
+    const viewModel = this.currentViewModel;
+    if (!viewModel) return;
+
+    const transitionScene = buildBufferedTorus2DPanScene(viewModel, finalScene);
+    const transitionSegments = buildTorus2DEndgameSegments(
+      transitionScene,
+      this.endgameOverlay,
+    );
+    const animatedLayers = this.renderPanTransition(
+      transitionScene,
+      finalScene,
+      transitionSegments,
+    );
+    const initialTranslation = panInitialTranslation(direction, finalScene.spacing);
+    const previousPointerEvents = this.svg.style.pointerEvents;
+
+    this.panAnimating = true;
+    this.movePreview = null;
+    this.movePreviewLayer = null;
+    this.svg.style.pointerEvents = 'none';
+    this.svg.setAttribute('data-pan-animating', 'true');
+    this.svg.setAttribute('data-pan-direction', direction);
+    this.svg.setAttribute('aria-busy', 'true');
+
+    const applyTranslation = (x: number, y: number): void => {
+      const transform = `translate(${x} ${y})`;
+      for (const layer of animatedLayers) layer.setAttribute('transform', transform);
+    };
+    applyTranslation(initialTranslation.x, initialTranslation.y);
+
+    let startedAt: number | null = null;
+    const frame = (timestamp: number): void => {
+      if (startedAt === null) startedAt = timestamp;
+      const progress = Math.min(
+        1,
+        (timestamp - startedAt) / TORUS_PAN_ANIMATION_DURATION_MS,
+      );
+      const remaining = 1 - easeInOutCubic(progress);
+      applyTranslation(
+        initialTranslation.x * remaining,
+        initialTranslation.y * remaining,
+      );
+
+      if (progress < 1) {
+        animationWindow.requestAnimationFrame(frame);
+        return;
+      }
+
+      this.currentViewState = nextViewState;
+      this.panAnimating = false;
+      this.svg.style.pointerEvents = previousPointerEvents;
+      this.svg.setAttribute('data-pan-animating', 'false');
+      this.svg.setAttribute('aria-busy', 'false');
+
+      const latestViewModel = this.currentViewModel;
+      if (latestViewModel) this.render(latestViewModel);
+    };
+
+    animationWindow.requestAnimationFrame(frame);
+  }
+
+  private renderPanTransition(
+    transitionScene: Torus2DScene,
+    visibleScene: Torus2DScene,
+    endgameSegments: readonly Torus2DEndgameSegment[],
+  ): readonly SVGGElement[] {
+    const document = this.svg.ownerDocument;
+    const background = document.createElementNS(SVG_NS, 'rect');
+    setAttributes(background, {
+      x: '0',
+      y: '0',
+      width: String(visibleScene.viewBoxSize),
+      height: String(visibleScene.viewBoxSize),
+      fill: '#d8ad68',
+      class: 'torus-board__background',
+    });
+
+    const visibleStart =
+      visibleScene.padding - visibleScene.duplicateMargin * visibleScene.spacing;
+    const visibleEnd =
+      visibleScene.padding +
+      (visibleScene.size - 1 + visibleScene.duplicateMargin) * visibleScene.spacing;
+    const visibleSpan = visibleEnd - visibleStart;
+
+    const defs = document.createElementNS(SVG_NS, 'defs');
+    const gridClipId = `${this.panClipPrefix}-grid`;
+    const piecesClipId = `${this.panClipPrefix}-pieces`;
+
+    const gridClip = document.createElementNS(SVG_NS, 'clipPath');
+    gridClip.setAttribute('id', gridClipId);
+    gridClip.setAttribute('clipPathUnits', 'userSpaceOnUse');
+    const gridClipRect = document.createElementNS(SVG_NS, 'rect');
+    setAttributes(gridClipRect, {
+      x: String(visibleStart),
+      y: String(visibleStart),
+      width: String(visibleSpan),
+      height: String(visibleSpan),
+    });
+    gridClip.appendChild(gridClipRect);
+    defs.appendChild(gridClip);
+
+    const piecesClip = document.createElementNS(SVG_NS, 'clipPath');
+    piecesClip.setAttribute('id', piecesClipId);
+    piecesClip.setAttribute('clipPathUnits', 'userSpaceOnUse');
+    const piecesClipRect = document.createElementNS(SVG_NS, 'rect');
+    const pieceOverflow = visibleScene.stoneRadius + 2;
+    setAttributes(piecesClipRect, {
+      x: String(visibleStart - pieceOverflow),
+      y: String(visibleStart - pieceOverflow),
+      width: String(visibleSpan + pieceOverflow * 2),
+      height: String(visibleSpan + pieceOverflow * 2),
+    });
+    piecesClip.appendChild(piecesClipRect);
+    defs.appendChild(piecesClip);
+
+    const gridViewport = document.createElementNS(SVG_NS, 'g');
+    gridViewport.setAttribute('class', 'torus-board__pan-viewport torus-board__pan-viewport--grid');
+    gridViewport.setAttribute('clip-path', `url(#${gridClipId})`);
+    gridViewport.setAttribute('pointer-events', 'none');
+    const gridContent = document.createElementNS(SVG_NS, 'g');
+    gridContent.setAttribute('class', 'torus-board__pan-content torus-board__pan-content--grid');
+    const grid = document.createElementNS(SVG_NS, 'g');
+    grid.setAttribute('class', 'torus-board__grid');
+    for (const lineData of transitionScene.gridLines) {
+      const line = document.createElementNS(SVG_NS, 'line');
+      setAttributes(line, {
+        x1: String(lineData.x1),
+        y1: String(lineData.y1),
+        x2: String(lineData.x2),
+        y2: String(lineData.y2),
+        stroke: '#3f3325',
+        'stroke-width': '2',
+        'vector-effect': 'non-scaling-stroke',
+      });
+      grid.appendChild(line);
+    }
+    gridContent.appendChild(grid);
+    gridViewport.appendChild(gridContent);
+
+    const piecesViewport = document.createElementNS(SVG_NS, 'g');
+    piecesViewport.setAttribute(
+      'class',
+      'torus-board__pan-viewport torus-board__pan-viewport--pieces',
+    );
+    piecesViewport.setAttribute('clip-path', `url(#${piecesClipId})`);
+    piecesViewport.setAttribute('pointer-events', 'none');
+    const piecesContent = document.createElementNS(SVG_NS, 'g');
+    piecesContent.setAttribute(
+      'class',
+      'torus-board__pan-content torus-board__pan-content--pieces',
+    );
+
+    const stones = document.createElementNS(SVG_NS, 'g');
+    stones.setAttribute('class', 'torus-board__stones');
+    for (const point of transitionScene.visualPoints) {
+      if (point.occupancy === 'empty') continue;
+
+      const stone = document.createElementNS(SVG_NS, 'circle');
+      setAttributes(stone, {
+        cx: String(point.x),
+        cy: String(point.y),
+        r: String(transitionScene.stoneRadius),
+        fill: point.occupancy === 'black' ? '#111111' : '#f5f5f2',
+        stroke: '#111111',
+        'stroke-width': '2',
+        'vector-effect': 'non-scaling-stroke',
+        'pointer-events': 'none',
+        'data-logical-point-id': point.logicalPointId,
+        'data-occupancy': point.occupancy,
+        'data-copy-role': point.duplicate ? 'duplicate' : 'primary',
+        class: `torus-board__stone torus-board__stone--${point.occupancy}${point.duplicate ? ' torus-board__stone--duplicate' : ''}`,
+      });
+      stones.appendChild(stone);
+    }
+    piecesContent.appendChild(stones);
+
+    if (endgameSegments.length > 0) {
+      const endgameLines = document.createElementNS(SVG_NS, 'g');
+      endgameLines.setAttribute('class', 'torus-board__endgame-lines');
+      for (const segment of endgameSegments) {
+        const style = endgameLineStyle(
+          segment.status,
+          segment.groupColor,
+          segment.temporary,
+        );
+        const line = document.createElementNS(SVG_NS, 'line');
+        const attributes: Record<string, string> = {
+          x1: String(segment.x1),
+          y1: String(segment.y1),
+          x2: String(segment.x2),
+          y2: String(segment.y2),
+          stroke: style.stroke,
+          'stroke-width': String(TORUS_ENDGAME_LINE_WIDTH_PX),
+          'stroke-linecap': 'butt',
+          'vector-effect': 'non-scaling-stroke',
+          'pointer-events': 'none',
+          opacity: String(style.opacity),
+          'data-endgame-group-id': segment.groupId,
+          'data-endgame-status': segment.status ?? 'preview',
+          'data-endgame-temporary': segment.temporary ? 'true' : 'false',
+          class: 'torus-board__endgame-line',
+        };
+        if (style.strokeDasharray) attributes['stroke-dasharray'] = style.strokeDasharray;
+        setAttributes(line, attributes);
+        endgameLines.appendChild(line);
+      }
+      piecesContent.appendChild(endgameLines);
+    }
+
+    piecesViewport.appendChild(piecesContent);
+    this.svg.replaceChildren(background, defs, gridViewport, piecesViewport);
+    return Object.freeze([gridContent, piecesContent]);
   }
 
   private renderMovePreview(): void {
