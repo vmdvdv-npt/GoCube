@@ -222,7 +222,7 @@ export function GameResultDialog({ result, onClose }: GameResultDialogProps) {
 
         <footer className="result-dialog__footer">
           <span>Final position remains available for review after closing.</span>
-          <button type="button" onClick={onClose}>Close result</button>
+          <button type="button" onClick={onClose}>Close</button>
         </footer>
       </section>
     </div>
