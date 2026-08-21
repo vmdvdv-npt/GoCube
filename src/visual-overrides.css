@@ -1,9 +1,15 @@
+.torus-game::before {
+  background:
+    linear-gradient(180deg, rgb(27 31 35 / 96%), rgb(5 12 18 / 98%)),
+    #071019;
+}
+
 .game-statistics {
-  border: 1px solid rgb(203 140 50 / 30%);
+  border: 1px solid rgb(203 140 50 / 36%);
 }
 
 .turn-indicator {
-  border: 1px solid rgb(203 140 50 / 30%);
+  border: 1px solid rgb(203 140 50 / 36%);
 }
 
 /* Remove the old beige viewport frame so the app's dark background surrounds the board. */
@@ -29,9 +35,10 @@
 }
 
 .torus-duplicates-control {
-  display: grid;
-  align-items: stretch;
-  gap: 7px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgb(203 140 50 / 36%);
 }
 
 .torus-duplicates-control label {
@@ -44,6 +51,13 @@
 .torus-duplicates-control label + label {
   padding-top: 7px;
   border-top: 1px solid rgb(255 255 255 / 5%);
+}
+
+.game-controls .new-game-control {
+  margin-left: 0;
+  border-color: rgb(103 103 103 / 24%);
+  background: linear-gradient(180deg, #07313a, #05242b);
+  color: #cfcfcf;
 }
 
 /*
