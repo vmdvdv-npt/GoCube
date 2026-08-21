@@ -18,7 +18,7 @@ const verticalSnapshot = async (page: Page) => {
 test('Cube 2D navigation keeps six physical faces, natural seams and movable vertical anchor', async ({ page }) => {
   await page.goto('/?cube2d-preview=1');
 
-  await expect(page.getByRole('heading', { name: 'Cube 2D gameplay integration' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Cube 2D visual completion' })).toBeVisible();
   await expect(page.getByText('occupied boards: 6')).toBeVisible();
   await expect(page.getByText('empty slots: 6')).toBeVisible();
   await expect(page.getByText('vertical anchor: 1')).toBeVisible();
