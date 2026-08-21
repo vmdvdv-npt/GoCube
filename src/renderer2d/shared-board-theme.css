@@ -57,6 +57,39 @@
   clip-path: inset(9.25%);
 }
 
+/*
+ * Cube 2D only: tune the playable content independently from the JPEG face.
+ * 3x3 remains the visual baseline. 2x2 expands toward the wood edge, while
+ * 4x4 and especially 5x5 shrink inward so the outer stones stay clear of the
+ * bevel in the board artwork. The JPEG itself and the physical face size do not
+ * change. Scaling the hit-area group together with the visible content keeps
+ * hover/click targeting aligned with the rendered intersections.
+ */
+.cube-2d-game .cube-2d-renderer[data-cube-size='2'] {
+  --cube-2d-content-scale: 1.1;
+}
+
+.cube-2d-game .cube-2d-renderer[data-cube-size='3'] {
+  --cube-2d-content-scale: 1;
+}
+
+.cube-2d-game .cube-2d-renderer[data-cube-size='4'] {
+  --cube-2d-content-scale: 0.91;
+}
+
+.cube-2d-game .cube-2d-renderer[data-cube-size='5'] {
+  --cube-2d-content-scale: 0.75;
+}
+
+.cube-2d-game .cube-2d-board__grid,
+.cube-2d-game .cube-2d-board__stones,
+.cube-2d-game .cube-2d-board__hover,
+.cube-2d-game .cube-2d-board__hit-areas {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  transform: scale(var(--cube-2d-content-scale, 1));
+}
+
 .cube-2d-game .cube-2d-board--central {
   box-shadow: none;
 }
