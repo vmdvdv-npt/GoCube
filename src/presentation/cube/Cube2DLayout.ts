@@ -27,6 +27,7 @@ export type Cube2DLayoutSlot = Cube2DLayoutCell | null;
 export interface Cube2DLayout {
   readonly orientation: CubeOrientation;
   readonly size: CubeSize;
+  readonly verticalAnchorColumn: Cube2DLayoutColumn;
   readonly cells: readonly Cube2DLayoutCell[];
   readonly rows: readonly (readonly Cube2DLayoutSlot[])[];
 }
@@ -82,41 +83,49 @@ const makeCell = (
     pointIds: pointMatrix(orientation.centerFace, orientation.rotation, size),
   });
 
+const makeVerticalRow = (
+  row: 0 | 2,
+  column: Cube2DLayoutColumn,
+  orientation: CubeOrientation,
+  size: CubeSize,
+): readonly Cube2DLayoutSlot[] => {
+  const slots: Cube2DLayoutSlot[] = [null, null, null, null];
+  slots[column] = makeCell(row, column, orientation, size);
+  return Object.freeze(slots);
+};
+
 /**
  * Builds the renderer-agnostic Cube 2D cross inside a fixed 4x3 placement field.
- * Exactly six positions are occupied: top above the center, the four-face side ring
- * across the middle row, and bottom below the center. Every physical cube face occurs
- * exactly once; the remaining six slots are empty and there are no visual duplicates.
+ * Exactly six positions are occupied: the four-face side ring across the middle row plus
+ * the physical top/bottom faces in the selected vertical anchor column. Every physical
+ * cube face occurs exactly once and the remaining six slots are empty.
+ *
+ * TOP/BOTTOM orientation is resolved from the side face in the selected column. This is
+ * essential: moving the vertical pair changes only its visual placement/rotation, while
+ * every visible seam continues to connect actual CubeTopology neighbors.
  */
 export const createCube2DLayout = (
   orientation: CubeOrientation,
   size: CubeSize,
+  verticalAnchorColumn: Cube2DLayoutColumn = CUBE_2D_CENTER.column,
 ): Cube2DLayout => {
   const left = orientation.moveLeft();
   const right = orientation.moveRight();
   const back = right.moveRight();
-  const top = orientation.moveUp();
-  const bottom = orientation.moveDown();
+  const sideRing = [left, orientation, right, back] as const;
+  const anchorOrientation = sideRing[verticalAnchorColumn];
+  const top = anchorOrientation.moveUp();
+  const bottom = anchorOrientation.moveDown();
 
   const rows: readonly (readonly Cube2DLayoutSlot[])[] = Object.freeze([
-    Object.freeze([
-      null,
-      makeCell(0, 1, top, size),
-      null,
-      null,
-    ]),
+    makeVerticalRow(0, verticalAnchorColumn, top, size),
     Object.freeze([
       makeCell(1, 0, left, size),
       makeCell(1, 1, orientation, size),
       makeCell(1, 2, right, size),
       makeCell(1, 3, back, size),
     ]),
-    Object.freeze([
-      null,
-      makeCell(2, 1, bottom, size),
-      null,
-      null,
-    ]),
+    makeVerticalRow(2, verticalAnchorColumn, bottom, size),
   ]);
 
   const cells = Object.freeze(
@@ -126,6 +135,7 @@ export const createCube2DLayout = (
   return Object.freeze({
     orientation,
     size,
+    verticalAnchorColumn,
     rows,
     cells,
   });

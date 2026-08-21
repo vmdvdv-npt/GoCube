@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createCube2DLayout } from './Cube2DLayout';
+import { createCube2DViewState } from './Cube2DNavigation';
 import { CubeOrientation } from './CubeOrientation';
 
 describe('Cube orientation/layout architecture boundary', () => {
@@ -12,12 +13,24 @@ describe('Cube orientation/layout architecture boundary', () => {
     expect(JSON.parse(JSON.stringify(state))).toEqual(state);
   });
 
+  it('keeps Cube 2D view state presentation-only', () => {
+    const state = createCube2DViewState();
+
+    expect(Object.keys(state).sort()).toEqual(['orientation', 'verticalAnchorColumn']);
+    expect(state.verticalAnchorColumn).toBe(1);
+    expect(state.orientation).toBeInstanceOf(CubeOrientation);
+    expect('gameState' in state).toBe(false);
+    expect('history' in state).toBe(false);
+  });
+
   it('exposes a six-face logical cross without renderer coordinates or duplicate metadata', () => {
     const layout = createCube2DLayout(new CubeOrientation(), 3);
     const firstCell = layout.cells[0];
     const allPointIds = layout.cells.flatMap((cell) => cell.pointIds.flat());
 
-    expect(Object.keys(layout).sort()).toEqual(['cells', 'orientation', 'rows', 'size']);
+    expect(Object.keys(layout).sort()).toEqual(
+      ['cells', 'orientation', 'rows', 'size', 'verticalAnchorColumn'].sort(),
+    );
     expect(Object.keys(firstCell).sort()).toEqual(
       ['column', 'face', 'isCentral', 'pointIds', 'rotation', 'row'].sort(),
     );
