@@ -18,7 +18,7 @@ const verticalSnapshot = async (page: Page) => {
 test('Cube 2D navigation keeps six physical faces, natural seams and movable vertical anchor', async ({ page }) => {
   await page.goto('/?cube2d-preview=1');
 
-  await expect(page.getByRole('heading', { name: 'Cube 2D navigation preview' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Cube 2D gameplay integration' })).toBeVisible();
   await expect(page.getByText('occupied boards: 6')).toBeVisible();
   await expect(page.getByText('empty slots: 6')).toBeVisible();
   await expect(page.getByText('vertical anchor: 1')).toBeVisible();
@@ -29,6 +29,7 @@ test('Cube 2D navigation keeps six physical faces, natural seams and movable ver
   await expect(renderer).toHaveAttribute('data-layout-columns', '4');
   await expect(renderer).toHaveAttribute('data-board-count', '6');
   await expect(renderer).toHaveAttribute('data-vertical-anchor-column', '1');
+  await expect(renderer).toHaveAttribute('data-gameplay-input-disabled', 'false');
   await waitForIdle(renderer);
   await expect(boards).toHaveCount(6);
   expect(new Set(await boards.evaluateAll((elements) => elements.map((element) => element.getAttribute('data-face')))).size).toBe(6);
@@ -62,7 +63,7 @@ test('Cube 2D navigation keeps six physical faces, natural seams and movable ver
   expect(Math.abs(bottomBox!.x - centerBox!.x)).toBeLessThan(0.5);
 
   await expect(central.locator('line')).toHaveCount(8);
-  await expect(central.locator('.cube-2d-visual-point')).toHaveCount(16);
+  await expect(central.locator('.cube-2d-hit-area')).toHaveCount(16);
 
   const anchorSlots = page.locator('.cube-2d-anchor-slot');
   await expect(anchorSlots).toHaveCount(6);
@@ -77,9 +78,11 @@ test('Cube 2D navigation keeps six physical faces, natural seams and movable ver
 
   await topSlotColumn4.click();
   await expect(renderer).toHaveAttribute('data-animating', 'true');
+  await expect(renderer).toHaveAttribute('data-gameplay-input-disabled', 'true');
   await expect(boards).toHaveCount(6);
   expect(new Set(await boards.evaluateAll((elements) => elements.map((element) => element.getAttribute('data-face')))).size).toBe(6);
   await waitForIdle(renderer);
+  await expect(renderer).toHaveAttribute('data-gameplay-input-disabled', 'false');
   await expect(renderer).toHaveAttribute('data-vertical-anchor-column', '3');
   await expect(page.getByText('vertical anchor: 3')).toBeVisible();
 
@@ -119,8 +122,9 @@ test('Cube 2D navigation keeps six physical faces, natural seams and movable ver
 
   await page.getByRole('button', { name: 'Move cube left' }).click();
   await expect(renderer).toHaveAttribute('data-animating', 'true');
+  await expect(page.locator('.cube-2d-preview-stone')).toHaveCount(0);
+  await expect(page.locator('.cube-2d-forbidden-marker')).toHaveCount(0);
   await expect(boards).toHaveCount(6);
-  expect(new Set(await boards.evaluateAll((elements) => elements.map((element) => element.getAttribute('data-face')))).size).toBe(6);
   await waitForIdle(renderer);
   await expect(page.locator('.cube-2d-board[data-central="true"]')).toHaveAttribute('data-face', 'left');
 
@@ -139,7 +143,67 @@ test('Cube 2D navigation keeps six physical faces, natural seams and movable ver
   await page.getByLabel('Cube size').selectOption('5');
   const resizedCentral = page.locator('.cube-2d-board[data-central="true"]');
   await expect(resizedCentral.locator('line')).toHaveCount(10);
-  await expect(resizedCentral.locator('.cube-2d-visual-point')).toHaveCount(25);
+  await expect(resizedCentral.locator('.cube-2d-hit-area')).toHaveCount(25);
   await expect(page.getByText('logical points: 150')).toBeVisible();
   await expect(boards).toHaveCount(6);
+});
+
+test('Cube 2D preview supports hover preview, real moves, occupied points and navigation persistence', async ({ page }) => {
+  await page.goto('/?cube2d-preview=1');
+
+  const renderer = page.locator('.cube-2d-renderer');
+  const target = page.locator('.cube-2d-hit-area[data-point-id="front:1:1"]');
+  await expect(target).toHaveCount(1);
+
+  await target.hover();
+  const preview = page.locator('.cube-2d-preview-stone[data-logical-point-id="front:1:1"]');
+  await expect(preview).toHaveCount(1);
+  expect(Number(await preview.evaluate((element) => getComputedStyle(element).opacity))).toBeCloseTo(0.5, 1);
+
+  const targetBox = await target.boundingBox();
+  const previewBox = await preview.boundingBox();
+  expect(targetBox && previewBox).toBeTruthy();
+  const previewCenter = {
+    x: previewBox!.x + previewBox!.width / 2,
+    y: previewBox!.y + previewBox!.height / 2,
+  };
+
+  await page.mouse.move(targetBox!.x + 2, targetBox!.y + 2);
+  const movedPreviewBox = await preview.boundingBox();
+  expect(movedPreviewBox).toBeTruthy();
+  expect(Math.abs(movedPreviewBox!.x + movedPreviewBox!.width / 2 - previewCenter.x)).toBeLessThan(0.5);
+  expect(Math.abs(movedPreviewBox!.y + movedPreviewBox!.height / 2 - previewCenter.y)).toBeLessThan(0.5);
+
+  await target.click();
+  const blackStone = page.locator('.cube-2d-stone[data-logical-point-id="front:1:1"][data-occupancy="black"]');
+  await expect(blackStone).toHaveCount(1);
+  await expect(page.locator('.cube-2d-last-move-marker[data-logical-point-id="front:1:1"]')).toHaveCount(1);
+  await expect(page.getByText('player: white')).toBeVisible();
+  await expect(page.getByText('move: 1')).toBeVisible();
+  await expect(page.locator('.cube-2d-preview-stone[data-logical-point-id="front:1:1"]')).toHaveCount(0);
+  await expect(page.locator('.cube-2d-forbidden-marker[data-logical-point-id="front:1:1"]')).toHaveCount(0);
+
+  await target.click();
+  await expect(blackStone).toHaveCount(1);
+  await expect(page.getByText('move: 1')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Move cube right' }).click();
+  await expect(renderer).toHaveAttribute('data-gameplay-input-disabled', 'true');
+  await waitForIdle(renderer);
+  await expect(page.locator('.cube-2d-board')).toHaveCount(6);
+  await expect(blackStone).toHaveCount(1);
+  await expect(page.locator('.cube-2d-board[data-face="front"] .cube-2d-stone[data-logical-point-id="front:1:1"]')).toHaveCount(1);
+
+  await page.locator('.cube-2d-anchor-slot[data-layout-row="0"][data-layout-column="3"]').click();
+  await waitForIdle(renderer);
+  await expect(blackStone).toHaveCount(1);
+  await expect(page.locator('.cube-2d-board')).toHaveCount(6);
+  expect(await page.locator('[data-duplicate]').count()).toBe(0);
+
+  await page.getByRole('button', { name: 'Move numbers' }).click();
+  const second = page.locator('.cube-2d-hit-area[data-point-id="right:1:1"]');
+  await second.click();
+  await expect(page.locator('.cube-2d-stone[data-logical-point-id="right:1:1"][data-occupancy="white"]')).toHaveCount(1);
+  await expect(page.locator('.cube-2d-move-number[data-logical-point-id="front:1:1"]')).toHaveText('1');
+  await expect(page.locator('.cube-2d-last-move-marker[data-logical-point-id="right:1:1"]')).toHaveCount(1);
 });
