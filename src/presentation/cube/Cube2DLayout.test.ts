@@ -4,8 +4,6 @@ import {
   CUBE_SIZES,
   CubeTopology,
   cubePointId,
-  oppositeCubeFace,
-  type CubeFace,
   type CubeSize,
 } from '../../core/topology/CubeTopology';
 import {
@@ -13,7 +11,7 @@ import {
   createCube2DLayout,
   type Cube2DLayoutCell,
 } from './Cube2DLayout';
-import { CubeOrientation } from './CubeOrientation';
+import { CubeOrientation, oppositeCubeFace } from './CubeOrientation';
 
 const flattenPoints = (cell: Cube2DLayoutCell): readonly string[] => cell.pointIds.flat();
 
