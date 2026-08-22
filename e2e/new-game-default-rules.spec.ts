@@ -43,6 +43,7 @@ test('new game uses board-size buttons and keeps Japanese rules as the default',
   const rules = page.getByLabel('Rules');
   await expect(rules.locator('option')).toHaveText(['Japanese', 'Chinese']);
   await expect(rules).toHaveValue('japanese');
+  await expect(page.getByLabel('Komi')).toHaveValue('7.5');
 
   const startGame = page.getByRole('button', { name: 'Start game' });
   const startBackground = await startGame.evaluate((element) => getComputedStyle(element).backgroundImage);
@@ -69,7 +70,7 @@ test('new game uses board-size buttons and keeps Japanese rules as the default',
   await expect(page.getByLabel('Rules')).toHaveValue('japanese');
 });
 
-test('normalizes committed komi to canonical half-point values before saving', async ({ page }) => {
+test('normalizes committed komi and remembers the normalized value for the next game', async ({ page }) => {
   await page.goto('/');
 
   const cases = [
@@ -89,7 +90,11 @@ test('normalizes committed komi to canonical half-point values before saving', a
 
     await page.getByRole('button', { name: 'New game', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'New game' })).toBeVisible();
+    await expect(page.getByLabel('Komi')).toHaveValue(expected);
   }
+
+  await page.reload();
+  await expect(page.getByLabel('Komi')).toHaveValue('7.5');
 });
 
 test('Cube 2D adds 6×6 and 7×7 beside 5×5 in the second size row', async ({ page }) => {
