@@ -6,10 +6,12 @@ import type { Torus2DSize, Torus2DViewState } from './Torus2DRenderer';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const VIEW_BOX_SIZE = 1000;
 const BOARD_PADDING = 120;
+const GRID_COLOR = '#201e1c';
 const DUPLICATE_GRID_DASH = '14 10';
 const DUPLICATE_GRID_OPACITY = 0.72;
 const DUPLICATE_BAND_OPACITY = 0.16;
 const DUPLICATE_STONE_OPACITY = 0.5;
+let duplicateGridMaskSequence = 0;
 
 export const TORUS_EDGE_DUPLICATE_GRID_DASH = DUPLICATE_GRID_DASH;
 export const TORUS_EDGE_DUPLICATE_STONE_OPACITY = DUPLICATE_STONE_OPACITY;
@@ -36,6 +38,14 @@ const directOverlay = (svg: SVGSVGElement): SVGGElement | null =>
       child instanceof SVGGElement && child.classList.contains('torus-board__edge-duplicates'),
   ) ?? null;
 
+const directPrimaryStoneLayer = (svg: SVGSVGElement): SVGGElement | null =>
+  Array.from(svg.children).find(
+    (child): child is SVGGElement =>
+      child instanceof SVGGElement &&
+      child.classList.contains('torus-board__stones') &&
+      !child.classList.contains('torus-board__edge-duplicate-stones'),
+  ) ?? null;
+
 const setAttributes = (element: Element, attributes: Readonly<Record<string, string>>): void => {
   for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
 };
@@ -54,7 +64,7 @@ const appendLine = (
     y1: String(y1),
     x2: String(x2),
     y2: String(y2),
-    stroke: '#3f3325',
+    stroke: GRID_COLOR,
     'stroke-width': String(gridStrokeWidth(size)),
     'stroke-dasharray': DUPLICATE_GRID_DASH,
     'stroke-linecap': 'round',
@@ -182,6 +192,44 @@ export const renderTorus2DEdgeDuplicates = (
     'data-duplicate-signature': signature,
   });
 
+  const gridMaskId = `torus-edge-duplicate-grid-mask-${++duplicateGridMaskSequence}`;
+  const defs = document.createElementNS(SVG_NS, 'defs');
+  const gridMask = document.createElementNS(SVG_NS, 'mask');
+  setAttributes(gridMask, {
+    id: gridMaskId,
+    class: 'torus-board__edge-duplicate-grid-mask',
+    maskUnits: 'userSpaceOnUse',
+    maskContentUnits: 'userSpaceOnUse',
+    x: '0',
+    y: '0',
+    width: String(VIEW_BOX_SIZE),
+    height: String(VIEW_BOX_SIZE),
+  });
+  const gridMaskBackground = document.createElementNS(SVG_NS, 'rect');
+  setAttributes(gridMaskBackground, {
+    x: '0',
+    y: '0',
+    width: String(VIEW_BOX_SIZE),
+    height: String(VIEW_BOX_SIZE),
+    fill: '#ffffff',
+  });
+  gridMask.appendChild(gridMaskBackground);
+  for (const point of duplicatePoints) {
+    if (point.occupancy === 'empty') continue;
+    const hole = document.createElementNS(SVG_NS, 'circle');
+    setAttributes(hole, {
+      cx: String(point.x),
+      cy: String(point.y),
+      r: String(stoneRadius + gridStrokeWidth(size) / 2),
+      fill: '#000000',
+      'data-logical-point-id': point.logicalPointId,
+      'data-copy-role': 'duplicate',
+    });
+    gridMask.appendChild(hole);
+  }
+  defs.appendChild(gridMask);
+  overlay.appendChild(defs);
+
   const bands = document.createElementNS(SVG_NS, 'g');
   bands.setAttribute('class', 'torus-board__edge-duplicate-bands');
   bands.setAttribute('pointer-events', 'none');
@@ -237,8 +285,11 @@ export const renderTorus2DEdgeDuplicates = (
   }
 
   const grid = document.createElementNS(SVG_NS, 'g');
-  grid.setAttribute('class', 'torus-board__edge-duplicate-grid');
-  grid.setAttribute('pointer-events', 'none');
+  setAttributes(grid, {
+    class: 'torus-board__edge-duplicate-grid',
+    'pointer-events': 'none',
+    mask: `url(#${gridMaskId})`,
+  });
 
   appendLine(grid, outerLeft, boardStart, outerLeft, boardEnd, size);
   appendLine(grid, outerRight, boardStart, outerRight, boardEnd, size);
@@ -281,7 +332,13 @@ export const renderTorus2DEdgeDuplicates = (
     stones.appendChild(stone);
   }
   overlay.appendChild(stones);
-  svg.appendChild(overlay);
+
+  // Duplicate strips are decoration. Keep the whole overlay below the canonical
+  // stone layer so translucent bands/dashed grid can never tint or cross a real
+  // edge stone on the playable N×N board.
+  const primaryStoneLayer = directPrimaryStoneLayer(svg);
+  if (primaryStoneLayer) svg.insertBefore(overlay, primaryStoneLayer);
+  else svg.appendChild(overlay);
 };
 
 /**
