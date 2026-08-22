@@ -20,8 +20,8 @@ import { ChineseScoring } from '../core/scoring/ChineseScoring';
 import { JapaneseScoring } from '../core/scoring/JapaneseScoring';
 import type { ScoringStrategy } from '../core/scoring/Scoring';
 import {
-  CUBE_SIZES,
   CubeTopology,
+  isValidCubeSize,
   type CubeSize,
 } from '../core/topology/CubeTopology';
 import type { PointId } from '../core/topology/Topology';
@@ -66,9 +66,6 @@ export type Cube2DEndgameDecisions = Readonly<
 >;
 
 const EMPTY_CAPTURED: readonly PointId[] = Object.freeze([]);
-
-const isCubeSize = (value: number): value is CubeSize =>
-  CUBE_SIZES.some((size) => size === value);
 
 class DeferredEndgameClassifier implements EndgameClassifier {
   private groups: readonly (readonly PointId[])[] | null = null;
@@ -145,7 +142,7 @@ export class Cube2DGameController {
   constructor(options: Cube2DGameControllerOptions = {}) {
     const snapshot = options.snapshot;
     const requestedSize = snapshot?.boardSize ?? options.size ?? 4;
-    if (!isCubeSize(requestedSize)) {
+    if (!isValidCubeSize(requestedSize)) {
       throw new Error(`Unsupported cube size: ${String(requestedSize)}`);
     }
 

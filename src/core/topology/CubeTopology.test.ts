@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { PointId, Topology } from './Topology';
 import {
   CUBE_FACES,
-  CUBE_SIZES,
   CubeTopology,
   cubePointId,
   type CubeFace,
@@ -18,6 +17,8 @@ interface EdgeExpectation {
   readonly toEdge: Edge;
   readonly reverse: boolean;
 }
+
+const CUBE_CONTRACT_SIZES = [2, 3, 4, 5, 6, 7, 8, 10] as const;
 
 const EDGE_EXPECTATIONS: readonly EdgeExpectation[] = [
   { fromFace: 'front', fromEdge: 'left', toFace: 'left', toEdge: 'right', reverse: false },
@@ -78,7 +79,7 @@ const verifyTopologyContract = (topology: Topology) => {
   }
 };
 
-describe.each(CUBE_SIZES)('CubeTopology %dx%d', (size: CubeSize) => {
+describe.each(CUBE_CONTRACT_SIZES)('CubeTopology %dx%d', (size: CubeSize) => {
   const createTopology = () => new CubeTopology(size);
 
   it('enumerates six faces with unique logical point ids', () => {
@@ -158,10 +159,20 @@ describe.each(CUBE_SIZES)('CubeTopology %dx%d', (size: CubeSize) => {
   });
 });
 
-describe('CubeTopology validation', () => {
-  it('rejects sizes outside 2x2 through 7x7 at runtime', () => {
-    for (const size of [0, 1, 8, 9, 2.5]) {
-      expect(() => new CubeTopology(size as CubeSize)).toThrow(/Unsupported cube size/);
+describe('CubeTopology parameterization and validation', () => {
+  it.each([8, 10] as const)(
+    'accepts technical %dx%d sizes that are intentionally outside the current UI list',
+    (size) => {
+      const topology = new CubeTopology(size);
+      expect(topology.size).toBe(size);
+      expect(topology.points()).toHaveLength(6 * size * size);
+      verifyTopologyContract(topology);
+    },
+  );
+
+  it('rejects only structurally invalid sizes instead of a UI-specific allowlist', () => {
+    for (const size of [0, 1, -1, 2.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => new CubeTopology(size)).toThrow(/safe integer >= 2/);
     }
   });
 

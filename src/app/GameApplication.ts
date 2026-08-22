@@ -4,8 +4,12 @@ import {
   GAME_SESSION_SNAPSHOT_VERSION,
   type GameSessionSnapshot,
 } from '../core/persistence/GameSessionSnapshot';
-import { CUBE_SIZES, type CubeSize } from '../core/topology/CubeTopology';
+import type { CubeSize } from '../core/topology/CubeTopology';
 import { TORUS_SIZES, type TorusSize } from '../core/topology/TorusTopology';
+import {
+  isCubeUiSize,
+  type CubeUiSize,
+} from './CubeGameConfig';
 import { LocalStorageGameRepository } from './persistence/LocalStorageGameRepository';
 import { Cube2DGameController } from './Cube2DGameController';
 import { TorusGameController } from './TorusGameController';
@@ -14,7 +18,7 @@ export const CURRENT_GAME_ID = 'current';
 export const APPLICATION_SAVE_VERSION = 2 as const;
 
 export type GameMode = 'torus-2d' | 'cube-2d';
-export type GameSize = TorusSize | CubeSize;
+export type GameSize = TorusSize | CubeUiSize;
 
 export interface NewGameSettings {
   readonly gameMode: GameMode;
@@ -51,11 +55,8 @@ const isRuleSet = (value: unknown): value is RuleSet =>
 const isTorusSize = (value: unknown): value is TorusSize =>
   typeof value === 'number' && TORUS_SIZES.some((size) => size === value);
 
-const isCubeSize = (value: unknown): value is CubeSize =>
-  typeof value === 'number' && CUBE_SIZES.some((size) => size === value);
-
 const isSizeForMode = (mode: GameMode, value: unknown): value is GameSize =>
-  mode === 'torus-2d' ? isTorusSize(value) : isCubeSize(value);
+  mode === 'torus-2d' ? isTorusSize(value) : isCubeUiSize(value);
 
 const isPhase = (value: unknown): value is SavedGameSummary['phase'] =>
   value === 'playing' || value === 'endgame' || value === 'finished';

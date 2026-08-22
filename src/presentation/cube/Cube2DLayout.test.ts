@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   CUBE_FACES,
-  CUBE_SIZES,
   CubeTopology,
   cubePointId,
   type CubeSize,
@@ -12,6 +11,8 @@ import {
   type Cube2DLayoutCell,
 } from './Cube2DLayout';
 import { CubeOrientation, oppositeCubeFace } from './CubeOrientation';
+
+const CUBE_LAYOUT_CONTRACT_SIZES = [2, 3, 4, 5, 6, 7, 8, 10] as const satisfies readonly CubeSize[];
 
 const flattenPoints = (cell: Cube2DLayoutCell): readonly string[] => cell.pointIds.flat();
 
@@ -40,19 +41,18 @@ const requireCell = (cell: Cube2DLayoutCell | null): Cube2DLayoutCell => {
 };
 
 describe('Cube 2D logical 4x3 placement field', () => {
-  it('uses the required second-column, second-row central position', () => {
+  it('uses the canonical fixed cross with CENTER in row 1 column 1', () => {
     const layout = createCube2DLayout(new CubeOrientation(), 3);
     const central = requireCell(layout.rows[CUBE_2D_CENTER.row][CUBE_2D_CENTER.column]);
 
     expect(CUBE_2D_CENTER).toEqual({ row: 1, column: 1 });
-    expect(layout.verticalAnchorColumn).toBe(1);
     expect(central.isCentral).toBe(true);
     expect(central.face).toBe('front');
     expect(central.rotation).toBe(0);
     expect(layout.cells.filter((cell) => cell.isCentral)).toHaveLength(1);
   });
 
-  it('builds the default six-face cross with no duplicates', () => {
+  it('builds exactly TOP / side ring / BOTTOM with six null slots and no anchor state', () => {
     const layout = createCube2DLayout(new CubeOrientation(), 3);
 
     expect(
@@ -84,39 +84,14 @@ describe('Cube 2D logical 4x3 placement field', () => {
     expect(layout.cells).toHaveLength(6);
     expect(new Set(layout.cells.map((cell) => cell.face))).toEqual(new Set(CUBE_FACES));
     expect(layout.cells.every((cell) => !('isDuplicate' in cell))).toBe(true);
+    expect('verticalAnchorColumn' in layout).toBe(false);
   });
 
-  it('moves the same physical TOP/BOTTOM faces to every column with seam-correct rotations', () => {
-    const orientation = new CubeOrientation();
-    const expected = [
-      { column: 0, topRotation: 270, bottomRotation: 90 },
-      { column: 1, topRotation: 0, bottomRotation: 0 },
-      { column: 2, topRotation: 90, bottomRotation: 270 },
-      { column: 3, topRotation: 180, bottomRotation: 180 },
-    ] as const;
-
-    for (const { column, topRotation, bottomRotation } of expected) {
-      const layout = createCube2DLayout(orientation, 4, column);
-      const top = requireCell(layout.rows[0][column]);
-      const bottom = requireCell(layout.rows[2][column]);
-
-      expect(layout.verticalAnchorColumn).toBe(column);
-      expect(top.face).toBe('top');
-      expect(bottom.face).toBe('bottom');
-      expect(top.rotation).toBe(topRotation);
-      expect(bottom.rotation).toBe(bottomRotation);
-      expect(top.column).toBe(column);
-      expect(bottom.column).toBe(column);
-      expect(layout.rows[0].filter(Boolean)).toHaveLength(1);
-      expect(layout.rows[2].filter(Boolean)).toHaveLength(1);
-    }
-  });
-
-  it.each(CUBE_SIZES)('maps exactly the six cube faces with no repeated logical points on %dx%d', (size: CubeSize) => {
-    const topology = new CubeTopology(size);
-
-    for (const anchor of [0, 1, 2, 3] as const) {
-      const layout = createCube2DLayout(new CubeOrientation(), size, anchor);
+  it.each(CUBE_LAYOUT_CONTRACT_SIZES)(
+    'maps exactly the six cube faces with no repeated logical points on %dx%d',
+    (size) => {
+      const topology = new CubeTopology(size);
+      const layout = createCube2DLayout(new CubeOrientation(), size);
       const visualPoints = layout.cells.flatMap((cell) => flattenPoints(cell));
 
       expect(layout.cells).toHaveLength(6);
@@ -131,12 +106,13 @@ describe('Cube 2D logical 4x3 placement field', () => {
         expect(points.every((point) => topology.has(point))).toBe(true);
         expect(points.every((point) => point.startsWith(`${cell.face}:`))).toBe(true);
       }
-    }
-  });
+    },
+  );
 
-  it.each(CUBE_SIZES)('contains each physical face exactly once on %dx%d', (size: CubeSize) => {
-    for (const anchor of [0, 1, 2, 3] as const) {
-      const layout = createCube2DLayout(new CubeOrientation(), size, anchor);
+  it.each(CUBE_LAYOUT_CONTRACT_SIZES)(
+    'contains each physical face exactly once on %dx%d',
+    (size) => {
+      const layout = createCube2DLayout(new CubeOrientation(), size);
 
       for (const face of CUBE_FACES) {
         const cells = layout.cells.filter((cell) => cell.face === face);
@@ -149,59 +125,55 @@ describe('Cube 2D logical 4x3 placement field', () => {
         );
         expect(new Set(flattenPoints(cells[0]))).toEqual(expected);
       }
-    }
-  });
+    },
+  );
 
-  it('keeps every visible seam compatible with CubeTopology across all orientations, sizes and anchors', () => {
+  it('keeps every visible seam compatible with CubeTopology across all orientations and sizes', () => {
     const orientations = allOrientations();
     expect(orientations).toHaveLength(24);
 
-    for (const size of CUBE_SIZES) {
+    for (const size of CUBE_LAYOUT_CONTRACT_SIZES) {
       const topology = new CubeTopology(size);
       const last = size - 1;
 
       for (const orientation of orientations) {
-        for (const anchor of [0, 1, 2, 3] as const) {
-          const layout = createCube2DLayout(orientation, size, anchor);
-          const middle = layout.rows[1].map(requireCell);
-          const top = requireCell(layout.rows[0][anchor]);
-          const bottom = requireCell(layout.rows[2][anchor]);
-          const anchoredSide = middle[anchor];
+        const layout = createCube2DLayout(orientation, size);
+        const middle = layout.rows[1].map(requireCell);
+        const top = requireCell(layout.rows[0][1]);
+        const bottom = requireCell(layout.rows[2][1]);
+        const center = middle[1];
 
-          for (let column = 0; column < 3; column += 1) {
-            const left = middle[column];
-            const right = middle[column + 1];
-            expectSeam(
-              topology,
-              left.pointIds.map((row) => row[last]),
-              right.pointIds.map((row) => row[0]),
-            );
-          }
-
-          expectSeam(topology, top.pointIds[last], anchoredSide.pointIds[0]);
-          expectSeam(topology, anchoredSide.pointIds[last], bottom.pointIds[0]);
-          expect(top.face).toBe(orientation.neighbors.top);
-          expect(bottom.face).toBe(orientation.neighbors.bottom);
+        for (let column = 0; column < 3; column += 1) {
+          const left = middle[column];
+          const right = middle[column + 1];
+          expectSeam(
+            topology,
+            left.pointIds.map((row) => row[last]),
+            right.pointIds.map((row) => row[0]),
+          );
         }
+
+        expectSeam(topology, top.pointIds[last], center.pointIds[0]);
+        expectSeam(topology, center.pointIds[last], bottom.pointIds[0]);
+        expect(top.face).toBe(orientation.neighbors.top);
+        expect(bottom.face).toBe(orientation.neighbors.bottom);
       }
     }
   });
 
-  it('rebuilds the six-face cross around every orientation and anchor without copies', () => {
+  it('rebuilds the canonical six-face cross around every orientation without moving TOP/BOTTOM slots', () => {
     for (const orientation of allOrientations()) {
-      for (const anchor of [0, 1, 2, 3] as const) {
-        const layout = createCube2DLayout(orientation, 4, anchor);
-        const central = requireCell(layout.rows[1][1]);
-        const occupiedPositions = layout.cells.map(({ row, column }) => `${row}:${column}`);
+      const layout = createCube2DLayout(orientation, 4);
+      const central = requireCell(layout.rows[1][1]);
+      const occupiedPositions = layout.cells.map(({ row, column }) => `${row}:${column}`);
 
-        expect(central.face).toBe(orientation.centerFace);
-        expect(central.rotation).toBe(orientation.rotation);
-        expect(layout.cells).toHaveLength(6);
-        expect(new Set(layout.cells.map((cell) => cell.face))).toEqual(new Set(CUBE_FACES));
-        expect(new Set(occupiedPositions)).toEqual(
-          new Set([`0:${anchor}`, '1:0', '1:1', '1:2', '1:3', `2:${anchor}`]),
-        );
-      }
+      expect(central.face).toBe(orientation.centerFace);
+      expect(central.rotation).toBe(orientation.rotation);
+      expect(layout.cells).toHaveLength(6);
+      expect(new Set(layout.cells.map((cell) => cell.face))).toEqual(new Set(CUBE_FACES));
+      expect(new Set(occupiedPositions)).toEqual(
+        new Set(['0:1', '1:0', '1:1', '1:2', '1:3', '2:1']),
+      );
     }
   });
 });

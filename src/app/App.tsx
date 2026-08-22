@@ -1,8 +1,8 @@
 import './new-game.css';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { RuleSet } from '../core/game/types';
-import { CUBE_SIZES } from '../core/topology/CubeTopology';
 import { TORUS_SIZES } from '../core/topology/TorusTopology';
+import { CUBE_UI_SIZES } from './CubeGameConfig';
 import { Cube2DGame } from './Cube2DGame';
 import {
   GameApplication,
@@ -16,7 +16,7 @@ import { TorusGame } from './TorusGame';
 type AppScreen = 'loading' | 'resume' | 'settings' | 'game';
 
 const sizesForMode = (mode: GameMode): readonly GameSize[] =>
-  mode === 'cube-2d' ? CUBE_SIZES : TORUS_SIZES;
+  mode === 'cube-2d' ? CUBE_UI_SIZES : TORUS_SIZES;
 
 const defaultSizeForMode = (mode: GameMode): GameSize =>
   mode === 'cube-2d' ? 4 : 9;
@@ -239,7 +239,12 @@ export function App() {
 
       {confirmNewGame ? (
         <div className="confirmation-backdrop" role="presentation">
-          <section className="confirmation-card" role="dialog" aria-modal="true" aria-labelledby="new-game-confirm-title">
+          <section
+            className="confirmation-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="new-game-confirm-title"
+          >
             <h2 id="new-game-confirm-title">Start a new game?</h2>
             <p>The current game and its local autosave will be discarded.</p>
             <div className="startup-actions">

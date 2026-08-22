@@ -4,7 +4,11 @@ import { Cube2DGameController } from './Cube2DGameController';
 import { Cube2DVisualEffects } from './Cube2DVisualEffects';
 import { GameResultDialog } from './GameResultDialog';
 import { GameSidebar } from './GameSidebar';
-import { CUBE_ENDGAME_STATUSES, cubeEndgameStatusLabel, useCube2DGame } from './useCube2DGame';
+import {
+  CUBE_ENDGAME_STATUSES,
+  cubeEndgameStatusLabel,
+  useCube2DGame,
+} from './useCube2DGame';
 import './manual-endgame.css';
 import './cube2d-preview.css';
 import './cube2d-game-flow.css';
@@ -38,23 +42,36 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
             {g.selected ? (
               <div className="endgame-selection">
                 <div className="endgame-selection__identity">
-                  <span className={`stone-chip stone-chip--${g.selected.color}`} aria-hidden="true" />
+                  <span
+                    className={`stone-chip stone-chip--${g.selected.color}`}
+                    aria-hidden="true"
+                  />
                   <div>
                     <strong>Selected group</strong>
                     <span>
-                      {g.selected.points.length} {g.selected.points.length === 1 ? 'stone' : 'stones'}
+                      {g.selected.points.length}{' '}
+                      {g.selected.points.length === 1 ? 'stone' : 'stones'}
                     </span>
                   </div>
                 </div>
-                <div className="endgame-statuses" role="group" aria-label="Selected group status">
+                <div
+                  className="endgame-statuses"
+                  role="group"
+                  aria-label="Selected group status"
+                >
                   {CUBE_ENDGAME_STATUSES.map((status) => (
                     <button
                       type="button"
                       key={status}
-                      className={g.decisions[g.selected!.id] === status ? 'is-selected' : undefined}
+                      className={
+                        g.decisions[g.selected!.id] === status ? 'is-selected' : undefined
+                      }
                       aria-pressed={g.decisions[g.selected!.id] === status}
                       onClick={() =>
-                        g.setDecisions((current) => ({ ...current, [g.selected!.id]: status }))
+                        g.setDecisions((current) => ({
+                          ...current,
+                          [g.selected!.id]: status,
+                        }))
                       }
                     >
                       {cubeEndgameStatusLabel(status)}
@@ -89,7 +106,12 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
         onShowMoveNumbersChange={g.setShowMoveNumbers}
         showDuplicateRegions={false}
         duplicateRegionsDisabled
-        passDisabled={g.vm.phase !== 'playing' || g.passGuarded || Boolean(g.transition) || g.captureAnimating}
+        passDisabled={
+          g.vm.phase !== 'playing' ||
+          g.passGuarded ||
+          Boolean(g.transition) ||
+          g.captureAnimating
+        }
         canRedo={!g.transition && !g.captureAnimating && controller.canRedo()}
         canUndo={!g.transition && !g.captureAnimating && controller.canUndo()}
         onPass={() => void g.pass()}
@@ -138,12 +160,13 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
               <Cube2DRenderer
                 layout={g.layout}
                 transition={g.transition ?? undefined}
-                onVerticalAnchorColumnChange={g.moveAnchor}
                 viewModel={g.vm}
                 hoveredPointId={g.hoveredPoint}
                 hoverStatus={g.hoverStatus}
                 showMoveNumbers={g.showMoveNumbers}
-                inputDisabled={Boolean(g.transition) || g.captureAnimating || g.vm.phase === 'finished'}
+                inputDisabled={
+                  Boolean(g.transition) || g.captureAnimating || g.vm.phase === 'finished'
+                }
                 onPointHover={g.hover}
                 onPointActivate={(point) => void g.activate(point)}
               />
