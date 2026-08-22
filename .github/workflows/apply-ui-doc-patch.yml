@@ -1,16 +1,15 @@
 name: Apply UI documentation patch
 
 on:
-  pull_request:
-    branches: [main]
-    types: [opened]
+  push:
+    branches:
+      - fix/new-game-layout-duplicate-control
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: github.head_ref == 'fix/new-game-layout-duplicate-control'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
