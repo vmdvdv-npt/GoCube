@@ -35,7 +35,7 @@
 
 В 0.1 появляются:
 
-- Torus 2D;
+- Torus 2D как единственная topology и единственное игровое представление;
 - размеры Torus 9×9, 13×13 и 19×19;
 - базовая механика Go;
 - Japanese и Chinese scoring;
@@ -78,6 +78,9 @@
 - CubeTopology;
 - Cube 2D;
 - выбор topology `Cube / Torus` при создании новой партии;
+- при первом появлении этого выбора default topology — `Cube`;
+- новая Cube-партия стартует в Cube 2D; Cube 3D ещё отсутствует;
+- Torus продолжает использовать Torus 2D;
 - пользовательский набор размеров Cube 2D;
 - Cube 2D layout и orientation model;
 - Cube 2D navigation и ViewState;
@@ -121,7 +124,7 @@
 - ручной fallback для недоказанных или спорных случаев;
 - regression/fixture coverage endgame-classification для обеих topology.
 
-Cube 3D в 0.3 не входит.
+Cube 3D в 0.3 не входит. Cube-партии по-прежнему стартуют и играются в Cube 2D; Torus остаётся 2D.
 
 ## Критерий готовности
 
@@ -140,9 +143,11 @@ Cube 3D в 0.3 не входит.
 В 0.5 появляются:
 
 - Cube 3D renderer;
+- новая Cube-партия по умолчанию стартует в Cube 3D;
+- свободное переключение Cube 2D ↔ Cube 3D в рамках одной Cube-партии;
+- Torus в текущем roadmap остаётся только Torus 2D;
 - 3D input, rotation, zoom и picking;
 - отображение полного текущего игрового состояния в 3D;
-- переключение Cube 2D ↔ Cube 3D;
 - сохранение пространственного orientation anchor между представлениями;
 - feature parity основных игровых и endgame-визуализаций Cube 2D/Cube 3D;
 - 3D-specific automated/visual regression coverage.
