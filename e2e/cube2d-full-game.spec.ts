@@ -13,7 +13,7 @@ const expectSixBoards = async (page: Page) => {
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
+  await page.getByRole('button', { name: 'Cube', exact: true }).click();
   await page.getByRole('button', { name: '3×3', exact: true }).click();
   await page.getByLabel('Rules').selectOption('chinese');
   await page.getByRole('button', { name: 'Start game' }).click();
