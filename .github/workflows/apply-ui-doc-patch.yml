@@ -1,0 +1,84 @@
+name: Apply UI documentation patch
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'fix/new-game-layout-duplicate-control'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/new-game-layout-duplicate-control
+          fetch-depth: 0
+
+      - name: Update canonical product requirements
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('docs/GAME_CUBE_GO.md')
+          text = path.read_text(encoding='utf-8')
+
+          old_layout = """Форма `New Game` использует компактную двухколоночную desktop-композицию вместо длинной одноколоночной формы.
+
+- Заголовок `New game` и поясняющий текст находятся над общей областью настроек.
+- Левая колонка содержит `Board Shape`, крупный topology preview и controls `Cube` / `Torus`.
+- Правая колонка содержит `Board Size`, `Rules`, `Komi` и `Start game`.
+- Левая колонка немного уже правой; правая получает больше горизонтального пространства для размеров поля и остальных настроек.
+- `Board Shape` и `Board Size` визуально являются заметными section headings и крупнее обычных подписей form controls.
+"""
+          new_layout = """Форма `New Game` использует компактную двухколоночную desktop-композицию вместо длинной одноколоночной формы.
+
+- Внутри формы нет отдельного заголовка `New game` и поясняющего текста `Choose the surface, board size, scoring rules, and komi.`; после общего header сразу начинается область настроек.
+- Отступ после общего `.app-header` перед формой New Game — `12vh`.
+- Левая колонка содержит крупный topology preview, а под ним подпись `Board Shape` и controls `Cube` / `Torus`.
+- Правая колонка содержит `Board Size`, `Rules`, `Komi` и `Start game`.
+- Левая колонка немного уже правой: grid использует пропорцию `0.85fr / 1.15fr` и горизонтальный gap `80px`.
+- `Board Shape` и `Board Size` используют ту же типографику подписи, что `Rules` и `Komi`; они не выделяются увеличенным или жирным section-heading шрифтом.
+"""
+          if old_layout not in text:
+              raise SystemExit('New Game canonical layout block not found')
+          text = text.replace(old_layout, new_layout, 1)
+
+          old_topology = """Раздел выбора topology имеет заголовок `Board Shape`. Когда доступны обе topology, `Cube` и `Torus` показываются как два равноправных selectable controls.
+"""
+          new_topology = """Раздел выбора topology имеет подпись `Board Shape`, расположенную под topology preview непосредственно над controls `Cube` / `Torus`. Когда доступны обе topology, `Cube` и `Torus` показываются как два равноправных selectable controls.
+"""
+          if old_topology not in text:
+              raise SystemExit('Board Shape canonical sentence not found')
+          text = text.replace(old_topology, new_topology, 1)
+
+          old_preview = """Непосредственно над двумя topology-controls находится одна отдельная крупная preview-зона выбранной topology.
+"""
+          new_preview = """Над подписью `Board Shape` и двумя topology-controls находится одна отдельная крупная preview-зона выбранной topology.
+"""
+          if old_preview not in text:
+              raise SystemExit('Topology preview canonical sentence not found')
+          text = text.replace(old_preview, new_preview, 1)
+
+          old_duplicates = """В display options есть `Show duplicate regions`.
+"""
+          new_duplicates = """В Torus 2D display options есть `Show duplicate regions`. В Cube 2D этот Torus-specific control не показывается вовсе; disabled/неработающий checkbox в Cube 2D не рендерится.
+"""
+          if old_duplicates not in text:
+              raise SystemExit('Duplicate regions canonical sentence not found')
+          text = text.replace(old_duplicates, new_duplicates, 1)
+
+          path.write_text(text, encoding='utf-8')
+          Path('.github/workflows/apply-ui-doc-patch.yml').unlink()
+
+      - name: Commit documentation update
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Update canonical UI requirements"
+          git push origin HEAD:fix/new-game-layout-duplicate-control
