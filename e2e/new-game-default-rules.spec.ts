@@ -70,14 +70,18 @@ test('new game uses board-size buttons and keeps Japanese rules as the default',
   await expect(page.getByLabel('Rules')).toHaveValue('japanese');
 });
 
-test('topology controls use a fixed animated SVG preview without button icons', async ({ page }) => {
+test('new game uses a compact two-column layout with animated topology preview', async ({ page }) => {
   await page.goto('/');
 
   const preview = page.getByTestId('topology-preview');
   const previewImage = page.getByTestId('topology-preview-image');
-  const cube = page.getByRole('button', { name: 'Cube 2D', exact: true });
-  const torus = page.getByRole('button', { name: 'Torus 2D', exact: true });
+  const cube = page.getByRole('button', { name: 'Cube', exact: true });
+  const torus = page.getByRole('button', { name: 'Torus', exact: true });
+  const shapeColumn = page.getByTestId('new-game-shape-column');
+  const detailsColumn = page.getByTestId('new-game-details-column');
 
+  await expect(page.getByRole('group', { name: 'Board Shape' })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Board Size' })).toBeVisible();
   await expect(preview).toBeVisible();
   await expect(preview.locator('img')).toHaveCount(1);
   await expect(previewImage).toHaveAttribute('src', '/assets/board/torus.svg');
@@ -85,17 +89,28 @@ test('topology controls use a fixed animated SVG preview without button icons', 
   await expect(cube.locator('img, svg')).toHaveCount(0);
   await expect(torus.locator('img, svg')).toHaveCount(0);
 
-  const [cubeBox, torusBox, previewBox] = await Promise.all([
+  const [cubeBox, torusBox, previewBox, shapeBox, detailsBox] = await Promise.all([
     cube.boundingBox(),
     torus.boundingBox(),
     preview.boundingBox(),
+    shapeColumn.boundingBox(),
+    detailsColumn.boundingBox(),
   ]);
   expect(cubeBox).not.toBeNull();
   expect(torusBox).not.toBeNull();
   expect(previewBox).not.toBeNull();
+  expect(shapeBox).not.toBeNull();
+  expect(detailsBox).not.toBeNull();
   if (cubeBox && torusBox) {
     expect(cubeBox.y).toBeCloseTo(torusBox.y, 0);
     expect(cubeBox.x).toBeLessThan(torusBox.x);
+    expect(cubeBox.height).toBeGreaterThanOrEqual(38);
+    expect(cubeBox.height).toBeLessThanOrEqual(52);
+  }
+  if (shapeBox && detailsBox) {
+    expect(shapeBox.y).toBeCloseTo(detailsBox.y, 0);
+    expect(shapeBox.x).toBeLessThan(detailsBox.x);
+    expect(detailsBox.width).toBeGreaterThan(shapeBox.width);
   }
 
   await cube.click();
@@ -176,9 +191,9 @@ test('normalizes committed komi and remembers the normalized value for the next 
   await expect(page.getByLabel('Komi')).toHaveValue('7.5');
 });
 
-test('Cube 2D adds 6×6 and 7×7 beside 5×5 in the second size row', async ({ page }) => {
+test('Cube adds 6×6 and 7×7 beside 5×5 in the second size row', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
+  await page.getByRole('button', { name: 'Cube', exact: true }).click();
 
   const size5 = page.getByRole('button', { name: '5×5', exact: true });
   const size6 = page.getByRole('button', { name: '6×6', exact: true });
@@ -215,8 +230,8 @@ test('Cube 2D adds 6×6 and 7×7 beside 5×5 in the second size row', async ({ p
 test('remembers the last started board type and board size separately for Torus and Cube', async ({ page }) => {
   await page.goto('/');
 
-  const torus = page.getByRole('button', { name: 'Torus 2D', exact: true });
-  const cube = page.getByRole('button', { name: 'Cube 2D', exact: true });
+  const torus = page.getByRole('button', { name: 'Torus', exact: true });
+  const cube = page.getByRole('button', { name: 'Cube', exact: true });
 
   await expect(torus).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('topology-preview-image')).toHaveAttribute(
