@@ -19,11 +19,11 @@ export const CUBE_2D_BASE_CELL_SIZE = 190;
 export const CUBE_2D_STAGE_WIDTH = CUBE_2D_SVG_SIZE * CUBE_2D_LAYOUT_COLUMNS;
 export const CUBE_2D_STAGE_HEIGHT = CUBE_2D_SVG_SIZE * CUBE_2D_LAYOUT_ROWS;
 export const CUBE_2D_TRANSITION_MS = 260;
+export const CUBE_2D_FORBIDDEN_MARKER_SCALE = 1 / 2.25;
 
 export const cube2DContentScale = (size: number): number => {
-  if (size <= 3) return 1;
-  if (size === 4) return 0.91;
-  if (size === 5) return 0.85;
+  if (size <= 4) return 0.88;
+  if (size <= 7) return 0.86;
   return 0.83;
 };
 
@@ -294,7 +294,8 @@ const renderBoard = (
   const step = CUBE_2D_SVG_SIZE / size;
   const stoneRadius = step * 0.39;
   const previewRadius = stoneRadius;
-  const markerRadius = Math.max(1.1, step * 0.09);
+  const lastMoveMarkerRadius = Math.max(1.1, step * 0.09);
+  const forbiddenMarkerRadius = stoneRadius * CUBE_2D_FORBIDDEN_MARKER_SCALE;
   const artworkPrefix = `cube-2d-${board.face}`;
 
   return (
@@ -367,7 +368,7 @@ const renderBoard = (
                       className="cube-2d-last-move-marker"
                       cx={point.x}
                       cy={point.y}
-                      r={markerRadius}
+                      r={lastMoveMarkerRadius}
                       fill={occupancy === 'black' ? '#fff' : '#000'}
                       data-logical-point-id={point.pointId}
                     />
@@ -418,7 +419,7 @@ const renderBoard = (
                       className="cube-2d-forbidden-marker"
                       cx={point.x}
                       cy={point.y}
-                      r={markerRadius}
+                      r={forbiddenMarkerRadius}
                       data-logical-point-id={point.pointId}
                     />
                   ))
