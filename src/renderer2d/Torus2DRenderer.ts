@@ -10,6 +10,8 @@ import {
 /** Maximum number of navigation commands waiting behind the active Torus shift. */
 export const TORUS_NAVIGATION_QUEUE_LIMIT = 6;
 
+type StyledSvg = SVGSVGElement & Readonly<{ style?: CSSStyleDeclaration }>;
+
 /**
  * Adds the product-level Torus navigation queue around the low-level renderer.
  * The base renderer remains responsible for one physical shift animation; this
@@ -51,8 +53,8 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
     }
 
     this.navigationBusy = true;
-    this.pointerEventsBeforeNavigation = this.navigationRoot.style.pointerEvents;
-    this.navigationRoot.style.pointerEvents = 'none';
+    this.pointerEventsBeforeNavigation = this.style()?.pointerEvents ?? '';
+    this.setPointerEvents('none');
     this.syncNavigationAttributes();
 
     const next = super.pan(direction);
@@ -74,7 +76,7 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
 
     // Base renderer restores pointer-events at the end of each individual shift.
     // Keep gameplay input blocked across the whole queued navigation burst.
-    this.navigationRoot.style.pointerEvents = 'none';
+    this.setPointerEvents('none');
     this.syncNavigationAttributes();
     super.pan(nextDirection);
   }
@@ -82,9 +84,18 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
   private finishNavigationBurst(): void {
     this.navigationQueue.length = 0;
     this.navigationBusy = false;
-    this.navigationRoot.style.pointerEvents = this.pointerEventsBeforeNavigation;
+    this.setPointerEvents(this.pointerEventsBeforeNavigation);
     this.pointerEventsBeforeNavigation = '';
     this.syncNavigationAttributes();
+  }
+
+  private style(): CSSStyleDeclaration | undefined {
+    return (this.navigationRoot as StyledSvg).style;
+  }
+
+  private setPointerEvents(value: string): void {
+    const style = this.style();
+    if (style) style.pointerEvents = value;
   }
 
   private syncNavigationAttributes(): void {
