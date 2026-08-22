@@ -1,9 +1,6 @@
 import type { GroupStatus } from '../core/endgame/EndgameClassifier';
-import { DeferredEndgameClassifier } from '../core/endgame/DeferredEndgameClassifier';
-import {
-  ManualEndgameClassifier,
-  type ManualGroupDecision,
-} from '../core/endgame/ManualEndgameClassifier';
+import { effectiveEndgameStatus } from '../core/endgame/EndgameReviewState';
+import { ManualEndgameClassifier } from '../core/endgame/ManualEndgameClassifier';
 import { GameEngine } from '../core/game/GameEngine';
 import {
   GameSession,
@@ -69,21 +66,16 @@ const scoringFor = (ruleSet: RuleSet, topology: TorusTopology): ScoringStrategy 
     : new JapaneseScoring(topology);
 
 /**
- * Thin application adapter used by the React screen.
- * Commands enter through GameSession; presentation exits through PresentationModel.
- * Manual review decisions are session-owned/autosaved. Finalization reads only
- * that authoritative review state before ManualEndgameClassifier validates it.
- * The deferred classifier seam is shared with Cube and can be replaced/composed
- * by the assisted classifier introduced in 0.3 without changing this UI boundary.
+ * Thin presentation-friendly adapter for Torus 2D.
+ * GameSession owns proposal, partial review, final classification and scoring;
+ * the controller only forwards decisions and exposes logical groups for rendering.
  */
 export class TorusGameController {
   readonly size: TorusSize;
 
   private readonly topology: TorusTopology;
-  private readonly endgameClassifier = new DeferredEndgameClassifier();
   private readonly session: GameSession;
   private readonly presentation = new PresentationModel();
-  private pendingEndgameCompletion: Promise<void> | null = null;
 
   constructor(options: TorusGameControllerOptions = {}) {
     const snapshot = options.snapshot;
@@ -104,7 +96,7 @@ export class TorusGameController {
     this.topology = new TorusTopology(this.size);
     const engine = new GameEngine(this.topology);
     const config = {
-      endgameClassifier: this.endgameClassifier,
+      endgameClassifier: new ManualEndgameClassifier(),
       scoringStrategy: scoringFor(ruleSet, this.topology),
       boardSize: this.size,
       komi,
@@ -114,10 +106,6 @@ export class TorusGameController {
     this.session = snapshot
       ? GameSession.fromSnapshot(engine, config, snapshot)
       : new GameSession(engine, config);
-
-    if (this.session.state().phase === 'endgame') {
-      this.pendingEndgameCompletion = this.session.resumeEndgame();
-    }
   }
 
   viewModel(): GameViewModel {
@@ -141,8 +129,8 @@ export class TorusGameController {
   }
 
   endgameGroups(): readonly TorusEndgameGroup[] {
-    const groups = this.endgameClassifier.pendingGroups();
-    if (!groups) return Object.freeze([]);
+    const review = this.session.endgameReview();
+    if (!review) return Object.freeze([]);
 
     const viewModel = this.viewModel();
     const occupancyByPoint = new Map(
@@ -150,17 +138,17 @@ export class TorusGameController {
     );
 
     return Object.freeze(
-      groups.map((points) => {
-        const occupancy = occupancyByPoint.get(points[0]!);
+      review.groups.map((group) => {
+        const occupancy = occupancyByPoint.get(group.points[0]!);
         if (occupancy !== 'black' && occupancy !== 'white') {
-          throw new Error(`Endgame group does not begin with a stone: ${points[0]}`);
+          throw new Error(`Endgame group does not begin with a stone: ${group.points[0]}`);
         }
 
         return Object.freeze({
-          id: endgameGroupId(points),
-          points: Object.freeze([...points]),
+          id: endgameGroupId(group.points),
+          points: Object.freeze([...group.points]),
           color: occupancy,
-          edges: buildEndgameGroupEdges(points, this.topology),
+          edges: buildEndgameGroupEdges(group.points, this.topology),
         });
       }),
     );
@@ -172,9 +160,12 @@ export class TorusGameController {
 
     return Object.freeze(
       Object.fromEntries(
-        review.groups.flatMap((group) =>
-          group.status ? [[endgameGroupId(group.points), group.status] as const] : [],
-        ),
+        review.groups.flatMap((group) => {
+          const status = effectiveEndgameStatus(group);
+          return status === 'unresolved'
+            ? []
+            : [[endgameGroupId(group.points), status] as const];
+        }),
       ),
     );
   }
@@ -186,10 +177,6 @@ export class TorusGameController {
   }
 
   moveAvailability(point: PointId): TorusMoveAvailability {
-    if (this.pendingEndgameCompletion) {
-      return Object.freeze({ allowed: false, reason: 'not-playing' });
-    }
-
     const result = this.session.queryPlaceStone(point);
     return Object.freeze({
       allowed: result.allowed,
@@ -198,102 +185,28 @@ export class TorusGameController {
   }
 
   async placeStone(point: PointId): Promise<TorusGameActionResult> {
-    if (this.pendingEndgameCompletion) return this.present(false, 'not-playing');
-
     const result = await this.session.execute({ type: 'place-stone', point });
     return this.present(result.ok, result.ok ? null : result.reason);
   }
 
   async pass(): Promise<TorusGameActionResult> {
-    if (this.pendingEndgameCompletion) return this.present(false, 'not-playing');
-
-    const completion = this.session.execute({ type: 'pass' });
-
-    // GameSession pushes the second Pass and invokes the classifier synchronously
-    // before awaiting persistence/classification, so the intermediate endgame state
-    // is immediately available without exposing GameEngine or GameState to the UI.
-    if (this.session.state().phase === 'endgame') {
-      this.pendingEndgameCompletion = completion.then((result) => {
-        if (!result.ok) {
-          throw new Error(`Endgame Pass was rejected: ${result.reason}`);
-        }
-      });
-      return this.present(true, null);
-    }
-
-    const result = await completion;
+    const result = await this.session.execute({ type: 'pass' });
     return this.present(result.ok, result.ok ? null : result.reason);
   }
 
   async finishEndgame(): Promise<TorusGameActionResult> {
-    const completion = this.pendingEndgameCompletion;
-    const groups = this.endgameClassifier.pendingGroups();
-    if (!completion || !groups || this.session.state().phase !== 'endgame') {
-      throw new Error('No manual endgame classification is pending');
-    }
-
-    const review = this.session.endgameReview();
-    if (!review) throw new Error('No manual endgame review state is available');
-
-    const decisionsByGroup = new Map(
-      review.groups.map((group) => [endgameGroupId(group.points), group.status] as const),
-    );
-    const manualDecisions: ManualGroupDecision[] = groups.map((points) => {
-      const id = endgameGroupId(points);
-      const status = decisionsByGroup.get(id);
-      if (!status) {
-        throw new Error(`Missing manual endgame decision for group: ${id}`);
-      }
-
-      return Object.freeze({
-        points: Object.freeze([...points]),
-        status,
-      });
-    });
-
-    const classification = await new ManualEndgameClassifier(
-      this.session.state(),
-      this.topology,
-      manualDecisions,
-    ).classify(groups);
-
-    this.endgameClassifier.resolve(classification);
-
-    try {
-      await completion;
-      return this.present(true, null);
-    } finally {
-      this.pendingEndgameCompletion = null;
-    }
+    await this.session.finishEndgameReview();
+    return this.present(true, null);
   }
 
   async undo(): Promise<TorusGameActionResult> {
-    const pendingCompletion = this.pendingEndgameCompletion;
-    if (pendingCompletion) {
-      if (this.session.state().phase !== 'endgame') {
-        return this.present(false, 'not-playing');
-      }
-
-      this.endgameClassifier.cancel();
-      this.pendingEndgameCompletion = null;
-      void pendingCompletion.catch(() => undefined);
-    }
-
     const result = await this.session.executeSessionCommand({ type: 'undo' });
     return this.present(result.ok, result.ok ? null : result.reason);
   }
 
   async redo(): Promise<TorusGameActionResult> {
-    if (this.pendingEndgameCompletion) return this.present(false, 'not-playing');
-
     const result = await this.session.executeSessionCommand({ type: 'redo' });
-    if (!result.ok) return this.present(false, result.reason);
-
-    if (result.state.phase === 'endgame') {
-      this.pendingEndgameCompletion = this.session.resumeEndgame();
-    }
-
-    return this.present(true, null);
+    return this.present(result.ok, result.ok ? null : result.reason);
   }
 
   private present(
