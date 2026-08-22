@@ -27,7 +27,7 @@ const allOrientations = (): readonly CubeOrientation[] => {
 
 describe('Cube2D hit testing', () => {
   it.each(CUBE_HIT_TEST_CONTRACT_SIZES)(
-    'maps the center of every visual hit-area to one unique logical point on %dx%d',
+    'maps the center of every visual hit-area to one unique logical point for Cube size %d',
     (size) => {
       const topology = new CubeTopology(size);
 

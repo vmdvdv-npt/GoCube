@@ -24,6 +24,8 @@ const defaultSizeForMode = (mode: GameMode): GameSize =>
 const modeLabel = (mode: GameMode): string =>
   mode === 'cube-2d' ? 'Cube 2D' : 'Torus 2D';
 
+const normalizeKomi = (value: number): number => Math.floor(value) + 0.5;
+
 export function App() {
   const application = useMemo(() => new GameApplication(), []);
   const [screen, setScreen] = useState<AppScreen>('loading');
@@ -95,13 +97,14 @@ export function App() {
       setError('Komi must be a finite number.');
       return;
     }
+    const normalizedKomi = normalizeKomi(parsedKomi);
 
     try {
       const next = await application.createNewGame({
         gameMode,
         size,
         ruleSet,
-        komi: parsedKomi,
+        komi: normalizedKomi,
       });
       setActiveGame(next);
       setScreen('game');

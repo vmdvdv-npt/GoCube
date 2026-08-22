@@ -24,9 +24,14 @@ const clickPoint = async (page: Page, logicalPointId: string): Promise<void> => 
   await target.click();
 };
 
+const expectNoLegacyPassState = async (page: Page): Promise<void> => {
+  await expect(page.getByText(/^Passes \d+$/)).toHaveCount(0);
+};
+
 const waitForPassGuard = async (page: Page): Promise<void> => {
   const pass = page.getByRole('button', { name: /^Pass(?: \(1\))?$/ });
   await expect(pass).toHaveText('Pass (1)');
+  await expectNoLegacyPassState(page);
   await expect(pass).toBeDisabled();
   await expect(page.getByRole('progressbar', { name: 'Pass cooldown' })).toHaveCount(0);
   await expect(pass).toBeEnabled({ timeout: 2200 });
@@ -72,12 +77,14 @@ test('release acceptance covers capture, Pass/Undo and board-first manual endgam
   await page.getByRole('button', { name: 'Pass' }).click();
   await expect(page.getByText('White to move')).toBeVisible();
   await expect(page.getByText('Move 9')).toBeVisible();
-  await expect(page.getByText('Passes 1')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Pass (1)', exact: true })).toBeVisible();
+  await expectNoLegacyPassState(page);
 
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(page.getByText('Black to move')).toBeVisible();
   await expect(page.getByText('Move 8')).toBeVisible();
-  await expect(page.getByText('Passes 0')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Pass', exact: true })).toBeVisible();
+  await expectNoLegacyPassState(page);
   await expect(page.getByLabel('Black stones captured: 1')).toBeVisible();
 
   await page.getByRole('button', { name: 'Pass' }).click();
@@ -90,7 +97,8 @@ test('release acceptance covers capture, Pass/Undo and board-first manual endgam
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(page.getByText('White to move')).toBeVisible();
   await expect(page.getByText('Move 9')).toBeVisible();
-  await expect(page.getByText('Passes 1')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Pass (1)', exact: true })).toBeVisible();
+  await expectNoLegacyPassState(page);
 
   await page.getByRole('button', { name: 'Pass' }).click();
   await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
@@ -131,7 +139,8 @@ test('release acceptance covers capture, Pass/Undo and board-first manual endgam
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(page.getByText('White to move')).toBeVisible();
   await expect(page.getByText('Move 9')).toBeVisible();
-  await expect(page.getByText('Passes 1')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Pass (1)', exact: true })).toBeVisible();
+  await expectNoLegacyPassState(page);
   await expect(page.getByLabel('Black stones captured: 1')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Game result' })).toHaveCount(0);
 });
@@ -177,7 +186,8 @@ test('Chinese game reaches result, can reopen it, and Undo restores play', async
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(page.getByText('White to move')).toBeVisible();
   await expect(page.getByText('Move 1')).toBeVisible();
-  await expect(page.getByText('Passes 1')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Pass (1)', exact: true })).toBeVisible();
+  await expectNoLegacyPassState(page);
 
   await page.getByRole('button', { name: 'Pass' }).click();
   await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
