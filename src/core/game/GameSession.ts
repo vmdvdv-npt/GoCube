@@ -17,7 +17,9 @@ import type { GameState, StoneColor } from './types';
 
 export type GameCommand =
   | Readonly<{ type: 'place-stone'; point: PointId }>
-  | Readonly<{ type: 'pass' }>
+  | Readonly<{ type: 'pass' }>;
+
+export type SessionCommand =
   | Readonly<{ type: 'undo' }>
   | Readonly<{ type: 'redo' }>;
 
@@ -297,6 +299,11 @@ export class GameSession {
         return this.placeStone(command.point);
       case 'pass':
         return this.pass();
+    }
+  }
+
+  async executeSessionCommand(command: SessionCommand): Promise<GameSessionResult> {
+    switch (command.type) {
       case 'undo':
         return this.undo();
       case 'redo':
