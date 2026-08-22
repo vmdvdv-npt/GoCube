@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   CUBE_FACES,
-  CUBE_SIZES,
   CubeTopology,
   cubePointId,
   type CubeSize,
@@ -12,6 +11,8 @@ import {
   type Cube2DLayoutCell,
 } from './Cube2DLayout';
 import { CubeOrientation, oppositeCubeFace } from './CubeOrientation';
+
+const CUBE_LAYOUT_CONTRACT_SIZES = [2, 3, 4, 5, 6, 7, 8, 10] as const satisfies readonly CubeSize[];
 
 const flattenPoints = (cell: Cube2DLayoutCell): readonly string[] => cell.pointIds.flat();
 
@@ -112,51 +113,57 @@ describe('Cube 2D logical 4x3 placement field', () => {
     }
   });
 
-  it.each(CUBE_SIZES)('maps exactly the six cube faces with no repeated logical points on %dx%d', (size: CubeSize) => {
-    const topology = new CubeTopology(size);
+  it.each(CUBE_LAYOUT_CONTRACT_SIZES)(
+    'maps exactly the six cube faces with no repeated logical points on %dx%d',
+    (size) => {
+      const topology = new CubeTopology(size);
 
-    for (const anchor of [0, 1, 2, 3] as const) {
-      const layout = createCube2DLayout(new CubeOrientation(), size, anchor);
-      const visualPoints = layout.cells.flatMap((cell) => flattenPoints(cell));
+      for (const anchor of [0, 1, 2, 3] as const) {
+        const layout = createCube2DLayout(new CubeOrientation(), size, anchor);
+        const visualPoints = layout.cells.flatMap((cell) => flattenPoints(cell));
 
-      expect(layout.cells).toHaveLength(6);
-      expect(visualPoints).toHaveLength(6 * size * size);
-      expect(new Set(visualPoints).size).toBe(6 * size * size);
-      expect(new Set(visualPoints)).toEqual(new Set(topology.points()));
+        expect(layout.cells).toHaveLength(6);
+        expect(visualPoints).toHaveLength(6 * size * size);
+        expect(new Set(visualPoints).size).toBe(6 * size * size);
+        expect(new Set(visualPoints)).toEqual(new Set(topology.points()));
 
-      for (const cell of layout.cells) {
-        const points = flattenPoints(cell);
-        expect(points).toHaveLength(size * size);
-        expect(new Set(points).size).toBe(size * size);
-        expect(points.every((point) => topology.has(point))).toBe(true);
-        expect(points.every((point) => point.startsWith(`${cell.face}:`))).toBe(true);
+        for (const cell of layout.cells) {
+          const points = flattenPoints(cell);
+          expect(points).toHaveLength(size * size);
+          expect(new Set(points).size).toBe(size * size);
+          expect(points.every((point) => topology.has(point))).toBe(true);
+          expect(points.every((point) => point.startsWith(`${cell.face}:`))).toBe(true);
+        }
       }
-    }
-  });
+    },
+  );
 
-  it.each(CUBE_SIZES)('contains each physical face exactly once on %dx%d', (size: CubeSize) => {
-    for (const anchor of [0, 1, 2, 3] as const) {
-      const layout = createCube2DLayout(new CubeOrientation(), size, anchor);
+  it.each(CUBE_LAYOUT_CONTRACT_SIZES)(
+    'contains each physical face exactly once on %dx%d',
+    (size) => {
+      for (const anchor of [0, 1, 2, 3] as const) {
+        const layout = createCube2DLayout(new CubeOrientation(), size, anchor);
 
-      for (const face of CUBE_FACES) {
-        const cells = layout.cells.filter((cell) => cell.face === face);
-        expect(cells).toHaveLength(1);
+        for (const face of CUBE_FACES) {
+          const cells = layout.cells.filter((cell) => cell.face === face);
+          expect(cells).toHaveLength(1);
 
-        const expected = new Set(
-          Array.from({ length: size * size }, (_, index) =>
-            cubePointId(face, Math.floor(index / size), index % size),
-          ),
-        );
-        expect(new Set(flattenPoints(cells[0]))).toEqual(expected);
+          const expected = new Set(
+            Array.from({ length: size * size }, (_, index) =>
+              cubePointId(face, Math.floor(index / size), index % size),
+            ),
+          );
+          expect(new Set(flattenPoints(cells[0]))).toEqual(expected);
+        }
       }
-    }
-  });
+    },
+  );
 
   it('keeps every visible seam compatible with CubeTopology across all orientations, sizes and anchors', () => {
     const orientations = allOrientations();
     expect(orientations).toHaveLength(24);
 
-    for (const size of CUBE_SIZES) {
+    for (const size of CUBE_LAYOUT_CONTRACT_SIZES) {
       const topology = new CubeTopology(size);
       const last = size - 1;
 
