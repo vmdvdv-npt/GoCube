@@ -81,6 +81,44 @@ describe('Cube2D captured stone animation', () => {
     ]);
   });
 
+  it('preserves the pre-navigation capture source after left, right, up and down', () => {
+    const before = createCube2DLayout(new CubeOrientation(), 4, 2);
+    const beforeGeometry = createCube2DStagePointMap(before);
+    const nextOrientations = [
+      ['left', new CubeOrientation().moveLeft()],
+      ['right', new CubeOrientation().moveRight()],
+      ['up', new CubeOrientation().moveUp()],
+      ['down', new CubeOrientation().moveDown()],
+    ] as const;
+
+    for (const [direction, orientation] of nextOrientations) {
+      const after = createCube2DLayout(orientation, 4, 2);
+      const afterGeometry = createCube2DStagePointMap(after);
+      const changedPointId = [...beforeGeometry.keys()].find((pointId) => {
+        const first = beforeGeometry.get(pointId)!;
+        const second = afterGeometry.get(pointId)!;
+        return first.stageX !== second.stageX || first.stageY !== second.stageY;
+      });
+      if (!changedPointId) throw new Error(`Expected ${direction} navigation to move a point`);
+
+      const source = sourceFrom(before, changedPointId, 'black');
+      const [effect] = buildCube2DCaptureEffects({
+        generation: 20,
+        capturedPointIds: [changedPointId],
+        previousSources: new Map([[changedPointId, source]]),
+        stageWidth: CUBE_2D_STAGE_WIDTH,
+      });
+      const nextPosition = afterGeometry.get(changedPointId)!;
+
+      expect(effect!.stageX, direction).toBe(source.stageX);
+      expect(effect!.stageY, direction).toBe(source.stageY);
+      expect([effect!.stageX, effect!.stageY], direction).not.toEqual([
+        nextPosition.stageX,
+        nextPosition.stageY,
+      ]);
+    }
+  });
+
   it('tracks vertical anchor columns 0, 1, 2 and 3 in stage geometry', () => {
     for (const anchor of [0, 1, 2, 3] as const) {
       const layout = createCube2DLayout(new CubeOrientation(), 4, anchor);
