@@ -73,7 +73,7 @@ describe('TorusGameController manual endgame flow', () => {
     await controller.pass();
     await controller.pass();
 
-    await controller.setEndgameDecision('[\"0,0\"]', 'alive');
+    await controller.setEndgameDecision('["0,0"]', 'alive');
     await expect(controller.finishEndgame()).rejects.toThrow(
       'Missing manual endgame decision',
     );
