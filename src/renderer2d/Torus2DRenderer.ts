@@ -50,8 +50,8 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
   private renderedViewState: Torus2DViewState | null = null;
   private duplicateRegionsVisibleState = false;
   private renderedDuplicateRegionsVisible = false;
-  private endgameOverlay: Torus2DEndgameOverlay | null = null;
-  private endgameSegments: readonly Torus2DEndgameSegment[] = EMPTY_ENDGAME_SEGMENTS;
+  private overlayState: Torus2DEndgameOverlay | null = null;
+  private overlaySegments: readonly Torus2DEndgameSegment[] = EMPTY_ENDGAME_SEGMENTS;
 
   constructor(
     private readonly navigationRoot: SVGSVGElement,
@@ -68,7 +68,7 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
   }
 
   override setEndgameOverlay(overlay: Torus2DEndgameOverlay | null): void {
-    this.endgameOverlay = overlay;
+    this.overlayState = overlay;
     super.setEndgameOverlay(overlay);
     this.refreshEndgameSegments();
     this.renderEndgameOverlay();
@@ -106,7 +106,7 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
     if (bounds.width <= 0 || bounds.height <= 0) return null;
 
     return endgameGroupFromTorusViewBoxPosition(
-      this.endgameSegments,
+      this.overlaySegments,
       ((x - bounds.left) / bounds.width) * scene.viewBoxSize,
       ((y - bounds.top) / bounds.height) * scene.viewBoxSize,
     );
@@ -114,8 +114,8 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
 
   private refreshEndgameSegments(): void {
     const scene = this.latestScene;
-    const overlay = this.endgameOverlay;
-    this.endgameSegments =
+    const overlay = this.overlayState;
+    this.overlaySegments =
       scene && overlay
         ? buildTorus2DEndgameSegments(scene, overlay)
         : EMPTY_ENDGAME_SEGMENTS;
@@ -127,13 +127,13 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
     if (typeof this.navigationRoot.querySelector !== 'function') return;
 
     this.navigationRoot.querySelector('.torus-board__endgame-lines')?.remove();
-    if (this.endgameSegments.length === 0) return;
+    if (this.overlaySegments.length === 0) return;
 
     const document = this.navigationRoot.ownerDocument;
     const endgameLines = document.createElementNS(SVG_NS, 'g');
     endgameLines.setAttribute('class', 'torus-board__endgame-lines');
 
-    for (const segment of this.endgameSegments) {
+    for (const segment of this.overlaySegments) {
       const style = endgameLineStyle(
         segment.status,
         segment.groupColor,
