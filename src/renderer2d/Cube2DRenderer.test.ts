@@ -55,7 +55,7 @@ const allOrientations = (): readonly CubeOrientation[] => {
 };
 
 describe('Cube2DRenderer render model', () => {
-  it('renders exactly six physical boards inside the canonical fixed 4x3 placement field', () => {
+  it('renders exactly six physical boards inside the fixed 4x3 placement field', () => {
     const orientation = new CubeOrientation();
     const layout = createCube2DLayout(orientation, 4);
     const model = createCube2DRenderModel(layout);
@@ -80,7 +80,7 @@ describe('Cube2DRenderer render model', () => {
   });
 
   it('copies face, rotation, central status and point mapping directly from Cube2DLayout', () => {
-    const layout = createCube2DLayout(new CubeOrientation().moveUp().moveRight(), 5);
+    const layout = createCube2DLayout(new CubeOrientation().moveUp().moveRight(), 5, 3);
     const model = createCube2DRenderModel(layout);
 
     expect(model.boards).toHaveLength(layout.cells.length);
@@ -111,25 +111,32 @@ describe('Cube2DRenderer render model', () => {
     'renders every logical CubeTopology point exactly once on %dx%d',
     (size) => {
       const topology = new CubeTopology(size);
-      const model = createCube2DRenderModel(createCube2DLayout(new CubeOrientation(), size));
-      const visualPointIds = model.boards.flatMap((board) =>
-        board.points.map((point) => point.pointId),
-      );
 
-      expect(visualPointIds).toHaveLength(6 * size * size);
-      expect(visualPointIds.every((pointId) => topology.has(pointId))).toBe(true);
-      expect(new Set(visualPointIds).size).toBe(6 * size * size);
-      expect(new Set(visualPointIds)).toEqual(new Set(topology.points()));
+      for (const anchor of [0, 1, 2, 3] as const) {
+        const model = createCube2DRenderModel(
+          createCube2DLayout(new CubeOrientation(), size, anchor),
+        );
+        const visualPointIds = model.boards.flatMap((board) =>
+          board.points.map((point) => point.pointId),
+        );
+
+        expect(visualPointIds).toHaveLength(6 * size * size);
+        expect(visualPointIds.every((pointId) => topology.has(pointId))).toBe(true);
+        expect(new Set(visualPointIds).size).toBe(6 * size * size);
+        expect(new Set(visualPointIds)).toEqual(new Set(topology.points()));
+      }
     },
   );
 
   it('renders every physical cube face once and only once', () => {
-    const model = createCube2DRenderModel(createCube2DLayout(new CubeOrientation(), 4));
+    for (const anchor of [0, 1, 2, 3] as const) {
+      const model = createCube2DRenderModel(createCube2DLayout(new CubeOrientation(), 4, anchor));
 
-    expect(model.boards).toHaveLength(CUBE_FACES.length);
-    expect(new Set(model.boards.map((board) => board.face))).toEqual(new Set(CUBE_FACES));
-    for (const face of CUBE_FACES) {
-      expect(model.boards.filter((board) => board.face === face)).toHaveLength(1);
+      expect(model.boards).toHaveLength(CUBE_FACES.length);
+      expect(new Set(model.boards.map((board) => board.face))).toEqual(new Set(CUBE_FACES));
+      for (const face of CUBE_FACES) {
+        expect(model.boards.filter((board) => board.face === face)).toHaveLength(1);
+      }
     }
   });
 
@@ -155,7 +162,7 @@ describe('Cube2DRenderer render model', () => {
     }
   });
 
-  it('preserves CubeTopology adjacency at every visible seam for all orientations and sizes', () => {
+  it('preserves CubeTopology adjacency at every visible seam for all orientations, sizes and anchors', () => {
     const orientations = allOrientations();
     expect(orientations).toHaveLength(24);
 
@@ -164,37 +171,39 @@ describe('Cube2DRenderer render model', () => {
       const last = size - 1;
 
       for (const orientation of orientations) {
-        const model = createCube2DRenderModel(createCube2DLayout(orientation, size));
-        const sideRing = [
-          boardAt(model.boards, 1, 0),
-          boardAt(model.boards, 1, 1),
-          boardAt(model.boards, 1, 2),
-          boardAt(model.boards, 1, 3),
-        ] as const;
-        const top = boardAt(model.boards, 0, 1);
-        const bottom = boardAt(model.boards, 2, 1);
-        const center = sideRing[1];
+        for (const anchor of [0, 1, 2, 3] as const) {
+          const model = createCube2DRenderModel(createCube2DLayout(orientation, size, anchor));
+          const sideRing = [
+            boardAt(model.boards, 1, 0),
+            boardAt(model.boards, 1, 1),
+            boardAt(model.boards, 1, 2),
+            boardAt(model.boards, 1, 3),
+          ] as const;
+          const top = boardAt(model.boards, 0, anchor);
+          const bottom = boardAt(model.boards, 2, anchor);
+          const anchoredSide = sideRing[anchor];
 
-        for (let column = 0; column < 3; column += 1) {
-          const first = sideRing[column];
-          const second = sideRing[column + 1];
+          for (let column = 0; column < 3; column += 1) {
+            const first = sideRing[column];
+            const second = sideRing[column + 1];
+            expectSeam(
+              topology,
+              Array.from({ length: size }, (_, row) => pointAt(first, row, last)),
+              Array.from({ length: size }, (_, row) => pointAt(second, row, 0)),
+            );
+          }
+
           expectSeam(
             topology,
-            Array.from({ length: size }, (_, row) => pointAt(first, row, last)),
-            Array.from({ length: size }, (_, row) => pointAt(second, row, 0)),
+            Array.from({ length: size }, (_, column) => pointAt(top, last, column)),
+            Array.from({ length: size }, (_, column) => pointAt(anchoredSide, 0, column)),
+          );
+          expectSeam(
+            topology,
+            Array.from({ length: size }, (_, column) => pointAt(anchoredSide, last, column)),
+            Array.from({ length: size }, (_, column) => pointAt(bottom, 0, column)),
           );
         }
-
-        expectSeam(
-          topology,
-          Array.from({ length: size }, (_, column) => pointAt(top, last, column)),
-          Array.from({ length: size }, (_, column) => pointAt(center, 0, column)),
-        );
-        expectSeam(
-          topology,
-          Array.from({ length: size }, (_, column) => pointAt(center, last, column)),
-          Array.from({ length: size }, (_, column) => pointAt(bottom, 0, column)),
-        );
       }
     }
   });

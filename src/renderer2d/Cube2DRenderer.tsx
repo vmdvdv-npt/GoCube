@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactElement } from 'react';
 import type { StoneColor } from '../core/game/types';
-import type { CubeFace } from '../core/topology/CubeTopology';
 import type { PointId } from '../core/topology/Topology';
+import type { CubeFace } from '../core/topology/CubeTopology';
 import type { GameViewModel, GameViewPoint } from '../presentation/PresentationModel';
 import {
   CUBE_2D_LAYOUT_COLUMNS,
@@ -41,7 +41,7 @@ export interface Cube2DRenderModel {
   readonly boards: readonly Cube2DVisualBoard[];
 }
 
-export type Cube2DRendererTransitionDirection = 'left' | 'right' | 'up' | 'down';
+export type Cube2DRendererTransitionDirection = 'left' | 'right' | 'up' | 'down' | 'anchor';
 
 export interface Cube2DRendererTransition {
   readonly fromLayout: Cube2DLayout;
@@ -116,6 +116,7 @@ export interface Cube2DRendererProps {
   readonly layout: Cube2DLayout;
   readonly diagnostics?: boolean;
   readonly transition?: Cube2DRendererTransition;
+  readonly onVerticalAnchorColumnChange?: (column: Cube2DLayoutColumn) => void;
   readonly viewModel?: GameViewModel;
   readonly hoveredPointId?: PointId | null;
   readonly hoverStatus?: Cube2DHoverStatus;
@@ -229,9 +230,7 @@ const renderBoard = (
   transition: Cube2DRendererTransition | undefined,
   gameplay: BoardGameplayContext,
 ): ReactElement => {
-  const coordinates = Array.from({ length: size }, (_, index) =>
-    visualCoordinate(index, size),
-  );
+  const coordinates = Array.from({ length: size }, (_, index) => visualCoordinate(index, size));
   const motion = resolveBoardMotion(board, transition);
   const placementStyle: MotionStyle = {
     gridRow: board.row + 1,
@@ -274,13 +273,7 @@ const renderBoard = (
         </figcaption>
       ) : null}
 
-      <div
-        className={
-          motion?.fromRotation
-            ? 'cube-2d-board__motion cube-2d-board__motion--rotating'
-            : 'cube-2d-board__motion'
-        }
-      >
+      <div className={motion?.fromRotation ? 'cube-2d-board__motion cube-2d-board__motion--rotating' : 'cube-2d-board__motion'}>
         <svg
           className="cube-2d-board__svg"
           viewBox={`0 0 ${CUBE_2D_SVG_SIZE} ${CUBE_2D_SVG_SIZE}`}
@@ -298,22 +291,10 @@ const renderBoard = (
 
           <g className="cube-2d-board__grid" aria-hidden="true">
             {coordinates.map((coordinate, index) => (
-              <line
-                key={`v:${index}`}
-                x1={coordinate}
-                y1="0"
-                x2={coordinate}
-                y2={CUBE_2D_SVG_SIZE}
-              />
+              <line key={`v:${index}`} x1={coordinate} y1="0" x2={coordinate} y2={CUBE_2D_SVG_SIZE} />
             ))}
             {coordinates.map((coordinate, index) => (
-              <line
-                key={`h:${index}`}
-                x1="0"
-                y1={coordinate}
-                x2={CUBE_2D_SVG_SIZE}
-                y2={coordinate}
-              />
+              <line key={`h:${index}`} x1="0" y1={coordinate} x2={CUBE_2D_SVG_SIZE} y2={coordinate} />
             ))}
           </g>
 
@@ -323,20 +304,12 @@ const renderBoard = (
               const occupancy = viewPoint?.occupancy;
               if (occupancy !== 'black' && occupancy !== 'white') return null;
               const isLastMove = gameplay.lastMovePointId === point.pointId;
-              const showNumber =
-                gameplay.showMoveNumbers && !isLastMove && viewPoint?.moveNumber;
-              const fill =
-                occupancy === 'black'
-                  ? `url(#${ids.blackGradient})`
-                  : `url(#${ids.whiteGradient})`;
+              const showNumber = gameplay.showMoveNumbers && !isLastMove && viewPoint?.moveNumber;
+              const fill = occupancy === 'black' ? `url(#${ids.blackGradient})` : `url(#${ids.whiteGradient})`;
               return (
                 <g key={`stone:${point.pointId}`} data-logical-point-id={point.pointId}>
                   <circle
-                    className={`cube-2d-stone cube-2d-stone--${occupancy}${
-                      gameplay.recentlyPlacedPointId === point.pointId
-                        ? ' cube-2d-stone--placed'
-                        : ''
-                    }`}
+                    className={`cube-2d-stone cube-2d-stone--${occupancy}${gameplay.recentlyPlacedPointId === point.pointId ? ' cube-2d-stone--placed' : ''}`}
                     cx={point.x}
                     cy={point.y}
                     r={stoneRadius}
@@ -373,9 +346,7 @@ const renderBoard = (
           </g>
 
           <g className="cube-2d-board__hover" aria-hidden="true">
-            {gameplay.hoveredPointId &&
-            gameplay.currentPlayer &&
-            gameplay.hoverStatus === 'allowed'
+            {gameplay.hoveredPointId && gameplay.currentPlayer && gameplay.hoverStatus === 'allowed'
               ? board.points
                   .filter((point) => point.pointId === gameplay.hoveredPointId)
                   .map((point) => (
@@ -385,11 +356,7 @@ const renderBoard = (
                       cx={point.x}
                       cy={point.y}
                       r={previewRadius}
-                      fill={
-                        gameplay.currentPlayer === 'black'
-                          ? `url(#${ids.blackGradient})`
-                          : `url(#${ids.whiteGradient})`
-                      }
+                      fill={gameplay.currentPlayer === 'black' ? `url(#${ids.blackGradient})` : `url(#${ids.whiteGradient})`}
                       data-logical-point-id={point.pointId}
                     />
                   ))
@@ -437,11 +404,43 @@ const renderBoard = (
   );
 };
 
-/** Six physical faces in a fixed 4×3 placement field with six plain empty slots. */
+const renderAnchorSlots = (
+  layout: Cube2DLayout,
+  disabled: boolean,
+  onVerticalAnchorColumnChange: Cube2DRendererProps['onVerticalAnchorColumnChange'],
+): readonly ReactElement[] => {
+  const slots: ReactElement[] = [];
+
+  for (const row of [0, 2] as const) {
+    for (const column of [0, 1, 2, 3] as const) {
+      if (layout.rows[row][column] !== null) continue;
+      const side = row === 0 ? 'top' : 'bottom';
+      slots.push(
+        <button
+          type="button"
+          className="cube-2d-anchor-slot"
+          aria-label={`Move top and bottom to column ${column + 1} using ${side} slot`}
+          data-layout-row={row}
+          data-layout-column={column}
+          data-anchor-preview="available"
+          disabled={disabled || !onVerticalAnchorColumnChange}
+          key={`slot:${row}:${column}`}
+          style={{ gridRow: row + 1, gridColumn: column + 1 }}
+          onClick={() => onVerticalAnchorColumnChange?.(column)}
+        />,
+      );
+    }
+  }
+
+  return Object.freeze(slots);
+};
+
+/** Six physical faces in a 4x3 placement field with optional gameplay presentation. */
 export function Cube2DRenderer({
   layout,
   diagnostics = false,
   transition,
+  onVerticalAnchorColumnChange,
   viewModel,
   hoveredPointId = null,
   hoverStatus = null,
@@ -477,14 +476,14 @@ export function Cube2DRenderer({
       data-layout-rows={model.rows}
       data-layout-columns={model.columns}
       data-board-count={model.boards.length}
+      data-vertical-anchor-column={layout.verticalAnchorColumn}
       data-animating={isAnimating}
       data-gameplay-input-disabled={gameplayInputDisabled}
       data-transition-id={transition?.id ?? 'none'}
       aria-label="Cube 2D six-face renderer in 4 by 3 placement field"
     >
-      {model.boards.map((board) =>
-        renderBoard(board, model.size, diagnostics, transition, gameplay),
-      )}
+      {renderAnchorSlots(layout, isAnimating, onVerticalAnchorColumnChange)}
+      {model.boards.map((board) => renderBoard(board, model.size, diagnostics, transition, gameplay))}
     </section>
   );
 }

@@ -6,6 +6,7 @@ import { CubeTopology, cubePointId } from '../core/topology/CubeTopology';
 import {
   createCube2DViewState,
   navigateCube2DViewState,
+  setCube2DVerticalAnchorColumn,
 } from '../presentation/cube/Cube2DNavigation';
 import { Cube2DGameController } from './Cube2DGameController';
 
@@ -137,9 +138,12 @@ describe('Cube2D full game flow', () => {
     },
   );
 
-  it('undoes the finishing second Pass without changing the presentation-only Cube orientation', async () => {
+  it('undoes the finishing second Pass without changing the presentation-only Cube view state', async () => {
     const controller = new Cube2DGameController({ size: 4, ruleSet: 'chinese' });
-    const viewState = navigateCube2DViewState(createCube2DViewState(), 'right');
+    const viewState = setCube2DVerticalAnchorColumn(
+      navigateCube2DViewState(createCube2DViewState(), 'right'),
+      3,
+    );
 
     await controller.pass();
     await controller.pass();
@@ -157,12 +161,13 @@ describe('Cube2D full game flow', () => {
     });
     expect(controller.resultModel()).toBeNull();
     expect(viewState.orientation.centerFace).toBe('right');
-    expect('verticalAnchorColumn' in viewState).toBe(false);
+    expect(viewState.verticalAnchorColumn).toBe(3);
 
     const redone = await controller.redo();
     expect(redone.viewModel.phase).toBe('finished');
     expect(redone.viewModel.finalScore).not.toBeNull();
     expect(viewState.orientation.centerFace).toBe('right');
+    expect(viewState.verticalAnchorColumn).toBe(3);
   });
 
   it.each([

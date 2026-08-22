@@ -37,7 +37,7 @@ describe('Cube2D gameplay integration', () => {
     await play(controller, point);
 
     const initial = createCube2DRenderModel(createCube2DLayout(new CubeOrientation(), 4));
-    const moved = createCube2DRenderModel(createCube2DLayout(new CubeOrientation().moveRight(), 4));
+    const moved = createCube2DRenderModel(createCube2DLayout(new CubeOrientation().moveRight(), 4, 3));
     const initialVisual = initial.boards.flatMap((board) => board.points).find((candidate) => candidate.pointId === point);
     const movedVisual = moved.boards.flatMap((board) => board.points).find((candidate) => candidate.pointId === point);
 

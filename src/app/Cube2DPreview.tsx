@@ -9,8 +9,8 @@ import './cube2d-game-flow.css';
 
 /**
  * Development-only Cube 2D inspection surface. It intentionally reuses the same
- * controller/hook/renderer stack as the production game so diagnostics cannot
- * preserve obsolete presentation state such as movable TOP/BOTTOM anchors.
+ * controller/hook/renderer stack as the production game, including the movable
+ * TOP/BOTTOM vertical anchor controlled through empty layout slots.
  */
 export function Cube2DPreview() {
   const [size, setSize] = useState<CubeUiSize>(4);
@@ -28,8 +28,8 @@ export function Cube2DPreview() {
           <p className="cube-2d-preview__kicker">Game Cube Go · developer view</p>
           <h1>Cube 2D visual completion</h1>
           <p>
-            One renderer path, six physical faces, fixed 4×3 slots and one logical
-            representation per Cube point.
+            One renderer path, six physical faces, a 4×3 placement field, movable
+            TOP/BOTTOM anchor slots and one logical representation per Cube point.
           </p>
         </div>
 
@@ -101,6 +101,7 @@ export function Cube2DPreview() {
       <div className="cube-2d-preview__status" aria-live="polite">
         <span>occupied boards: {g.layout.cells.length}</span>
         <span className="cube-2d-preview__empty-count">empty slots: {emptySlots}</span>
+        <span>vertical anchor: {g.view.verticalAnchorColumn}</span>
         <span>logical points: {g.vm.points.length}</span>
         <span>player: {g.vm.currentPlayer ?? 'none'}</span>
         <span>move: {g.vm.moveNumber}</span>
@@ -111,6 +112,7 @@ export function Cube2DPreview() {
           <Cube2DRenderer
             layout={g.layout}
             transition={g.transition ?? undefined}
+            onVerticalAnchorColumnChange={g.moveAnchor}
             viewModel={g.vm}
             hoveredPointId={g.hoveredPoint}
             hoverStatus={g.hoverStatus}
