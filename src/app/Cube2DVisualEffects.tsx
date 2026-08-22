@@ -1,10 +1,12 @@
-import type { CSSProperties, ReactElement } from 'react';
+import type { CSSProperties } from 'react';
 import type { EndgameClassification, GroupStatus } from '../core/endgame/EndgameClassifier';
 import type { FinalScore } from '../core/scoring/Scoring';
 import type { PointId } from '../core/topology/Topology';
 import type { EndgameGroupPresentation } from '../presentation/EndgameGroupPresentation';
 import type { Cube2DLayout } from '../presentation/cube/Cube2DLayout';
 import {
+  CUBE_2D_CAPTURE_FLIGHT_MS,
+  CUBE_2D_CAPTURE_STAGGER_MS,
   createCube2DVisualEffectsModel,
   type CapturedStoneEffect,
 } from '../presentation/cube/Cube2DVisualEffectsModel';
@@ -18,8 +20,7 @@ import {
 } from '../renderer2d/Cube2DRenderer';
 import { StoneArtworkDefs, stoneArtworkFill } from '../renderer2d/StoneArtwork';
 
-export const CUBE_2D_CAPTURE_STAGGER_MS = 150;
-export const CUBE_2D_CAPTURE_FLIGHT_MS = 520;
+export { CUBE_2D_CAPTURE_FLIGHT_MS, CUBE_2D_CAPTURE_STAGGER_MS };
 
 interface Cube2DVisualEffectsProps {
   readonly layout: Cube2DLayout;
@@ -79,6 +80,7 @@ export function Cube2DVisualEffects({
     >
       {renderModel.boards.map((board) => {
         const pointsById = pointMap(board.points);
+        void pointsById;
         return (
           <svg
             key={board.face}
@@ -154,7 +156,6 @@ export function Cube2DVisualEffects({
           <StoneArtworkDefs idPrefix={captureArtworkPrefix} />
           <g className="cube-2d-effects__captures">
             {effects.capturedStones.map((effect) => {
-              const delayMs = effect.order * CUBE_2D_CAPTURE_STAGGER_MS;
               const dx = effect.targetStageX - effect.stageX;
               const dy = effect.targetStageY - effect.stageY;
               return (
@@ -171,7 +172,7 @@ export function Cube2DVisualEffects({
                   data-captured-color={effect.color}
                   data-capture-direction={effect.color === 'white' ? 'left' : 'right'}
                   data-capture-order={effect.order}
-                  data-capture-delay-ms={delayMs}
+                  data-capture-delay-ms={effect.delayMs}
                   data-source-face={effect.face}
                   data-source-layout-row={effect.layoutRow}
                   data-source-layout-column={effect.layoutColumn}
@@ -187,8 +188,8 @@ export function Cube2DVisualEffects({
                     type="translate"
                     from="0 0"
                     to={`${dx} ${dy}`}
-                    begin={`${delayMs}ms`}
-                    dur={`${CUBE_2D_CAPTURE_FLIGHT_MS}ms`}
+                    begin={`${effect.delayMs}ms`}
+                    dur={`${effect.durationMs}ms`}
                     calcMode="spline"
                     keyTimes="0;1"
                     keySplines="0.22 0.65 0.3 1"
@@ -198,8 +199,8 @@ export function Cube2DVisualEffects({
                     attributeName="opacity"
                     values="1;1;0"
                     keyTimes="0;0.78;1"
-                    begin={`${delayMs}ms`}
-                    dur={`${CUBE_2D_CAPTURE_FLIGHT_MS}ms`}
+                    begin={`${effect.delayMs}ms`}
+                    dur={`${effect.durationMs}ms`}
                     fill="freeze"
                   />
                 </circle>
