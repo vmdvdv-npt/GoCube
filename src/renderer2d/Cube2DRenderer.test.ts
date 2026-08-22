@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   CUBE_FACES,
-  CUBE_SIZES,
   CubeTopology,
   cubePointId,
   type CubeSize,
@@ -13,6 +12,8 @@ import {
   createCube2DRenderModel,
   type Cube2DVisualBoard,
 } from './Cube2DRenderer';
+
+const CUBE_RENDER_CONTRACT_SIZES = [2, 3, 4, 5, 6, 7, 8, 10] as const satisfies readonly CubeSize[];
 
 const pointAt = (board: Cube2DVisualBoard, row: number, column: number): string =>
   board.pointRows[row][column].pointId;
@@ -106,19 +107,26 @@ describe('Cube2DRenderer render model', () => {
     }
   });
 
-  it.each(CUBE_SIZES)('renders every logical CubeTopology point exactly once on %dx%d', (size: CubeSize) => {
-    const topology = new CubeTopology(size);
+  it.each(CUBE_RENDER_CONTRACT_SIZES)(
+    'renders every logical CubeTopology point exactly once on %dx%d',
+    (size) => {
+      const topology = new CubeTopology(size);
 
-    for (const anchor of [0, 1, 2, 3] as const) {
-      const model = createCube2DRenderModel(createCube2DLayout(new CubeOrientation(), size, anchor));
-      const visualPointIds = model.boards.flatMap((board) => board.points.map((point) => point.pointId));
+      for (const anchor of [0, 1, 2, 3] as const) {
+        const model = createCube2DRenderModel(
+          createCube2DLayout(new CubeOrientation(), size, anchor),
+        );
+        const visualPointIds = model.boards.flatMap((board) =>
+          board.points.map((point) => point.pointId),
+        );
 
-      expect(visualPointIds).toHaveLength(6 * size * size);
-      expect(visualPointIds.every((pointId) => topology.has(pointId))).toBe(true);
-      expect(new Set(visualPointIds).size).toBe(6 * size * size);
-      expect(new Set(visualPointIds)).toEqual(new Set(topology.points()));
-    }
-  });
+        expect(visualPointIds).toHaveLength(6 * size * size);
+        expect(visualPointIds.every((pointId) => topology.has(pointId))).toBe(true);
+        expect(new Set(visualPointIds).size).toBe(6 * size * size);
+        expect(new Set(visualPointIds)).toEqual(new Set(topology.points()));
+      }
+    },
+  );
 
   it('renders every physical cube face once and only once', () => {
     for (const anchor of [0, 1, 2, 3] as const) {
@@ -158,7 +166,7 @@ describe('Cube2DRenderer render model', () => {
     const orientations = allOrientations();
     expect(orientations).toHaveLength(24);
 
-    for (const size of CUBE_SIZES) {
+    for (const size of CUBE_RENDER_CONTRACT_SIZES) {
       const topology = new CubeTopology(size);
       const last = size - 1;
 
@@ -200,19 +208,22 @@ describe('Cube2DRenderer render model', () => {
     }
   });
 
-  it.each(CUBE_SIZES)('keeps point spacing uniform across face boundaries on %dx%d', (size: CubeSize) => {
-    const model = createCube2DRenderModel(createCube2DLayout(new CubeOrientation(), size));
-    const central = model.boards.find((board) => board.isCentral)!;
-    const xs = central.pointRows[0].map((point) => point.x);
-    const ys = central.pointRows.map((row) => row[0].y);
-    const horizontalStep = xs[1] - xs[0];
-    const verticalStep = ys[1] - ys[0];
-    const horizontalSeamDistance = CUBE_2D_SVG_SIZE - xs[xs.length - 1] + xs[0];
-    const verticalSeamDistance = CUBE_2D_SVG_SIZE - ys[ys.length - 1] + ys[0];
+  it.each(CUBE_RENDER_CONTRACT_SIZES)(
+    'keeps point spacing uniform across face boundaries on %dx%d',
+    (size) => {
+      const model = createCube2DRenderModel(createCube2DLayout(new CubeOrientation(), size));
+      const central = model.boards.find((board) => board.isCentral)!;
+      const xs = central.pointRows[0].map((point) => point.x);
+      const ys = central.pointRows.map((row) => row[0].y);
+      const horizontalStep = xs[1] - xs[0];
+      const verticalStep = ys[1] - ys[0];
+      const horizontalSeamDistance = CUBE_2D_SVG_SIZE - xs[xs.length - 1] + xs[0];
+      const verticalSeamDistance = CUBE_2D_SVG_SIZE - ys[ys.length - 1] + ys[0];
 
-    expect(horizontalSeamDistance).toBeCloseTo(horizontalStep, 8);
-    expect(verticalSeamDistance).toBeCloseTo(verticalStep, 8);
-  });
+      expect(horizontalSeamDistance).toBeCloseTo(horizontalStep, 8);
+      expect(verticalSeamDistance).toBeCloseTo(verticalStep, 8);
+    },
+  );
 
   it('rebuilds from a new orientation without mutating the previous orientation', () => {
     const initialOrientation = new CubeOrientation();
