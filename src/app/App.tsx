@@ -18,6 +18,8 @@ import {
 } from './persistence/PreferencesStorage';
 import { TorusGame } from './TorusGame';
 
+declare const __BUILD_PR__: string;
+
 type AppScreen = 'loading' | 'resume' | 'settings' | 'game';
 type TopologyPreviewDirection = 'left' | 'right';
 type TopologyPreviewTransition = Readonly<{
@@ -220,7 +222,7 @@ export function App() {
     <main className={`app-shell${screen === 'game' ? ' app-shell--game' : ''}`}>
       {screen !== 'game' ? (
         <header className="app-header">
-          <p className="app-kicker">Game Cube Go · 0.2.0</p>
+          <p className="app-kicker">Game Cube Go · 0.2.0 · {__BUILD_PR__}</p>
           <h1>GoCube</h1>
           <p>Two surface modes · local save/load · Chinese and Japanese scoring.</p>
         </header>
@@ -342,26 +344,28 @@ export function App() {
                 </select>
               </fieldset>
 
-              <label>
-                Rules
-                <select
-                  value={ruleSet}
-                  onChange={(event) => setRuleSet(event.target.value as RuleSet)}
-                >
-                  <option value="japanese">Japanese</option>
-                  <option value="chinese">Chinese</option>
-                </select>
-              </label>
+              <div className="new-game-rules-komi">
+                <label>
+                  Rules
+                  <select
+                    value={ruleSet}
+                    onChange={(event) => setRuleSet(event.target.value as RuleSet)}
+                  >
+                    <option value="japanese">Japanese</option>
+                    <option value="chinese">Chinese</option>
+                  </select>
+                </label>
 
-              <label>
-                Komi
-                <input
-                  type="number"
-                  step="any"
-                  value={komi}
-                  onChange={(event) => setKomi(event.target.value)}
-                />
-              </label>
+                <label>
+                  Komi
+                  <input
+                    type="number"
+                    step="any"
+                    value={komi}
+                    onChange={(event) => setKomi(event.target.value)}
+                  />
+                </label>
+              </div>
 
               <button className="start-game-button" type="submit">Start game</button>
             </div>
