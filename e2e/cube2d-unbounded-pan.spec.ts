@@ -90,7 +90,7 @@ test('Cube 2D drag-pan is not clamped by the board viewport or sidebar', async (
   expect(pageMetrics.scrollHeight).toBeLessThanOrEqual(pageMetrics.innerHeight);
 });
 
-test('Cube 2D drag-pan can start again after releasing the mouse', async ({ page }) => {
+test('Cube 2D can be re-grabbed after release even when the next drag starts on an internal control', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
   await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
@@ -98,6 +98,7 @@ test('Cube 2D drag-pan can start again after releasing the mouse', async ({ page
   await page.getByRole('button', { name: 'Start game' }).click();
 
   const viewport = page.locator('.cube-2d-game__viewport');
+  const navigationLayer = page.locator('.cube-2d-game__navigation-layer');
   await viewport.hover();
   await page.mouse.wheel(0, -500);
 
@@ -115,14 +116,27 @@ test('Cube 2D drag-pan can start again after releasing the mouse', async ({ page
   expect(firstPan.x).toBeGreaterThan(90);
   expect(firstPan.y).toBeGreaterThan(60);
 
-  // Start the next gesture exactly where the first one ended. Releasing a drag must
-  // completely finish the old pointer session so this new press creates a fresh one.
+  const anchorColumnBefore = await navigationLayer.getAttribute('data-vertical-anchor-column');
+  const anchorSlot = page.getByRole('button', {
+    name: 'Move top and bottom to column 3 using top slot',
+  });
+  const slotBox = await requiredBox(anchorSlot);
+  const slotX = slotBox.x + slotBox.width / 2;
+  const slotY = slotBox.y + slotBox.height / 2;
+
+  // The old hook marked any gesture beginning on a button as ignored. A real drag
+  // from this Cube-only control must pan instead, while the generated click is suppressed.
+  await page.mouse.move(slotX, slotY);
   await page.mouse.down();
-  await page.mouse.move(startX + 210, startY + 140, { steps: 8 });
+  await page.mouse.move(slotX + 90, slotY + 50, { steps: 8 });
   await page.mouse.up();
   await expect(viewport).toHaveAttribute('data-dragging', 'false');
 
   const secondPan = await currentPan(viewport);
   expect(secondPan.x).toBeGreaterThan(firstPan.x + 70);
-  expect(secondPan.y).toBeGreaterThan(firstPan.y + 40);
+  expect(secondPan.y).toBeGreaterThan(firstPan.y + 30);
+  await expect(navigationLayer).toHaveAttribute(
+    'data-vertical-anchor-column',
+    anchorColumnBefore ?? '',
+  );
 });
