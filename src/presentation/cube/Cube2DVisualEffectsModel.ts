@@ -5,6 +5,9 @@ import type { CubeFace } from '../../core/topology/CubeTopology';
 import type { PointId } from '../../core/topology/Topology';
 import type { EndgameGroupPresentation } from '../EndgameGroupPresentation';
 
+export const CUBE_2D_CAPTURE_STAGGER_MS = 150;
+export const CUBE_2D_CAPTURE_FLIGHT_MS = 520;
+
 export interface Cube2DCaptureSource {
   readonly pointId: PointId;
   readonly color: StoneColor;
@@ -21,6 +24,8 @@ export interface Cube2DCaptureSource {
 export interface CapturedStoneEffect extends Cube2DCaptureSource {
   readonly id: string;
   readonly order: number;
+  readonly delayMs: number;
+  readonly durationMs: number;
   readonly targetStageX: number;
   readonly targetStageY: number;
 }
@@ -58,6 +63,8 @@ export const buildCube2DCaptureEffects = (
         ...source,
         id: `${input.generation}:${pointId}`,
         order,
+        delayMs: order * CUBE_2D_CAPTURE_STAGGER_MS,
+        durationMs: CUBE_2D_CAPTURE_FLIGHT_MS,
         targetStageX,
         targetStageY: source.stageY - upwardDistance,
       }),
