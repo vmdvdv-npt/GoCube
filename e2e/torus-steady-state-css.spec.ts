@@ -76,6 +76,8 @@ test('duplicate strips preserve the normal hit influence of all four primary boa
 }) => {
   await startTorus(page);
   await page.getByLabel('Показывать дублирующие области').check();
+  await expect(page.locator('.torus-board')).toHaveAttribute('data-duplicate-regions-visible', 'true');
+  await expect(page.locator('.torus-board__edge-duplicates')).toHaveCount(1);
 
   const edgePoints = [
     { id: '0,4', direction: 'left' },
