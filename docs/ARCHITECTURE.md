@@ -869,7 +869,7 @@ Pass проходит тем же `GameCommand` path, что и постанов
 3. Ручные/assisted statuses изменяют только review state; каждое изменение autosave-ится с новой session revision. Presentation/UI не хранит вторую изменяемую копию этих решений: экран читает актуальные statuses из session-owned review state и отправляет каждое изменение как session command. DOM events, synthetic clicks и replay пользовательского UI не используются как механизм синхронизации review state.
 4. Пока review incomplete, scoring не запускается.
 5. Когда review полностью resolved, создаётся полный `EndgameClassification`.
-6. `GameSession` передаёт classification в выбранную `ScoringStrategy` и получает `FinalScore`.
+6. `GameSession` передаёт classification в выбранный `ScoringStrategy` и получает `FinalScore`.
 7. `GameSession` передаёт внутреннюю доменную `CompleteEndgame` operation через authority/engine boundary.
 8. `GameEngine` валидирует, что current phase — `ENDGAME_REVIEW`, и возвращает `GameState` с `FINISHED`.
 9. Session сохраняет final classification/result metadata и новый state.
@@ -912,7 +912,9 @@ PR CI имеет ровно три режима:
 - без специального marker — стандартный CI: static lint, TypeScript typecheck, unit/integration tests с global coverage thresholds, production build и Playwright E2E только в Chromium;
 - `[full]` в title PR — полный regression gate: все стандартные проверки плюс Playwright E2E в Chromium, Firefox и WebKit.
 
-Изменение title PR повторно запускает CI, поэтому режим можно переключить без нового code commit. Если одновременно указаны `[full]` и `[no-test]`, приоритет имеет `[full]`.
+`[full]` не выбирается автоматически по сложности, размеру, риску, затронутым файлам, renderer/architecture changes или по самостоятельному решению агента. Агент не добавляет `[full]` в title PR, если пользователь явно не попросил Full CI именно для этого PR. Единственное автоматическое применение full — release finalization.
+
+Изменение title PR повторно запускает CI, поэтому по явному запросу пользователя режим можно переключить без нового code commit. Если одновременно указаны `[full]` и `[no-test]`, приоритет имеет `[full]`.
 
 Обычный push в `main` не повторяет уже выполненный PR CI. Release-finalization push всегда принудительно выполняет `full` независимо от title/marker, и только такой cross-browser прогон считается полным regression/release gate. Режим `[no-test]` сознательно не является доказательством regression correctness и используется только как явное решение пропустить автоматические проверки для конкретного PR.
 
