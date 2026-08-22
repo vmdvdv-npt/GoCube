@@ -99,7 +99,6 @@ export function useDragPan(options: DragPanOptions = {}) {
         origin: offset,
         dragging: false,
       };
-      event.currentTarget.setPointerCapture(event.pointerId);
     },
     [offset],
   );
@@ -116,6 +115,7 @@ export function useDragPan(options: DragPanOptions = {}) {
         if (Math.hypot(deltaX, deltaY) < DRAG_PAN_THRESHOLD_PX) return;
         session.dragging = true;
         suppressClickRef.current = true;
+        event.currentTarget.setPointerCapture(event.pointerId);
         setDragging(true);
         onDragStart?.();
       }
