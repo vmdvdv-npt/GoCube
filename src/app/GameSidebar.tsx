@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { GameViewModel } from '../presentation/PresentationModel';
 import { LocalStoragePreferencesStorage } from './persistence/LocalStoragePreferencesStorage';
 
@@ -19,6 +19,7 @@ export interface GameSidebarProps {
   readonly gameResultAvailable: boolean;
   readonly onOpenGameResult: () => void;
   readonly onRequestNewGame: () => void;
+  readonly newGameDisabled?: boolean;
   readonly endgame?: ReactNode;
   readonly feedback?: string | null;
 }
@@ -40,10 +41,12 @@ export function GameSidebar({
   gameResultAvailable,
   onOpenGameResult,
   onRequestNewGame,
+  newGameDisabled = false,
   endgame = null,
   feedback = null,
 }: GameSidebarProps) {
   const preferencesStorage = useMemo(() => new LocalStoragePreferencesStorage(), []);
+  const [torusNavigationBusy, setTorusNavigationBusy] = useState(false);
   const stageLabel =
     viewModel.phase === 'playing'
       ? `${viewModel.currentPlayer === 'black' ? 'Black' : 'White'} to move`
@@ -68,8 +71,30 @@ export function GameSidebar({
     duplicateRegionsDisabled,
     onShowDuplicateRegionsChange,
     preferencesStorage,
-    viewModel,
   ]);
+
+  useEffect(() => {
+    const board = document.querySelector<SVGSVGElement>('.torus-game .torus-board');
+    if (!board) {
+      setTorusNavigationBusy(false);
+      return;
+    }
+
+    const syncNavigationState = (): void => {
+      setTorusNavigationBusy(board.getAttribute('data-navigation-busy') === 'true');
+    };
+    syncNavigationState();
+
+    const Observer = board.ownerDocument.defaultView?.MutationObserver;
+    if (!Observer) return;
+
+    const observer = new Observer(syncNavigationState);
+    observer.observe(board, {
+      attributes: true,
+      attributeFilter: ['data-navigation-busy'],
+    });
+    return () => observer.disconnect();
+  }, []);
 
   const handleDuplicateRegionsChange = (visible: boolean): void => {
     onShowDuplicateRegionsChange?.(visible);
@@ -149,15 +174,15 @@ export function GameSidebar({
           className="pass-control"
           type="button"
           onClick={onPass}
-          disabled={passDisabled}
+          disabled={passDisabled || torusNavigationBusy}
         >
           {viewModel.phase === 'playing' && viewModel.consecutivePasses === 1 ? 'Pass (1)' : 'Pass'}
         </button>
         <div className="history-controls" role="group" aria-label="Move history controls">
-          <button type="button" onClick={onRedo} disabled={!canRedo}>
+          <button type="button" onClick={onRedo} disabled={!canRedo || torusNavigationBusy}>
             Redo
           </button>
-          <button type="button" onClick={onUndo} disabled={!canUndo}>
+          <button type="button" onClick={onUndo} disabled={!canUndo || torusNavigationBusy}>
             Undo
           </button>
         </div>
@@ -166,7 +191,12 @@ export function GameSidebar({
             Game result
           </button>
         ) : null}
-        <button className="new-game-control" type="button" onClick={onRequestNewGame}>
+        <button
+          className="new-game-control"
+          type="button"
+          onClick={onRequestNewGame}
+          disabled={newGameDisabled || torusNavigationBusy}
+        >
           New game
         </button>
       </div>
