@@ -144,9 +144,19 @@ export function useDragPan(options: DragPanOptions = {}) {
     }
   }, []);
 
-  const handleClickCapture = useCallback((event: ReactMouseEvent<HTMLDivElement>): void => {
-    if (!suppressClickRef.current) return;
+  const handlePointerLeave = useCallback((event: ReactPointerEvent<HTMLDivElement>): void => {
+    const session = sessionRef.current;
+    if (!session || session.pointerId !== event.pointerId || session.dragging) return;
+    sessionRef.current = null;
+  }, []);
 
+  const handleClickCapture = useCallback((event: ReactMouseEvent<HTMLDivElement>): void => {
+    if (!suppressClickRef.current) {
+      sessionRef.current = null;
+      return;
+    }
+
+    sessionRef.current = null;
     suppressClickRef.current = false;
     if (suppressResetTimerRef.current !== null) {
       window.clearTimeout(suppressResetTimerRef.current);
@@ -165,6 +175,7 @@ export function useDragPan(options: DragPanOptions = {}) {
     onPointerMove: handlePointerMove,
     onPointerUp: finishPointer,
     onPointerCancel: finishPointer,
+    onPointerLeave: handlePointerLeave,
     onClickCapture: handleClickCapture,
   } as const;
 }
