@@ -1,3 +1,7 @@
+.app-header {
+  margin-bottom: 6vh;
+}
+
 .startup-status {
   color: #89949e;
 }
@@ -6,11 +10,12 @@
 .confirmation-card {
   display: grid;
   gap: 16px;
-  padding: 20px;
+  padding: 30px 45px;
   border: 1px solid rgb(255 255 255 / 8%);
   border-radius: 12px;
   background: #0b131b;
   color: #eef3f7;
+  line-height: 1.5;
   box-shadow: 0 18px 48px rgb(0 0 0 / 24%);
 }
 
@@ -63,8 +68,8 @@
 
 .new-game-settings-grid {
   display: grid;
-  grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
-  gap: 32px;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 50px;
   align-items: start;
 }
 
@@ -75,6 +80,12 @@
 .new-game-settings-column--details {
   display: grid;
   gap: 18px;
+}
+
+.new-game-rules-komi {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .new-game-form label {
