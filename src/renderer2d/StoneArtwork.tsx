@@ -11,11 +11,14 @@ const FORBIDDEN_MARKER_SELECTOR = '.torus-board__forbidden-marker';
 const HIT_TARGET_SELECTOR = '.torus-board__hit-target';
 
 export const SHARED_STONE_ARTWORK = Object.freeze({
-  gradient: Object.freeze({ cx: '35%', cy: '25%', r: '70%' }),
+  gradients: Object.freeze({
+    black: Object.freeze({ cx: '35%', cy: '28%', r: '97%' }),
+    white: Object.freeze({ cx: '35%', cy: '25%', r: '70%' }),
+  }),
   blackStops: Object.freeze([
-    Object.freeze({ offset: '0', color: '#555' }),
-    Object.freeze({ offset: '0.35', color: '#111' }),
-    Object.freeze({ offset: '1', color: '#000' }),
+    Object.freeze({ offset: '0', color: '#42474d' }),
+    Object.freeze({ offset: '0.35', color: '#15181b' }),
+    Object.freeze({ offset: '0.72', color: '#050607' }),
   ]),
   whiteStops: Object.freeze([
     Object.freeze({ offset: '0', color: '#fff' }),
@@ -25,7 +28,7 @@ export const SHARED_STONE_ARTWORK = Object.freeze({
   patternViewBox: '16 16 224 224',
   body: Object.freeze({ cx: 128, cy: 128, r: 112 }),
   highlight: Object.freeze({ cx: 96, cy: 72, rx: 24, ry: 14, fill: '#fff' }),
-  highlightOpacity: Object.freeze({ black: 0.18, white: 0.65 }),
+  whiteHighlightOpacity: 0.65,
 });
 
 export interface StoneArtworkIds {
@@ -48,6 +51,7 @@ export const stoneArtworkFill = (prefix: string, color: StoneColor): string => {
   return `url(#${color === 'black' ? ids.blackPatternId : ids.whitePatternId})`;
 };
 
+const gradientFor = (color: StoneColor) => SHARED_STONE_ARTWORK.gradients[color];
 const stopsFor = (color: StoneColor) =>
   color === 'black' ? SHARED_STONE_ARTWORK.blackStops : SHARED_STONE_ARTWORK.whiteStops;
 
@@ -57,13 +61,14 @@ const paintPattern = (
 ): ReactElement => {
   const gradientId = color === 'black' ? ids.blackGradientId : ids.whiteGradientId;
   const patternId = color === 'black' ? ids.blackPatternId : ids.whitePatternId;
+  const gradient = gradientFor(color);
   return (
     <>
       <radialGradient
         id={gradientId}
-        cx={SHARED_STONE_ARTWORK.gradient.cx}
-        cy={SHARED_STONE_ARTWORK.gradient.cy}
-        r={SHARED_STONE_ARTWORK.gradient.r}
+        cx={gradient.cx}
+        cy={gradient.cy}
+        r={gradient.r}
       >
         {stopsFor(color).map((stop) => (
           <stop key={`${color}:${stop.offset}`} offset={stop.offset} stopColor={stop.color} />
@@ -85,14 +90,16 @@ const paintPattern = (
           r={SHARED_STONE_ARTWORK.body.r}
           fill={`url(#${gradientId})`}
         />
-        <ellipse
-          cx={SHARED_STONE_ARTWORK.highlight.cx}
-          cy={SHARED_STONE_ARTWORK.highlight.cy}
-          rx={SHARED_STONE_ARTWORK.highlight.rx}
-          ry={SHARED_STONE_ARTWORK.highlight.ry}
-          fill={SHARED_STONE_ARTWORK.highlight.fill}
-          opacity={SHARED_STONE_ARTWORK.highlightOpacity[color]}
-        />
+        {color === 'white' ? (
+          <ellipse
+            cx={SHARED_STONE_ARTWORK.highlight.cx}
+            cy={SHARED_STONE_ARTWORK.highlight.cy}
+            rx={SHARED_STONE_ARTWORK.highlight.rx}
+            ry={SHARED_STONE_ARTWORK.highlight.ry}
+            fill={SHARED_STONE_ARTWORK.highlight.fill}
+            opacity={SHARED_STONE_ARTWORK.whiteHighlightOpacity}
+          />
+        ) : null}
       </pattern>
     </>
   );
@@ -129,12 +136,13 @@ const appendStonePaint = (
   patternId: string,
 ): void => {
   const document = defs.ownerDocument;
+  const gradientSpec = gradientFor(color);
   const gradient = document.createElementNS(SVG_NS, 'radialGradient');
   setAttributes(gradient, {
     id: gradientId,
-    cx: SHARED_STONE_ARTWORK.gradient.cx,
-    cy: SHARED_STONE_ARTWORK.gradient.cy,
-    r: SHARED_STONE_ARTWORK.gradient.r,
+    cx: gradientSpec.cx,
+    cy: gradientSpec.cy,
+    r: gradientSpec.r,
   });
   for (const stop of stopsFor(color)) appendStop(gradient, stop.offset, stop.color);
   defs.appendChild(gradient);
@@ -160,16 +168,18 @@ const appendStonePaint = (
   });
   pattern.appendChild(body);
 
-  const highlight = document.createElementNS(SVG_NS, 'ellipse');
-  setAttributes(highlight, {
-    cx: String(SHARED_STONE_ARTWORK.highlight.cx),
-    cy: String(SHARED_STONE_ARTWORK.highlight.cy),
-    rx: String(SHARED_STONE_ARTWORK.highlight.rx),
-    ry: String(SHARED_STONE_ARTWORK.highlight.ry),
-    fill: SHARED_STONE_ARTWORK.highlight.fill,
-    opacity: String(SHARED_STONE_ARTWORK.highlightOpacity[color]),
-  });
-  pattern.appendChild(highlight);
+  if (color === 'white') {
+    const highlight = document.createElementNS(SVG_NS, 'ellipse');
+    setAttributes(highlight, {
+      cx: String(SHARED_STONE_ARTWORK.highlight.cx),
+      cy: String(SHARED_STONE_ARTWORK.highlight.cy),
+      rx: String(SHARED_STONE_ARTWORK.highlight.rx),
+      ry: String(SHARED_STONE_ARTWORK.highlight.ry),
+      fill: SHARED_STONE_ARTWORK.highlight.fill,
+      opacity: String(SHARED_STONE_ARTWORK.whiteHighlightOpacity),
+    });
+    pattern.appendChild(highlight);
+  }
   defs.appendChild(pattern);
 };
 

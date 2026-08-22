@@ -8,8 +8,10 @@ test('game screen uses compact statistics and uniform history controls', async (
 
   await expect(page.locator('.app-header')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Shift torus view up' })).toBeVisible();
-  await expect(page.getByText('Black Captured 0')).toBeVisible();
-  await expect(page.getByText('White Captured 0')).toBeVisible();
+  await expect(page.getByLabel('Black stones captured: 0')).toBeVisible();
+  await expect(page.getByLabel('White stones captured: 0')).toBeVisible();
+  await expect(page.getByText('Black Captured 0', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('White Captured 0', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Move 0')).toBeVisible();
   const passStateHook = page.getByText('Passes 0');
   const passStateBox = await passStateHook.boundingBox();
@@ -18,6 +20,45 @@ test('game screen uses compact statistics and uniform history controls', async (
   await expect(page.getByText('Japanese rules')).toBeVisible();
   await expect(page.getByText('Komi 7.5')).toBeVisible();
   await expect(page.getByLabel('Показывать дублирующие области')).toBeVisible();
+
+  const standardStatStyle = await page.getByText('9×9').evaluate((element) => ({
+    color: getComputedStyle(element).color,
+    fontSize: getComputedStyle(element).fontSize,
+  }));
+  const rulesStyle = await page.getByText('Japanese rules').evaluate((element) => ({
+    color: getComputedStyle(element).color,
+    fontSize: getComputedStyle(element).fontSize,
+  }));
+  const moveNumbersLabelStyle = await page
+    .locator('.torus-duplicates-control label')
+    .nth(1)
+    .evaluate((element) => ({
+      color: getComputedStyle(element, '::after').color,
+      fontSize: getComputedStyle(element, '::after').fontSize,
+    }));
+
+  expect(standardStatStyle).toEqual({ color: 'rgb(154, 154, 154)', fontSize: '13px' });
+  expect(rulesStyle).toEqual(standardStatStyle);
+  expect(moveNumbersLabelStyle).toEqual(standardStatStyle);
+
+  const blackCaptureStat = page.locator('.capture-stat--black');
+  const blackCaptureStone = page.locator('.capture-stat--black .capture-stat__stone');
+  const blackCaptureCount = page.locator('.capture-stat--black .capture-stat__count');
+  const blackCaptureStoneBox = await blackCaptureStone.boundingBox();
+  const blackCaptureLayout = await blackCaptureStat.evaluate((element) => ({
+    flexDirection: getComputedStyle(element).flexDirection,
+    legacyPseudoContent: getComputedStyle(element, '::before').content,
+  }));
+  const blackCaptureCountStyle = await blackCaptureCount.evaluate((element) => ({
+    color: getComputedStyle(element).color,
+    fontSize: getComputedStyle(element).fontSize,
+  }));
+
+  expect(blackCaptureStoneBox).not.toBeNull();
+  expect(blackCaptureStoneBox?.width).toBeCloseTo(36, 0);
+  expect(blackCaptureStoneBox?.height).toBeCloseTo(36, 0);
+  expect(blackCaptureLayout).toEqual({ flexDirection: 'row', legacyPseudoContent: 'none' });
+  expect(blackCaptureCountStyle).toEqual({ color: 'rgb(133, 133, 133)', fontSize: '26px' });
 
   const pass = page.getByRole('button', { name: /^Pass(?: \(1\))?$/ });
   const redo = page.getByRole('button', { name: 'Redo' });

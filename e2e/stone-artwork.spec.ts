@@ -12,7 +12,7 @@ const startGame = async (page: Page): Promise<void> => {
   await page.getByRole('button', { name: 'Start game' }).click();
 };
 
-test('uses the supplied gradient-and-highlight SVG artwork for black and white stones', async ({ page }) => {
+test('uses matte black SVG artwork without a highlight and preserves the white highlight', async ({ page }) => {
   await startGame(page);
 
   await point(page, '4,4').click();
@@ -34,7 +34,20 @@ test('uses the supplied gradient-and-highlight SVG artwork for black and white s
 
   const defs = page.locator('defs[data-torus-stone-artwork="true"]');
   await expect(defs).toHaveCount(1);
-  await expect(defs.locator('pattern[id$="-black"] ellipse')).toHaveAttribute('opacity', '0.18');
+
+  const blackGradient = defs.locator('radialGradient[id$="-black-gradient"]');
+  await expect(blackGradient).toHaveAttribute('cx', '35%');
+  await expect(blackGradient).toHaveAttribute('cy', '28%');
+  await expect(blackGradient).toHaveAttribute('r', '97%');
+  await expect(blackGradient.locator('stop')).toHaveCount(3);
+  await expect(blackGradient.locator('stop').nth(0)).toHaveAttribute('offset', '0');
+  await expect(blackGradient.locator('stop').nth(0)).toHaveAttribute('stop-color', '#42474d');
+  await expect(blackGradient.locator('stop').nth(1)).toHaveAttribute('offset', '0.35');
+  await expect(blackGradient.locator('stop').nth(1)).toHaveAttribute('stop-color', '#15181b');
+  await expect(blackGradient.locator('stop').nth(2)).toHaveAttribute('offset', '0.72');
+  await expect(blackGradient.locator('stop').nth(2)).toHaveAttribute('stop-color', '#050607');
+
+  await expect(defs.locator('pattern[id$="-black"] ellipse')).toHaveCount(0);
   await expect(defs.locator('pattern[id$="-white"] ellipse')).toHaveAttribute('opacity', '0.65');
 
   await point(page, '6,4').hover();
