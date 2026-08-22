@@ -127,8 +127,8 @@ const scoringFor = (ruleSet: RuleSet, topology: TorusTopology): ScoringStrategy 
 /**
  * Thin application adapter used by the React screen.
  * Commands enter through GameSession; presentation exits through PresentationModel.
- * Manual endgame decisions are validated by ManualEndgameClassifier before the
- * deferred GameSession endgame flow is allowed to continue to scoring.
+ * Manual endgame decisions are session-owned/autosaved and validated by
+ * ManualEndgameClassifier before the deferred endgame flow reaches scoring.
  */
 export class TorusGameController {
   readonly size: TorusSize;
@@ -218,6 +218,25 @@ export class TorusGameController {
         });
       }),
     );
+  }
+
+  endgameDecisions(): TorusEndgameDecisions {
+    const review = this.session.endgameReview();
+    if (!review) return Object.freeze({});
+
+    return Object.freeze(
+      Object.fromEntries(
+        review.groups.flatMap((group) =>
+          group.status ? [[endgameGroupId(group.points), group.status] as const] : [],
+        ),
+      ),
+    );
+  }
+
+  async setEndgameDecision(groupId: string, status: GroupStatus): Promise<void> {
+    const group = this.endgameGroups().find((candidate) => candidate.id === groupId);
+    if (!group) throw new Error(`Unknown manual endgame group: ${groupId}`);
+    await this.session.setEndgameReviewDecision(group.points, status);
   }
 
   moveAvailability(point: PointId): TorusMoveAvailability {
