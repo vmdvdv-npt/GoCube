@@ -133,3 +133,79 @@ test('Cube arrows keep full brightness and exact 30px anchoring while the fixed 
   expect(stacking.sidebar).toBeGreaterThan(stacking.board);
   await expectNoDocumentScrollbars(page);
 });
+
+test('Torus drag-pan moves the zoomed visual shell without placing a stone and keeps post-pan hit-testing aligned', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start game' }).click();
+
+  const shell = page.locator('.torus-board-shell');
+  const board = page.locator('.torus-board');
+  const target = page.locator(
+    '.torus-board__hit-target[data-logical-point-id="4,4"][data-copy-role="primary"]',
+  ).first();
+  const turn = page.locator('.turn-indicator strong');
+
+  await board.hover();
+  await page.mouse.wheel(0, -450);
+  await expect(shell).not.toHaveAttribute('data-view-zoom', '1.000');
+
+  const targetBefore = await requiredBox(target);
+  const startX = targetBefore.x + targetBefore.width / 2;
+  const startY = targetBefore.y + targetBefore.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 110, startY + 70, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(turn).toHaveText('Black to move');
+  await expect.poll(async () => Number(await shell.getAttribute('data-pan-x'))).toBeGreaterThan(80);
+  await expect.poll(async () => Number(await shell.getAttribute('data-pan-y'))).toBeGreaterThan(50);
+
+  const targetAfter = await requiredBox(target);
+  expect(targetAfter.x - targetBefore.x).toBeGreaterThan(80);
+  expect(targetAfter.y - targetBefore.y).toBeGreaterThan(50);
+
+  await target.click();
+  await expect(turn).toHaveText('White to move');
+  await expectNoDocumentScrollbars(page);
+});
+
+test('Cube drag-pan moves the complete cross with its arrows, suppresses the drag click, and preserves later gameplay clicks', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
+  await page.getByRole('button', { name: '4×4', exact: true }).click();
+  await page.getByRole('button', { name: 'Start game' }).click();
+
+  const viewport = page.locator('.cube-2d-game__viewport');
+  const navigationLayer = page.locator('.cube-2d-game__navigation-layer');
+  const target = page.locator('.cube-2d-board[data-central="true"] .cube-2d-hit-area').first();
+  const turn = page.locator('.turn-indicator strong');
+
+  await viewport.hover();
+  await page.mouse.wheel(0, -500);
+  await expect(viewport).toHaveAttribute('data-view-zoom', '1.350');
+
+  const targetBefore = await requiredBox(target);
+  const layerBefore = await requiredBox(navigationLayer);
+  const startX = targetBefore.x + targetBefore.width / 2;
+  const startY = targetBefore.y + targetBefore.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 60, startY + 50, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(turn).toHaveText('Black to move');
+  await expect.poll(async () => Number(await viewport.getAttribute('data-pan-x'))).toBeGreaterThan(40);
+  await expect.poll(async () => Number(await viewport.getAttribute('data-pan-y'))).toBeGreaterThan(35);
+
+  const layerAfter = await requiredBox(navigationLayer);
+  expect(layerAfter.x - layerBefore.x).toBeGreaterThan(40);
+  expect(layerAfter.y - layerBefore.y).toBeGreaterThan(35);
+  await expectCubeNavigationAnchored(page);
+
+  await target.click();
+  await expect(turn).toHaveText('White to move');
+  await expectNoDocumentScrollbars(page);
+});
