@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { EndgameClassifier } from '../endgame/EndgameClassifier';
-import { SimpleKoPolicy } from '../rules/RepetitionPolicy';
 import { ChineseScoring } from '../scoring/ChineseScoring';
 import { TorusTopology } from '../topology/TorusTopology';
 import { GameEngine } from './GameEngine';
@@ -60,9 +59,6 @@ describe('GameEngine endgame transition ownership', () => {
       const completion = realCompleteEndgame(state);
       if (!completion.ok) return completion;
 
-      // The real transition is covered above. The sentinel exists only to prove
-      // that GameSession stores the state returned by the domain boundary rather
-      // than reconstructing a finished GameState itself.
       return Object.freeze({
         ok: true as const,
         state: Object.freeze({
@@ -74,7 +70,7 @@ describe('GameEngine endgame transition ownership', () => {
     const classifier: EndgameClassifier = {
       classify: async () => Object.freeze([]),
     };
-    const session = new GameSession(engine, new SimpleKoPolicy(), {
+    const session = new GameSession(engine, {
       endgameClassifier: classifier,
       scoringStrategy: new ChineseScoring(topology),
       komi: 7.5,
