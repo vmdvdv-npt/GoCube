@@ -20,6 +20,7 @@ import {
 import {
   Torus2DRenderer,
   type Torus2DPanDirection,
+  type Torus2DSize,
 } from '../renderer2d/Torus2DRenderer';
 import { renderTorus2DStoneAnnotations } from '../renderer2d/Torus2DStoneAnnotations';
 import {
@@ -33,11 +34,56 @@ const ENDGAME_STATUSES: readonly GroupStatus[] = ['alive', 'dead', 'seki'];
 const TORUS_ZOOM_MIN = 0.7;
 const TORUS_ZOOM_MAX = 2.5;
 const TORUS_ZOOM_WHEEL_SENSITIVITY = 0.0015;
+const TORUS_VIEWBOX_SIZE = 1000;
 const PASS_GUARD_DURATION_MS = 1000;
 const PASS_GUARD_TICK_MS = 100;
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
+
+const torusEdgeFitScale = (size: Torus2DSize, duplicatesVisible: boolean): number => {
+  if (size === 9) return duplicatesVisible ? 0.95 : 1.09649;
+  if (size === 13) return duplicatesVisible ? 1.04 : 1.16099;
+  return duplicatesVisible ? 1.11 : 1.20838;
+};
+
+const applyTorusVectorCamera = (
+  svg: SVGSVGElement,
+  viewZoom: number,
+  size: Torus2DSize,
+  duplicatesVisible: boolean,
+): void => {
+  const cameraScale = viewZoom * torusEdgeFitScale(size, duplicatesVisible);
+  const span = TORUS_VIEWBOX_SIZE / cameraScale;
+  const origin = (TORUS_VIEWBOX_SIZE - span) / 2;
+  svg.setAttribute('viewBox', `${origin} ${origin} ${span} ${span}`);
+  svg.setAttribute('data-vector-camera', 'viewBox');
+  svg.setAttribute('data-vector-camera-scale', cameraScale.toFixed(6));
+};
+
+/**
+ * Torus2DRenderer intentionally owns logical 0..1000 scene coordinates. When the
+ * root SVG viewBox is a zoom camera, convert the real pointer through that camera
+ * to the synthetic client coordinate expected by the renderer's stable hit-test API.
+ */
+const rendererClientPosition = (
+  svg: SVGSVGElement,
+  clientX: number,
+  clientY: number,
+): Readonly<{ x: number; y: number }> => {
+  const bounds = svg.getBoundingClientRect();
+  const viewBox = svg.viewBox.baseVal;
+  if (bounds.width <= 0 || bounds.height <= 0 || viewBox.width <= 0 || viewBox.height <= 0) {
+    return Object.freeze({ x: clientX, y: clientY });
+  }
+
+  const sceneX = viewBox.x + ((clientX - bounds.left) / bounds.width) * viewBox.width;
+  const sceneY = viewBox.y + ((clientY - bounds.top) / bounds.height) * viewBox.height;
+  return Object.freeze({
+    x: bounds.left + (sceneX / TORUS_VIEWBOX_SIZE) * bounds.width,
+    y: bounds.top + (sceneY / TORUS_VIEWBOX_SIZE) * bounds.height,
+  });
+};
 
 const rejectionLabel = (reason: TorusGameActionResult['reason']): string | null => {
   if (!reason) return null;
@@ -90,6 +136,8 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const rendererRef = useRef<Torus2DRenderer | null>(null);
   const actionInFlight = useRef(false);
   const previewedMovePointRef = useRef<string | null>(null);
+  const viewZoomRef = useRef(viewZoom);
+  viewZoomRef.current = viewZoom;
 
   const renderGroups = useMemo<readonly EndgameGroupRenderState[]>(
     () =>
@@ -208,6 +256,12 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
 
   useEffect(() => {
     const svg = svgRef.current;
+    if (!svg) return;
+    applyTorusVectorCamera(svg, viewZoom, controller.size, showDuplicateRegions);
+  }, [controller, showDuplicateRegions, viewZoom]);
+
+  useEffect(() => {
+    const svg = svgRef.current;
     const Observer = svg?.ownerDocument.defaultView?.MutationObserver;
     if (!svg || !Observer) return;
 
@@ -223,6 +277,12 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         );
       }
       renderTorus2DStoneAnnotations(svg, viewModel, showMoveNumbers);
+      applyTorusVectorCamera(
+        svg,
+        viewZoomRef.current,
+        controller.size,
+        showDuplicateRegions,
+      );
     });
     observer.observe(svg, { childList: true });
     return () => observer.disconnect();
@@ -260,22 +320,20 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     const renderer = rendererRef.current;
     const svg = svgRef.current;
     if (!renderer || !svg) return null;
+    const client = rendererClientPosition(svg, event.clientX, event.clientY);
     if (
       showDuplicateRegions &&
-      !isTorus2DPrimaryBoardClientPosition(svg, event.clientX, event.clientY)
+      !isTorus2DPrimaryBoardClientPosition(svg, client.x, client.y)
     ) {
       return null;
     }
 
-    const lineGroupId = renderer.endgameGroupFromClientPosition(
-      event.clientX,
-      event.clientY,
-    );
+    const lineGroupId = renderer.endgameGroupFromClientPosition(client.x, client.y);
     if (lineGroupId) {
       return endgameGroups.find((group) => group.id === lineGroupId) ?? null;
     }
 
-    const point = renderer.pointFromClientPosition(event.clientX, event.clientY);
+    const point = renderer.pointFromClientPosition(client.x, client.y);
     return point ? endgameGroupForPoint(endgameGroups, point) : null;
   };
 
@@ -285,10 +343,13 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     if (actionInFlight.current) return;
 
     const svg = svgRef.current;
+    const client = svg
+      ? rendererClientPosition(svg, event.clientX, event.clientY)
+      : Object.freeze({ x: event.clientX, y: event.clientY });
     if (
       showDuplicateRegions &&
       svg &&
-      !isTorus2DPrimaryBoardClientPosition(svg, event.clientX, event.clientY)
+      !isTorus2DPrimaryBoardClientPosition(svg, client.x, client.y)
     ) {
       previewedMovePointRef.current = null;
       rendererRef.current?.setMovePreview(null);
@@ -309,7 +370,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     const renderer = rendererRef.current;
     if (!renderer) return;
 
-    const exactHit = renderer.visualPointFromClientPosition(event.clientX, event.clientY);
+    const exactHit = renderer.visualPointFromClientPosition(client.x, client.y);
     const logicalPointId = previewedMovePointRef.current ?? exactHit?.logicalPointId ?? null;
     if (!logicalPointId) return;
 
@@ -333,11 +394,14 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const handleBoardMouseMove = (event: ReactMouseEvent<SVGSVGElement>): void => {
     const renderer = rendererRef.current;
     const svg = svgRef.current;
+    const client = svg
+      ? rendererClientPosition(svg, event.clientX, event.clientY)
+      : Object.freeze({ x: event.clientX, y: event.clientY });
 
     if (
       showDuplicateRegions &&
       svg &&
-      !isTorus2DPrimaryBoardClientPosition(svg, event.clientX, event.clientY)
+      !isTorus2DPrimaryBoardClientPosition(svg, client.x, client.y)
     ) {
       previewedMovePointRef.current = null;
       renderer?.setMovePreview(null);
@@ -353,7 +417,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         return;
       }
 
-      const hit = renderer.hoverVisualPointFromClientPosition(event.clientX, event.clientY);
+      const hit = renderer.hoverVisualPointFromClientPosition(client.x, client.y);
       if (!hit) {
         previewedMovePointRef.current = null;
         renderer.setMovePreview(null);
@@ -593,7 +657,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
             className={`torus-board${viewModel.phase === 'playing' ? '' : viewModel.phase === 'endgame' ? ' torus-board--endgame' : ' torus-board--inactive'}`}
             data-view-zoom={viewZoom.toFixed(3)}
             data-move-numbers-visible={showMoveNumbers ? 'true' : 'false'}
-            style={{ transform: `scale(${viewZoom})`, cursor: 'default' }}
+            style={{ cursor: 'default' }}
             onClick={(event) => void handleBoardClick(event)}
             onMouseMove={handleBoardMouseMove}
             onMouseLeave={handleBoardMouseLeave}
