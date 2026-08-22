@@ -8,7 +8,7 @@ const cubeStone = (page: Page, pointId: string) =>
 
 const startCube = async (page: Page): Promise<void> => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
+  await page.getByRole('button', { name: 'Cube', exact: true }).click();
   await page.getByRole('button', { name: '3×3', exact: true }).click();
   await page.getByLabel('Rules').selectOption('chinese');
   await page.getByRole('button', { name: 'Start game' }).click();
