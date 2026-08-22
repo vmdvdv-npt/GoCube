@@ -90,7 +90,7 @@ test('Cube 2D drag-pan is not clamped by the board viewport or sidebar', async (
   expect(pageMetrics.scrollHeight).toBeLessThanOrEqual(pageMetrics.innerHeight);
 });
 
-test('Cube 2D can be re-grabbed after release even when the next drag starts on an internal control', async ({ page }) => {
+test('Cube 2D re-grab cancels native browser drag instead of losing pan', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
   await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
@@ -124,10 +124,22 @@ test('Cube 2D can be re-grabbed after release even when the next drag starts on 
   const slotX = slotBox.x + slotBox.width / 2;
   const slotY = slotBox.y + slotBox.height / 2;
 
-  // The old hook marked any gesture beginning on a button as ignored. A real drag
-  // from this Cube-only control must pan instead, while the generated click is suppressed.
+  // Force the same browser-native drag path that produces Chrome's prohibited-drop cursor.
+  // Cube pan must own the pointer gesture first and cancel dragstart before it can cancel
+  // the pointer stream. Short presses still remain normal button clicks.
+  await anchorSlot.evaluate((element) => {
+    (element as HTMLElement).draggable = true;
+  });
   await page.mouse.move(slotX, slotY);
   await page.mouse.down();
+
+  const nativeDragPrevented = await anchorSlot.evaluate((element) => {
+    const event = new DragEvent('dragstart', { bubbles: true, cancelable: true });
+    element.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(nativeDragPrevented).toBe(true);
+
   await page.mouse.move(slotX + 90, slotY + 50, { steps: 8 });
   await page.mouse.up();
   await expect(viewport).toHaveAttribute('data-dragging', 'false');
