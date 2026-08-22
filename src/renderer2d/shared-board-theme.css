@@ -22,6 +22,8 @@
 
 .cube-2d-game .cube-2d-board {
   background-color: var(--go-board-surface);
+  /* Mask subpixel edge bleed from the bright fallback surface without affecting layout. */
+  box-shadow: 0 0 0 4px #000;
 }
 
 .cube-2d-game .cube-2d-board__surface {
@@ -81,8 +83,4 @@
   transform-box: view-box;
   transform-origin: 50% 50%;
   transform: scale(var(--cube-2d-content-scale));
-}
-
-.cube-2d-game .cube-2d-board--central {
-  box-shadow: none;
 }
