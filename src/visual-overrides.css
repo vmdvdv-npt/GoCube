@@ -7,6 +7,19 @@
 .game-statistics {
   grid-template-rows: auto auto auto auto;
   border: 1px solid rgb(203 140 50 / 36%);
+  color: #9a9a9a;
+  font-size: 13px;
+}
+
+.game-statistics::before {
+  color: #858585;
+  font-size: 15px;
+}
+
+.game-statistics > span:not(.capture-stat) {
+  color: #9a9a9a;
+  font-size: 13px;
+  font-weight: 400;
 }
 
 /* Pass count is represented by Pass (1); keep the old text only as an off-screen state hook. */
@@ -51,6 +64,52 @@
   grid-row: 4;
 }
 
+.game-statistics > .capture-stat {
+  flex-direction: row;
+  justify-content: center;
+  min-height: 68px;
+  gap: 12px;
+  color: #858585;
+  font-size: 26px;
+  font-weight: 700;
+  text-align: left;
+  text-transform: none;
+}
+
+.game-statistics > .capture-stat::before {
+  content: none;
+}
+
+.capture-stat__stone {
+  display: block;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 50%;
+  box-shadow:
+    0 4px 8px rgb(0 0 0 / 32%),
+    0 0 0 3px rgb(211 144 46 / 8%),
+    0 0 18px rgb(211 144 46 / 28%);
+}
+
+.capture-stat__stone--black {
+  border: 1px solid #30343a;
+  background: radial-gradient(circle at 35% 28%, #42474d 0, #15181b 35%, #050607 72%);
+}
+
+.capture-stat__stone--white {
+  border: 1px solid #d5d4cd;
+  background: radial-gradient(circle at 35% 28%, #ffffff 0, #efeee8 45%, #c9c7bf 100%);
+}
+
+.capture-stat__count {
+  min-width: 1ch;
+  color: #858585;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .turn-indicator {
   border: 1px solid rgb(203 140 50 / 36%);
 }
@@ -68,20 +127,13 @@
   stroke-width: 4px;
 }
 
-/* Match the warm current-turn halo behind both captured-stone icons. */
-.game-statistics span:nth-child(4)::before,
-.game-statistics span:nth-child(5)::before {
-  box-shadow:
-    0 4px 8px rgb(0 0 0 / 32%),
-    0 0 0 3px rgb(211 144 46 / 8%),
-    0 0 18px rgb(211 144 46 / 28%);
-}
-
 .torus-duplicates-control {
   display: grid;
   align-items: stretch;
   gap: 0;
   border: 1px solid rgb(203 140 50 / 36%);
+  color: #9a9a9a;
+  font-size: 13px;
 }
 
 .torus-duplicates-control label {
@@ -108,13 +160,15 @@
 
 .torus-duplicates-control label:nth-child(2)::after {
   content: 'Move numbers';
-  font-size: 11px;
+  color: #9a9a9a;
+  font-size: 13px;
   line-height: 1.25;
 }
 
 .torus-duplicates-control label:nth-child(1)::after {
   content: 'Show duplicate regions';
-  font-size: 11px;
+  color: #9a9a9a;
+  font-size: 13px;
   line-height: 1.25;
 }
 
