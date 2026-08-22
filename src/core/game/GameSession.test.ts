@@ -1,11 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { EndgameClassifier } from '../endgame/EndgameClassifier';
 import { ChineseScoring } from '../scoring/ChineseScoring';
-import type { Topology } from '../topology/Topology';
+import type { PointId, Topology } from '../topology/Topology';
 import { TorusTopology } from '../topology/TorusTopology';
 import type { GameState } from './types';
 import { GameEngine } from './GameEngine';
-import { GameSession, type GameSessionConfig } from './GameSession';
+import {
+  GameSession,
+  type GameCommand,
+  type GameSessionConfig,
+  type SessionCommand,
+} from './GameSession';
 
 const emptyClassifier: EndgameClassifier = Object.freeze({
   classify: async () => Object.freeze([]),
@@ -19,6 +24,17 @@ const sessionConfig = (topology: Topology): GameSessionConfig =>
   });
 
 describe('GameSession', () => {
+  it('keeps domain and session command types as separate boundaries', () => {
+    expectTypeOf<GameCommand>().toEqualTypeOf<
+      | Readonly<{ type: 'place-stone'; point: PointId }>
+      | Readonly<{ type: 'pass' }>
+    >();
+    expectTypeOf<SessionCommand>().toEqualTypeOf<
+      | Readonly<{ type: 'undo' }>
+      | Readonly<{ type: 'redo' }>
+    >();
+  });
+
   it('is the command entry point and records only successful actions', async () => {
     const topology = new TorusTopology(9);
     const engine = new GameEngine(topology);
@@ -66,7 +82,7 @@ describe('GameSession', () => {
     expect(session.state().board['4,4']).toBe('empty');
     expect(session.state().board['4,5']).toBe('black');
 
-    const undo = await session.execute({ type: 'undo' });
+    const undo = await session.executeSessionCommand({ type: 'undo' });
     expect(undo.ok).toBe(true);
     expect(session.state()).toEqual(beforeCapture);
     expect(session.state().board['4,4']).toBe('white');
@@ -126,7 +142,7 @@ describe('GameSession', () => {
     });
     expect(session.finalScore()).not.toBeNull();
 
-    const undo = await session.execute({ type: 'undo' });
+    const undo = await session.executeSessionCommand({ type: 'undo' });
 
     expect(undo.ok).toBe(true);
     expect(session.historyLength()).toBe(2);
@@ -144,7 +160,7 @@ describe('GameSession', () => {
     const engine = new GameEngine(topology);
     const session = new GameSession(engine, sessionConfig(topology));
 
-    expect(await session.execute({ type: 'undo' })).toMatchObject({
+    expect(await session.executeSessionCommand({ type: 'undo' })).toMatchObject({
       ok: false,
       reason: 'nothing-to-undo',
     });

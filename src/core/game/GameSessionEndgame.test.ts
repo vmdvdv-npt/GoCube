@@ -244,7 +244,7 @@ describe('GameSession endgame flow', () => {
     expect(classifier.calls).toHaveLength(1);
     expect(scoring.calls).toHaveLength(1);
 
-    const undo = await session.execute({ type: 'undo' });
+    const undo = await session.executeSessionCommand({ type: 'undo' });
 
     expect(undo.ok).toBe(true);
     expect(session.state()).toEqual(firstPass.state);

@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import type { GameViewModel } from '../presentation/PresentationModel';
+import { LocalStoragePreferencesStorage } from './persistence/LocalStoragePreferencesStorage';
 
 export interface GameSidebarProps {
   readonly size: number;
@@ -42,12 +43,50 @@ export function GameSidebar({
   endgame = null,
   feedback = null,
 }: GameSidebarProps) {
+  const preferencesStorage = useMemo(() => new LocalStoragePreferencesStorage(), []);
   const stageLabel =
     viewModel.phase === 'playing'
       ? `${viewModel.currentPlayer === 'black' ? 'Black' : 'White'} to move`
       : viewModel.phase === 'endgame'
         ? 'Classify groups'
         : 'Game finished';
+
+  useEffect(() => {
+    if (duplicateRegionsDisabled || !onShowDuplicateRegionsChange) return;
+
+    let cancelled = false;
+    void preferencesStorage.loadPreferences().then((preferences) => {
+      if (!cancelled) {
+        onShowDuplicateRegionsChange(preferences.showTorusDuplicateRegions);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    duplicateRegionsDisabled,
+    onShowDuplicateRegionsChange,
+    preferencesStorage,
+    viewModel,
+  ]);
+
+  const handleDuplicateRegionsChange = (visible: boolean): void => {
+    onShowDuplicateRegionsChange?.(visible);
+    void preferencesStorage
+      .loadPreferences()
+      .then((current) =>
+        preferencesStorage.savePreferences(
+          Object.freeze({
+            ...current,
+            showTorusDuplicateRegions: visible,
+          }),
+        ),
+      )
+      .catch(() => {
+        // A preference write failure must not block or revert the active game view.
+      });
+  };
 
   return (
     <>
@@ -89,7 +128,7 @@ export function GameSidebar({
             type="checkbox"
             checked={showDuplicateRegions}
             disabled={duplicateRegionsDisabled}
-            onChange={(event) => onShowDuplicateRegionsChange?.(event.target.checked)}
+            onChange={(event) => handleDuplicateRegionsChange(event.target.checked)}
           />
           Показывать дублирующие области
         </label>

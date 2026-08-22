@@ -11,15 +11,33 @@ import {
   type GameSize,
   type SavedGameSummary,
 } from './GameApplication';
+import { LocalStoragePreferencesStorage } from './persistence/LocalStoragePreferencesStorage';
+import {
+  DEFAULT_USER_PREFERENCES,
+  type UserPreferences,
+} from './persistence/PreferencesStorage';
 import { TorusGame } from './TorusGame';
 
 type AppScreen = 'loading' | 'resume' | 'settings' | 'game';
+
+const DEFAULT_KOMI = 7.5;
 
 const sizesForMode = (mode: GameMode): readonly GameSize[] =>
   mode === 'cube-2d' ? CUBE_UI_SIZES : TORUS_SIZES;
 
 const defaultSizeForMode = (mode: GameMode): GameSize =>
   mode === 'cube-2d' ? 4 : 9;
+
+const preferredSizeForMode = (
+  mode: GameMode,
+  preferences: UserPreferences,
+): GameSize =>
+  mode === 'cube-2d'
+    ? preferences.lastCubeSize ?? defaultSizeForMode(mode)
+    : preferences.lastTorusSize ?? defaultSizeForMode(mode);
+
+const preferredKomi = (preferences: UserPreferences): number =>
+  preferences.lastKomi ?? DEFAULT_KOMI;
 
 const modeLabel = (mode: GameMode): string =>
   mode === 'cube-2d' ? 'Cube 2D' : 'Torus 2D';
@@ -28,6 +46,8 @@ const normalizeKomi = (value: number): number => Math.floor(value) + 0.5;
 
 export function App() {
   const application = useMemo(() => new GameApplication(), []);
+  const preferencesStorage = useMemo(() => new LocalStoragePreferencesStorage(), []);
+  const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_USER_PREFERENCES);
   const [screen, setScreen] = useState<AppScreen>('loading');
   const [savedGame, setSavedGame] = useState<SavedGameSummary | null>(null);
   const [activeGame, setActiveGame] = useState<ActiveGame | null>(null);
@@ -35,14 +55,20 @@ export function App() {
   const [gameMode, setGameMode] = useState<GameMode>('torus-2d');
   const [size, setSize] = useState<GameSize>(9);
   const [ruleSet, setRuleSet] = useState<RuleSet>('japanese');
-  const [komi, setKomi] = useState('7.5');
+  const [komi, setKomi] = useState(String(DEFAULT_KOMI));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    void application.findSavedGame().then((summary) => {
+    void Promise.all([
+      application.findSavedGame(),
+      preferencesStorage.loadPreferences(),
+    ]).then(([summary, storedPreferences]) => {
       if (cancelled) return;
+      setPreferences(storedPreferences);
+      setSize(preferredSizeForMode('torus-2d', storedPreferences));
+      setKomi(String(preferredKomi(storedPreferences)));
       setSavedGame(summary);
       setScreen(summary ? 'resume' : 'settings');
     });
@@ -50,7 +76,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [application]);
+  }, [application, preferencesStorage]);
 
   const continueSavedGame = async (): Promise<void> => {
     setScreen('loading');
@@ -74,9 +100,9 @@ export function App() {
       setSavedGame(null);
       setConfirmNewGame(false);
       setGameMode('torus-2d');
-      setSize(9);
+      setSize(preferredSizeForMode('torus-2d', preferences));
       setRuleSet('japanese');
-      setKomi('7.5');
+      setKomi(String(preferredKomi(preferences)));
       setScreen('settings');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not reset saved game.');
@@ -85,7 +111,7 @@ export function App() {
 
   const chooseMode = (nextMode: GameMode) => {
     setGameMode(nextMode);
-    setSize(defaultSizeForMode(nextMode));
+    setSize(preferredSizeForMode(nextMode, preferences));
   };
 
   const startNewGame = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -106,6 +132,29 @@ export function App() {
         ruleSet,
         komi: normalizedKomi,
       });
+
+      const storedPreferences = await preferencesStorage
+        .loadPreferences()
+        .catch(() => preferences);
+      const nextPreferences: UserPreferences = Object.freeze({
+        ...storedPreferences,
+        lastCubeSize:
+          gameMode === 'cube-2d'
+            ? (size as UserPreferences['lastCubeSize'])
+            : storedPreferences.lastCubeSize,
+        lastTorusSize:
+          gameMode === 'torus-2d'
+            ? (size as UserPreferences['lastTorusSize'])
+            : storedPreferences.lastTorusSize,
+        lastKomi: normalizedKomi,
+      });
+      setPreferences(nextPreferences);
+      try {
+        await preferencesStorage.savePreferences(nextPreferences);
+      } catch {
+        setError('Game started, but preferences could not be saved.');
+      }
+
       setActiveGame(next);
       setScreen('game');
     } catch (caught) {

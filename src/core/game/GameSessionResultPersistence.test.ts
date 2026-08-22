@@ -74,7 +74,7 @@ describe('GameSession result persistence', () => {
       session.snapshot().endgameClassification,
     );
 
-    const undo = await restored!.execute({ type: 'undo' });
+    const undo = await restored!.executeSessionCommand({ type: 'undo' });
     expect(undo.ok).toBe(true);
     expect(restored?.state().phase).toBe('playing');
     expect(restored?.snapshot().endgameClassification).toBeNull();
