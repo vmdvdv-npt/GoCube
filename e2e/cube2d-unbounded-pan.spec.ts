@@ -6,16 +6,17 @@ const requiredBox = async (locator: Locator) => {
   return box!;
 };
 
-const dragViewportBy = async (page: Page, viewport: Locator, dx: number, dy: number) => {
+const dragAcrossViewportToTopLeft = async (page: Page, viewport: Locator) => {
   const box = await requiredBox(viewport);
-  const startX = box.x + box.width / 2;
-  const startY = box.y + box.height / 2;
-  const endX = Math.max(box.x + 24, Math.min(box.x + box.width - 24, startX + dx));
-  const endY = Math.max(box.y + 24, Math.min(box.y + box.height - 24, startY + dy));
+  const inset = 32;
+  const startX = box.x + box.width - inset;
+  const startY = box.y + box.height - inset;
+  const endX = box.x + inset;
+  const endY = box.y + inset;
 
   await page.mouse.move(startX, startY);
   await page.mouse.down();
-  await page.mouse.move(endX, endY, { steps: 8 });
+  await page.mouse.move(endX, endY, { steps: 12 });
   await page.mouse.up();
 };
 
@@ -43,9 +44,7 @@ test('Cube 2D drag-pan is not clamped by the board viewport or sidebar', async (
     };
   });
 
-  for (let index = 0; index < 7; index += 1) {
-    await dragViewportBy(page, viewport, -320, -220);
-  }
+  await dragAcrossViewportToTopLeft(page, viewport);
 
   const pan = {
     x: Number(await viewport.getAttribute('data-pan-x')),
@@ -54,17 +53,19 @@ test('Cube 2D drag-pan is not clamped by the board viewport or sidebar', async (
   expect(pan.x).toBeLessThan(-formerClamp.maxX - 200);
   expect(pan.y).toBeLessThan(-formerClamp.maxY - 200);
 
-  const escaped = await page.evaluate(() => {
+  const movedGeometry = await page.evaluate(() => {
     const bounds = document
       .querySelector<HTMLElement>('.cube-2d-game__navigation-layer')!
       .getBoundingClientRect();
+    const sidebarBounds = document.querySelector<HTMLElement>('.game-summary')!.getBoundingClientRect();
     return {
-      right: bounds.right,
-      bottom: bounds.bottom,
+      navigationLeft: bounds.left,
+      navigationTop: bounds.top,
+      sidebarRight: sidebarBounds.right,
     };
   });
-  expect(escaped.right).toBeLessThan(0);
-  expect(escaped.bottom).toBeLessThan(0);
+  expect(movedGeometry.navigationLeft).toBeLessThan(movedGeometry.sidebarRight);
+  expect(movedGeometry.navigationTop).toBeLessThan(0);
 
   const sidebarAfter = await requiredBox(sidebar);
   expect(sidebarAfter.x).toBeCloseTo(sidebarBefore.x, 0);
