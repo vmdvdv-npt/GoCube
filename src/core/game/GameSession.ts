@@ -1,8 +1,23 @@
 import type {
   EndgameClassification,
   EndgameClassifier,
+  EndgameProposal,
+  EndgameProposalStatus,
   GroupStatus,
 } from '../endgame/EndgameClassifier';
+import {
+  canonicalizeEndgameGroup,
+  compareEndgamePointIds,
+  endgameGroupId,
+} from '../endgame/EndgameGroupIdentity';
+import {
+  cloneEndgameReviewState,
+  createEndgameReviewState,
+  effectiveEndgameStatus,
+  resolveEndgameClassification,
+  setEndgameReviewDecision as updateEndgameReviewDecision,
+  type EndgameReviewState,
+} from '../endgame/EndgameReviewState';
 import { LinearHistory } from '../history/LinearHistory';
 import type { GameRepository } from '../persistence/GameRepository';
 import { OrderedGameSaveCoordinator } from '../persistence/OrderedGameSaveCoordinator';
@@ -92,39 +107,16 @@ export type GameSessionResult =
   | RejectedGameSessionResult;
 
 type HistoryMetadata = Readonly<{
-  endgameReview: EndgameReviewStateSnapshot | null;
+  endgameReview: EndgameReviewState | null;
   endgameClassification: EndgameClassification | null;
   finalScore: FinalScore | null;
 }>;
 
-const comparePointIds = (left: PointId, right: PointId): number =>
-  left < right ? -1 : left > right ? 1 : 0;
-
-const canonicalizePoints = (points: readonly PointId[]): readonly PointId[] =>
-  Object.freeze([...points].sort(comparePointIds));
-
-const groupKey = (points: readonly PointId[]): string =>
-  JSON.stringify(canonicalizePoints(points));
-
 const isGroupStatus = (value: unknown): value is GroupStatus =>
   value === 'alive' || value === 'dead' || value === 'seki';
 
-const cloneEndgameReview = (
-  review: EndgameReviewStateSnapshot | null | undefined,
-): EndgameReviewStateSnapshot | null => {
-  if (!review) return null;
-
-  return Object.freeze({
-    groups: Object.freeze(
-      review.groups.map((group) =>
-        Object.freeze({
-          points: canonicalizePoints(group.points),
-          status: group.status,
-        }),
-      ),
-    ),
-  });
-};
+const isProposalStatus = (value: unknown): value is EndgameProposalStatus =>
+  isGroupStatus(value) || value === 'unresolved';
 
 const cloneEndgameClassification = (
   classification: EndgameClassification | null | undefined,
@@ -134,7 +126,7 @@ const cloneEndgameClassification = (
   return Object.freeze(
     classification.map((group) =>
       Object.freeze({
-        points: Object.freeze([...group.points]),
+        points: canonicalizeEndgameGroup(group.points),
         status: group.status,
         source: group.source,
       }),
@@ -161,14 +153,76 @@ const cloneFinalScore = (score: FinalScore | null): FinalScore | null => {
   });
 };
 
-const cloneHistoryMetadata = (
+const reviewFromSnapshot = (
+  snapshot: EndgameReviewStateSnapshot | null | undefined,
+): EndgameReviewState | null => {
+  if (!snapshot) return null;
+
+  return Object.freeze({
+    groups: Object.freeze(
+      snapshot.groups.map((group) => {
+        const proposalStatus = group.proposal?.status ?? 'unresolved';
+        const userDecision =
+          group.userDecision !== undefined
+            ? group.userDecision
+            : group.status ?? null;
+
+        return Object.freeze({
+          points: canonicalizeEndgameGroup(group.points),
+          proposal: Object.freeze({
+            status: proposalStatus,
+            ...(group.proposal?.evidence
+              ? { evidence: Object.freeze({ ...group.proposal.evidence }) }
+              : {}),
+          }),
+          userDecision,
+        });
+      }),
+    ),
+  });
+};
+
+const reviewToSnapshot = (
+  review: EndgameReviewState | null | undefined,
+): EndgameReviewStateSnapshot | null => {
+  if (!review) return null;
+
+  return Object.freeze({
+    groups: Object.freeze(
+      review.groups.map((group) => {
+        const effective = effectiveEndgameStatus(group);
+        return Object.freeze({
+          points: canonicalizeEndgameGroup(group.points),
+          proposal: Object.freeze({
+            status: group.proposal.status,
+            ...(group.proposal.evidence
+              ? { evidence: Object.freeze({ ...group.proposal.evidence }) }
+              : {}),
+          }),
+          userDecision: group.userDecision,
+          // Deprecated additive v1 compatibility projection.
+          status: effective === 'unresolved' ? null : effective,
+        });
+      }),
+    ),
+  });
+};
+
+const cloneHistoryMetadata = (metadata: HistoryMetadata): HistoryMetadata =>
+  Object.freeze({
+    endgameReview: cloneEndgameReviewState(metadata.endgameReview),
+    endgameClassification: cloneEndgameClassification(metadata.endgameClassification),
+    finalScore: cloneFinalScore(metadata.finalScore),
+  });
+
+const historyMetadataFromSnapshot = (
   metadata: Pick<
     GameSessionRedoEntrySnapshot,
     'endgameReview' | 'endgameClassification' | 'finalScore'
   >,
 ): HistoryMetadata =>
   Object.freeze({
-    endgameReview: cloneEndgameReview(metadata.endgameReview),
+    endgameReview: reviewFromSnapshot(metadata.endgameReview),
     endgameClassification: cloneEndgameClassification(metadata.endgameClassification),
     finalScore: cloneFinalScore(metadata.finalScore),
   });
@@ -193,7 +247,7 @@ export class GameSession {
   private readonly config: GameSessionConfig;
   private currentFinalScore: FinalScore | null = null;
   private currentEndgameClassification: EndgameClassification | null = null;
-  private currentEndgameReview: EndgameReviewStateSnapshot | null = null;
+  private currentEndgameReview: EndgameReviewState | null = null;
   private readonly futureMetadata: HistoryMetadata[] = [];
   private sessionRevision = 0;
   private readonly saveCoordinator: OrderedGameSaveCoordinator<GameSessionSnapshot> | null;
@@ -239,8 +293,8 @@ export class GameSession {
       snapshot.history,
       redo.map((entry) => entry.state),
     );
-    session.futureMetadata.push(...redo.map(cloneHistoryMetadata));
-    session.currentEndgameReview = cloneEndgameReview(snapshot.endgameReview);
+    session.futureMetadata.push(...redo.map(historyMetadataFromSnapshot));
+    session.currentEndgameReview = reviewFromSnapshot(snapshot.endgameReview);
     session.currentFinalScore = cloneFinalScore(snapshot.finalScore);
     session.currentEndgameClassification = cloneEndgameClassification(
       snapshot.endgameClassification,
@@ -273,8 +327,8 @@ export class GameSession {
     return this.currentFinalScore;
   }
 
-  endgameReview(): EndgameReviewStateSnapshot | null {
-    return cloneEndgameReview(this.currentEndgameReview);
+  endgameReview(): EndgameReviewState | null {
+    return cloneEndgameReviewState(this.currentEndgameReview);
   }
 
   historyLength(): number {
@@ -316,24 +370,21 @@ export class GameSession {
       throw new Error(`Invalid manual endgame status: ${String(status)}`);
     }
 
-    const key = groupKey(points);
-    let matched = false;
-    let changed = false;
-    const groups = this.currentEndgameReview.groups.map((group) => {
-      if (groupKey(group.points) !== key) return group;
-      matched = true;
-      if (group.status === status) return group;
-      changed = true;
-      return Object.freeze({ points: canonicalizePoints(group.points), status });
-    });
-
-    if (!matched) {
-      throw new Error(`Unknown manual endgame group: ${key}`);
-    }
-    if (!changed) return;
-
-    this.currentEndgameReview = Object.freeze({ groups: Object.freeze(groups) });
+    const updated = updateEndgameReviewDecision(this.currentEndgameReview, points, status);
+    if (updated === this.currentEndgameReview) return;
+    this.currentEndgameReview = updated;
     await this.persist();
+  }
+
+  async finishEndgameReview(): Promise<void> {
+    const state = this.history.current();
+    if (state.phase !== 'endgame' || !this.currentEndgameReview) {
+      throw new Error('No endgame review is active');
+    }
+
+    const classification = resolveEndgameClassification(this.currentEndgameReview);
+    if (!classification) throw new Error('Endgame review is incomplete');
+    await this.completeEndgame(state, classification);
   }
 
   snapshot(): GameSessionSnapshot {
@@ -347,7 +398,7 @@ export class GameSession {
         const metadata = this.futureMetadata[index]!;
         return Object.freeze({
           state,
-          endgameReview: cloneEndgameReview(metadata.endgameReview),
+          endgameReview: reviewToSnapshot(metadata.endgameReview),
           endgameClassification: cloneEndgameClassification(metadata.endgameClassification),
           finalScore: cloneFinalScore(metadata.finalScore),
         });
@@ -362,7 +413,7 @@ export class GameSession {
       komi: this.config.komi,
       history: this.history.states(),
       redo,
-      endgameReview: cloneEndgameReview(this.currentEndgameReview),
+      endgameReview: reviewToSnapshot(this.currentEndgameReview),
       endgameClassification: cloneEndgameClassification(this.currentEndgameClassification),
       finalScore: cloneFinalScore(this.currentFinalScore),
     });
@@ -386,15 +437,16 @@ export class GameSession {
     }
   }
 
-  /** Restarts the application-level endgame orchestration after an endgame snapshot is restored. */
+  /** Compatibility entry point for restored legacy endgame snapshots missing proposal data. */
   async resumeEndgame(): Promise<void> {
     const state = this.history.current();
     if (state.phase !== 'endgame') {
-      throw new Error('Only an endgame snapshot can resume endgame classification');
+      throw new Error('Only an endgame snapshot can resume endgame review');
     }
+    if (this.currentEndgameReview) return;
 
-    const classification = this.startEndgameClassification(state);
-    await this.completeEndgame(state, classification);
+    await this.startEndgameReview(state);
+    await this.persist();
   }
 
   private async placeStone(point: PointId): Promise<GameSessionResult> {
@@ -417,6 +469,8 @@ export class GameSession {
     const state = this.history.push(result.state);
     this.futureMetadata.length = 0;
     this.currentEndgameReview = null;
+    this.currentEndgameClassification = null;
+    this.currentFinalScore = null;
     await this.persist();
     return Object.freeze({
       ok: true,
@@ -440,6 +494,9 @@ export class GameSession {
 
     const state = this.history.push(result.state);
     this.futureMetadata.length = 0;
+    this.currentEndgameClassification = null;
+    this.currentFinalScore = null;
+
     if (state.phase !== 'endgame') {
       this.currentEndgameReview = null;
       await this.persist();
@@ -451,12 +508,17 @@ export class GameSession {
       });
     }
 
-    // Start classification synchronously so the UI can immediately expose the
-    // manual endgame groups and session-owned review state, then persist the
-    // accepted second Pass before waiting for user classification.
-    const classification = this.startEndgameClassification(state);
+    await this.startEndgameReview(state);
     await this.persist();
-    await this.completeEndgame(state, classification);
+
+    // If every group was resolved automatically (or there are no stone groups),
+    // no manual UI round-trip is necessary.
+    const automaticClassification = this.currentEndgameReview
+      ? resolveEndgameClassification(this.currentEndgameReview)
+      : null;
+    if (automaticClassification) {
+      await this.completeEndgame(state, automaticClassification);
+    }
 
     return Object.freeze({
       ok: true,
@@ -467,11 +529,13 @@ export class GameSession {
   }
 
   private async undo(): Promise<GameSessionResult> {
-    const metadata = Object.freeze({
-      endgameReview: cloneEndgameReview(this.currentEndgameReview),
-      endgameClassification: cloneEndgameClassification(this.currentEndgameClassification),
-      finalScore: cloneFinalScore(this.currentFinalScore),
-    });
+    const metadata = cloneHistoryMetadata(
+      Object.freeze({
+        endgameReview: this.currentEndgameReview,
+        endgameClassification: this.currentEndgameClassification,
+        finalScore: this.currentFinalScore,
+      }),
+    );
     const state = this.history.undo();
 
     if (!state) {
@@ -506,7 +570,7 @@ export class GameSession {
     }
 
     const metadata = this.futureMetadata.pop();
-    this.currentEndgameReview = cloneEndgameReview(metadata?.endgameReview);
+    this.currentEndgameReview = cloneEndgameReviewState(metadata?.endgameReview);
     this.currentEndgameClassification = cloneEndgameClassification(
       metadata?.endgameClassification,
     );
@@ -519,40 +583,30 @@ export class GameSession {
     });
   }
 
-  private startEndgameClassification(
-    state: GameState,
-  ): Promise<EndgameClassification> {
+  private async startEndgameReview(state: GameState): Promise<void> {
     const groups = this.groupsForClassification(state);
-    const groupKeys = groups.map(groupKey);
+    const proposal = await this.config.endgameClassifier.analyze(
+      Object.freeze({
+        state,
+        topology: this.engine.logicalTopology(),
+        groups,
+      }),
+    );
 
-    if (this.currentEndgameReview) {
-      const reviewKeys = this.currentEndgameReview.groups.map((group) => groupKey(group.points));
-      if (
-        reviewKeys.length !== groupKeys.length ||
-        reviewKeys.some((key, index) => key !== groupKeys[index])
-      ) {
-        throw new Error('Saved endgame review does not match the current endgame position');
-      }
-    } else {
-      this.currentEndgameReview = Object.freeze({
-        groups: Object.freeze(
-          groups.map((points) =>
-            Object.freeze({ points: canonicalizePoints(points), status: null }),
-          ),
-        ),
-      });
+    if (this.history.current() !== state || state.phase !== 'endgame') {
+      throw new Error('Endgame state changed while analysis was pending');
     }
 
-    return Promise.resolve(this.config.endgameClassifier.classify(groups));
+    this.assertProposalMatchesGroups(groups, proposal);
+    this.currentEndgameReview = createEndgameReviewState(proposal);
   }
 
   private async completeEndgame(
     state: GameState,
-    classificationPromise: Promise<EndgameClassification>,
+    classification: EndgameClassification,
   ): Promise<void> {
-    const classification = await classificationPromise;
     if (this.history.current() !== state || state.phase !== 'endgame') {
-      throw new Error('Endgame state changed while classification was pending');
+      throw new Error('Endgame state changed before scoring');
     }
 
     const finalScore = this.config.scoringStrategy.score(
@@ -597,18 +651,48 @@ export class GameSession {
     const visited = new Set<PointId>();
     const groups: (readonly PointId[])[] = [];
 
-    for (const point of Object.keys(state.board).sort(comparePointIds)) {
+    for (const point of Object.keys(state.board).sort(compareEndgamePointIds)) {
       if (visited.has(point) || state.board[point] === 'empty') continue;
 
       const group = this.engine.groupAt(state, point);
       if (!group) continue;
 
-      const points = [...group.points].sort(comparePointIds);
+      const points = canonicalizeEndgameGroup(group.points);
       for (const groupPoint of points) visited.add(groupPoint);
-      groups.push(Object.freeze(points));
+      groups.push(points);
     }
 
     return Object.freeze(groups);
+  }
+
+  private assertProposalMatchesGroups(
+    groups: readonly (readonly PointId[])[],
+    proposal: EndgameProposal,
+  ): void {
+    const expected = groups.map(endgameGroupId).sort();
+    const actual: string[] = [];
+    const seen = new Set<string>();
+
+    for (const group of proposal) {
+      if (!Array.isArray(group.points) || group.points.length === 0) {
+        throw new Error('Endgame proposal group must contain points');
+      }
+      if (!isProposalStatus(group.status)) {
+        throw new Error(`Invalid endgame proposal status: ${String(group.status)}`);
+      }
+      const id = endgameGroupId(group.points);
+      if (seen.has(id)) throw new Error(`Duplicate endgame proposal group: ${id}`);
+      seen.add(id);
+      actual.push(id);
+    }
+
+    actual.sort();
+    if (
+      actual.length !== expected.length ||
+      actual.some((id, index) => id !== expected[index])
+    ) {
+      throw new Error('Endgame proposal does not match all stone groups exactly once');
+    }
   }
 
   private static assertCompatibleSnapshot(
@@ -691,14 +775,21 @@ export class GameSession {
         if (!Array.isArray(group.points) || group.points.length === 0) {
           throw new Error(`Endgame review group for ${label} must contain points`);
         }
-        if (group.status !== null && !isGroupStatus(group.status)) {
-          throw new Error(`Endgame review group for ${label} has invalid status`);
+        if (group.status !== undefined && group.status !== null && !isGroupStatus(group.status)) {
+          throw new Error(`Endgame review group for ${label} has invalid legacy status`);
         }
-        const key = groupKey(group.points);
-        if (seen.has(key)) {
+        if (group.userDecision !== undefined && group.userDecision !== null && !isGroupStatus(group.userDecision)) {
+          throw new Error(`Endgame review group for ${label} has invalid user decision`);
+        }
+        if (group.proposal && !isProposalStatus(group.proposal.status)) {
+          throw new Error(`Endgame review group for ${label} has invalid proposal status`);
+        }
+
+        const id = endgameGroupId(group.points);
+        if (seen.has(id)) {
           throw new Error(`Endgame review for ${label} contains duplicate groups`);
         }
-        seen.add(key);
+        seen.add(id);
       }
     }
     if (finalScore && (finalScore.ruleSet !== ruleSet || finalScore.komi !== komi)) {
