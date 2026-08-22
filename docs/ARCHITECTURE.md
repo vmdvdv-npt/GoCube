@@ -43,6 +43,8 @@
 20. Cube surface/orientation semantics имеют renderer-neutral представление; SVG/CSS/Three.js не являются каноническим источником пространственной истины.
 21. В проекте существует одна физически общая реализация основной панели управления; renderer-specific режимы не владеют собственными копиями панели.
 22. Общие 2D visual assets/theme имеют одного владельца в presentation/renderer layer и не дублируются независимо для Torus 2D и Cube 2D.
+23. Один и тот же текущий `GameState` используется всеми доступными представлениями данной партии; смена Renderer не создаёт отдельную версию игрового состояния.
+24. Стадия партии задаётся одной явной state machine, а не набором независимо изменяемых boolean-флагов.
 
 Стрелка `A → B` в этом документе означает: `A` использует контракт `B` или передаёт ему данные/команду. Она не означает наследование.
 
@@ -94,7 +96,7 @@ UI отвечает за визуальные controls, pointer/input и фор�
 - `ChangeKomi(value)`;
 - `ChangeRules(ruleSet)`.
 
-UI получает `logical pointId` от hit-testing активного Renderer и передаёт игровую команду в `GameSession`. Чисто визуальные команды могут идти в presentation/view layer, но не меняют доменное состояние.
+UI получает `logical PointId` от hit-testing активного Renderer и передаёт игровую команду в `GameSession`. Чисто визуальные команды могут идти в presentation/view layer, но не меняют доменное состояние.
 
 UI не знает алгоритмы групп, liberties, captures, suicide, ko/repetition, endgame classification или scoring.
 
@@ -218,7 +220,7 @@ UI не должен знать, local или remote execution использу�
 - capture counters;
 - action/move number;
 - `consecutivePasses`;
-- текущий game phase/status;
+- текущий `GamePhase`;
 - rule/repetition-relevant данные текущего snapshot, которые не выводятся из переданного `RepetitionContext`;
 - другие динамические поля, непосредственно влияющие на применение правил из этого snapshot.
 
@@ -232,7 +234,22 @@ UI не должен знать, local или remote execution использу�
 - browser storage handles;
 - network connections.
 
-## 7.2. GameSessionSnapshot
+## 7.2. GamePhase state machine
+
+Канонические базовые состояния стадии партии:
+
+`PLAYING → ENDGAME_REVIEW → FINISHED`
+
+- `PLAYING` — основная игровая фаза.
+- Выполнение доменного условия окончания основной фазы переводит партию в `ENDGAME_REVIEW`.
+- Завершённая обязательная endgame classification и расчёт результата переводят партию в `FINISHED`.
+- Undo/Redo восстанавливают соответствующий прежний/следующий `GamePhase` вместе с остальным rule-relevant state и session-level endgame/result metadata.
+- Нельзя использовать несколько независимых boolean-флагов как параллельные источники истины о стадии партии.
+- Если в будущем понадобится новая стадия, расширяется одна state machine, а не добавляется несогласованный флаг.
+
+Точное пользовательское действие, запускающее переходы, и UX каждой стадии определяет `docs/GAME_CUBE_GO.md`.
+
+## 7.3. GameSessionSnapshot
 
 Статическая конфигурация партии и данные, принадлежащие всей сессии, сериализуются в `GameSessionSnapshot` или эквивалентном session envelope.
 
@@ -250,7 +267,7 @@ UI не должен знать, local или remote execution использу�
 
 `PlayerSlot` может иметь внутренний id и цвет без требования аккаунта. Будущая привязка аккаунта относится к session/infrastructure layer и не должна менять правила Go.
 
-## 7.3. ViewState
+## 7.4. ViewState
 
 `ViewState` содержит только presentation state, например:
 
@@ -268,7 +285,7 @@ UI не должен знать, local или remote execution использу�
 
 Сохранение `ViewState` допускается отдельно, если этого требует продукт, но отсутствие или сброс `ViewState` не должен менять восстановленную игровую сессию.
 
-## 7.4. Schema evolution
+## 7.5. Schema evolution
 
 Форматы `GameState` и session persistence имеют явную schema/version boundary. Фундаментальное изменение смысла сохранённых данных требует миграции/совместимости либо осознанного изменения schema version; нельзя молча переинтерпретировать старые сохранения.
 
@@ -553,7 +570,7 @@ Torus 2D и Cube 2D используют общий `BoardTheme` и общие 2
 
 ## 14.3. Torus renderer-only copies
 
-Пассивные Torus duplicate regions, когда они включены продуктовым ViewState, являются renderer-only projections исходных `PointId`. Они не расширяют `TorusTopology` и не создают duplicate game state или hit targets.
+Пассивные Torus duplicate regions, когда они включены продуктовым `ViewState`, являются renderer-only projections исходных `PointId`. Они не расширяют `TorusTopology` и не создают duplicate game state или hit targets.
 
 # 15. Animation / Effects
 
@@ -657,9 +674,9 @@ Login, matchmaking, lobby, reconnect, spectators и cloud sync остаются 
 
 Pass проходит тем же command path, что и другие игровые действия.
 
-Когда доменное состояние достигает условия перехода к endgame, `GameSession` запускает `EndgameClassifier`, затем выбранную `ScoringStrategy`, сохраняет результат как session/domain metadata и передаёт его PresentationModel.
+Когда доменное состояние достигает условия перехода к endgame, `GameSession` переводит state machine в `ENDGAME_REVIEW`, запускает `EndgameClassifier`, затем выбранную `ScoringStrategy`, сохраняет результат как session/domain metadata и после завершения flow переводит партию в `FINISHED`.
 
-Точная пользовательская state machine и UX endgame определены в `GAME_CUBE_GO.md`; технический owner transitions — session/domain state, а не Renderer.
+Точная пользовательская семантика Pass/endgame и визуальный UX определены в `GAME_CUBE_GO.md`; technical owner transitions — session/domain state, а не Renderer.
 
 ## 18.4. Undo / Redo
 
@@ -689,6 +706,7 @@ Renderer не реконструирует историю самостоятел
 - turn switching;
 - Pass;
 - action numbering;
+- `GamePhase` transitions;
 - integration с `RepetitionPolicy` через переданный context;
 - детерминизм domain results;
 - отсутствие зависимости от UI/browser/Renderer.
@@ -732,7 +750,7 @@ Headless tests обязаны проверять без SVG/DOM/Three.js:
 - Undo/Redo stone;
 - Undo/Redo Pass;
 - `canUndo/canRedo`;
-- восстановление currentPlayer/captures/repetition/pass/action data;
+- восстановление currentPlayer/captures/repetition/pass/action/GamePhase data;
 - clearing redo после нового действия;
 - serialization/restoration past/current/redo;
 - restoration endgame/result metadata.
@@ -982,6 +1000,7 @@ Camera, controls, picking, instancing, line rendering и animation по возм
 - читать browser storage из `GameEngine`;
 - давать `GameEngine` объект `History` вместо минимального repetition data;
 - вкладывать `History`/redo-future внутрь `GameState`;
+- моделировать `GamePhase` набором конфликтующих boolean-флагов;
 - терять redo-future при autosave/reload;
 - хранить ViewState в rule history как игровое действие;
 - вызывать Three.js из `Topology`;
