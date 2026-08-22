@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 const start9x9Game = async (page: Page): Promise<void> => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'New game' })).toBeVisible();
+  await expect(page.getByTestId('new-game-settings-grid')).toBeVisible();
   await page.getByLabel('Board size').selectOption('9');
   await page.getByRole('button', { name: 'Start game' }).click();
   await expect(page.locator('.torus-game')).toBeVisible();
