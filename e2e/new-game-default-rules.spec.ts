@@ -31,14 +31,25 @@ test('new game uses board-size buttons and keeps Japanese rules as the default',
   await expect(size13).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByLabel('Board size')).toHaveValue('13');
   await page.mouse.move(0, 0);
-  const selectedBackground = await size13.evaluate((element) => getComputedStyle(element).backgroundImage);
-  expect(selectedBackground).toContain('rgb(52, 66, 79)');
+  await expect(size13).toHaveClass(/is-selected/);
+  await expect
+    .poll(() =>
+      size13.evaluate((element) => getComputedStyle(element).backgroundImage),
+    )
+    .toContain('rgb(52, 66, 79)');
 
   const idleBackground = await size19.evaluate((element) => getComputedStyle(element).backgroundImage);
   await size19.hover();
-  const hoverBackground = await size19.evaluate((element) => getComputedStyle(element).backgroundImage);
-  expect(hoverBackground).not.toBe(idleBackground);
-  expect(hoverBackground).toContain('rgb(39, 53, 66)');
+  await expect
+    .poll(() =>
+      size19.evaluate((element) => getComputedStyle(element).backgroundImage),
+    )
+    .not.toBe(idleBackground);
+  await expect
+    .poll(() =>
+      size19.evaluate((element) => getComputedStyle(element).backgroundImage),
+    )
+    .toContain('rgb(39, 53, 66)');
 
   const rules = page.getByLabel('Rules');
   await expect(rules.locator('option')).toHaveText(['Japanese', 'Chinese']);

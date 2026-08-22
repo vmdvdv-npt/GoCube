@@ -142,7 +142,7 @@ describe('TorusGameApplication New Game and restore', () => {
 
     await controller.pass();
     await controller.pass();
-    await controller.finishEndgame({});
+    await controller.finishEndgame();
 
     expect(repository.saved?.state.finalScore).not.toBeNull();
     expect(repository.saved?.state.history.at(-1)?.phase).toBe('finished');

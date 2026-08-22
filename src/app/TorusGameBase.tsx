@@ -27,7 +27,6 @@ import {
 import { renderTorus2DStoneAnnotations } from '../renderer2d/Torus2DStoneAnnotations';
 import {
   TorusGameController,
-  type TorusEndgameDecisions,
   type TorusEndgameGroup,
   type TorusGameActionResult,
 } from './TorusGameController';
@@ -125,7 +124,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const [endgameGroups, setEndgameGroups] = useState<readonly TorusEndgameGroup[]>(() =>
     initialViewModel.phase === 'endgame' ? controller.endgameGroups() : [],
   );
-  const [decisions, setDecisions] = useState<TorusEndgameDecisions>({});
+  const decisions = controller.endgameDecisions();
   const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [resultOpen, setResultOpen] = useState(
@@ -171,6 +170,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const dragPan = useDragPan({
     constrain: constrainViewPan,
     onDragStart: clearPanHover,
+    startOnPointerDown: true,
   });
   const panOffsetRef = useRef<DragPanOffset>(dragPan.offset);
 
@@ -200,6 +200,24 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   }, [dragPan.offset]);
 
   useEffect(() => {
+    if (viewModel.phase !== 'endgame') {
+      if (selectedGroupId !== null) setSelectedGroupId(null);
+      return;
+    }
+
+    if (
+      selectedGroupId !== null &&
+      endgameGroups.some((group) => group.id === selectedGroupId)
+    ) {
+      return;
+    }
+
+    const restoredSelection =
+      endgameGroups.find((group) => Boolean(decisions[group.id]))?.id ?? null;
+    if (restoredSelection !== null) setSelectedGroupId(restoredSelection);
+  }, [decisions, endgameGroups, selectedGroupId, viewModel.phase]);
+
+  useEffect(() => {
     rendererRef.current = null;
     previewedMovePointRef.current = null;
     viewZoomRef.current = 1;
@@ -208,7 +226,6 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     const nextViewModel = controller.viewModel();
     setViewModel(nextViewModel);
     setFeedback(null);
-    setDecisions({});
     setHoveredGroupId(null);
     setSelectedGroupId(null);
     setShowDuplicateRegions(false);
@@ -391,8 +408,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
       setSelectedGroupId(null);
     } else {
       setEndgameGroups([]);
-      setDecisions({});
-      setHoveredGroupId(null);
+        setHoveredGroupId(null);
       setSelectedGroupId(null);
     }
   };
@@ -404,9 +420,17 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     const svg = svgRef.current;
     if (!renderer || !svg) return null;
 
-    const directPointId = (event.target as Element | null)
-      ?.closest('[data-logical-point-id]')
-      ?.getAttribute('data-logical-point-id');
+    const pathPoint = event.nativeEvent
+      .composedPath()
+      .find(
+        (target): target is Element =>
+          target instanceof Element && target.hasAttribute('data-logical-point-id'),
+      );
+    const directPointId =
+      pathPoint?.getAttribute('data-logical-point-id') ??
+      (event.target as Element | null)
+        ?.closest('[data-logical-point-id]')
+        ?.getAttribute('data-logical-point-id');
     if (directPointId) {
       const directGroup = endgameGroupForPoint(endgameGroups, directPointId);
       if (directGroup) return directGroup;
@@ -623,8 +647,24 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     }
   };
 
-  const setGroupStatus = (group: TorusEndgameGroup, status: GroupStatus): void => {
-    setDecisions((current) => ({ ...current, [group.id]: status }));
+  const setGroupStatus = async (
+    group: TorusEndgameGroup,
+    status: GroupStatus,
+  ): Promise<void> => {
+    if (actionInFlight.current || viewModel.phase !== 'endgame') return;
+
+    actionInFlight.current = true;
+    try {
+      await controller.setEndgameDecision(group.id, status);
+      setViewModel(controller.viewModel());
+      setFeedback(null);
+    } catch (error) {
+      setFeedback(
+        error instanceof Error ? error.message : 'Endgame decision could not be saved.',
+      );
+    } finally {
+      actionInFlight.current = false;
+    }
   };
 
   const handleFinishEndgame = async (): Promise<void> => {
@@ -632,7 +672,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
 
     actionInFlight.current = true;
     try {
-      applyResult(await controller.finishEndgame(decisions));
+      applyResult(await controller.finishEndgame());
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : 'Endgame classification failed.');
     } finally {
@@ -685,7 +725,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
                       key={status}
                       className={decisions[selectedGroup.id] === status ? 'is-selected' : undefined}
                       aria-pressed={decisions[selectedGroup.id] === status}
-                      onClick={() => setGroupStatus(selectedGroup, status)}
+                      onClick={() => void setGroupStatus(selectedGroup, status)}
                     >
                       {statusLabel(status)}
                     </button>
