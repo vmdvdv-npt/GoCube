@@ -256,8 +256,21 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
 
   useEffect(() => {
     const svg = svgRef.current;
+    const view = svg?.ownerDocument.defaultView;
     if (!svg) return;
-    applyTorusVectorCamera(svg, viewZoom, controller.size, showDuplicateRegions);
+
+    const applyCamera = (): void =>
+      applyTorusVectorCamera(svg, viewZoom, controller.size, showDuplicateRegions);
+
+    // Torus2DRenderer still owns the scene lifecycle and may perform one final
+    // initial render after React's first effect pass. Apply immediately and once
+    // again on the next frame so the vector camera is the steady-state owner of
+    // the root viewBox even at the untouched 1.0 user zoom.
+    applyCamera();
+    const frameId = view?.requestAnimationFrame(applyCamera) ?? null;
+    return () => {
+      if (frameId !== null) view?.cancelAnimationFrame(frameId);
+    };
   }, [controller, showDuplicateRegions, viewZoom]);
 
   useEffect(() => {
