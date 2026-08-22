@@ -1,4 +1,8 @@
-import type { RepetitionContext, RepetitionPolicy } from '../rules/RepetitionPolicy';
+import {
+  NO_SIMPLE_KO_CONTEXT,
+  SimpleKoPolicy,
+  type SimpleKoContext,
+} from '../rules/SimpleKoPolicy';
 import type { PointId, Topology } from '../topology/Topology';
 import type {
   BoardOccupancy,
@@ -101,6 +105,8 @@ const rejectedCompleteEndgame = (state: GameState): RejectedCompleteEndgameResul
   Object.freeze({ ok: false, state, reason: 'not-endgame' });
 
 export class GameEngine {
+  private readonly simpleKoPolicy = new SimpleKoPolicy();
+
   constructor(private readonly topology: Topology) {}
 
   createInitialState(): GameState {
@@ -120,8 +126,7 @@ export class GameEngine {
     state: GameState,
     point: PointId,
     color: StoneColor,
-    repetitionPolicy?: RepetitionPolicy,
-    repetitionContext?: RepetitionContext,
+    simpleKoContext: SimpleKoContext = NO_SIMPLE_KO_CONTEXT,
   ): PlaceStoneResult {
     this.assertKnownPoint(point);
     if (state.phase !== 'playing') return rejectedMove(state, 'not-playing');
@@ -161,13 +166,7 @@ export class GameEngine {
       captures,
     );
 
-    if (
-      repetitionPolicy &&
-      !repetitionPolicy.isAllowed(
-        repetitionContext ?? { states: Object.freeze([state]) },
-        candidateState,
-      )
-    ) {
+    if (!this.simpleKoPolicy.isAllowed(simpleKoContext, candidateState)) {
       return rejectedMove(state, 'repetition');
     }
 
