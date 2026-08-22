@@ -134,6 +134,55 @@ test('Cube arrows keep full brightness and exact 30px anchoring while the fixed 
   await expectNoDocumentScrollbars(page);
 });
 
+test('Cube strong zoom reaches 4.05x and lets boards and arrows extend beyond the real viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
+  await page.getByRole('button', { name: '4×4', exact: true }).click();
+  await page.getByRole('button', { name: 'Start game' }).click();
+
+  const viewport = page.locator('.cube-2d-game__viewport');
+  await viewport.hover();
+  await page.mouse.wheel(0, -5000);
+  await expect(viewport).toHaveAttribute('data-view-zoom', '4.050');
+
+  const geometry = await page.evaluate(() => {
+    const rect = (selector: string) => {
+      const bounds = document.querySelector(selector)!.getBoundingClientRect();
+      return {
+        left: bounds.left,
+        right: bounds.right,
+        top: bounds.top,
+        bottom: bounds.bottom,
+        width: bounds.width,
+        height: bounds.height,
+      };
+    };
+
+    return {
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      centralBoard: rect('.cube-2d-board[data-central="true"]'),
+      navigationLayer: rect('.cube-2d-game__navigation-layer'),
+      leftArrow: rect('button[aria-label="Move cube left"]'),
+      rightArrow: rect('button[aria-label="Move cube right"]'),
+      upArrow: rect('button[aria-label="Move cube up"]'),
+      downArrow: rect('button[aria-label="Move cube down"]'),
+    };
+  });
+
+  expect(geometry.centralBoard.width).toBeGreaterThan(geometry.viewportWidth * 0.6);
+  expect(geometry.navigationLayer.left).toBeLessThan(0);
+  expect(geometry.navigationLayer.right).toBeGreaterThan(geometry.viewportWidth);
+  expect(geometry.navigationLayer.top).toBeLessThan(0);
+  expect(geometry.navigationLayer.bottom).toBeGreaterThan(geometry.viewportHeight);
+  expect(geometry.leftArrow.right).toBeLessThan(0);
+  expect(geometry.rightArrow.left).toBeGreaterThan(geometry.viewportWidth);
+  expect(geometry.upArrow.bottom).toBeLessThan(0);
+  expect(geometry.downArrow.top).toBeGreaterThan(geometry.viewportHeight);
+  await expectNoDocumentScrollbars(page);
+});
+
 test('Torus drag-pan moves the zoomed visual shell without placing a stone and keeps post-pan hit-testing aligned', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
@@ -184,8 +233,8 @@ test('Cube drag-pan moves the complete cross with its arrows, suppresses the dra
   const turn = page.locator('.turn-indicator strong');
 
   await viewport.hover();
-  await page.mouse.wheel(0, -500);
-  await expect(viewport).toHaveAttribute('data-view-zoom', '1.350');
+  await page.mouse.wheel(0, -1000);
+  await expect(viewport).toHaveAttribute('data-view-zoom', '1.800');
 
   const targetBefore = await requiredBox(target);
   const layerBefore = await requiredBox(navigationLayer);
