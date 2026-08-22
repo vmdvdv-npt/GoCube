@@ -632,23 +632,7 @@ Zoom сохраняет корректное torus display, navigation и hit-te
 
 Если во время текущего shift пользователь нажимает любую navigation arrow, дополнительное нажатие игнорируется. Отдельная очередь navigation commands не используется, и быстрые последовательные нажатия не обязаны выполняться после завершения текущей animation.
 
-Пока выполняется shift:
-
-**blocked:**
-
-- stone placement;
-- Pass;
-- Undo/Redo;
-- New Game;
-- другие game/session actions, способные изменить партию или прервать navigation;
-- switching to another view mode.
-
-**остаются доступными:**
-
-- wheel zoom;
-- pan;
-- `Move numbers`;
-- `Show duplicate regions`.
+Torus shift сам по себе не вводит обязательную блокировку `Pass`, `Undo`, `Redo`, `New Game` или других controls общей панели. Их доступность определяется обычным состоянием партии и собственными правилами этих controls, а не фактом текущей navigation animation.
 
 Если `Show duplicate regions` меняется во время shift:
 
