@@ -29,7 +29,29 @@ const wheelAt = async (page: Page, locator: ReturnType<Page['locator']>, deltaY:
   await page.mouse.wheel(0, deltaY);
 };
 
-const visibleCubeHitNearestViewportCenter = async (page: Page): Promise<Locator> => {
+const dragCubeViewportBy = async (page: Page, dx: number, dy: number) => {
+  const viewport = page.locator('.cube-2d-game__viewport');
+  let remainingX = dx;
+  let remainingY = dy;
+  for (let index = 0; index < 12 && (Math.abs(remainingX) > 1 || Math.abs(remainingY) > 1); index += 1) {
+    const box = await viewport.boundingBox();
+    if (!box) throw new Error('Expected Cube viewport bounding box');
+    const maxStepX = Math.max(1, box.width * 0.35);
+    const maxStepY = Math.max(1, box.height * 0.35);
+    const stepX = Math.max(-maxStepX, Math.min(maxStepX, remainingX));
+    const stepY = Math.max(-maxStepY, Math.min(maxStepY, remainingY));
+    const startX = box.x + box.width / 2;
+    const startY = box.y + box.height / 2;
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + stepX, startY + stepY, { steps: 8 });
+    await page.mouse.up();
+    remainingX -= stepX;
+    remainingY -= stepY;
+  }
+};
+
+const cubeHitNearestViewportCenter = async (page: Page): Promise<Locator> => {
   const pointId = await page.locator('.cube-2d-hit-area').evaluateAll((elements) => {
     const viewport = document.querySelector<HTMLElement>('.cube-2d-game__viewport')!.getBoundingClientRect();
     const centerX = viewport.left + viewport.width / 2;
@@ -41,24 +63,45 @@ const visibleCubeHitNearestViewportCenter = async (page: Page): Promise<Locator>
         const y = rect.top + rect.height / 2;
         return {
           pointId: element.getAttribute('data-point-id'),
-          x,
-          y,
           distance: Math.hypot(x - centerX, y - centerY),
         };
       })
-      .filter(
-        (candidate) =>
-          candidate.pointId &&
-          candidate.x >= viewport.left &&
-          candidate.x <= viewport.right &&
-          candidate.y >= viewport.top &&
-          candidate.y <= viewport.bottom,
-      )
+      .filter((candidate) => candidate.pointId)
       .sort((a, b) => a.distance - b.distance);
     return candidates[0]?.pointId ?? null;
   });
-  if (!pointId) throw new Error('Expected a visible Cube hit target');
+  if (!pointId) throw new Error('Expected a Cube hit target');
   return cubeHit(page, pointId);
+};
+
+const bringCubeHitIntoViewport = async (page: Page): Promise<Locator> => {
+  const hit = await cubeHitNearestViewportCenter(page);
+  const viewport = page.locator('.cube-2d-game__viewport');
+  const [hitBox, viewportBox] = await Promise.all([hit.boundingBox(), viewport.boundingBox()]);
+  if (!hitBox || !viewportBox) throw new Error('Expected Cube hit target and viewport bounding boxes');
+  const hitCenterX = hitBox.x + hitBox.width / 2;
+  const hitCenterY = hitBox.y + hitBox.height / 2;
+  const viewportCenterX = viewportBox.x + viewportBox.width / 2;
+  const viewportCenterY = viewportBox.y + viewportBox.height / 2;
+  const visible =
+    hitCenterX >= viewportBox.x &&
+    hitCenterX <= viewportBox.x + viewportBox.width &&
+    hitCenterY >= viewportBox.y &&
+    hitCenterY <= viewportBox.y + viewportBox.height;
+  if (!visible) {
+    await dragCubeViewportBy(page, viewportCenterX - hitCenterX, viewportCenterY - hitCenterY);
+  }
+
+  const finalBox = await hit.boundingBox();
+  const finalViewportBox = await viewport.boundingBox();
+  if (!finalBox || !finalViewportBox) throw new Error('Expected final Cube hit target and viewport boxes');
+  const finalCenterX = finalBox.x + finalBox.width / 2;
+  const finalCenterY = finalBox.y + finalBox.height / 2;
+  expect(finalCenterX).toBeGreaterThanOrEqual(finalViewportBox.x);
+  expect(finalCenterX).toBeLessThanOrEqual(finalViewportBox.x + finalViewportBox.width);
+  expect(finalCenterY).toBeGreaterThanOrEqual(finalViewportBox.y);
+  expect(finalCenterY).toBeLessThanOrEqual(finalViewportBox.y + finalViewportBox.height);
+  return hit;
 };
 
 const comparePngScreenshots = async (
@@ -136,7 +179,7 @@ const expectCubeVectorSteadyState = async (page: Page, zoom: number): Promise<vo
   expect(state.stageTransform).toBe('none');
   expect(state.boardWillChange).toBe('auto');
 
-  const hit = await visibleCubeHitNearestViewportCenter(page);
+  const hit = await bringCubeHitIntoViewport(page);
   const pointId = await hit.getAttribute('data-point-id');
   if (!pointId) throw new Error('Expected visible Cube hit target PointId');
   const box = await hit.boundingBox();
