@@ -101,7 +101,7 @@ export function Cube2DPreview() {
       <div className="cube-2d-preview__status" aria-live="polite">
         <span>occupied boards: {g.layout.cells.length}</span>
         <span className="cube-2d-preview__empty-count">empty slots: {emptySlots}</span>
-        <span>vertical anchor: column {g.view.verticalAnchorColumn + 1}</span>
+        <span>vertical anchor: {g.view.verticalAnchorColumn}</span>
         <span>logical points: {g.vm.points.length}</span>
         <span>player: {g.vm.currentPlayer ?? 'none'}</span>
         <span>move: {g.vm.moveNumber}</span>
