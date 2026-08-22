@@ -220,4 +220,19 @@ describe('Cube2D full game flow', () => {
     expect(restored.snapshot().ruleSet).toBe('japanese');
     expect(restored.snapshot().komi).toBe(0);
   });
+
+  it.each([8, 10] as const)(
+    'runs the same headless Cube game controller on technical %dx%d sizes outside the UI set',
+    async (size) => {
+      const controller = new Cube2DGameController({ size });
+      const point = cubePointId('front', 0, 0);
+      const move = await controller.placeStone(point);
+
+      expect(controller.topology.points()).toHaveLength(6 * size * size);
+      expect(move.accepted).toBe(true);
+      expect(
+        move.viewModel.points.find((candidate) => candidate.logicalPointId === point)?.occupancy,
+      ).toBe('black');
+    },
+  );
 });
