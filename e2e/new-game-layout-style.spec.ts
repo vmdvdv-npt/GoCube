@@ -13,6 +13,8 @@ test('New Game uses the requested effective layout styles', async ({ page }) => 
   const boardSizeLabel = page.locator('legend').filter({ hasText: 'Board Size' });
   const rulesLabel = page.locator('.new-game-rules-komi label').filter({ hasText: 'Rules' });
   const komiLabel = page.locator('.new-game-rules-komi label').filter({ hasText: 'Komi' });
+  const cubeButton = page.getByRole('button', { name: 'Cube', exact: true });
+  const torusButton = page.getByRole('button', { name: 'Torus', exact: true });
   const rules = page.getByLabel('Rules');
   const komi = page.getByLabel('Komi');
 
@@ -52,11 +54,22 @@ test('New Game uses the requested effective layout styles', async ({ page }) => 
   expect(formStyle.lineHeight / formStyle.fontSize).toBeCloseTo(1.5, 2);
   expect(gridStyle.columnGap).toBe(80);
 
-  const [shapeBox, detailsBox, previewBox, boardShapeBox, rulesBox, komiBox] = await Promise.all([
+  const [
+    shapeBox,
+    detailsBox,
+    previewBox,
+    boardShapeBox,
+    cubeBox,
+    torusBox,
+    rulesBox,
+    komiBox,
+  ] = await Promise.all([
     shapeColumn.boundingBox(),
     detailsColumn.boundingBox(),
     topologyPreview.boundingBox(),
     boardShapeLabel.boundingBox(),
+    cubeButton.boundingBox(),
+    torusButton.boundingBox(),
     rules.boundingBox(),
     komi.boundingBox(),
   ]);
@@ -65,6 +78,8 @@ test('New Game uses the requested effective layout styles', async ({ page }) => 
   expect(detailsBox).not.toBeNull();
   expect(previewBox).not.toBeNull();
   expect(boardShapeBox).not.toBeNull();
+  expect(cubeBox).not.toBeNull();
+  expect(torusBox).not.toBeNull();
   expect(rulesBox).not.toBeNull();
   expect(komiBox).not.toBeNull();
 
@@ -75,6 +90,11 @@ test('New Game uses the requested effective layout styles', async ({ page }) => 
 
   if (previewBox && boardShapeBox) {
     expect(boardShapeBox.y).toBeGreaterThanOrEqual(previewBox.y + previewBox.height);
+  }
+
+  if (boardShapeBox && cubeBox && torusBox) {
+    expect(cubeBox.y).toBeGreaterThan(boardShapeBox.y);
+    expect(torusBox.y).toBeGreaterThan(boardShapeBox.y);
   }
 
   if (rulesBox && komiBox) {
