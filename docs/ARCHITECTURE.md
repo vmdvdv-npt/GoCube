@@ -49,6 +49,9 @@
 26. Частичный ручной/assisted endgame review хранится как отдельный session-level `EndgameReviewState`; он не маскируется под уже завершённую `EndgameClassification`.
 27. Межпартийные пользовательские preferences отделены от сохранения текущей партии и от `ViewState` конкретной сессии.
 28. Autosave имеет монотонную revision и упорядоченную запись: более старый async save не может перезаписать более новое состояние.
+29. Production-classifier и final scoring не зависят от KataGo, локального AI bridge, внешнего oracle, сети или конкретного компьютера разработчика; такие компоненты являются необязательной verification/developer infrastructure.
+30. Внешний AI/oracle никогда не превращает вероятностную или эвристическую оценку в authoritative automatic status без внутренней project-defined proof/verification boundary.
+31. Test-position generator не обходит доменные правила ради создания «случайной партии»: последовательности legal game positions строятся через `GameEngine`/эквивалентную domain boundary; synthetic pattern fixtures остаются отдельной test-only инфраструктурой.
 
 Стрелка `A → B` в этом документе означает: `A` использует контракт `B` или передаёт ему данные/команду. Она не означает наследование.
 
@@ -73,6 +76,10 @@
 Для endgame:
 
 `GameSession → EndgameClassifier → EndgameReviewState → EndgameClassification → ScoringStrategy → FinalScore`
+
+Для optional developer verification 0.3 используется отдельный внешний путь, не входящий в production correctness chain:
+
+`Developer Test Lab → Oracle Adapter / LocalAnalysisClient → external oracle or CubeGoLocalAnalysisBridge → diagnostic result`
 
 После получения полного результата `GameSession` запрашивает у доменной границы переход текущего `GameState` из `ENDGAME_REVIEW` в `FINISHED`; он не меняет phase напрямую.
 
@@ -421,6 +428,8 @@ Visual offset, duplicate edge strips и другие особенности Toru
 
 Группы, liberties, captures, Simple Ko и scoring не получают отдельные «cube versions»: они используют общий `Topology` contract.
 
+Важно для standard-Go oracle reuse: одинаковая degree=4 у каждой точки не означает глобальную эквивалентность квадратной сетке. В частности, возле физических углов Cube локальный logical graph содержит трёхциклы между corner-adjacent points разных faces, которых нет в обычной bipartite square grid. Поэтому planar oracle применяется к Cube только после явной проверки локальной planar-grid embedding, а не по факту «четырёх соседей».
+
 ## 8.4. CubeOrientation
 
 `CubeOrientation` — renderer-neutral дискретная модель того, какая физическая грань выполняет пространственную роль CENTER/LEFT/RIGHT/TOP/BOTTOM/BACK и какой quarter-turn нужен для согласованной ориентации.
@@ -557,6 +566,8 @@ Persistence должен сохранять redo-future. После `Undo → sa
 
 либо `unresolved`.
 
+Для диагностируемости proposal может дополнительно хранить renderer-independent metadata о происхождении/основании результата, например `source`, algorithm id/version и evidence/reason code. Такая metadata не меняет семантику `alive/dead/seki/unresolved` и не является отдельным scoring input.
+
 Реализации:
 
 - `ManualEndgameClassifier`/эквивалентная manual implementation перечисляет группы и оставляет требующие решения статусы unresolved;
@@ -579,6 +590,8 @@ Persistence должен сохранять redo-future. После `Undo → sa
 
 Ручное решение является authoritative override/fallback в пределах правил, определённых продуктовым документом.
 
+Порядок, в котором presentation предлагает unresolved groups пользователю, не является частью classifier algorithm. Он принадлежит application/presentation layer и может меняться без изменения `AssistedEndgameClassifier`, `EndgameProposal` или scoring.
+
 ## 12.3. ScoringStrategy
 
 Контракт:
@@ -593,6 +606,31 @@ Persistence должен сохранять redo-future. После `Undo → sa
 Scoring получает уже полностью разрешённую `EndgameClassification` и концентрирует формулу соответствующего scoring mode внутри strategy/rule modules, а не размазывает `if japanese/chinese` по `GameEngine`.
 
 `FinalScore` является доменным результатом scoring, а не объектом Renderer/PresentationModel.
+
+## 12.4. Assisted classifier pipeline и proof boundary
+
+0.3 не заменяет существующий topology-neutral scorer сторонним rectangular scorer. Основная сложность 0.3 принадлежит классификации групп; после полного review используются существующие project `ScoringStrategy` implementations.
+
+Рекомендуемый внутренний pipeline assisted classifier:
+
+`final position → group/region analysis → proven structural results → optional candidates → strict verifier → EndgameProposal`
+
+Правила pipeline:
+
+- deterministic structural proof имеет приоритет над эвристикой/AI;
+- pass-alive/Benson-like analysis используется как основной фундамент автоматического `alive` там, где доказательство выполнено на project `Topology`;
+- dead/seki heuristic, rollout, Monte-Carlo, score-estimator или neural result является **candidate**, пока project-defined verifier не подтвердит статус;
+- candidate, не прошедший verification, становится `unresolved`;
+- probabilistic confidence (`99%`, ownership и т. п.) само по себе не является proof;
+- classifier обязан работать через `Topology` и logical groups/regions, а не через Renderer coordinates;
+- Torus/Cube-specific знания допускаются только в topology/adapter/proof helper, а не отдельными scoring engines;
+- false automatic resolution считается более тяжёлым дефектом, чем лишний `unresolved`.
+
+Минимальная стратегия reuse для production core:
+
+- адаптировать зрелую deterministic pass-alive/Benson implementation к `Topology.neighbors(PointId)`;
+- строить dead/seki поверх узких candidate/verifier boundaries;
+- не импортировать neural model или rectangular game engine в authoritative domain core только ради 0.3.
 
 # 13. PresentationModel
 
@@ -965,7 +1003,9 @@ Storage adapter должен заменяться без изменения `Gam
 - изменение и повторное изменение пользовательского group status;
 - scoring не запускается при incomplete review;
 - полный review детерминированно создаёт `EndgameClassification`;
-- работу classifier через абстрактный `Topology` без renderer assumptions.
+- работу classifier через абстрактный `Topology` без renderer assumptions;
+- отсутствие изменения итогового scoring при одинаковом полном `EndgameClassification` независимо от того, какие statuses пришли automatic, а какие user;
+- доказуемые automatic statuses отдельно от heuristic/oracle candidates.
 
 ## 19.7. Renderer contract tests
 
@@ -996,6 +1036,20 @@ Storage adapter должен заменяться без изменения `Gam
 
 Seed любого найденного дефекта сохраняется; после минимизации случай превращается в постоянный regression fixture.
 
+### 19.8.1. Endgame test-position generators
+
+Для 0.3 существует единая deterministic generator infrastructure с несколькими генераторами, а не один «random fill»:
+
+- **LegalGameGenerator** — генерирует последовательность допустимых ходов через настоящую domain boundary; может предпочитать ходы рядом с существующими stones, но не пишет occupancy напрямую;
+- **EndgamePositionGenerator** — продолжает legal simulation до плотных/финальных состояний и создаёт позиции, пригодные для массового classifier testing;
+- **LocalLifeDeathPatternGenerator** — test-only размещает/трансформирует маленькие curated patterns: один глаз, два глаза, false-eye, окружённые группы, локальные capture/life-death формы и другие явно заданные fixtures;
+- **SekiPatternGenerator** — создаёт curated obvious/ambiguous seki-like cases для proof/fallback tests;
+- **TopologyStressGenerator** — переносит применимые patterns через Torus seam и через Cube edge/corner regions, чтобы одна и та же логическая идея проверялась на необычных связностях.
+
+Legal simulation и synthetic fixture construction — разные test boundaries. Synthetic builder может создавать позицию напрямую только внутри test infrastructure и обязан валидировать point ids/occupancy/group assumptions; такой API не доступен production gameplay и не заменяет `GameEngine`.
+
+Все генераторы обязаны поддерживать stable seed. Дефектный случай воспроизводится как минимум по `generator kind + topology + size + seed + generator version/options`.
+
 ## 19.9. Fixture format
 
 Внутренний fixture-формат является test infrastructure, а не пользовательским export/import.
@@ -1012,7 +1066,8 @@ Fixture может содержать:
 - scoring mode;
 - komi;
 - expected groups/liberties/legal moves/captures;
-- expected endgame proposal/review/classification/scoring data при необходимости.
+- expected endgame proposal/review/classification/scoring data при необходимости;
+- generator metadata/seed и oracle diagnostics при необходимости для воспроизведения 0.3 failures.
 
 Один формат используется для Torus и Cube; topology-specific fixtures расширяют библиотеку, а не создают параллельные несовместимые test systems.
 
@@ -1033,6 +1088,24 @@ Fixture может содержать:
 - Torus passive-copy → source `PointId` mapping.
 
 Debug renderer не является пользовательской функцией и не определяет correctness.
+
+### 19.10.1. Endgame Test Lab
+
+0.3 developer mode расширяет diagnostic tooling до `Endgame Test Lab` или эквивалента с тем же смыслом. Это не часть обычного пользовательского gameplay UI.
+
+Lab должен позволять без ручной расстановки каждого stone:
+
+- сгенерировать позицию выбранным generator kind;
+- задать/увидеть seed и в точности воспроизвести case;
+- прогнать project classifier;
+- при доступности прогнать один или несколько oracle adapters;
+- при доступности локального bridge запросить KataGo/local AI analysis;
+- показать automatic/resolved/unresolved statuses и расхождения;
+- открыть конкретный failed seed повторно для ручного исследования.
+
+Предусматриваются как минимум логические presets `Quick`, `Full`, `Deep` или эквивалентные уровни объёма. Конкретные counts/time budgets являются test configuration, а не архитектурным инвариантом. Deep local run может использовать значительно больше desktop CPU/GPU, чем обязательный CI gate.
+
+Lab не является источником истины: он оркестрирует generators, classifier и independent diagnostics.
 
 # 20. Library / Reuse Policy
 
@@ -1086,15 +1159,99 @@ Library/Reuse Review является техническим gate. `ROADMAP.md` 
 
 Любой внешний engine/oracle при сравнении repetition behavior на проектных fixtures настраивается/интерпретируется только в соответствии с текущим `SimpleKoPolicy`; наличие у внешней библиотеки superko options не делает их частью архитектуры проекта.
 
-## 20.4. Endgame candidates
+`@sabaki/sgf` допустим также как parser/source для test-only импорта стандартных SGF, из которых извлекаются локальные patterns/fixtures. SGF не становится пользовательским game export/import и не определяет Cube/Torus topology.
 
-Для automatic/assisted alive-dead-seki следует исследовать актуальные реализации, включая:
+## 20.4. Endgame candidates и зафиксированная reuse strategy для 0.3
 
-- `@sabaki/deadstones`;
-- `online-go/score-estimator`;
-- другие актуальные alternatives.
+Исходный обзор 0.3 классифицирует кандидаты следующим образом. Перед фактическим подключением всё равно проверяется актуальная лицензия/API конкретной выбранной revision; этот раздел фиксирует архитектурную роль, а не pin версии.
 
-Прямоугольный алгоритм не считается автоматически пригодным для Torus/Cube. Reuse допустим только после доказательства topology-independence или через адаптацию к логическому графу.
+### 20.4.1. Moka (`millionco/moka`) — **adapt** для production deterministic core
+
+Moka содержит TypeScript implementation conservative pass-alive analysis с Benson-like fixed-point elimination и дополнительный capture-aftermath для dead candidates.
+
+Для GoCube:
+
+- pass-alive/Benson часть является главным исходным кандидатом на адаптацию;
+- rectangular adjacency заменяется на `Topology.neighbors(PointId)` и project group/region abstractions;
+- deterministic proof-oriented часть может войти в production classifier при сохранении MIT license obligations;
+- capture-aftermath/greedy capture result рассматривается только как candidate/heuristic, пока project verifier не докажет `dead`;
+- neural/model часть Moka не требуется для authoritative 0.3 core.
+
+### 20.4.2. KataGo — **oracle/reference + optional local AI**, не production dependency
+
+KataGo используется как сильный независимый standard-Go oracle и источник analysis diagnostics:
+
+- planar fixture differential tests;
+- ownership/search/life-death diagnostics;
+- optional local desktop analysis через JSON analysis engine;
+- генерация/извлечение standard-Go positions/patterns для test corpus при необходимости.
+
+KataGo не считается понимающим Torus/Cube глобально. Его результат может применяться только к позиции/локальному neighbourhood, для которого adapter доказал эквивалентность обычной square grid, либо как неавторитетная diagnostic подсказка.
+
+KataGo не входит в browser production bundle и не требуется для final scoring или обычной игры.
+
+### 20.4.3. `goscorer` — **oracle/reference**
+
+`goscorer` полезен как независимый planar scoring/seki oracle после корректной маркировки dead stones и как источник fixtures/heuristic ideas.
+
+Он не заменяет GoCube `ScoringStrategy`, потому что его primary model rectangular и production scorer проекта уже работает через topology-neutral adjacency.
+
+### 20.4.4. `online-go/score-estimator` — **oracle/candidate generator**
+
+OGS score-estimator полезен как независимый planar dead/score estimator и differential source. Его suggestion не считается proof для automatic status на Cube/Torus.
+
+Rectangular/Emscripten implementation не затаскивается в domain core только ради 0.3.
+
+### 20.4.5. `@sabaki/deadstones` — **oracle/candidate generator**
+
+Monte-Carlo/stochastic dead-stone detection пригодна для независимого сравнения и поиска подозрительных cases.
+
+Из-за вероятностной природы её результат не может напрямую становиться automatic `dead`; stable seed/iterations должны фиксироваться при test reproduction, если библиотека используется в differential tooling.
+
+### 20.4.6. `@sabaki/go-board`, Tenuki, Sente, tsumego.js — **reference с ограниченной ролью**
+
+- `@sabaki/go-board` — standard rectangular groups/liberties/reference; не нужен как production engine поверх существующего `Topology` core.
+- Tenuki — дополнительный planar rules/scoring/seki reference; simple seki heuristics не считаются proof для нестандартных topology.
+- Sente — стандартный Go reference, но отсутствие automatic dead-stone removal делает его низкоприоритетным для 0.3.
+- `tsumego.js` — возможный источник идей для bounded life-and-death search; standard-grid/open-boundary limitations не позволяют использовать его напрямую как topology-neutral authority.
+
+### 20.4.7. `goplayerjuggler/goVariants` / Go-Variants-Engine — **Torus oracle/reference**
+
+MIT JavaScript engine с Toroidal Go особенно полезен как независимый Torus-specific reference для mechanics/scoring/regions после заданной dead marking.
+
+Он не решает главную задачу auto-dead и не заменяет GoCube classifier, но даёт редкий внешний differential source именно для toroidal topology.
+
+### 20.4.8. `govariantsteam/govariants` — **Cube/graph reference only**
+
+Проект содержит generic graph/custom-board и Cube variant concepts, но использует AGPL-3.0.
+
+Поэтому:
+
+- разрешено изучать architecture/test ideas и использовать независимое поведение как reference;
+- нельзя копировать/адаптировать его код или включать runtime dependency в GoCube без отдельного осознанного решения пользователя о лицензионных последствиях;
+- он не является каноническим источником Cube rules проекта.
+
+### 20.4.9. GNU Go и другие GPL/copyleft engines — **offline oracle only при необходимости**
+
+Сильный copyleft и rectangular assumptions делают такие engines плохими production dependencies. Они допустимы как изолированные offline/dev oracle, если реально дают дополнительную независимую проверку, но не должны попадать в browser/runtime bundle без отдельного license decision.
+
+### 20.4.10. Итоговая 0.3 reuse boundary
+
+Предпочтительный production объём собственного/адаптированного кода ограничивается:
+
+- topology-neutral Benson/pass-alive adapter;
+- узкими candidate generators;
+- строгими dead/seki verifiers;
+- orchestration `EndgameProposal → EndgameReviewState`.
+
+Не следует писать заново или тащить в production без необходимости:
+
+- второй scoring engine;
+- полноценный rectangular Go engine;
+- собственную neural network;
+- собственный SGF ecosystem;
+- отдельный Torus/Cube scoring implementation;
+- огромный вручную составленный fixture corpus вместо генераторов + внешних references.
 
 ## 20.5. Testing / schema candidates
 
@@ -1180,6 +1337,67 @@ Camera, controls, picking, instancing, line rendering и animation по возм
 
 Differential oracle не может расширять правила repetition проекта: сравнение считается релевантным только в режиме, эквивалентном `SimpleKoPolicy`.
 
+Oracle disagreement не означает автоматически bug GoCube. Test report обязан сохранять достаточные diagnostics/seed, чтобы различить:
+
+- defect classifier;
+- limitation external oracle;
+- non-planar/topology-specific case;
+- insufficient local context;
+- истинно unresolved position.
+
+### 20.10.1. Planar Local Analyzer для KataGo/standard-Go oracle
+
+Для Torus/Cube допускается локальный adapter, который использует standard-Go AI только там, где рассматриваемый induced neighbourhood может быть без конфликтов вложен в обычную square grid.
+
+Процедура:
+
+1. выбрать target group/region;
+2. расширить neighbourhood через `Topology.neighbors()` на настраиваемый graph radius;
+3. попытаться назначить точкам integer 2D coordinates так, чтобы каждое logical neighbour edge соответствовало одному ортогональному grid step;
+4. обнаружить coordinate conflicts, duplicate logical embeddings, short cycles/adjacency, несовместимые с square grid, или wrap/self-meeting;
+5. только при успешной embedding перенести локальную позицию в центр достаточно большой стандартной доски (обычно 19×19 с margin) и отправить oracle;
+6. при неуспешной embedding вернуть `not-applicable`, а не искусственно ломать topology.
+
+Для Torus небольшие neighbourhoods обычно planar-grid compatible, пока область не обходит torus и не встречает сама себя. Для Cube многие области внутри face и через одно обычное edge также совместимы, но neighbourhood около physical cube corner может содержать трёхциклы и должен отклоняться как non-planar-standard-Go case.
+
+Для diagnostics можно прогонять несколько radii (например small/medium/large) и сравнивать устойчивость результата. Смена ответа при увеличении context означает недостаточную локальность; одинаковые high-confidence AI results на нескольких radii повышают диагностическую полезность, но всё равно не заменяют project proof boundary.
+
+Если oracle поддерживает ограничение рассматриваемых ходов (`allowMoves`/`avoidMoves` или эквивалент), adapter может ограничить search локальной областью, но обязан сохранять семантику исходной embedded позиции.
+
+### 20.10.2. CubeGoLocalAnalysisBridge
+
+Браузерная страница не получает право запускать произвольный `.exe` напрямую. Для локального AI используется отдельный optional desktop helper/service `CubeGoLocalAnalysisBridge` или эквивалент с тем же responsibility.
+
+Путь:
+
+`Developer browser → LocalAnalysisClient → loopback HTTP/WebSocket → CubeGoLocalAnalysisBridge → configured KataGo executable → JSON analysis → browser diagnostics`
+
+Bridge:
+
+- устанавливается/настраивается один раз на developer machine;
+- может запускаться автоматически вместе с OS либо стартовать KataGo process on-demand при первом запросе;
+- может держать KataGo/model warm между запросами для низкой latency;
+- принимает только фиксированный безопасный analysis protocol, а не произвольную shell command от сайта;
+- bind-ится только на loopback (`127.0.0.1`/`::1`) и не открывает AI service в LAN/Internet;
+- проверяет разрешённый browser origin и при необходимости локальный auth token/nonce;
+- имеет request size/time/concurrency limits и health/version endpoint;
+- путь к KataGo/model/config задаётся локальной конфигурацией bridge, а не произвольными аргументами из web page;
+- при отсутствии/ошибке bridge developer lab деградирует в `local AI unavailable`, не ломая classifier или production gameplay.
+
+Local bridge является test/developer infrastructure. Публичный production game не должен автоматически требовать установку helper-а у обычного пользователя.
+
+### 20.10.3. Local AI trust level
+
+KataGo/local AI может возвращать ownership, policy/search, score estimates и другие diagnostics. Эти данные допускаются для:
+
+- поиска расхождений;
+- ранжирования cases для ручного просмотра;
+- candidate generation;
+- оценки того, где deterministic classifier слишком консервативен;
+- создания regression fixtures после человеческой/алгоритмической верификации.
+
+AI result не записывается в authoritative `EndgameReviewState` как automatic status только на основании confidence threshold.
+
 ## 20.11. Фиксация reuse decision
 
 Результат review фиксируется кратко в рабочем контексте задачи/PR как implementation rationale, а не вводится как новый проектный документ. Создавать новый `.md` ради Library/Reuse Review нельзя без отдельного разрешения пользователя.
@@ -1198,6 +1416,11 @@ Differential oracle не может расширять правила repetition
 - автоматически определять alive/dead внутри `ScoringStrategy`;
 - запускать scoring на partial/incomplete endgame review;
 - выдавать unresolved classifier result за окончательный `EndgameClassification`;
+- считать probabilistic AI/oracle confidence доказательством alive/dead/seki без project verifier;
+- делать KataGo/local bridge/external oracle обязательной production dependency;
+- позволять browser page передавать local bridge произвольную shell command или executable path;
+- считать любой Cube/Torus neighbourhood эквивалентным центру обычной Go board без проверки square-grid embedding;
+- генерировать «legal game» путём прямой случайной записи occupancy в обход `GameEngine`;
 - читать browser storage из `GameEngine`;
 - давать `GameEngine` объект `History` вместо минимального `SimpleKoContext`;
 - держать `SuperkoPolicy`, selectable repetition policy или скрытый superko branch «на будущее»;
@@ -1239,6 +1462,10 @@ Differential oracle не может расширять правила repetition
 14. Сохраняется ли один authoritative current `GameState` при отдельной History/session envelope?
 15. Все ли forward изменения `GamePhase` проходят через доменную границу, а не прямой mutation координатора?
 16. Не дублируется ли нормативное правило между архитектурой, roadmap и product requirements?
+17. Если используется oracle/AI, доказано ли, что он только diagnostic/candidate либо его результат проходит явную project verification boundary?
+18. Если standard-Go oracle применяется к Cube/Torus, доказана ли применимость конкретного planar neighbourhood вместо предположения по degree=4?
+19. Можно ли полностью запустить production gameplay/scoring при выключенных local bridge и внешних oracle?
+20. Любой generated legal-game case действительно прошёл domain rules, а synthetic fixture остаётся изолированным test-only path?
 
 Если ответ показывает нарушение границы, сначала исправляется architecture/adapter contract, затем реализуется функция.
 
@@ -1255,9 +1482,12 @@ Differential oracle не может расширять правила repetition
 - единственный `SimpleKoPolicy` проверяет immediate repetition по минимальному `SimpleKoContext`;
 - `History` владеет past/current/redo snapshots;
 - `EndgameClassifier` создаёт proposal, который может содержать unresolved groups;
+- deterministic structural proof решает только доказуемые statuses, а heuristic/AI/oracle остаётся candidate/diagnostic без verifier;
 - `EndgameReviewState` хранит partial/ручные решения до полного resolution;
 - только полный `EndgameClassification` передаётся в `ScoringStrategy`;
 - `ScoringStrategy` создаёт `FinalScore`;
+- seeded generators и independent oracles помогают тестировать core, но не становятся частью authoritative gameplay;
+- optional `CubeGoLocalAnalysisBridge` даёт developer browser доступ к локальному KataGo через безопасный loopback protocol, а не через прямой запуск exe из browser;
 - ordered autosave с `sessionRevision` сохраняет session envelope через `GameStorage`;
 - `PreferencesStorage` отдельно хранит только product-approved cross-game preferences;
 - `PresentationModel` строит данные для показа;
@@ -1265,4 +1495,4 @@ Differential oracle не может расширять правила repetition
 - Animation визуализирует события, не меняя правила;
 - `NetworkTransport` в будущем только переносит commands/state через внешний authority boundary.
 
-Главный критерий качества архитектуры: новая topology, новый Renderer, новый storage backend или будущий network adapter должны добавляться на своей границе и не требовать переписывать уже проверенное независимое domain core без реальной необходимости.
+Главный критерий качества архитектуры: новая topology, новый Renderer, новый storage backend, новый classifier proof helper, новый oracle adapter или будущий network adapter должны добавляться на своей границе и не требовать переписывать уже проверенное независимое domain core без реальной необходимости.
