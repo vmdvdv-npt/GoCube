@@ -69,7 +69,7 @@ test('Cube wheel zoom works on black playfield space and keeps the pointer as th
   );
 });
 
-test('Cube keeps a real board point pinned through repeated zoom all the way to 4.05x', async ({ page }) => {
+test('Cube keeps a real board point pinned through repeated zoom-in all the way to 4.05x', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await startCube(page);
 
@@ -87,16 +87,73 @@ test('Cube keeps a real board point pinned through repeated zoom all the way to 
   await expect(viewport).toHaveAttribute('data-view-zoom', '4.050');
   await expectCenterAt(target, anchor);
 
-  for (let index = 0; index < 10; index += 1) {
-    await page.mouse.wheel(0, 250);
-  }
-  await expect(viewport).toHaveAttribute('data-view-zoom', '2.050');
-  await expectCenterAt(target, anchor);
-
   const layer = await requiredBox(page.locator('.cube-2d-game__navigation-layer'));
   const viewportBox = await requiredBox(viewport);
   expect(layer.width).toBeGreaterThan(viewportBox.width);
   expect(layer.height).toBeGreaterThan(viewportBox.height);
+});
+
+test('Cube zoom-out returns the cross toward the initial centered home position independent of cursor', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await startCube(page);
+
+  const viewport = page.locator('.cube-2d-game__viewport');
+  const navigationLayer = page.locator('.cube-2d-game__navigation-layer');
+  const target = page
+    .locator('.cube-2d-board[data-central="true"] .cube-2d-hit-area')
+    .nth(5);
+  const anchor = boxCenter(await requiredBox(target));
+
+  await page.mouse.move(anchor.x, anchor.y);
+  for (let index = 0; index < 5; index += 1) {
+    await page.mouse.wheel(0, -250);
+  }
+  await expect(viewport).toHaveAttribute('data-view-zoom', '2.000');
+  await expectCenterAt(target, anchor);
+
+  await page.mouse.move(anchor.x, anchor.y);
+  await page.mouse.down();
+  await page.mouse.move(anchor.x + 120, anchor.y + 80, { steps: 8 });
+  await page.mouse.up();
+
+  const currentPanX = Number(await viewport.getAttribute('data-pan-x'));
+  const currentPanY = Number(await viewport.getAttribute('data-pan-y'));
+  expect(Math.abs(currentPanX) + Math.abs(currentPanY)).toBeGreaterThan(100);
+
+  const viewportBox = await requiredBox(viewport);
+  const deliberatelyOffCenterCursor = {
+    x: viewportBox.x + viewportBox.width - 24,
+    y: viewportBox.y + viewportBox.height - 24,
+  };
+  await page.mouse.move(deliberatelyOffCenterCursor.x, deliberatelyOffCenterCursor.y);
+  await page.mouse.wheel(0, 250);
+
+  await expect(viewport).toHaveAttribute('data-view-zoom', '1.800');
+  await expect.poll(async () => Number(await viewport.getAttribute('data-pan-x'))).toBeCloseTo(
+    currentPanX * 0.8,
+    0,
+  );
+  await expect.poll(async () => Number(await viewport.getAttribute('data-pan-y'))).toBeCloseTo(
+    currentPanY * 0.8,
+    0,
+  );
+
+  await page.mouse.wheel(0, 1000);
+  await expect(viewport).toHaveAttribute('data-view-zoom', '1.000');
+  await expect(viewport).toHaveAttribute('data-pan-x', '0.0');
+  await expect(viewport).toHaveAttribute('data-pan-y', '0.0');
+
+  const homeViewportBox = await requiredBox(viewport);
+  const homeLayerBox = await requiredBox(navigationLayer);
+  await expectCenterAt(navigationLayer, boxCenter(homeViewportBox));
+  expect(boxCenter(homeLayerBox).x).toBeCloseTo(boxCenter(homeViewportBox).x, 0);
+  expect(boxCenter(homeLayerBox).y).toBeCloseTo(boxCenter(homeViewportBox).y, 0);
+
+  await page.mouse.wheel(0, 500);
+  await expect(viewport).toHaveAttribute('data-view-zoom', '0.780');
+  await expect(viewport).toHaveAttribute('data-pan-x', '0.0');
+  await expect(viewport).toHaveAttribute('data-pan-y', '0.0');
+  await expectCenterAt(navigationLayer, boxCenter(await requiredBox(viewport)));
 });
 
 test('Cube preserves the pointer anchor after drag-pan and accumulates a rapid wheel burst', async ({ page }) => {
