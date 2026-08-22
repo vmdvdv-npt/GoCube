@@ -255,3 +255,9 @@
 .torus-board[aria-label^='19 by 19'] .torus-board__grid line {
   stroke-width: 0.8px;
 }
+
+/* Game mode uses the full viewport width instead of the generic centered max-width shell. */
+.app-shell--game {
+  width: auto;
+  margin: 0 12px;
+}
