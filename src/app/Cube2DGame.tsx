@@ -1,4 +1,10 @@
-import type { CSSProperties, WheelEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  type CSSProperties,
+  type WheelEvent,
+} from 'react';
 import { CUBE_2D_LAYOUT_COLUMNS, CUBE_2D_LAYOUT_ROWS } from '../presentation/cube/Cube2DLayout';
 import {
   CUBE_2D_BASE_CELL_SIZE,
@@ -10,6 +16,7 @@ import { Cube2DVisualEffects } from './Cube2DVisualEffects';
 import { GameResultDialog } from './GameResultDialog';
 import { GameSidebar } from './GameSidebar';
 import { CUBE_ENDGAME_STATUSES, cubeEndgameStatusLabel, useCube2DGame } from './useCube2DGame';
+import { useDragPan, type DragPanOffset } from './useDragPan';
 import './manual-endgame.css';
 import './cube2d-preview.css';
 import './cube2d-game-flow.css';
@@ -30,6 +37,7 @@ export interface Cube2DGameProps {
 
 export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
   const g = useCube2DGame(controller);
+  const viewportRef = useRef<HTMLDivElement>(null);
   const layoutCellSize = CUBE_2D_BASE_CELL_SIZE * g.zoom;
   const stageWidth = layoutCellSize * CUBE_2D_LAYOUT_COLUMNS;
   const stageHeight = layoutCellSize * CUBE_2D_LAYOUT_ROWS;
@@ -48,6 +56,34 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
         animationDuration: `${CUBE_2D_TRANSITION_MS}ms`,
       }
     : {};
+
+  const constrainPan = useCallback(
+    (candidate: DragPanOffset): DragPanOffset => {
+      const viewport = viewportRef.current;
+      if (!viewport) return candidate;
+
+      const maxX = Math.max(0, (navigationWidth - viewport.clientWidth) / 2);
+      const maxY = Math.max(0, (navigationHeight - viewport.clientHeight) / 2);
+      return Object.freeze({
+        x: Math.min(maxX, Math.max(-maxX, candidate.x)),
+        y: Math.min(maxY, Math.max(-maxY, candidate.y)),
+      });
+    },
+    [navigationHeight, navigationWidth],
+  );
+
+  const dragPan = useDragPan({
+    constrain: constrainPan,
+    onDragStart: () => g.hover(null),
+  });
+
+  useEffect(() => {
+    dragPan.reset();
+  }, [controller, dragPan.reset]);
+
+  useEffect(() => {
+    dragPan.reconstrain();
+  }, [navigationHeight, navigationWidth, dragPan.reconstrain]);
 
   const handleWheel = (event: WheelEvent<HTMLDivElement>): void => {
     event.preventDefault();
@@ -135,15 +171,29 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
 
       <div className="cube-2d-game__board-shell" aria-label="Cube 2D view">
         <div
+          ref={viewportRef}
           className="cube-2d-game__viewport"
           data-view-zoom={g.zoom.toFixed(3)}
+          data-pan-x={dragPan.offset.x.toFixed(1)}
+          data-pan-y={dragPan.offset.y.toFixed(1)}
+          data-dragging={dragPan.dragging ? 'true' : 'false'}
+          style={{ touchAction: 'none' }}
           onWheel={handleWheel}
+          onPointerDown={dragPan.onPointerDown}
+          onPointerMove={dragPan.onPointerMove}
+          onPointerUp={dragPan.onPointerUp}
+          onPointerCancel={dragPan.onPointerCancel}
+          onClickCapture={dragPan.onClickCapture}
         >
           <div
             className="cube-2d-game__navigation-layer"
             data-navigation-gap={CUBE_2D_NAVIGATION_GAP}
             data-vertical-anchor-column={g.view.verticalAnchorColumn}
-            style={{ width: `${navigationWidth}px`, height: `${navigationHeight}px` }}
+            style={{
+              width: `${navigationWidth}px`,
+              height: `${navigationHeight}px`,
+              transform: `translate(${dragPan.offset.x}px, ${dragPan.offset.y}px)`,
+            }}
           >
             <button
               className={`torus-pan torus-pan--up cube-2d-game__navigation-arrow${
@@ -194,7 +244,12 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
                 hoveredPointId={g.hoveredPoint}
                 hoverStatus={g.hoverStatus}
                 showMoveNumbers={g.showMoveNumbers}
-                inputDisabled={Boolean(g.transition) || g.captureAnimating || g.vm.phase === 'finished'}
+                inputDisabled={
+                  Boolean(g.transition) ||
+                  g.captureAnimating ||
+                  g.vm.phase === 'finished' ||
+                  dragPan.dragging
+                }
                 onPointHover={g.hover}
                 onPointActivate={(point) => void g.activate(point)}
               />
