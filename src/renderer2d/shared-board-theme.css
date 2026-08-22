@@ -26,6 +26,10 @@
   background-color: var(--go-board-underlay);
 }
 
+.cube-2d-game .cube-2d-board--central {
+  box-shadow: none;
+}
+
 .cube-2d-game .cube-2d-board__surface {
   fill: transparent;
 }
