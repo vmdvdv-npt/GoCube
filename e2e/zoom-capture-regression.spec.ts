@@ -150,25 +150,42 @@ for (const [zoom, deltaY] of [
   [1.5, -Math.log(1.5) / 0.0015],
   [2.5, -1000],
 ] as const) {
-  test(`Torus zoom ${zoom} uses an SVG viewBox camera and preserves hit-testing`, async ({ page }) => {
+  test(`Torus zoom ${zoom} scales the whole board-and-arrows shell and preserves hit-testing`, async ({ page }) => {
     await startTorus(page);
     const svg = page.locator('.torus-board');
+    const shell = page.locator('.torus-board-shell');
+    const arrow = page.getByRole('button', { name: 'Shift torus view up' });
+    const initialShellBox = await shell.boundingBox();
+    const initialArrowBox = await arrow.boundingBox();
+    if (!initialShellBox || !initialArrowBox) throw new Error('Expected Torus shell and arrow boxes');
+
     if (deltaY !== 0) await wheelAt(page, svg, deltaY);
 
     const actualZoom = Number(await svg.getAttribute('data-view-zoom'));
     expect(actualZoom).toBeCloseTo(zoom, 2);
+    await expect(shell).toHaveAttribute('data-view-zoom', actualZoom.toFixed(3));
     await expect(svg).toHaveAttribute('data-vector-camera', 'viewBox');
+    await expect.poll(async () => (await shell.boundingBox())?.width ?? 0).toBeCloseTo(
+      initialShellBox.width * actualZoom,
+      0,
+    );
+
     const state = await svg.evaluate((element) => {
       const root = element as SVGSVGElement;
+      const shellElement = root.closest<HTMLElement>('.torus-board-shell')!;
       return {
-        transform: getComputedStyle(root).transform,
-        scale: getComputedStyle(root).scale,
+        svgTransform: getComputedStyle(root).transform,
+        shellTransform: getComputedStyle(shellElement).transform,
         viewBox: root.getAttribute('viewBox'),
       };
     });
-    expect(state.transform).toBe('none');
-    expect(state.scale === 'none' || state.scale === '1').toBe(true);
+    expect(state.svgTransform).toBe('none');
+    expect(state.shellTransform).not.toBe('none');
     expect(state.viewBox).not.toBe('0 0 1000 1000');
+
+    const arrowBox = await arrow.boundingBox();
+    if (!arrowBox) throw new Error('Expected scaled Torus arrow box');
+    expect(arrowBox.width).toBeCloseTo(initialArrowBox.width * actualZoom, 0);
 
     const center = page.locator(
       '.torus-board__hit-target[data-logical-point-id="4,4"][data-copy-role="primary"]',
