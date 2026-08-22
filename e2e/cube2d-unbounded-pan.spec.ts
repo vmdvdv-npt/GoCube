@@ -28,8 +28,6 @@ test('Cube 2D drag-pan is not clamped by the board viewport or sidebar', async (
 
   const sidebar = page.locator('.game-summary');
   const viewport = page.locator('.cube-2d-game__viewport');
-  const navigationLayer = page.locator('.cube-2d-game__navigation-layer');
-
   const sidebarBefore = await requiredBox(sidebar);
 
   await viewport.hover();
