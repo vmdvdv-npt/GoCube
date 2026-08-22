@@ -51,10 +51,26 @@ describe('GameEngine endgame transition ownership', () => {
     expect(rejectedFinished.state).toBe(completion.state);
   });
 
-  it('makes GameSession use the GameEngine-produced finished state', async () => {
+  it('makes GameSession consume the GameEngine-produced finished state', async () => {
     const topology = new TorusTopology(9);
     const engine = new GameEngine(topology);
-    const completeEndgame = vi.spyOn(engine, 'completeEndgame');
+    const realCompleteEndgame = engine.completeEndgame.bind(engine);
+    const sentinelMoveNumber = 9_876;
+    const completeEndgame = vi.spyOn(engine, 'completeEndgame').mockImplementation((state) => {
+      const completion = realCompleteEndgame(state);
+      if (!completion.ok) return completion;
+
+      // The real transition is covered above. The sentinel exists only to prove
+      // that GameSession stores the state returned by the domain boundary rather
+      // than reconstructing a finished GameState itself.
+      return Object.freeze({
+        ok: true as const,
+        state: Object.freeze({
+          ...completion.state,
+          moveNumber: sentinelMoveNumber,
+        }),
+      });
+    });
     const classifier: EndgameClassifier = {
       classify: async () => Object.freeze([]),
     };
@@ -77,8 +93,9 @@ describe('GameEngine endgame transition ownership', () => {
       throw new Error('Expected GameEngine.completeEndgame to produce the finished state');
     }
 
-    expect(session.state()).toBe(completion.state);
+    expect(session.state()).toStrictEqual(completion.state);
     expect(session.state().phase).toBe('finished');
+    expect(session.state().moveNumber).toBe(sentinelMoveNumber);
     expect(session.historyLength()).toBe(3);
   });
 });
