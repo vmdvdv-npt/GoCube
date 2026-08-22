@@ -37,6 +37,10 @@ test('duplicate torus regions are one-line dashed visual-only edge strips', asyn
     '14 10',
   );
   await expect(page.locator('.torus-board__edge-duplicate-grid-line').first()).toHaveAttribute(
+    'stroke',
+    '#201e1c',
+  );
+  await expect(page.locator('.torus-board__edge-duplicate-grid-line').first()).toHaveAttribute(
     'pointer-events',
     'none',
   );
@@ -49,6 +53,36 @@ test('duplicate torus regions are one-line dashed visual-only edge strips', asyn
     'opacity',
     '0.5',
   );
+
+  const primaryStone00 = page.locator(
+    '.torus-board__stone[data-logical-point-id="0,0"][data-copy-role="primary"]',
+  );
+  await expect(primaryStone00).toHaveCount(1);
+  await expect(primaryStone00).not.toHaveAttribute('opacity', '0.5');
+  expect(await primaryStone00.evaluate((element) => getComputedStyle(element).opacity)).toBe('1');
+
+  const layerOrder = await board.evaluate((svg) => {
+    const children = Array.from(svg.children);
+    return {
+      duplicateOverlay: children.findIndex((child) =>
+        child.classList.contains('torus-board__edge-duplicates'),
+      ),
+      primaryStones: children.findIndex(
+        (child) =>
+          child.classList.contains('torus-board__stones') &&
+          !child.classList.contains('torus-board__edge-duplicate-stones'),
+      ),
+    };
+  });
+  expect(layerOrder.duplicateOverlay).toBeGreaterThanOrEqual(0);
+  expect(layerOrder.primaryStones).toBeGreaterThan(layerOrder.duplicateOverlay);
+
+  const duplicateGrid = page.locator('.torus-board__edge-duplicate-grid');
+  await expect(duplicateGrid).toHaveAttribute(
+    'mask',
+    /url\(#torus-edge-duplicate-grid-mask-\d+\)/,
+  );
+  await expect(page.locator('.torus-board__edge-duplicate-grid-mask circle')).toHaveCount(2);
 
   // Clicking directly on a visible duplicate must be ignored completely.
   const duplicateBox = await duplicate00.first().boundingBox();
