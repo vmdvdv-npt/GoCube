@@ -64,7 +64,7 @@
   grid-row: 4;
 }
 
-.game-statistics > .capture-stat {
+.game-statistics > span.capture-stat {
   flex-direction: row;
   justify-content: center;
   min-height: 68px;
@@ -76,7 +76,7 @@
   text-transform: none;
 }
 
-.game-statistics > .capture-stat::before {
+.game-statistics > span.capture-stat::before {
   content: none;
 }
 
