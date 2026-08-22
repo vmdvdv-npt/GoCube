@@ -68,7 +68,7 @@ describe('GameEngine endgame transition ownership', () => {
       });
     });
     const classifier: EndgameClassifier = {
-      classify: async () => Object.freeze([]),
+      analyze: async () => Object.freeze([]),
     };
     const session = new GameSession(engine, {
       endgameClassifier: classifier,
@@ -78,6 +78,7 @@ describe('GameEngine endgame transition ownership', () => {
 
     await session.execute({ type: 'pass' });
     await session.execute({ type: 'pass' });
+    await session.finishEndgameReview();
 
     expect(completeEndgame).toHaveBeenCalledTimes(1);
     const endgameInput = completeEndgame.mock.calls[0]?.[0];

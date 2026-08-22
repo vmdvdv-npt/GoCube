@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { EndgameClassification, EndgameClassifier } from '../endgame/EndgameClassifier';
+import type {
+  EndgameAnalysisContext,
+  EndgameClassifier,
+  EndgameProposal,
+} from '../endgame/EndgameClassifier';
 import type { GameRepository, SavedGame } from '../persistence/GameRepository';
 import type { GameSessionSnapshot } from '../persistence/GameSessionSnapshot';
 import { ChineseScoring } from '../scoring/ChineseScoring';
@@ -8,11 +12,23 @@ import { TorusTopology } from '../topology/TorusTopology';
 import { GameEngine } from './GameEngine';
 import { GameSession, type GameSessionConfig } from './GameSession';
 
-const emptyClassification: EndgameClassification = Object.freeze([]);
-
 class EmptyClassifier implements EndgameClassifier {
-  async classify(): Promise<EndgameClassification> {
-    return emptyClassification;
+  async analyze(): Promise<EndgameProposal> {
+    return Object.freeze([]);
+  }
+}
+
+class MixedClassifier implements EndgameClassifier {
+  async analyze(context: EndgameAnalysisContext): Promise<EndgameProposal> {
+    return Object.freeze(
+      context.groups.map((points, index) =>
+        Object.freeze(
+          index === 0
+            ? { points, status: 'alive' as const, source: 'automatic' as const, evidence: { proof: 'stub' } }
+            : { points, status: 'unresolved' as const },
+        ),
+      ),
+    );
   }
 }
 
@@ -40,8 +56,9 @@ const persistentConfig = (
   repository: GameRepository<GameSessionSnapshot>,
   scoringStrategy: GameSessionConfig['scoringStrategy'],
   komi = 7.5,
+  endgameClassifier: EndgameClassifier = new EmptyClassifier(),
 ): GameSessionConfig => ({
-  endgameClassifier: new EmptyClassifier(),
+  endgameClassifier,
   scoringStrategy,
   komi,
   persistence: {
@@ -117,6 +134,102 @@ describe('GameSession persistence', () => {
     expect(repository.saves).toHaveLength(4);
   });
 
+  it('persists proposal, unresolved status, evidence and user override through reload', async () => {
+    const topology = new TorusTopology(9);
+    const repository = new MemoryRepository();
+    const config = persistentConfig(
+      repository,
+      new ChineseScoring(topology),
+      7.5,
+      new MixedClassifier(),
+    );
+    const engine = new GameEngine(topology);
+    const session = new GameSession(engine, config);
+
+    await session.execute({ type: 'place-stone', point: '0,0' });
+    await session.execute({ type: 'place-stone', point: '4,4' });
+    await session.execute({ type: 'pass' });
+    await session.execute({ type: 'pass' });
+
+    expect(session.state().phase).toBe('endgame');
+    expect(session.endgameReview()).toEqual({
+      groups: [
+        {
+          points: ['0,0'],
+          proposal: { status: 'alive', evidence: { proof: 'stub' } },
+          userDecision: null,
+        },
+        {
+          points: ['4,4'],
+          proposal: { status: 'unresolved' },
+          userDecision: null,
+        },
+      ],
+    });
+
+    await session.setEndgameReviewDecision(['4,4'], 'seki');
+    const stored = repository.saves.at(-1)?.state.endgameReview;
+    expect(stored).toEqual({
+      groups: [
+        {
+          points: ['0,0'],
+          proposal: { status: 'alive', evidence: { proof: 'stub' } },
+          userDecision: null,
+          status: 'alive',
+        },
+        {
+          points: ['4,4'],
+          proposal: { status: 'unresolved' },
+          userDecision: 'seki',
+          status: 'seki',
+        },
+      ],
+    });
+
+    const restored = await GameSession.load(engine, config);
+    expect(restored?.state().phase).toBe('endgame');
+    expect(restored?.endgameReview()).toEqual(session.endgameReview());
+  });
+
+  it('reads legacy v1 partial review status as a user decision without losing it', () => {
+    const topology = new TorusTopology(9);
+    const engine = new GameEngine(topology);
+    const initial = engine.createInitialState();
+    const endgame = {
+      ...initial,
+      board: Object.freeze({ ...initial.board, '0,0': 'black' as const }),
+      moveNumber: 2,
+      consecutivePasses: 2,
+      phase: 'endgame' as const,
+    };
+    const snapshot: GameSessionSnapshot = Object.freeze({
+      version: 1,
+      ruleSet: 'chinese',
+      komi: 7.5,
+      history: Object.freeze([initial, endgame]),
+      redo: Object.freeze([]),
+      endgameReview: Object.freeze({
+        groups: Object.freeze([
+          Object.freeze({ points: Object.freeze(['0,0']), status: 'dead' as const }),
+        ]),
+      }),
+      endgameClassification: null,
+      finalScore: null,
+    });
+
+    const session = GameSession.fromSnapshot(
+      engine,
+      persistentConfig(new MemoryRepository(), new ChineseScoring(topology)),
+      snapshot,
+    );
+
+    expect(session.endgameReview()).toEqual({
+      groups: [
+        { points: ['0,0'], proposal: { status: 'unresolved' }, userDecision: 'dead' },
+      ],
+    });
+  });
+
   it('persists the Redo future across Undo, save and reload', async () => {
     const topology = new TorusTopology(9);
     const repository = new MemoryRepository();
@@ -153,6 +266,7 @@ describe('GameSession persistence', () => {
 
     await session.execute({ type: 'pass' });
     await session.execute({ type: 'pass' });
+    await session.finishEndgameReview();
 
     const finishedScore = session.finalScore();
     const stored = repository.saves.at(-1)?.state;

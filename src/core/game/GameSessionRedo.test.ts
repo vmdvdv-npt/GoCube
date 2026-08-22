@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { EndgameClassifier } from '../endgame/EndgameClassifier';
+import { ManualEndgameClassifier } from '../endgame/ManualEndgameClassifier';
 import { ChineseScoring } from '../scoring/ChineseScoring';
 import { TorusTopology } from '../topology/TorusTopology';
 import { GameEngine } from './GameEngine';
 import { GameSession } from './GameSession';
 
 const emptyClassifier: EndgameClassifier = Object.freeze({
-  classify: async () => Object.freeze([]),
+  analyze: async () => Object.freeze([]),
 });
 
 const createSession = (): GameSession => {
@@ -41,10 +42,45 @@ describe('GameSession redo', () => {
     expect(session.canRedo()).toBe(false);
   });
 
+  it('undo of the second Pass removes review and redo restores that exact review without reanalysis', async () => {
+    const topology = new TorusTopology(9);
+    const engine = new GameEngine(topology);
+    const initial = engine.createInitialState();
+    const session = new GameSession(
+      engine,
+      {
+        endgameClassifier: new ManualEndgameClassifier(),
+        scoringStrategy: new ChineseScoring(topology),
+        komi: 0,
+      },
+      Object.freeze({
+        ...initial,
+        board: Object.freeze({ ...initial.board, '0,0': 'black' as const }),
+      }),
+    );
+
+    await session.execute({ type: 'pass' });
+    await session.execute({ type: 'pass' });
+    await session.setEndgameReviewDecision(['0,0'], 'dead');
+    const reviewBeforeUndo = session.endgameReview();
+
+    expect(session.state().phase).toBe('endgame');
+    expect(reviewBeforeUndo?.groups[0]?.userDecision).toBe('dead');
+
+    await session.executeSessionCommand({ type: 'undo' });
+    expect(session.state()).toMatchObject({ phase: 'playing', consecutivePasses: 1 });
+    expect(session.endgameReview()).toBeNull();
+
+    await session.executeSessionCommand({ type: 'redo' });
+    expect(session.state()).toMatchObject({ phase: 'endgame', consecutivePasses: 2 });
+    expect(session.endgameReview()).toEqual(reviewBeforeUndo);
+  });
+
   it('redo restores a finished position and its final result', async () => {
     const session = createSession();
     await session.execute({ type: 'pass' });
     await session.execute({ type: 'pass' });
+    await session.finishEndgameReview();
 
     expect(session.state().phase).toBe('finished');
     const finalScore = session.finalScore();

@@ -119,7 +119,10 @@ test('new game uses a compact two-column layout with animated topology preview',
     expect(cubeBox.height).toBeLessThanOrEqual(52);
   }
   if (shapeBox && detailsBox) {
-    expect(shapeBox.y).toBeCloseTo(detailsBox.y, 0);
+    expect(shapeBox.y + shapeBox.height / 2).toBeCloseTo(
+      detailsBox.y + detailsBox.height / 2,
+      0,
+    );
     expect(shapeBox.x).toBeLessThan(detailsBox.x);
     expect(detailsBox.width).toBeGreaterThan(shapeBox.width);
   }

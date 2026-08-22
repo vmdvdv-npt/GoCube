@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { EndgameClassification, EndgameClassifier } from '../endgame/EndgameClassifier';
+import type { EndgameClassifier, EndgameProposal } from '../endgame/EndgameClassifier';
 import type { GameRepository, SavedGame } from '../persistence/GameRepository';
 import type { GameSessionSnapshot } from '../persistence/GameSessionSnapshot';
 import { ChineseScoring } from '../scoring/ChineseScoring';
@@ -7,11 +7,9 @@ import { TorusTopology } from '../topology/TorusTopology';
 import { GameEngine } from './GameEngine';
 import { GameSession, type GameSessionConfig } from './GameSession';
 
-const emptyClassification: EndgameClassification = Object.freeze([]);
-
 class EmptyClassifier implements EndgameClassifier {
-  async classify(): Promise<EndgameClassification> {
-    return emptyClassification;
+  async analyze(): Promise<EndgameProposal> {
+    return Object.freeze([]);
   }
 }
 

@@ -1,6 +1,9 @@
 import type { GroupStatus } from '../core/endgame/EndgameClassifier';
+import { compareEndgamePointIds } from '../core/endgame/EndgameGroupIdentity';
 import type { StoneColor } from '../core/game/types';
 import type { PointId, Topology } from '../core/topology/Topology';
+
+export { endgameGroupId } from '../core/endgame/EndgameGroupIdentity';
 
 export type EndgameVisualStatus = GroupStatus | 'unknown';
 
@@ -20,12 +23,6 @@ export interface EndgameGroupRenderState extends EndgameGroupPresentation {
   readonly status: EndgameVisualStatus | null;
 }
 
-const comparePointIds = (left: PointId, right: PointId): number =>
-  left < right ? -1 : left > right ? 1 : 0;
-
-export const endgameGroupId = (points: readonly PointId[]): string =>
-  JSON.stringify([...points].sort(comparePointIds));
-
 export const buildEndgameGroupEdges = (
   points: readonly PointId[],
   topology: Topology,
@@ -42,7 +39,7 @@ export const buildEndgameGroupEdges = (
     for (const neighbor of topology.neighbors(point)) {
       if (!pointSet.has(neighbor)) continue;
 
-      const from = comparePointIds(point, neighbor) <= 0 ? point : neighbor;
+      const from = compareEndgamePointIds(point, neighbor) <= 0 ? point : neighbor;
       const to = from === point ? neighbor : point;
       const key = `${from}\u0000${to}`;
       if (seen.has(key)) continue;
@@ -53,7 +50,7 @@ export const buildEndgameGroupEdges = (
   }
 
   edges.sort((left, right) =>
-    comparePointIds(left.from, right.from) || comparePointIds(left.to, right.to),
+    compareEndgamePointIds(left.from, right.from) || compareEndgamePointIds(left.to, right.to),
   );
 
   return Object.freeze(edges);

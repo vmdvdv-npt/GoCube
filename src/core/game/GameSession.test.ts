@@ -13,7 +13,7 @@ import {
 } from './GameSession';
 
 const emptyClassifier: EndgameClassifier = Object.freeze({
-  classify: async () => Object.freeze([]),
+  analyze: async () => Object.freeze([]),
 });
 
 const sessionConfig = (topology: Topology): GameSessionConfig =>
@@ -125,15 +125,17 @@ describe('GameSession', () => {
     expect(session.state().board['4,5']).toBe('black');
   });
 
-  it('undo after the second Pass returns from finished to playing and keeps the first Pass', async () => {
+  it('undo after a finished endgame returns to playing and keeps the first Pass', async () => {
     const topology = new TorusTopology(9);
     const engine = new GameEngine(topology);
     const session = new GameSession(engine, sessionConfig(topology));
 
     await session.execute({ type: 'pass' });
     const secondPass = await session.execute({ type: 'pass' });
-
     expect(secondPass.ok).toBe(true);
+    expect(session.state().phase).toBe('endgame');
+
+    await session.finishEndgameReview();
     expect(session.state()).toMatchObject({
       currentPlayer: 'black',
       moveNumber: 2,
