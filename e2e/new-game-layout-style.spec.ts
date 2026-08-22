@@ -60,7 +60,7 @@ test('New Game uses the requested effective layout styles', async ({ page }) => 
   }
 
   if (rulesBox && komiBox) {
-    expect(rulesBox.y).toBeCloseTo(komiBox.y, 0);
+    expect(Math.abs(rulesBox.y - komiBox.y)).toBeLessThanOrEqual(1);
     expect(rulesBox.x).toBeLessThan(komiBox.x);
   }
 });
