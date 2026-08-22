@@ -37,6 +37,10 @@ const sameOffset = (left: DragPanOffset, right: DragPanOffset): boolean =>
 
 const frozenOffset = (x: number, y: number): DragPanOffset => Object.freeze({ x, y });
 
+const preventNativeDragStart = (event: DragEvent): void => {
+  event.preventDefault();
+};
+
 export function useDragPan(options: DragPanOptions = {}) {
   const {
     constrain,
@@ -48,6 +52,7 @@ export function useDragPan(options: DragPanOptions = {}) {
   const [dragging, setDragging] = useState(false);
   const sessionRef = useRef<DragPanSession | null>(null);
   const captureElementRef = useRef<HTMLDivElement | null>(null);
+  const gestureElementRef = useRef<HTMLDivElement | null>(null);
   const suppressClickRef = useRef(false);
   const suppressResetTimerRef = useRef<number | null>(null);
 
@@ -59,6 +64,14 @@ export function useDragPan(options: DragPanOptions = {}) {
     [allowInteractiveDrag],
   );
 
+  const detachGestureElement = useCallback((): void => {
+    const element = gestureElementRef.current;
+    if (element) {
+      element.removeEventListener('dragstart', preventNativeDragStart, true);
+    }
+    gestureElementRef.current = null;
+  }, []);
+
   const finishPointer = useCallback((pointerId: number): void => {
     const session = sessionRef.current;
     if (!session || session.pointerId !== pointerId) return;
@@ -68,6 +81,7 @@ export function useDragPan(options: DragPanOptions = {}) {
       captureElement.releasePointerCapture(pointerId);
     }
     captureElementRef.current = null;
+    detachGestureElement();
     sessionRef.current = null;
     setDragging(false);
 
@@ -79,7 +93,7 @@ export function useDragPan(options: DragPanOptions = {}) {
     } else {
       suppressClickRef.current = false;
     }
-  }, []);
+  }, [detachGestureElement]);
 
   useEffect(() => {
     const handlePointerUp = (event: PointerEvent): void => finishPointer(event.pointerId);
@@ -90,11 +104,12 @@ export function useDragPan(options: DragPanOptions = {}) {
     return () => {
       window.removeEventListener('pointerup', handlePointerUp);
       window.removeEventListener('pointercancel', handlePointerCancel);
+      detachGestureElement();
       if (suppressResetTimerRef.current !== null) {
         window.clearTimeout(suppressResetTimerRef.current);
       }
     };
-  }, [finishPointer]);
+  }, [detachGestureElement, finishPointer]);
 
   const constrainOffset = useCallback(
     (candidate: DragPanOffset): DragPanOffset => constrain?.(candidate) ?? candidate,
@@ -118,11 +133,12 @@ export function useDragPan(options: DragPanOptions = {}) {
       captureElement.releasePointerCapture(session.pointerId);
     }
     captureElementRef.current = null;
+    detachGestureElement();
     sessionRef.current = null;
     suppressClickRef.current = false;
     setDragging(false);
     setOffsetState(frozenOffset(0, 0));
-  }, []);
+  }, [detachGestureElement]);
 
   const reconstrain = useCallback((): void => {
     setOffsetState((current) => {
@@ -143,20 +159,26 @@ export function useDragPan(options: DragPanOptions = {}) {
       ) {
         captureElement.releasePointerCapture(previousSession.pointerId);
       }
+      detachGestureElement();
 
       const target = event.target as Element | null;
+      const ignored = shouldIgnoreTarget(target);
       captureElementRef.current = null;
       sessionRef.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
         origin: offset,
-        ignored: shouldIgnoreTarget(target),
+        ignored,
         dragging: false,
       };
+      if (!ignored) {
+        gestureElementRef.current = event.currentTarget;
+        event.currentTarget.addEventListener('dragstart', preventNativeDragStart, true);
+      }
       setDragging(false);
     },
-    [offset, shouldIgnoreTarget, startOnPointerDown],
+    [detachGestureElement, offset, shouldIgnoreTarget, startOnPointerDown],
   );
 
   const handlePointerMove = useCallback(
@@ -182,6 +204,12 @@ export function useDragPan(options: DragPanOptions = {}) {
       }
 
       if (session.pointerId !== event.pointerId || session.ignored) return;
+
+      if (startOnPointerDown) {
+        // Cube owns this pointer gesture from pointerdown onward. Prevent browser text
+        // selection/drag defaults before our 6px pan threshold can be crossed.
+        event.preventDefault();
+      }
 
       const deltaX = event.clientX - session.startX;
       const deltaY = event.clientY - session.startY;
