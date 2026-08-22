@@ -136,19 +136,22 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const [viewZoom, setViewZoom] = useState(1);
   const [passGuardUntil, setPassGuardUntil] = useState<number | null>(null);
   const [passGuardRemainingMs, setPassGuardRemainingMs] = useState(0);
+  const gameRef = useRef<HTMLElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const rendererRef = useRef<Torus2DRenderer | null>(null);
   const actionInFlight = useRef(false);
   const previewedMovePointRef = useRef<string | null>(null);
+  const viewZoomRef = useRef(1);
 
   const constrainViewPan = useCallback(
     (candidate: DragPanOffset): DragPanOffset => {
       const shell = shellRef.current;
       if (!shell) return candidate;
 
-      const overflowX = (shell.offsetWidth * Math.max(0, viewZoom - 1)) / 2;
-      const overflowY = (shell.offsetHeight * Math.max(0, viewZoom - 1)) / 2;
+      const zoom = viewZoomRef.current;
+      const overflowX = (shell.offsetWidth * Math.max(0, zoom - 1)) / 2;
+      const overflowY = (shell.offsetHeight * Math.max(0, zoom - 1)) / 2;
       const maxX = overflowX + TORUS_PAN_EDGE_SLACK;
       const maxY = overflowY + TORUS_PAN_EDGE_SLACK;
       return Object.freeze({
@@ -156,7 +159,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         y: clamp(candidate.y, -maxY, maxY),
       });
     },
-    [viewZoom],
+    [],
   );
 
   const clearPanHover = useCallback((): void => {
@@ -169,6 +172,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     constrain: constrainViewPan,
     onDragStart: clearPanHover,
   });
+  const panOffsetRef = useRef<DragPanOffset>(dragPan.offset);
 
   const renderGroups = useMemo<readonly EndgameGroupRenderState[]>(
     () =>
@@ -192,8 +196,14 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   );
 
   useEffect(() => {
+    panOffsetRef.current = dragPan.offset;
+  }, [dragPan.offset]);
+
+  useEffect(() => {
     rendererRef.current = null;
     previewedMovePointRef.current = null;
+    viewZoomRef.current = 1;
+    panOffsetRef.current = Object.freeze({ x: 0, y: 0 });
     dragPan.reset();
     const nextViewModel = controller.viewModel();
     setViewModel(nextViewModel);
@@ -234,23 +244,52 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   }, [passGuardUntil]);
 
   useEffect(() => {
-    const svg = svgRef.current;
-    if (!svg) return;
+    const game = gameRef.current;
+    if (!game) return;
 
     const handleWheel = (event: WheelEvent): void => {
+      const sidebar = game.querySelector<HTMLElement>('.game-summary');
+      const sidebarBounds = sidebar?.getBoundingClientRect();
+      if (sidebarBounds && event.clientX <= sidebarBounds.right) return;
+
+      const shell = shellRef.current;
+      if (!shell) return;
+
       event.preventDefault();
-      setViewZoom((current) =>
-        clamp(
-          current * Math.exp(-event.deltaY * TORUS_ZOOM_WHEEL_SENSITIVITY),
-          TORUS_ZOOM_MIN,
-          TORUS_ZOOM_MAX,
-        ),
+      const currentZoom = viewZoomRef.current;
+      const nextZoom = clamp(
+        currentZoom * Math.exp(-event.deltaY * TORUS_ZOOM_WHEEL_SENSITIVITY),
+        TORUS_ZOOM_MIN,
+        TORUS_ZOOM_MAX,
       );
+      if (nextZoom === currentZoom) return;
+
+      const shellBounds = shell.getBoundingClientRect();
+      const renderedPanX = Number(shell.dataset.panX ?? 0);
+      const renderedPanY = Number(shell.dataset.panY ?? 0);
+      const baseCenterX = shellBounds.left + shellBounds.width / 2 - renderedPanX;
+      const baseCenterY = shellBounds.top + shellBounds.height / 2 - renderedPanY;
+      const currentPan = panOffsetRef.current;
+      const sceneCenterX = baseCenterX + currentPan.x;
+      const sceneCenterY = baseCenterY + currentPan.y;
+      const ratio = nextZoom / currentZoom;
+
+      viewZoomRef.current = nextZoom;
+      setViewZoom(nextZoom);
+
+      const nextPan = constrainViewPan(
+        Object.freeze({
+          x: currentPan.x + (event.clientX - sceneCenterX) * (1 - ratio),
+          y: currentPan.y + (event.clientY - sceneCenterY) * (1 - ratio),
+        }),
+      );
+      panOffsetRef.current = nextPan;
+      dragPan.setOffset(nextPan);
     };
 
-    svg.addEventListener('wheel', handleWheel, { passive: false });
-    return () => svg.removeEventListener('wheel', handleWheel);
-  }, [controller]);
+    game.addEventListener('wheel', handleWheel, { passive: false });
+    return () => game.removeEventListener('wheel', handleWheel);
+  }, [constrainViewPan, dragPan.setOffset]);
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -676,7 +715,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     viewZoom !== 1 || dragPan.offset.x !== 0 || dragPan.offset.y !== 0;
 
   return (
-    <section className="torus-game" aria-label="Torus 2D game">
+    <section ref={gameRef} className="torus-game" aria-label="Torus 2D game">
       <GameSidebar
         size={controller.size}
         viewModel={viewModel}
