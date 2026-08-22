@@ -81,10 +81,100 @@
   font-size: 14px;
 }
 
+.surface-fieldset {
+  gap: 10px;
+}
+
+.topology-preview {
+  position: relative;
+  height: 260px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.topology-preview__image {
+  position: absolute;
+  inset: 16px 28px;
+  display: block;
+  width: calc(100% - 56px);
+  height: calc(100% - 32px);
+  object-fit: contain;
+  object-position: center;
+  user-select: none;
+}
+
+.topology-preview__image--exit-left {
+  animation: topology-preview-exit-left 300ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.topology-preview__image--exit-right {
+  animation: topology-preview-exit-right 300ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.topology-preview__image--enter-from-left {
+  animation: topology-preview-enter-from-left 300ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.topology-preview__image--enter-from-right {
+  animation: topology-preview-enter-from-right 300ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@keyframes topology-preview-exit-left {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateX(-48px);
+  }
+}
+
+@keyframes topology-preview-exit-right {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateX(48px);
+  }
+}
+
+@keyframes topology-preview-enter-from-left {
+  from {
+    opacity: 0;
+    transform: translateX(-48px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes topology-preview-enter-from-right {
+  from {
+    opacity: 0;
+    transform: translateX(48px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 .board-size-options {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+
+.surface-options {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .board-size-options button {
