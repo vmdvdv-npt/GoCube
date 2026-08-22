@@ -15,6 +15,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
   await page.getByRole('button', { name: '3×3', exact: true }).click();
+  await page.getByLabel('Rules').selectOption('chinese');
   await page.getByRole('button', { name: 'Start game' }).click();
   await expect(page.locator('.cube-2d-renderer')).toHaveAttribute('data-cube-size', '3');
 });
