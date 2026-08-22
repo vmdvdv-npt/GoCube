@@ -10,7 +10,7 @@
 .confirmation-card {
   display: grid;
   gap: 16px;
-  padding: 30px 45px;
+  padding: 10px 45px 30px 45px;
   border: 1px solid rgb(255 255 255 / 8%);
   border-radius: 12px;
   background: #0b131b;
@@ -26,6 +26,7 @@
 
 .startup-card.new-game-form {
   width: min(980px, 100%);
+  height: auto;
 }
 
 .startup-card h2,
@@ -68,8 +69,8 @@
 
 .new-game-settings-grid {
   display: grid;
-  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
-  gap: 80px;
+  grid-template-columns: minmax(0, 0.85fr) 80px minmax(0, 1.15fr);
+  gap: 0;
   align-items: start;
 }
 
@@ -77,8 +78,24 @@
   min-width: 0;
 }
 
+.new-game-column-divider {
+  align-self: stretch;
+  justify-self: center;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgb(255 255 255 / 10%) 15%,
+    rgb(255 255 255 / 10%) 85%,
+    transparent 100%
+  );
+  opacity: 0.4;
+  pointer-events: none;
+}
+
 .new-game-settings-column--details {
   display: grid;
+  align-content: start;
   gap: 18px;
 }
 

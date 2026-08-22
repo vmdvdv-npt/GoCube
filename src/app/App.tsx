@@ -307,6 +307,12 @@ export function App() {
             </fieldset>
 
             <div
+              className="new-game-column-divider"
+              data-testid="new-game-column-divider"
+              aria-hidden="true"
+            />
+
+            <div
               className="new-game-settings-column new-game-settings-column--details"
               data-testid="new-game-details-column"
             >
