@@ -33,7 +33,7 @@ jobs:
           PY
           python /tmp/release-prep.py
           npm install --package-lock-only --ignore-scripts
-          rm .github/workflows/release-prep-bootstrap.yml .github/workflows/release-prep-pr.yml
+          git restore .github/workflows
           git diff --check
       - name: Commit prepared branch
         run: |
