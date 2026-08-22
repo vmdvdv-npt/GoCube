@@ -6,11 +6,11 @@ const requiredBox = async (locator: Locator) => {
   return box!;
 };
 
-const dragAcrossViewportToTopLeft = async (page: Page, viewport: Locator) => {
+const dragViewportCenterToTopLeft = async (page: Page, viewport: Locator) => {
   const box = await requiredBox(viewport);
   const inset = 32;
-  const startX = box.x + box.width - inset;
-  const startY = box.y + box.height - inset;
+  const startX = box.x + box.width / 2;
+  const startY = box.y + box.height / 2;
   const endX = box.x + inset;
   const endY = box.y + inset;
 
@@ -44,7 +44,7 @@ test('Cube 2D drag-pan is not clamped by the board viewport or sidebar', async (
     };
   });
 
-  await dragAcrossViewportToTopLeft(page, viewport);
+  await dragViewportCenterToTopLeft(page, viewport);
 
   const pan = {
     x: Number(await viewport.getAttribute('data-pan-x')),
