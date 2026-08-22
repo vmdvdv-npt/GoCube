@@ -1,15 +1,80 @@
 import type { EndgameClassification, GroupStatus } from '../../core/endgame/EndgameClassifier';
 import type { StoneColor } from '../../core/game/types';
 import type { FinalScore } from '../../core/scoring/Scoring';
+import type { CubeFace } from '../../core/topology/CubeTopology';
 import type { PointId } from '../../core/topology/Topology';
 import type { EndgameGroupPresentation } from '../EndgameGroupPresentation';
 
-export interface CapturedStoneEffect {
-  readonly id: string;
+export const CUBE_2D_CAPTURE_STAGGER_MS = 150;
+export const CUBE_2D_CAPTURE_FLIGHT_MS = 520;
+
+export interface Cube2DCaptureSource {
   readonly pointId: PointId;
   readonly color: StoneColor;
-  readonly order: number;
+  readonly face: CubeFace;
+  readonly layoutRow: number;
+  readonly layoutColumn: number;
+  readonly localX: number;
+  readonly localY: number;
+  readonly stageX: number;
+  readonly stageY: number;
+  readonly radius: number;
 }
+
+export interface CapturedStoneEffect extends Cube2DCaptureSource {
+  readonly id: string;
+  readonly order: number;
+  readonly delayMs: number;
+  readonly durationMs: number;
+  readonly targetStageX: number;
+  readonly targetStageY: number;
+}
+
+export interface BuildCube2DCaptureEffectsInput {
+  readonly generation: number;
+  readonly capturedPointIds: readonly PointId[];
+  readonly previousSources: ReadonlyMap<PointId, Cube2DCaptureSource>;
+  readonly stageWidth: number;
+}
+
+/**
+ * Builds capture flights only from the previous rendered scene snapshot.
+ * No lookup in the next/current layout is permitted here. Duplicate PointIds are
+ * collapsed defensively so one logical captured stone can never receive two flights.
+ */
+export const buildCube2DCaptureEffects = (
+  input: BuildCube2DCaptureEffectsInput,
+): readonly CapturedStoneEffect[] => {
+  const uniqueCapturedPointIds = [...new Set(input.capturedPointIds)];
+  const effects = uniqueCapturedPointIds.flatMap((pointId, order) => {
+    const source = input.previousSources.get(pointId);
+    if (!source) return [];
+
+    const targetStageX =
+      source.color === 'white'
+        ? -source.radius * 1.5
+        : input.stageWidth + source.radius * 1.5;
+    const horizontalDistance = Math.abs(targetStageX - source.stageX);
+    const upwardDistance = Math.min(
+      source.radius * 2.8,
+      Math.max(source.radius * 0.75, horizontalDistance * 0.08),
+    );
+
+    return [
+      Object.freeze({
+        ...source,
+        id: `${input.generation}:${pointId}`,
+        order,
+        delayMs: order * CUBE_2D_CAPTURE_STAGGER_MS,
+        durationMs: CUBE_2D_CAPTURE_FLIGHT_MS,
+        targetStageX,
+        targetStageY: source.stageY - upwardDistance,
+      }),
+    ];
+  });
+
+  return Object.freeze(effects);
+};
 
 export interface Cube2DPointVisualStatus {
   readonly pointId: PointId;
