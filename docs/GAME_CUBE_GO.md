@@ -68,25 +68,26 @@
 
 Форма `New Game` использует компактную двухколоночную desktop-композицию вместо длинной одноколоночной формы.
 
-- Заголовок `New game` и поясняющий текст находятся над общей областью настроек.
-- Левая колонка содержит `Board Shape`, крупный topology preview и controls `Cube` / `Torus`.
+- Внутри формы нет отдельного заголовка `New game` и поясняющего текста `Choose the surface, board size, scoring rules, and komi.`; после общего header сразу начинается область настроек.
+- Отступ после общего `.app-header` перед формой New Game — `12vh`.
+- Левая колонка содержит крупный topology preview, а под ним подпись `Board Shape` и controls `Cube` / `Torus`.
 - Правая колонка содержит `Board Size`, `Rules`, `Komi` и `Start game`.
-- Левая колонка немного уже правой; правая получает больше горизонтального пространства для размеров поля и остальных настроек.
-- `Board Shape` и `Board Size` визуально являются заметными section headings и крупнее обычных подписей form controls.
+- Левая колонка немного уже правой: grid использует пропорцию `0.85fr / 1.15fr` и горизонтальный gap `80px`.
+- `Board Shape` и `Board Size` используют ту же типографику подписи, что `Rules` и `Komi`; они не выделяются увеличенным или жирным section-heading шрифтом.
 - Высота selectable buttons остаётся компактной и близкой к существующим controls; oversized/tall buttons для этой формы не используются.
 - Существующая цветовая схема controls сохраняется: topology/size selections остаются нейтральными, а зелёный accent принадлежит `Start game`/`New Game` и не переносится на selectable buttons.
 - На минимальной целевой desktop-конфигурации форма должна помещаться по высоте без превращения в длинный вертикальный экран.
 
 ## 4.1. Выбор topology
 
-Раздел выбора topology имеет заголовок `Board Shape`. Когда доступны обе topology, `Cube` и `Torus` показываются как два равноправных selectable controls.
+Раздел выбора topology имеет подпись `Board Shape`, расположенную под topology preview непосредственно над controls `Cube` / `Torus`. Когда доступны обе topology, `Cube` и `Torus` показываются как два равноправных selectable controls.
 
 - `Cube` расположен слева, `Torus` — справа.
 - В самих controls остаются только подписи `Cube` и `Torus`; слова `2D` и маленькие topology-icons внутри кнопок не используются.
 - Выбранный вариант получает понятный selected-state.
 - При переключении topology сразу меняется доступный набор размеров.
 
-Непосредственно над двумя topology-controls находится одна отдельная крупная preview-зона выбранной topology.
+Над подписью `Board Shape` и двумя topology-controls находится одна отдельная крупная preview-зона выбранной topology.
 
 - Для `Cube` preview использует `/assets/board/cube.svg`.
 - Для `Torus` preview использует `/assets/board/torus.svg`.
@@ -528,7 +529,7 @@ Torus 2D показывает всё поле как одну квадратну
 
 ## 19.2. Show duplicate regions
 
-В display options есть `Show duplicate regions`.
+В Torus 2D display options есть `Show duplicate regions`. В Cube 2D этот Torus-specific control не показывается вовсе; disabled/неработающий checkbox в Cube 2D не рендерится.
 
 `Move numbers` располагается отдельной строкой **выше** `Show duplicate regions`; оба control вертикально уложены в одном компактном блоке.
 
