@@ -154,7 +154,7 @@ describe('GameSession endgame proposal/review flow', () => {
     await session.execute({ type: 'pass' });
     await session.setEndgameReviewDecision(['0,0'], 'alive');
 
-    await expect(session.finishEndgameReview()).rejects.toThrow('Endgame review is incomplete');
+    await expect(session.finishEndgameReview()).rejects.toThrow('Missing manual endgame decision');
     expect(session.state().phase).toBe('endgame');
     expect(scoring.calls).toHaveLength(0);
   });
@@ -214,7 +214,7 @@ describe('GameSession endgame proposal/review flow', () => {
     ]);
   });
 
-  it('immediately completes when the proposal is already fully automatic', async () => {
+  it('keeps a fully automatic proposal in review until explicit completion', async () => {
     const topology = new TorusTopology(9);
     const classifier = new RecordingClassifier((context) => resolvedProposal(context, 'alive'));
     const scoring = new RecordingScoring(new ChineseScoring(topology));
@@ -227,8 +227,14 @@ describe('GameSession endgame proposal/review flow', () => {
     await session.execute({ type: 'pass' });
     await session.execute({ type: 'pass' });
 
+    expect(session.state().phase).toBe('endgame');
+    expect(session.endgameReview()?.groups).toEqual([
+      { points: ['0,0'], proposal: { status: 'alive' }, userDecision: null },
+    ]);
+    expect(scoring.calls).toHaveLength(0);
+
+    await session.finishEndgameReview();
     expect(session.state().phase).toBe('finished');
-    expect(session.endgameReview()).toBeNull();
     expect(scoring.calls).toHaveLength(1);
     expect(scoring.calls[0]?.classification).toEqual([
       { points: ['0,0'], status: 'alive', source: 'automatic' },
