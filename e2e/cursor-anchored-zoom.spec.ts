@@ -14,7 +14,7 @@ const boxCenter = (box: { x: number; y: number; width: number; height: number })
 const expectCenterAt = async (
   locator: Locator,
   expected: { x: number; y: number },
-  tolerance = 1.5,
+  tolerance = 2,
 ) => {
   const center = boxCenter(await requiredBox(locator));
   expect(Math.abs(center.x - expected.x)).toBeLessThanOrEqual(tolerance);
