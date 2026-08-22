@@ -12,9 +12,20 @@ import {
   type Cube2DLayoutRow,
 } from '../presentation/cube/Cube2DLayout';
 import type { CubeRotation } from '../presentation/cube/CubeOrientation';
+import { StoneArtworkDefs, stoneArtworkFill } from './StoneArtwork';
 
 export const CUBE_2D_SVG_SIZE = 100;
+export const CUBE_2D_BASE_CELL_SIZE = 190;
+export const CUBE_2D_STAGE_WIDTH = CUBE_2D_SVG_SIZE * CUBE_2D_LAYOUT_COLUMNS;
+export const CUBE_2D_STAGE_HEIGHT = CUBE_2D_SVG_SIZE * CUBE_2D_LAYOUT_ROWS;
 export const CUBE_2D_TRANSITION_MS = 260;
+
+export const cube2DContentScale = (size: number): number => {
+  if (size <= 3) return 1;
+  if (size === 4) return 0.91;
+  if (size === 5) return 0.85;
+  return 0.83;
+};
 
 export interface Cube2DVisualPoint {
   readonly pointId: PointId;
@@ -39,6 +50,18 @@ export interface Cube2DRenderModel {
   readonly rows: typeof CUBE_2D_LAYOUT_ROWS;
   readonly columns: typeof CUBE_2D_LAYOUT_COLUMNS;
   readonly boards: readonly Cube2DVisualBoard[];
+}
+
+export interface Cube2DStagePoint {
+  readonly pointId: PointId;
+  readonly face: CubeFace;
+  readonly layoutRow: Cube2DLayoutRow;
+  readonly layoutColumn: Cube2DLayoutColumn;
+  readonly localX: number;
+  readonly localY: number;
+  readonly stageX: number;
+  readonly stageY: number;
+  readonly radius: number;
 }
 
 export type Cube2DRendererTransitionDirection = 'left' | 'right' | 'up' | 'down' | 'anchor';
@@ -96,6 +119,44 @@ export const createCube2DRenderModel = (layout: Cube2DLayout): Cube2DRenderModel
     boards: Object.freeze(layout.cells.map((cell) => createVisualBoard(cell, layout.size))),
   });
 
+/**
+ * Returns the exact stable 4x3 stage-space geometry used by rendered stones.
+ * The size-specific content scale is applied here because the normal stone group
+ * is scaled around the center of each 0..100 face viewBox.
+ */
+export const createCube2DStagePointMap = (
+  layout: Cube2DLayout,
+): ReadonlyMap<PointId, Cube2DStagePoint> => {
+  const model = createCube2DRenderModel(layout);
+  const contentScale = cube2DContentScale(model.size);
+  const step = CUBE_2D_SVG_SIZE / model.size;
+  const radius = step * 0.39 * contentScale;
+  const result = new Map<PointId, Cube2DStagePoint>();
+
+  for (const board of model.boards) {
+    for (const point of board.points) {
+      const localX = CUBE_2D_SVG_SIZE / 2 + (point.x - CUBE_2D_SVG_SIZE / 2) * contentScale;
+      const localY = CUBE_2D_SVG_SIZE / 2 + (point.y - CUBE_2D_SVG_SIZE / 2) * contentScale;
+      result.set(
+        point.pointId,
+        Object.freeze({
+          pointId: point.pointId,
+          face: board.face,
+          layoutRow: board.row,
+          layoutColumn: board.column,
+          localX,
+          localY,
+          stageX: board.column * CUBE_2D_SVG_SIZE + localX,
+          stageY: board.row * CUBE_2D_SVG_SIZE + localY,
+          radius,
+        }),
+      );
+    }
+  }
+
+  return result;
+};
+
 /** Pure hit test inside one visual board. Coordinates are in the 0..100 SVG viewBox. */
 export const hitTestCube2DPoint = (
   board: Cube2DVisualBoard,
@@ -114,6 +175,7 @@ export const hitTestCube2DPoint = (
 
 export interface Cube2DRendererProps {
   readonly layout: Cube2DLayout;
+  readonly layoutCellSize?: number;
   readonly diagnostics?: boolean;
   readonly transition?: Cube2DRendererTransition;
   readonly onVerticalAnchorColumnChange?: (column: Cube2DLayoutColumn) => void;
@@ -141,6 +203,11 @@ type MotionStyle = CSSProperties & {
   '--cube-from-y'?: string;
   '--cube-from-rotation'?: string;
   '--cube-transition-ms'?: string;
+};
+
+type RendererStyle = CSSProperties & {
+  '--cube-2d-cell-size'?: string;
+  '--cube-2d-content-scale'?: string;
 };
 
 const shortestRotationDelta = (from: CubeRotation, to: CubeRotation): number => {
@@ -200,29 +267,6 @@ interface BoardGameplayContext {
   readonly onPointActivate?: (pointId: PointId) => void;
 }
 
-const stonePaintIds = (face: CubeFace) => ({
-  blackGradient: `cube-2d-${face}-black-gradient`,
-  whiteGradient: `cube-2d-${face}-white-gradient`,
-});
-
-const renderStoneDefs = (face: CubeFace): ReactElement => {
-  const ids = stonePaintIds(face);
-  return (
-    <defs aria-hidden="true">
-      <radialGradient id={ids.blackGradient} cx="35%" cy="25%" r="70%">
-        <stop offset="0" stopColor="#555" />
-        <stop offset="0.35" stopColor="#111" />
-        <stop offset="1" stopColor="#000" />
-      </radialGradient>
-      <radialGradient id={ids.whiteGradient} cx="35%" cy="25%" r="70%">
-        <stop offset="0" stopColor="#fff" />
-        <stop offset="0.45" stopColor="#eee" />
-        <stop offset="1" stopColor="#cfcfcf" />
-      </radialGradient>
-    </defs>
-  );
-};
-
 const renderBoard = (
   board: Cube2DVisualBoard,
   size: number,
@@ -251,7 +295,7 @@ const renderBoard = (
   const stoneRadius = step * 0.39;
   const previewRadius = stoneRadius;
   const markerRadius = Math.max(1.1, step * 0.09);
-  const ids = stonePaintIds(board.face);
+  const artworkPrefix = `cube-2d-${board.face}`;
 
   return (
     <figure
@@ -280,7 +324,7 @@ const renderBoard = (
           role="img"
           aria-label={`${board.face} face, rotation ${board.rotation} degrees`}
         >
-          {renderStoneDefs(board.face)}
+          <StoneArtworkDefs idPrefix={artworkPrefix} />
           <rect
             className="cube-2d-board__surface"
             x="0"
@@ -305,7 +349,6 @@ const renderBoard = (
               if (occupancy !== 'black' && occupancy !== 'white') return null;
               const isLastMove = gameplay.lastMovePointId === point.pointId;
               const showNumber = gameplay.showMoveNumbers && !isLastMove && viewPoint?.moveNumber;
-              const fill = occupancy === 'black' ? `url(#${ids.blackGradient})` : `url(#${ids.whiteGradient})`;
               return (
                 <g key={`stone:${point.pointId}`} data-logical-point-id={point.pointId}>
                   <circle
@@ -313,7 +356,9 @@ const renderBoard = (
                     cx={point.x}
                     cy={point.y}
                     r={stoneRadius}
-                    fill={fill}
+                    fill={stoneArtworkFill(artworkPrefix, occupancy)}
+                    stroke="none"
+                    data-stone-artwork="custom-svg"
                     data-occupancy={occupancy}
                     data-logical-point-id={point.pointId}
                   />
@@ -356,7 +401,10 @@ const renderBoard = (
                       cx={point.x}
                       cy={point.y}
                       r={previewRadius}
-                      fill={gameplay.currentPlayer === 'black' ? `url(#${ids.blackGradient})` : `url(#${ids.whiteGradient})`}
+                      fill={stoneArtworkFill(artworkPrefix, gameplay.currentPlayer!)}
+                      stroke="none"
+                      data-stone-artwork="custom-svg"
+                      data-occupancy={gameplay.currentPlayer}
                       data-logical-point-id={point.pointId}
                     />
                   ))
@@ -438,6 +486,7 @@ const renderAnchorSlots = (
 /** Six physical faces in a 4x3 placement field with optional gameplay presentation. */
 export function Cube2DRenderer({
   layout,
+  layoutCellSize = CUBE_2D_BASE_CELL_SIZE,
   diagnostics = false,
   transition,
   onVerticalAnchorColumnChange,
@@ -468,10 +517,15 @@ export function Cube2DRenderer({
     onPointHover,
     onPointActivate,
   };
+  const rendererStyle: RendererStyle = {
+    '--cube-2d-cell-size': `${layoutCellSize}px`,
+    '--cube-2d-content-scale': String(cube2DContentScale(model.size)),
+  };
 
   return (
     <section
       className="cube-2d-renderer"
+      style={rendererStyle}
       data-cube-size={model.size}
       data-layout-rows={model.rows}
       data-layout-columns={model.columns}
@@ -480,6 +534,7 @@ export function Cube2DRenderer({
       data-animating={isAnimating}
       data-gameplay-input-disabled={gameplayInputDisabled}
       data-transition-id={transition?.id ?? 'none'}
+      data-layout-cell-size={layoutCellSize.toFixed(3)}
       aria-label="Cube 2D six-face renderer in 4 by 3 placement field"
     >
       {renderAnchorSlots(layout, isAnimating, onVerticalAnchorColumnChange)}
