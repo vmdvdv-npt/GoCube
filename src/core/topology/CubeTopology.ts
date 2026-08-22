@@ -12,8 +12,9 @@ export const isValidCubeSize = (size: number): size is CubeSize =>
 
 export const CUBE_FACES = ['front', 'back', 'left', 'right', 'top', 'bottom'] as const;
 export type CubeFace = (typeof CUBE_FACES)[number];
+export type CubeDirection = 'top' | 'right' | 'bottom' | 'left';
 
-type CubeEdge = 'top' | 'right' | 'bottom' | 'left';
+type CubeEdge = CubeDirection;
 
 interface EdgeTransition {
   readonly face: CubeFace;
@@ -64,21 +65,6 @@ const EDGE_TRANSITIONS: Readonly<Record<CubeFace, Readonly<Record<CubeEdge, Edge
 export const cubePointId = (face: CubeFace, row: number, column: number): PointId =>
   `${face}:${row}:${column}`;
 
-interface CubePoint {
-  readonly face: CubeFace;
-  readonly row: number;
-  readonly column: number;
-}
-
-const parsePoint = (point: PointId): CubePoint => {
-  const [face, rowText, columnText] = point.split(':');
-  return {
-    face: face as CubeFace,
-    row: Number(rowText),
-    column: Number(columnText),
-  };
-};
-
 const pointOnEdge = (
   face: CubeFace,
   edge: CubeEdge,
@@ -94,6 +80,74 @@ const pointOnEdge = (
       return cubePointId(face, last, index);
     case 'left':
       return cubePointId(face, index, 0);
+  }
+};
+
+const crossCubeEdge = (
+  size: CubeSize,
+  face: CubeFace,
+  edge: CubeEdge,
+  index: number,
+): PointId => {
+  const transition = EDGE_TRANSITIONS[face][edge];
+  const last = size - 1;
+  const targetIndex = transition.reverse ? last - index : index;
+  return pointOnEdge(transition.face, transition.edge, targetIndex, last);
+};
+
+const isCubeFace = (value: string): value is CubeFace =>
+  CUBE_FACES.includes(value as CubeFace);
+
+/**
+ * Renderer-neutral one-step surface traversal used by topology-stress test tooling.
+ * The returned PointId follows the same edge transitions as CubeTopology.neighbors().
+ */
+export const cubeStepPoint = (
+  size: CubeSize,
+  point: PointId,
+  direction: CubeDirection,
+): PointId => {
+  if (!isValidCubeSize(size)) {
+    throw new Error(`Cube size must be a safe integer >= 2, got ${String(size)}`);
+  }
+
+  const [faceText, rowText, columnText, ...extra] = point.split(':');
+  if (extra.length > 0 || !faceText || !isCubeFace(faceText)) {
+    throw new Error(`Unknown cube point: ${point}`);
+  }
+
+  const face = faceText;
+  const row = Number(rowText);
+  const column = Number(columnText);
+  const last = size - 1;
+  if (
+    !Number.isInteger(row) ||
+    !Number.isInteger(column) ||
+    row < 0 ||
+    column < 0 ||
+    row > last ||
+    column > last
+  ) {
+    throw new Error(`Unknown cube point: ${point}`);
+  }
+
+  switch (direction) {
+    case 'top':
+      return row > 0
+        ? cubePointId(face, row - 1, column)
+        : crossCubeEdge(size, face, 'top', column);
+    case 'right':
+      return column < last
+        ? cubePointId(face, row, column + 1)
+        : crossCubeEdge(size, face, 'right', row);
+    case 'bottom':
+      return row < last
+        ? cubePointId(face, row + 1, column)
+        : crossCubeEdge(size, face, 'bottom', column);
+    case 'left':
+      return column > 0
+        ? cubePointId(face, row, column - 1)
+        : crossCubeEdge(size, face, 'left', row);
   }
 };
 
@@ -131,29 +185,11 @@ export class CubeTopology implements Topology {
       throw new Error(`Unknown point: ${point}`);
     }
 
-    const { face, row, column } = parsePoint(point);
-    const last = this.size - 1;
-
     return Object.freeze([
-      row > 0
-        ? cubePointId(face, row - 1, column)
-        : this.crossEdge(face, 'top', column),
-      column < last
-        ? cubePointId(face, row, column + 1)
-        : this.crossEdge(face, 'right', row),
-      row < last
-        ? cubePointId(face, row + 1, column)
-        : this.crossEdge(face, 'bottom', column),
-      column > 0
-        ? cubePointId(face, row, column - 1)
-        : this.crossEdge(face, 'left', row),
+      cubeStepPoint(this.size, point, 'top'),
+      cubeStepPoint(this.size, point, 'right'),
+      cubeStepPoint(this.size, point, 'bottom'),
+      cubeStepPoint(this.size, point, 'left'),
     ]);
-  }
-
-  private crossEdge(face: CubeFace, edge: CubeEdge, index: number): PointId {
-    const transition = EDGE_TRANSITIONS[face][edge];
-    const last = this.size - 1;
-    const targetIndex = transition.reverse ? last - index : index;
-    return pointOnEdge(transition.face, transition.edge, targetIndex, last);
   }
 }
