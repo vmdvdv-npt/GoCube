@@ -73,12 +73,17 @@ test('new game uses board-size buttons and keeps Japanese rules as the default',
 test('new game uses a compact two-column layout with animated topology preview', async ({ page }) => {
   await page.goto('/');
 
+  const header = page.locator('.app-header');
+  const newGameForm = page.locator('.startup-card.new-game-form');
+  const settingsGrid = page.getByTestId('new-game-settings-grid');
   const preview = page.getByTestId('topology-preview');
   const previewImage = page.getByTestId('topology-preview-image');
   const cube = page.getByRole('button', { name: 'Cube', exact: true });
   const torus = page.getByRole('button', { name: 'Torus', exact: true });
   const shapeColumn = page.getByTestId('new-game-shape-column');
   const detailsColumn = page.getByTestId('new-game-details-column');
+  const rules = page.getByLabel('Rules');
+  const komi = page.getByLabel('Komi');
 
   await expect(page.getByRole('group', { name: 'Board Shape' })).toBeVisible();
   await expect(page.getByRole('group', { name: 'Board Size' })).toBeVisible();
@@ -89,18 +94,53 @@ test('new game uses a compact two-column layout with animated topology preview',
   await expect(cube.locator('img, svg')).toHaveCount(0);
   await expect(torus.locator('img, svg')).toHaveCount(0);
 
-  const [cubeBox, torusBox, previewBox, shapeBox, detailsBox] = await Promise.all([
+  const [headerStyles, formStyles, gridStyles, viewportHeight] = await Promise.all([
+    header.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { marginBottom: Number.parseFloat(style.marginBottom) };
+    }),
+    newGameForm.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        paddingTop: Number.parseFloat(style.paddingTop),
+        paddingRight: Number.parseFloat(style.paddingRight),
+        paddingBottom: Number.parseFloat(style.paddingBottom),
+        paddingLeft: Number.parseFloat(style.paddingLeft),
+        lineHeight: Number.parseFloat(style.lineHeight),
+        fontSize: Number.parseFloat(style.fontSize),
+      };
+    }),
+    settingsGrid.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { columnGap: Number.parseFloat(style.columnGap) };
+    }),
+    page.evaluate(() => window.innerHeight),
+  ]);
+
+  expect(headerStyles.marginBottom).toBeCloseTo(viewportHeight * 0.06, 1);
+  expect(formStyles.paddingTop).toBe(30);
+  expect(formStyles.paddingRight).toBe(45);
+  expect(formStyles.paddingBottom).toBe(30);
+  expect(formStyles.paddingLeft).toBe(45);
+  expect(formStyles.lineHeight / formStyles.fontSize).toBeCloseTo(1.5, 2);
+  expect(gridStyles.columnGap).toBe(50);
+
+  const [cubeBox, torusBox, previewBox, shapeBox, detailsBox, rulesBox, komiBox] = await Promise.all([
     cube.boundingBox(),
     torus.boundingBox(),
     preview.boundingBox(),
     shapeColumn.boundingBox(),
     detailsColumn.boundingBox(),
+    rules.boundingBox(),
+    komi.boundingBox(),
   ]);
   expect(cubeBox).not.toBeNull();
   expect(torusBox).not.toBeNull();
   expect(previewBox).not.toBeNull();
   expect(shapeBox).not.toBeNull();
   expect(detailsBox).not.toBeNull();
+  expect(rulesBox).not.toBeNull();
+  expect(komiBox).not.toBeNull();
   if (cubeBox && torusBox) {
     expect(cubeBox.y).toBeCloseTo(torusBox.y, 0);
     expect(cubeBox.x).toBeLessThan(torusBox.x);
@@ -110,7 +150,12 @@ test('new game uses a compact two-column layout with animated topology preview',
   if (shapeBox && detailsBox) {
     expect(shapeBox.y).toBeCloseTo(detailsBox.y, 0);
     expect(shapeBox.x).toBeLessThan(detailsBox.x);
-    expect(detailsBox.width).toBeGreaterThan(shapeBox.width);
+    expect(detailsBox.x - (shapeBox.x + shapeBox.width)).toBeCloseTo(50, 0);
+    expect(detailsBox.width / shapeBox.width).toBeCloseTo(1.15 / 0.85, 1);
+  }
+  if (rulesBox && komiBox) {
+    expect(rulesBox.y).toBeCloseTo(komiBox.y, 0);
+    expect(rulesBox.x).toBeLessThan(komiBox.x);
   }
 
   await cube.click();
