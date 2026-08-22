@@ -1,6 +1,7 @@
 import type { EndgameClassification, EndgameClassifier } from '../endgame/EndgameClassifier';
 import { LinearHistory } from '../history/LinearHistory';
 import type { GameRepository } from '../persistence/GameRepository';
+import { OrderedGameSaveCoordinator } from '../persistence/OrderedGameSaveCoordinator';
 import {
   GAME_SESSION_SNAPSHOT_VERSION,
   type GameSessionRedoEntrySnapshot,
@@ -141,12 +142,23 @@ const assertBoardSize = (boardSize: number): void => {
   }
 };
 
+const assertSessionRevision = (sessionRevision: number | undefined): void => {
+  if (sessionRevision === undefined) return;
+  if (!Number.isSafeInteger(sessionRevision) || sessionRevision < 0) {
+    throw new Error(
+      `Session revision must be a non-negative safe integer, got ${String(sessionRevision)}`,
+    );
+  }
+};
+
 export class GameSession {
   private history: LinearHistory;
   private readonly config: GameSessionConfig;
   private currentFinalScore: FinalScore | null = null;
   private currentEndgameClassification: EndgameClassification | null = null;
   private readonly futureMetadata: HistoryMetadata[] = [];
+  private sessionRevision = 0;
+  private readonly saveCoordinator: OrderedGameSaveCoordinator<GameSessionSnapshot> | null;
 
   constructor(
     private readonly engine: GameEngine,
@@ -168,6 +180,9 @@ export class GameSession {
           })
         : undefined,
     });
+    this.saveCoordinator = config.persistence
+      ? new OrderedGameSaveCoordinator(config.persistence.repository)
+      : null;
     this.history = new LinearHistory(initialState);
   }
 
@@ -193,6 +208,7 @@ export class GameSession {
     session.currentEndgameClassification = cloneEndgameClassification(
       snapshot.endgameClassification,
     );
+    session.sessionRevision = snapshot.sessionRevision ?? 0;
     return session;
   }
 
@@ -270,6 +286,7 @@ export class GameSession {
     return Object.freeze({
       version: GAME_SESSION_SNAPSHOT_VERSION,
       boardSize: this.config.boardSize,
+      sessionRevision: this.sessionRevision,
       ruleSet: this.config.scoringStrategy.ruleSet,
       komi: this.config.komi,
       history: this.history.states(),
@@ -455,13 +472,21 @@ export class GameSession {
   }
 
   private async persist(): Promise<void> {
-    const persistence = this.config.persistence;
-    if (!persistence) return;
+    if (this.sessionRevision >= Number.MAX_SAFE_INTEGER) {
+      throw new Error('Session revision overflow');
+    }
+    this.sessionRevision += 1;
 
-    await persistence.repository.save({
+    const persistence = this.config.persistence;
+    const coordinator = this.saveCoordinator;
+    if (!persistence || !coordinator) return;
+
+    const snapshot = this.snapshot();
+    const savedAt = (persistence.now ?? (() => new Date().toISOString()))();
+    await coordinator.save({
       id: persistence.gameId,
-      savedAt: (persistence.now ?? (() => new Date().toISOString()))(),
-      state: this.snapshot(),
+      savedAt,
+      state: snapshot,
     });
   }
 
@@ -493,6 +518,7 @@ export class GameSession {
       throw new Error(`Unsupported saved game version: ${String(snapshot.version)}`);
     }
     if (snapshot.boardSize !== undefined) assertBoardSize(snapshot.boardSize);
+    assertSessionRevision(snapshot.sessionRevision);
     if (
       config.boardSize !== undefined &&
       snapshot.boardSize !== undefined &&
