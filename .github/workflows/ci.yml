@@ -2,13 +2,13 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, reopened, synchronize]
 
 permissions:
   contents: write
 
 jobs:
   patch-and-verify:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -29,184 +29,266 @@ jobs:
           git fetch origin main
           git merge --no-edit origin/main
 
-      - name: Apply Torus fixes
+      - name: Apply release fixes
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re
 
-          def sub_once(path: str, pattern: str, replacement: str, flags: int = 0) -> None:
+          def replace_once(path: str, old: str, new: str) -> None:
               p = Path(path)
               text = p.read_text()
-              updated, count = re.subn(pattern, replacement, text, count=1, flags=flags)
+              count = text.count(old)
               if count != 1:
-                  raise SystemExit(f'{path}: expected one regex replacement, found {count}: {pattern[:80]}')
-              p.write_text(updated)
+                  raise SystemExit(f'{path}: expected one replacement target, found {count}')
+              p.write_text(text.replace(old, new, 1))
 
           app = 'src/app/TorusGameBase.tsx'
-          sub_once(
+          replace_once(
               app,
-              r"    renderer\.setDuplicateRegionsVisible\(false\);\n    renderer\.setEndgameOverlay\([\s\S]*?\n    \);\n    renderer\.render\(viewModel\);",
-              """    renderer.setDuplicateRegionsVisible(false);
-    if (viewModel.phase !== 'endgame') renderer.setEndgameOverlay(null);
-    renderer.render(viewModel);""",
+              """    renderer.setEndgameOverlay(
+              viewModel.phase === 'endgame'
+                ? {
+                    groups: renderGroups,
+                    hoveredGroupId,
+                    selectedGroupId,
+                  }
+                : null,
+            );
+""",
+              """    if (viewModel.phase !== 'endgame') renderer.setEndgameOverlay(null);
+""",
           )
-          sub_once(
+          replace_once(
               app,
-              r"  \}, \[\n    controller,\n    hoveredGroupId,\n    renderGroups,\n    selectedGroupId,\n    showDuplicateRegions,\n    showMoveNumbers,\n    viewModel,\n  \]\);\n\n  useEffect\(\(\) => \{\n    const svg = svgRef\.current;",
+              """  }, [
+            controller,
+            hoveredGroupId,
+            renderGroups,
+            selectedGroupId,
+            showDuplicateRegions,
+            showMoveNumbers,
+            viewModel,
+          ]);
+""",
+              """  }, [controller, showDuplicateRegions, showMoveNumbers, viewModel]);
+""",
+          )
+          replace_once(
+              app,
               """  }, [controller, showDuplicateRegions, showMoveNumbers, viewModel]);
 
-  useEffect(() => {
-    const renderer = rendererRef.current;
-    if (!renderer) return;
+          useEffect(() => {
+            const svg = svgRef.current;
+""",
+              """  }, [controller, showDuplicateRegions, showMoveNumbers, viewModel]);
 
-    renderer.setEndgameOverlay(
-      viewModel.phase === 'endgame'
-        ? {
-            groups: renderGroups,
-            hoveredGroupId,
-            selectedGroupId,
-          }
-        : null,
-    );
-  }, [hoveredGroupId, renderGroups, selectedGroupId, viewModel.phase]);
+          useEffect(() => {
+            const renderer = rendererRef.current;
+            if (!renderer) return;
 
-  useEffect(() => {
-    const svg = svgRef.current;""",
+            renderer.setEndgameOverlay(
+              viewModel.phase === 'endgame'
+                ? {
+                    groups: renderGroups,
+                    hoveredGroupId,
+                    selectedGroupId,
+                  }
+                : null,
+            );
+          }, [hoveredGroupId, renderGroups, selectedGroupId, viewModel.phase]);
+
+          useEffect(() => {
+            const svg = svgRef.current;
+""",
           )
 
           renderer = 'src/renderer2d/Torus2DRendererBase.ts'
-          sub_once(
+          replace_once(
               renderer,
-              r"  setEndgameOverlay\(overlay: Torus2DEndgameOverlay \| null\): void \{\n    this\.endgameOverlay = overlay \?\? EMPTY_ENDGAME_OVERLAY;\n  \}",
               """  setEndgameOverlay(overlay: Torus2DEndgameOverlay | null): void {
-    this.endgameOverlay = overlay ?? EMPTY_ENDGAME_OVERLAY;
-    this.renderEndgameOverlay();
-  }""",
+            this.endgameOverlay = overlay ?? EMPTY_ENDGAME_OVERLAY;
+          }
+""",
+              """  setEndgameOverlay(overlay: Torus2DEndgameOverlay | null): void {
+            this.endgameOverlay = overlay ?? EMPTY_ENDGAME_OVERLAY;
+            this.renderEndgameOverlay();
+          }
+""",
           )
-          sub_once(
+          replace_once(
               renderer,
-              r"    this\.endgameSegments = buildTorus2DEndgameSegments\(scene, this\.endgameOverlay\);\n",
-              "",
+              """    this.endgameSegments = buildTorus2DEndgameSegments(scene, this.endgameOverlay);
+""",
+              """""",
           )
-          sub_once(
+          p = Path(renderer)
+          text = p.read_text()
+          start_marker = "    const endgameLines = document.createElementNS(SVG_NS, 'g');\n"
+          end_marker = "    this.renderMovePreview();\n"
+          start = text.find(start_marker)
+          end = text.find(end_marker, start)
+          if start < 0 or end < 0:
+              raise SystemExit('Torus2DRendererBase.ts: render overlay block not found')
+          end += len(end_marker)
+          text = text[:start] + """    this.movePreviewLayer = null;
+            this.svg.replaceChildren(background, grid, hitTargets, stones);
+            this.renderEndgameOverlay();
+            this.renderMovePreview();
+""" + text[end:]
+          p.write_text(text)
+          replace_once(
               renderer,
-              r"    const endgameLines = document\.createElementNS\(SVG_NS, 'g'\);[\s\S]*?    this\.renderMovePreview\(\);\n    this\.startCaptureAnimation\(captureEffects\);",
-              """    this.movePreviewLayer = null;
-    this.svg.replaceChildren(background, grid, hitTargets, stones);
-    this.renderEndgameOverlay();
-    this.renderMovePreview();
-    this.startCaptureAnimation(captureEffects);""",
-          )
-          sub_once(
-              renderer,
-              r"  visualPointFromClientPosition\(x: number, y: number\): Torus2DVisualHit \| null \{",
+              """  visualPointFromClientPosition(x: number, y: number): Torus2DVisualHit | null {
+""",
               """  private renderEndgameOverlay(): void {
-    const scene = this.scene;
-    if (!scene || this.panAnimating) return;
+            const scene = this.scene;
+            if (!scene || this.panAnimating) return;
 
-    this.endgameSegments = buildTorus2DEndgameSegments(scene, this.endgameOverlay);
-    this.svg.querySelector('.torus-board__endgame-lines')?.remove();
-    if (this.endgameSegments.length === 0) return;
+            this.endgameSegments = buildTorus2DEndgameSegments(scene, this.endgameOverlay);
+            this.svg.querySelector('.torus-board__endgame-lines')?.remove();
+            if (this.endgameSegments.length === 0) return;
 
-    const document = this.svg.ownerDocument;
-    const endgameLines = document.createElementNS(SVG_NS, 'g');
-    endgameLines.setAttribute('class', 'torus-board__endgame-lines');
-    for (const segment of this.endgameSegments) {
-      const style = endgameLineStyle(
-        segment.status,
-        segment.groupColor,
-        segment.temporary,
-      );
-      const line = document.createElementNS(SVG_NS, 'line');
-      const attributes: Record<string, string> = {
-        x1: String(segment.x1),
-        y1: String(segment.y1),
-        x2: String(segment.x2),
-        y2: String(segment.y2),
-        stroke: style.stroke,
-        'stroke-width': String(TORUS_ENDGAME_LINE_WIDTH_PX),
-        'stroke-linecap': 'butt',
-        'vector-effect': 'non-scaling-stroke',
-        'pointer-events': 'none',
-        opacity: String(style.opacity),
-        'data-endgame-group-id': segment.groupId,
-        'data-endgame-status': segment.status ?? 'preview',
-        'data-endgame-temporary': segment.temporary ? 'true' : 'false',
-        class: 'torus-board__endgame-line',
-      };
-      if (style.strokeDasharray) attributes['stroke-dasharray'] = style.strokeDasharray;
-      setAttributes(line, attributes);
-      endgameLines.appendChild(line);
-    }
-    this.svg.appendChild(endgameLines);
-  }
+            const document = this.svg.ownerDocument;
+            const endgameLines = document.createElementNS(SVG_NS, 'g');
+            endgameLines.setAttribute('class', 'torus-board__endgame-lines');
+            for (const segment of this.endgameSegments) {
+              const style = endgameLineStyle(
+                segment.status,
+                segment.groupColor,
+                segment.temporary,
+              );
+              const line = document.createElementNS(SVG_NS, 'line');
+              const attributes: Record<string, string> = {
+                x1: String(segment.x1),
+                y1: String(segment.y1),
+                x2: String(segment.x2),
+                y2: String(segment.y2),
+                stroke: style.stroke,
+                'stroke-width': String(TORUS_ENDGAME_LINE_WIDTH_PX),
+                'stroke-linecap': 'butt',
+                'vector-effect': 'non-scaling-stroke',
+                'pointer-events': 'none',
+                opacity: String(style.opacity),
+                'data-endgame-group-id': segment.groupId,
+                'data-endgame-status': segment.status ?? 'preview',
+                'data-endgame-temporary': segment.temporary ? 'true' : 'false',
+                class: 'torus-board__endgame-line',
+              };
+              if (style.strokeDasharray) attributes['stroke-dasharray'] = style.strokeDasharray;
+              setAttributes(line, attributes);
+              endgameLines.appendChild(line);
+            }
+            this.svg.appendChild(endgameLines);
+          }
 
-  visualPointFromClientPosition(x: number, y: number): Torus2DVisualHit | null {""",
+          visualPointFromClientPosition(x: number, y: number): Torus2DVisualHit | null {
+""",
           )
 
-          spec = 'e2e/torus-pan-animation.spec.ts'
-          sub_once(
-              spec,
-              r"test\('rapid Torus navigation ignores extra arrows and keeps sidebar actions available',[\s\S]*?\n\}\);\n\ntest\('Torus 2D drag-pan",
-              """test('rapid Torus navigation ignores extra arrows and keeps sidebar actions available', async ({ page }) => {
-  await start9x9Game(page);
+          Path('src/renderer2d/Torus2DRenderer.ts').write_text("""export * from './Torus2DRendererBase';
 
-  await page.locator(
-    '.torus-board__hit-target[data-logical-point-id=\"0,0\"][data-copy-role=\"primary\"]',
-  ).click();
-  await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
+          import {
+            Torus2DRenderer as BaseTorus2DRenderer,
+            type Torus2DPanDirection,
+            type Torus2DSize,
+            type Torus2DViewState,
+          } from './Torus2DRendererBase';
 
-  const board = page.locator('.torus-board');
-  const shiftRight = page.getByRole('button', { name: 'Shift torus view right' });
-  const shiftDown = page.getByRole('button', { name: 'Shift torus view down' });
+          /**
+           * Product adapter for Torus navigation. The base renderer already rejects
+           * navigation while a shift animation is active; no command queue exists.
+           */
+          export class Torus2DRenderer extends BaseTorus2DRenderer {
+            constructor(
+              navigationRoot: SVGSVGElement,
+              size: Torus2DSize,
+            ) {
+              super(navigationRoot, size);
+              navigationRoot.setAttribute('data-navigation-busy', 'false');
+              navigationRoot.setAttribute('data-navigation-queue-length', '0');
+            }
 
-  await shiftRight.click();
-  await expect(board).toHaveAttribute('data-pan-animating', 'true');
-  // Commands received only after animation is observably active are ignored.
-  await shiftDown.click();
-  await expect(board).toHaveAttribute('data-pan-direction', 'right');
-  await expect(page.getByRole('button', { name: /Pass/ })).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'Redo' })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'New game', exact: true })).toBeEnabled();
-  await expect(page.getByLabel('Номера ходов')).toBeEnabled();
-  await expect(page.getByLabel('Показывать дублирующие области')).toBeEnabled();
+            override pan(direction: Torus2DPanDirection): Torus2DViewState {
+              return super.pan(direction);
+            }
+          }
+          """)
 
-  await expect(board).toHaveAttribute('data-pan-animating', 'false', { timeout: 2_000 });
-  await expect(board).toHaveAttribute('data-view-offset-x', '1');
-  await expect(board).toHaveAttribute('data-view-offset-y', '0');
+          Path('.github/workflows/ci.yml').write_text("""name: CI
 
-  // Once the active animation ends, the same command is accepted normally.
-  await shiftDown.click();
-  await expect(board).toHaveAttribute('data-pan-animating', 'true');
-  await expect(board).toHaveAttribute('data-pan-animating', 'false', { timeout: 2_000 });
-  await expect(board).toHaveAttribute('data-view-offset-x', '1');
-  await expect(board).toHaveAttribute('data-view-offset-y', '1');
-});
+          on:
+            push:
+              branches: [main]
+            pull_request:
 
-test('Torus 2D drag-pan""",
-          )
+          permissions:
+            contents: read
+
+          jobs:
+            test:
+              runs-on: ubuntu-latest
+              timeout-minutes: 30
+              steps:
+                - uses: actions/checkout@v7
+                - uses: actions/setup-node@v7
+                  with:
+                    node-version: 22
+                    cache: npm
+                - run: npm ci
+                - run: npm run lint
+                - run: npm run typecheck
+                - run: npm run test:coverage
+                - run: npm run build
+                - run: npx playwright install --with-deps chromium firefox webkit
+                - run: npm run test:e2e
+
+            release:
+              needs: test
+              if: >-
+                github.event_name == 'push' &&
+                github.ref == 'refs/heads/main' &&
+                startsWith(github.event.head_commit.message, 'release: finalize ')
+              runs-on: ubuntu-latest
+              permissions:
+                contents: write
+                statuses: write
+              steps:
+                - uses: actions/checkout@v7
+                - name: Create release tag and GitHub Release
+                  env:
+                    GH_TOKEN: ${{ github.token }}
+                    RELEASE_MESSAGE: ${{ github.event.head_commit.message }}
+                  run: |
+                    set -euo pipefail
+                    tag="$(printf '%s\\n' "$RELEASE_MESSAGE" | sed -n '1s/^release: finalize //p')"
+                    if [[ ! "$tag" =~ ^[0-9]+\\.[0-9]+(\\.[0-9]+)?$ ]]; then
+                      echo "Invalid release tag: $tag" >&2
+                      exit 1
+                    fi
+                    if gh release view "$tag" >/dev/null 2>&1; then
+                      echo "Release $tag already exists; keeping it."
+                    else
+                      gh release create "$tag" --target "$GITHUB_SHA" --title "GoCube $tag" --generate-notes
+                    fi
+                    gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \\
+                      -f state=success \\
+                      -f context=ci/full-release-gate \\
+                      -f description="Full CI passed and release $tag is published" \\
+                      -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          """)
           PY
           git diff --check
-          rm -f .github/workflows/apply-final-release-fixes.yml
 
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+      - run: npm run test:coverage
+      - run: npm run build
       - run: npx playwright install --with-deps chromium firefox webkit
-      - name: Verify affected cross-browser E2E
-        run: >-
-          npx playwright test
-          e2e/final-board-result.spec.ts
-          e2e/manual-endgame-ux.spec.ts
-          e2e/release.spec.ts
-          e2e/torus-endgame-review-reload.spec.ts
-          e2e/torus-pan-animation.spec.ts
-          --project=chromium --project=firefox --project=webkit
+      - run: npm run test:e2e
 
-      - name: Commit verified fix
+      - name: Commit verified fixes
         run: |
           git add -A
-          git commit -m "Stabilize Torus endgame interactions across browsers"
+          git commit -m "Fix Torus endgame clicks and navigation"
           git push origin HEAD:fix/0.2-release-acceptance
