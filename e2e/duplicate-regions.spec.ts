@@ -103,3 +103,44 @@ test('duplicate torus regions are one-line dashed visual-only edge strips', asyn
   await expect(page.locator('.torus-board__hit-target[data-copy-role="duplicate"]')).toHaveCount(0);
   await expect(page.locator('.torus-board__grid line')).toHaveCount(18);
 });
+
+test('Show duplicate regions is remembered between Torus games and reloads', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start game' }).click();
+
+  let toggle = page.getByLabel('Показывать дублирующие области');
+  await expect(toggle).not.toBeChecked();
+  await toggle.check();
+  await expect(toggle).toBeChecked();
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const raw = localStorage.getItem('gocube:preferences');
+        return raw ? JSON.parse(raw).showTorusDuplicateRegions : null;
+      }),
+    )
+    .toBe(true);
+
+  await page.getByRole('button', { name: 'New game', exact: true }).click();
+  await page.getByRole('button', { name: 'New Game', exact: true }).click();
+  await page.getByRole('button', { name: 'Start game' }).click();
+
+  toggle = page.getByLabel('Показывать дублирующие области');
+  await expect(toggle).toBeChecked();
+  await expect(page.locator('.torus-board')).toHaveAttribute(
+    'data-duplicate-regions-visible',
+    'true',
+  );
+
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Continue saved game?' })).toBeVisible();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+
+  toggle = page.getByLabel('Показывать дублирующие области');
+  await expect(toggle).toBeChecked();
+  await expect(page.locator('.torus-board')).toHaveAttribute(
+    'data-duplicate-regions-visible',
+    'true',
+  );
+});

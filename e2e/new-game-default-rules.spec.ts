@@ -127,3 +127,33 @@ test('Cube 2D adds 6×6 and 7×7 beside 5×5 in the second size row', async ({ p
   await expect(size7).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByLabel('Board size')).toHaveValue('7');
 });
+
+test('remembers the last started board size separately for Torus and Cube', async ({ page }) => {
+  await page.goto('/');
+
+  await page.getByRole('button', { name: '13×13', exact: true }).click();
+  await page.getByRole('button', { name: 'Start game' }).click();
+
+  await page.getByRole('button', { name: 'New game', exact: true }).click();
+  await page.getByRole('button', { name: 'New Game', exact: true }).click();
+  await expect(page.getByLabel('Board size')).toHaveValue('13');
+
+  await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
+  await expect(page.getByLabel('Board size')).toHaveValue('4');
+  await page.getByRole('button', { name: '6×6', exact: true }).click();
+  await page.getByRole('button', { name: 'Start game' }).click();
+
+  await page.getByRole('button', { name: 'New game', exact: true }).click();
+  await page.getByRole('button', { name: 'New Game', exact: true }).click();
+  await expect(page.getByLabel('Board size')).toHaveValue('13');
+
+  await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
+  await expect(page.getByLabel('Board size')).toHaveValue('6');
+  await page.getByRole('button', { name: 'Torus 2D', exact: true }).click();
+  await expect(page.getByLabel('Board size')).toHaveValue('13');
+
+  await page.reload();
+  await expect(page.getByLabel('Board size')).toHaveValue('13');
+  await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
+  await expect(page.getByLabel('Board size')).toHaveValue('6');
+});
