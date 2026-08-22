@@ -17,6 +17,7 @@ interface DragPanSession {
   readonly startX: number;
   readonly startY: number;
   readonly origin: DragPanOffset;
+  readonly ignored: boolean;
   dragging: boolean;
 }
 
@@ -39,17 +40,46 @@ export function useDragPan(options: DragPanOptions = {}) {
   const [offset, setOffsetState] = useState<DragPanOffset>(() => frozenOffset(0, 0));
   const [dragging, setDragging] = useState(false);
   const sessionRef = useRef<DragPanSession | null>(null);
+  const captureElementRef = useRef<HTMLDivElement | null>(null);
   const suppressClickRef = useRef(false);
   const suppressResetTimerRef = useRef<number | null>(null);
 
-  useEffect(
-    () => () => {
+  const finishPointer = useCallback((pointerId: number): void => {
+    const session = sessionRef.current;
+    if (!session || session.pointerId !== pointerId) return;
+
+    const captureElement = captureElementRef.current;
+    if (captureElement?.hasPointerCapture(pointerId)) {
+      captureElement.releasePointerCapture(pointerId);
+    }
+    captureElementRef.current = null;
+    sessionRef.current = null;
+    setDragging(false);
+
+    if (session.dragging) {
+      suppressResetTimerRef.current = window.setTimeout(() => {
+        suppressClickRef.current = false;
+        suppressResetTimerRef.current = null;
+      }, 0);
+    } else {
+      suppressClickRef.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    const handlePointerUp = (event: PointerEvent): void => finishPointer(event.pointerId);
+    const handlePointerCancel = (event: PointerEvent): void => finishPointer(event.pointerId);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerCancel);
+
+    return () => {
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerCancel);
       if (suppressResetTimerRef.current !== null) {
         window.clearTimeout(suppressResetTimerRef.current);
       }
-    },
-    [],
-  );
+    };
+  }, [finishPointer]);
 
   const constrainOffset = useCallback(
     (candidate: DragPanOffset): DragPanOffset => constrain?.(candidate) ?? candidate,
@@ -67,6 +97,12 @@ export function useDragPan(options: DragPanOptions = {}) {
   );
 
   const reset = useCallback((): void => {
+    const session = sessionRef.current;
+    const captureElement = captureElementRef.current;
+    if (session && captureElement?.hasPointerCapture(session.pointerId)) {
+      captureElement.releasePointerCapture(session.pointerId);
+    }
+    captureElementRef.current = null;
     sessionRef.current = null;
     suppressClickRef.current = false;
     setDragging(false);
@@ -80,33 +116,27 @@ export function useDragPan(options: DragPanOptions = {}) {
     });
   }, [constrainOffset]);
 
-  const handlePointerDown = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>): void => {
-      if (event.button !== 0) return;
-
-      const target = event.target as Element | null;
-      if (target?.closest(DRAG_PAN_INTERACTIVE_SELECTOR)) return;
-
-      if (suppressResetTimerRef.current !== null) {
-        window.clearTimeout(suppressResetTimerRef.current);
-        suppressResetTimerRef.current = null;
-      }
-      suppressClickRef.current = false;
-      sessionRef.current = {
-        pointerId: event.pointerId,
-        startX: event.clientX,
-        startY: event.clientY,
-        origin: offset,
-        dragging: false,
-      };
-    },
-    [offset],
-  );
-
   const handlePointerMove = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>): void => {
-      const session = sessionRef.current;
-      if (!session || session.pointerId !== event.pointerId) return;
+      if ((event.buttons & 1) !== 1) return;
+
+      let session = sessionRef.current;
+      if (!session) {
+        const target = event.target as Element | null;
+        const movementX = Number.isFinite(event.movementX) ? event.movementX : 0;
+        const movementY = Number.isFinite(event.movementY) ? event.movementY : 0;
+        session = {
+          pointerId: event.pointerId,
+          startX: event.clientX - movementX,
+          startY: event.clientY - movementY,
+          origin: offset,
+          ignored: Boolean(target?.closest(DRAG_PAN_INTERACTIVE_SELECTOR)),
+          dragging: false,
+        };
+        sessionRef.current = session;
+      }
+
+      if (session.pointerId !== event.pointerId || session.ignored) return;
 
       const deltaX = event.clientX - session.startX;
       const deltaY = event.clientY - session.startY;
@@ -115,6 +145,7 @@ export function useDragPan(options: DragPanOptions = {}) {
         if (Math.hypot(deltaX, deltaY) < DRAG_PAN_THRESHOLD_PX) return;
         session.dragging = true;
         suppressClickRef.current = true;
+        captureElementRef.current = event.currentTarget;
         event.currentTarget.setPointerCapture(event.pointerId);
         setDragging(true);
         onDragStart?.();
@@ -123,40 +154,12 @@ export function useDragPan(options: DragPanOptions = {}) {
       event.preventDefault();
       applyOffset(frozenOffset(session.origin.x + deltaX, session.origin.y + deltaY));
     },
-    [applyOffset, onDragStart],
+    [applyOffset, offset, onDragStart],
   );
 
-  const finishPointer = useCallback((event: ReactPointerEvent<HTMLDivElement>): void => {
-    const session = sessionRef.current;
-    if (!session || session.pointerId !== event.pointerId) return;
-
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    sessionRef.current = null;
-    setDragging(false);
-
-    if (session.dragging) {
-      suppressResetTimerRef.current = window.setTimeout(() => {
-        suppressClickRef.current = false;
-        suppressResetTimerRef.current = null;
-      }, 0);
-    }
-  }, []);
-
-  const handlePointerLeave = useCallback((event: ReactPointerEvent<HTMLDivElement>): void => {
-    const session = sessionRef.current;
-    if (!session || session.pointerId !== event.pointerId || session.dragging) return;
-    sessionRef.current = null;
-  }, []);
-
   const handleClickCapture = useCallback((event: ReactMouseEvent<HTMLDivElement>): void => {
-    if (!suppressClickRef.current) {
-      sessionRef.current = null;
-      return;
-    }
+    if (!suppressClickRef.current) return;
 
-    sessionRef.current = null;
     suppressClickRef.current = false;
     if (suppressResetTimerRef.current !== null) {
       window.clearTimeout(suppressResetTimerRef.current);
@@ -171,11 +174,16 @@ export function useDragPan(options: DragPanOptions = {}) {
     dragging,
     reset,
     reconstrain,
-    onPointerDown: handlePointerDown,
+    // Deliberately do not register React pointerdown/up handlers. Torus endgame
+    // hover updates replace SVG children; React discrete pointer events can flush
+    // that replacement between native down/up and retarget an otherwise valid
+    // click. Dragging starts from pointermove while button 1 is held, and native
+    // window pointerup/cancel listeners finish the gesture without disturbing click.
+    onPointerDown: undefined,
     onPointerMove: handlePointerMove,
-    onPointerUp: finishPointer,
-    onPointerCancel: finishPointer,
-    onPointerLeave: handlePointerLeave,
+    onPointerUp: undefined,
+    onPointerCancel: undefined,
+    onPointerLeave: undefined,
     onClickCapture: handleClickCapture,
   } as const;
 }
