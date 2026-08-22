@@ -30,6 +30,51 @@ const expectNoDocumentScrollbars = async (page: Page) => {
   expect(metrics.scrollHeight).toBeLessThanOrEqual(metrics.innerHeight);
 };
 
+const dragBy = async (page: Page, locator: Locator, dx: number, dy: number) => {
+  const box = await requiredBox(locator);
+  const startX = box.x + box.width / 2;
+  const startY = box.y + box.height / 2;
+  const inset = 24;
+  const endX = Math.max(box.x + inset, Math.min(box.x + box.width - inset, startX + dx));
+  const endY = Math.max(box.y + inset, Math.min(box.y + box.height - inset, startY + dy));
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(endX, endY, { steps: 8 });
+  await page.mouse.up();
+};
+
+const visibleCubeHitNearestViewportCenter = async (page: Page): Promise<Locator> => {
+  const pointId = await page.locator('.cube-2d-hit-area').evaluateAll((elements) => {
+    const viewport = document.querySelector<HTMLElement>('.cube-2d-game__viewport')!.getBoundingClientRect();
+    const centerX = viewport.left + viewport.width / 2;
+    const centerY = viewport.top + viewport.height / 2;
+    const candidates = elements
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        return {
+          pointId: element.getAttribute('data-point-id'),
+          x,
+          y,
+          distance: Math.hypot(x - centerX, y - centerY),
+        };
+      })
+      .filter(
+        (candidate) =>
+          candidate.pointId &&
+          candidate.x >= viewport.left &&
+          candidate.x <= viewport.right &&
+          candidate.y >= viewport.top &&
+          candidate.y <= viewport.bottom,
+      )
+      .sort((a, b) => a.distance - b.distance);
+    return candidates[0]?.pointId ?? null;
+  });
+  if (!pointId) throw new Error('Expected a visible Cube hit target');
+  return page.locator(`.cube-2d-hit-area[data-point-id="${pointId}"]`);
+};
+
 const expectCubeNavigationAnchored = async (page: Page) => {
   const leftBoard = await requiredBox(
     page.locator('.cube-2d-board[data-layout-row="1"][data-layout-column="0"]'),
@@ -134,7 +179,7 @@ test('Cube arrows keep full brightness and exact 30px anchoring while the fixed 
   await expectNoDocumentScrollbars(page);
 });
 
-test('Cube strong zoom reaches 4.05x and lets boards and arrows extend beyond the real viewport', async ({ page }) => {
+test('Cube strong zoom reaches 4.05x and lets boards and arrows extend beyond the real viewport through pan', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
   await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
@@ -146,7 +191,7 @@ test('Cube strong zoom reaches 4.05x and lets boards and arrows extend beyond th
   await page.mouse.wheel(0, -5000);
   await expect(viewport).toHaveAttribute('data-view-zoom', '4.050');
 
-  const geometry = await page.evaluate(() => {
+  const initialGeometry = await page.evaluate(() => {
     const rect = (selector: string) => {
       const bounds = document.querySelector(selector)!.getBoundingClientRect();
       return {
@@ -164,22 +209,48 @@ test('Cube strong zoom reaches 4.05x and lets boards and arrows extend beyond th
       viewportHeight: window.innerHeight,
       centralBoard: rect('.cube-2d-board[data-central="true"]'),
       navigationLayer: rect('.cube-2d-game__navigation-layer'),
-      leftArrow: rect('button[aria-label="Move cube left"]'),
-      rightArrow: rect('button[aria-label="Move cube right"]'),
-      upArrow: rect('button[aria-label="Move cube up"]'),
-      downArrow: rect('button[aria-label="Move cube down"]'),
     };
   });
 
-  expect(geometry.centralBoard.width).toBeGreaterThan(geometry.viewportWidth * 0.6);
-  expect(geometry.navigationLayer.left).toBeLessThan(0);
-  expect(geometry.navigationLayer.right).toBeGreaterThan(geometry.viewportWidth);
-  expect(geometry.navigationLayer.top).toBeLessThan(0);
-  expect(geometry.navigationLayer.bottom).toBeGreaterThan(geometry.viewportHeight);
-  expect(geometry.leftArrow.right).toBeLessThan(0);
-  expect(geometry.rightArrow.left).toBeGreaterThan(geometry.viewportWidth);
-  expect(geometry.upArrow.bottom).toBeLessThan(0);
-  expect(geometry.downArrow.top).toBeGreaterThan(geometry.viewportHeight);
+  expect(initialGeometry.centralBoard.width).toBeGreaterThan(initialGeometry.viewportWidth * 0.6);
+  expect(initialGeometry.navigationLayer.width).toBeGreaterThan(initialGeometry.viewportWidth);
+  expect(initialGeometry.navigationLayer.height).toBeGreaterThan(initialGeometry.viewportHeight);
+
+  for (let index = 0; index < 8; index += 1) await dragBy(page, viewport, -320, -220);
+  const negativePanGeometry = await page.evaluate(() => {
+    const rect = (selector: string) => {
+      const bounds = document.querySelector(selector)!.getBoundingClientRect();
+      return { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom };
+    };
+    return {
+      navigationLayer: rect('.cube-2d-game__navigation-layer'),
+      leftArrow: rect('button[aria-label="Move cube left"]'),
+      upArrow: rect('button[aria-label="Move cube up"]'),
+    };
+  });
+  expect(negativePanGeometry.navigationLayer.left).toBeLessThan(0);
+  expect(negativePanGeometry.navigationLayer.top).toBeLessThan(0);
+  expect(negativePanGeometry.leftArrow.right).toBeLessThan(0);
+  expect(negativePanGeometry.upArrow.bottom).toBeLessThan(0);
+
+  for (let index = 0; index < 16; index += 1) await dragBy(page, viewport, 320, 220);
+  const positivePanGeometry = await page.evaluate(() => {
+    const rect = (selector: string) => {
+      const bounds = document.querySelector(selector)!.getBoundingClientRect();
+      return { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom };
+    };
+    return {
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      navigationLayer: rect('.cube-2d-game__navigation-layer'),
+      rightArrow: rect('button[aria-label="Move cube right"]'),
+      downArrow: rect('button[aria-label="Move cube down"]'),
+    };
+  });
+  expect(positivePanGeometry.navigationLayer.right).toBeGreaterThan(positivePanGeometry.viewportWidth);
+  expect(positivePanGeometry.navigationLayer.bottom).toBeGreaterThan(positivePanGeometry.viewportHeight);
+  expect(positivePanGeometry.rightArrow.left).toBeGreaterThan(positivePanGeometry.viewportWidth);
+  expect(positivePanGeometry.downArrow.top).toBeGreaterThan(positivePanGeometry.viewportHeight);
   await expectNoDocumentScrollbars(page);
 });
 
@@ -220,7 +291,7 @@ test('Torus drag-pan moves the zoomed visual shell without placing a stone and k
   await expectNoDocumentScrollbars(page);
 });
 
-test('Cube drag-pan moves the complete cross with its arrows, suppresses the drag click, and preserves later gameplay clicks', async ({ page }) => {
+test('Cube drag-pan at 4.05x moves the complete cross with its arrows, suppresses the drag click, and preserves later gameplay clicks', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
   await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
@@ -229,13 +300,13 @@ test('Cube drag-pan moves the complete cross with its arrows, suppresses the dra
 
   const viewport = page.locator('.cube-2d-game__viewport');
   const navigationLayer = page.locator('.cube-2d-game__navigation-layer');
-  const target = page.locator('.cube-2d-board[data-central="true"] .cube-2d-hit-area').first();
   const turn = page.locator('.turn-indicator strong');
 
   await viewport.hover();
-  await page.mouse.wheel(0, -1000);
-  await expect(viewport).toHaveAttribute('data-view-zoom', '1.800');
+  await page.mouse.wheel(0, -5000);
+  await expect(viewport).toHaveAttribute('data-view-zoom', '4.050');
 
+  const target = await visibleCubeHitNearestViewportCenter(page);
   const targetBefore = await requiredBox(target);
   const layerBefore = await requiredBox(navigationLayer);
   const startX = targetBefore.x + targetBefore.width / 2;
