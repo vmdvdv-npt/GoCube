@@ -3,6 +3,7 @@
   --cube-board-texture: url('/assets/board/cube.jpg');
   --go-board-grid: #201e1c;
   --go-board-surface: #d8ad68;
+  --go-board-underlay: #04090f;
 }
 
 .torus-board {
@@ -21,9 +22,8 @@
 }
 
 .cube-2d-game .cube-2d-board {
-  background-color: var(--go-board-surface);
-  /* Mask subpixel edge bleed from the bright fallback surface without affecting layout. */
-  box-shadow: 0 0 0 4px #000;
+  /* Keep the fallback under the JPEG dark so subpixel texture edges cannot reveal a bright seam. */
+  background-color: var(--go-board-underlay);
 }
 
 .cube-2d-game .cube-2d-board__surface {
