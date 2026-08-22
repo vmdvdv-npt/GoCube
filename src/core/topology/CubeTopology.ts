@@ -65,21 +65,6 @@ const EDGE_TRANSITIONS: Readonly<Record<CubeFace, Readonly<Record<CubeEdge, Edge
 export const cubePointId = (face: CubeFace, row: number, column: number): PointId =>
   `${face}:${row}:${column}`;
 
-interface CubePoint {
-  readonly face: CubeFace;
-  readonly row: number;
-  readonly column: number;
-}
-
-const parsePoint = (point: PointId): CubePoint => {
-  const [face, rowText, columnText] = point.split(':');
-  return {
-    face: face as CubeFace,
-    row: Number(rowText),
-    column: Number(columnText),
-  };
-};
-
 const pointOnEdge = (
   face: CubeFace,
   edge: CubeEdge,
