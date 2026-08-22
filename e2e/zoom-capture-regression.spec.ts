@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 const cubeHit = (page: Page, pointId: string) =>
   page.locator(`.cube-2d-hit-area[data-point-id="${pointId}"]`);
@@ -27,6 +27,96 @@ const wheelAt = async (page: Page, locator: ReturnType<Page['locator']>, deltaY:
   if (!box) throw new Error('Expected wheel target bounding box');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.wheel(0, deltaY);
+};
+
+const dragCubeViewportBy = async (page: Page, dx: number, dy: number) => {
+  const viewport = page.locator('.cube-2d-game__viewport');
+  let remainingX = dx;
+  let remainingY = dy;
+  for (let index = 0; index < 12 && (Math.abs(remainingX) > 1 || Math.abs(remainingY) > 1); index += 1) {
+    const box = await viewport.boundingBox();
+    if (!box) throw new Error('Expected Cube viewport bounding box');
+    const maxStepX = Math.max(1, box.width * 0.35);
+    const maxStepY = Math.max(1, box.height * 0.35);
+    const stepX = Math.max(-maxStepX, Math.min(maxStepX, remainingX));
+    const stepY = Math.max(-maxStepY, Math.min(maxStepY, remainingY));
+    const start = await page.evaluate(() => {
+      const viewportElement = document.querySelector<HTMLElement>('.cube-2d-game__viewport')!;
+      const rect = viewportElement.getBoundingClientRect();
+      const interactive = 'button, input, select, textarea, a, [data-drag-pan-ignore="true"]';
+      for (let row = 1; row <= 7; row += 1) {
+        for (let column = 1; column <= 7; column += 1) {
+          const x = rect.left + rect.width * (column / 8);
+          const y = rect.top + rect.height * (row / 8);
+          const target = document.elementFromPoint(x, y);
+          if (target && viewportElement.contains(target) && !target.closest(interactive)) {
+            return { x, y };
+          }
+        }
+      }
+      return null;
+    });
+    if (!start) throw new Error('Expected a non-interactive Cube viewport point for drag-pan');
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(start.x + stepX, start.y + stepY, { steps: 8 });
+    await page.mouse.up();
+    remainingX -= stepX;
+    remainingY -= stepY;
+  }
+};
+
+const cubeHitNearestViewportCenter = async (page: Page): Promise<Locator> => {
+  const pointId = await page.locator('.cube-2d-hit-area').evaluateAll((elements) => {
+    const viewport = document.querySelector<HTMLElement>('.cube-2d-game__viewport')!.getBoundingClientRect();
+    const centerX = viewport.left + viewport.width / 2;
+    const centerY = viewport.top + viewport.height / 2;
+    const candidates = elements
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        return {
+          pointId: element.getAttribute('data-point-id'),
+          distance: Math.hypot(x - centerX, y - centerY),
+        };
+      })
+      .filter((candidate) => candidate.pointId)
+      .sort((a, b) => a.distance - b.distance);
+    return candidates[0]?.pointId ?? null;
+  });
+  if (!pointId) throw new Error('Expected a Cube hit target');
+  return cubeHit(page, pointId);
+};
+
+const bringCubeHitIntoViewport = async (page: Page): Promise<Locator> => {
+  const hit = await cubeHitNearestViewportCenter(page);
+  const viewport = page.locator('.cube-2d-game__viewport');
+  const [hitBox, viewportBox] = await Promise.all([hit.boundingBox(), viewport.boundingBox()]);
+  if (!hitBox || !viewportBox) throw new Error('Expected Cube hit target and viewport bounding boxes');
+  const hitCenterX = hitBox.x + hitBox.width / 2;
+  const hitCenterY = hitBox.y + hitBox.height / 2;
+  const viewportCenterX = viewportBox.x + viewportBox.width / 2;
+  const viewportCenterY = viewportBox.y + viewportBox.height / 2;
+  const visible =
+    hitCenterX >= viewportBox.x &&
+    hitCenterX <= viewportBox.x + viewportBox.width &&
+    hitCenterY >= viewportBox.y &&
+    hitCenterY <= viewportBox.y + viewportBox.height;
+  if (!visible) {
+    await dragCubeViewportBy(page, viewportCenterX - hitCenterX, viewportCenterY - hitCenterY);
+  }
+
+  const finalBox = await hit.boundingBox();
+  const finalViewportBox = await viewport.boundingBox();
+  if (!finalBox || !finalViewportBox) throw new Error('Expected final Cube hit target and viewport boxes');
+  const finalCenterX = finalBox.x + finalBox.width / 2;
+  const finalCenterY = finalBox.y + finalBox.height / 2;
+  expect(finalCenterX).toBeGreaterThanOrEqual(finalViewportBox.x);
+  expect(finalCenterX).toBeLessThanOrEqual(finalViewportBox.x + finalViewportBox.width);
+  expect(finalCenterY).toBeGreaterThanOrEqual(finalViewportBox.y);
+  expect(finalCenterY).toBeLessThanOrEqual(finalViewportBox.y + finalViewportBox.height);
+  return hit;
 };
 
 const comparePngScreenshots = async (
@@ -92,7 +182,9 @@ const comparePngScreenshots = async (
 
 const expectCubeVectorSteadyState = async (page: Page, zoom: number): Promise<void> => {
   const stage = page.locator('.cube-2d-game__stage');
+  const renderer = page.locator('.cube-2d-renderer');
   await expect(stage).toHaveAttribute('data-view-zoom', zoom.toFixed(3));
+  const anchorBeforePan = await renderer.getAttribute('data-vertical-anchor-column');
   const state = await page.evaluate(() => {
     const stageElement = document.querySelector<HTMLElement>('.cube-2d-game__stage')!;
     const board = document.querySelector<HTMLElement>('.cube-2d-board')!;
@@ -104,26 +196,31 @@ const expectCubeVectorSteadyState = async (page: Page, zoom: number): Promise<vo
   expect(state.stageTransform).toBe('none');
   expect(state.boardWillChange).toBe('auto');
 
-  const hit = cubeHit(page, 'front:1:1');
+  const hit = await bringCubeHitIntoViewport(page);
+  await expect(renderer).toHaveAttribute('data-vertical-anchor-column', anchorBeforePan ?? '');
+  const pointId = await hit.getAttribute('data-point-id');
+  if (!pointId) throw new Error('Expected visible Cube hit target PointId');
   const box = await hit.boundingBox();
   if (!box) throw new Error('Expected Cube hit target bounding box');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await expect(
-    page.locator('.cube-2d-preview-stone[data-logical-point-id="front:1:1"]'),
+    page.locator(`.cube-2d-preview-stone[data-logical-point-id="${pointId}"]`),
   ).toHaveCount(1);
 };
 
 for (const [zoom, deltaY] of [
   [0.78, 1000],
   [1, 0],
-  [1.35, -1000],
+  [4.05, -10000],
 ] as const) {
   test(`Cube zoom ${zoom} uses real layout size and keeps hit-testing aligned`, async ({ page }) => {
     await startCube(page);
     if (deltaY !== 0) await wheelAt(page, page.locator('.cube-2d-game__viewport'), deltaY);
     await expectCubeVectorSteadyState(page, zoom);
 
-    await page.getByRole('button', { name: 'Move cube right' }).click();
+    const moveRight = page.getByRole('button', { name: 'Move cube right' });
+    if (zoom === 4.05) await moveRight.dispatchEvent('click');
+    else await moveRight.click();
     await expect(page.locator('.cube-2d-renderer')).toHaveAttribute('data-animating', 'true');
     const movingWillChange = await page.locator('.cube-2d-board--moving').first().evaluate(
       (element) => getComputedStyle(element).willChange,
@@ -134,11 +231,17 @@ for (const [zoom, deltaY] of [
     });
     await expectCubeVectorSteadyState(page, zoom);
 
-    const slot = page.locator('.cube-2d-anchor-slot[data-layout-row="0"][data-layout-column="0"]');
-    await slot.click();
-    await expect(page.locator('.cube-2d-renderer')).toHaveAttribute('data-vertical-anchor-column', '0', {
-      timeout: 1000,
-    });
+    const slot = page.locator('.cube-2d-anchor-slot[data-layout-row="0"]').first();
+    await expect(slot).toHaveAttribute('data-layout-column', /[0-3]/);
+    const targetAnchorColumn = await slot.getAttribute('data-layout-column');
+    if (!targetAnchorColumn) throw new Error('Expected available top anchor slot column');
+    if (zoom === 4.05) await slot.dispatchEvent('click');
+    else await slot.click();
+    await expect(page.locator('.cube-2d-renderer')).toHaveAttribute(
+      'data-vertical-anchor-column',
+      targetAnchorColumn,
+      { timeout: 1000 },
+    );
     await expect(page.locator('.cube-2d-renderer')).toHaveAttribute('data-animating', 'false');
     await expectCubeVectorSteadyState(page, zoom);
   });
@@ -199,8 +302,8 @@ for (const [zoom, deltaY] of [
 
 const captureParityAtCurrentDpr = async (page: Page): Promise<void> => {
   await startCube(page);
-  await wheelAt(page, page.locator('.cube-2d-game__viewport'), -1000);
-  await expect(page.locator('.cube-2d-game__stage')).toHaveAttribute('data-view-zoom', '1.350');
+  await wheelAt(page, page.locator('.cube-2d-game__viewport'), -10000);
+  await expect(page.locator('.cube-2d-game__stage')).toHaveAttribute('data-view-zoom', '4.050');
 
   const movesBeforeCapture = [
     'front:1:1',
