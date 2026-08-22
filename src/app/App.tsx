@@ -252,17 +252,12 @@ export function App() {
 
       {screen === 'settings' ? (
         <form className="startup-card new-game-form" onSubmit={(event) => void startNewGame(event)}>
-          <div>
-            <h2>New game</h2>
-            <p>Choose the surface, board size, scoring rules, and komi.</p>
-          </div>
-
           <div className="new-game-settings-grid" data-testid="new-game-settings-grid">
             <fieldset
               className="board-size-fieldset surface-fieldset new-game-settings-column new-game-settings-column--shape"
               data-testid="new-game-shape-column"
+              aria-label="Board Shape"
             >
-              <legend>Board Shape</legend>
               <div className="topology-preview" data-testid="topology-preview">
                 {topologyPreviewTransition ? (
                   <>
@@ -295,6 +290,7 @@ export function App() {
                   />
                 )}
               </div>
+              <span className="new-game-control-label">Board Shape</span>
               <div className="board-size-options surface-options">
                 {(['cube-2d', 'torus-2d'] as const).map((mode) => (
                   <button
