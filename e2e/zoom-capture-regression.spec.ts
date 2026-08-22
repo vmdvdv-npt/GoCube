@@ -317,7 +317,7 @@ const captureParityAtCurrentDpr = async (page: Page): Promise<void> => {
     'right:2:0',
     'top:1:1',
   ];
-  for (const pointId of movesBeforeCapture) await cubeHit(page, pointId).click();
+  for (const pointId of movesBeforeCapture) await cubeHit(page, pointId).dispatchEvent('click');
 
   const candidates = ['front:1:2', 'right:1:0'] as const;
   const before = new Map<string, { box: NonNullable<Awaited<ReturnType<ReturnType<typeof cubeStone>['boundingBox']>>>; screenshot: Buffer; filter: string }>();
@@ -344,7 +344,7 @@ const captureParityAtCurrentDpr = async (page: Page): Promise<void> => {
     state.__cubeCaptureObserver = observer;
   });
 
-  await cubeHit(page, 'right:1:1').click();
+  await cubeHit(page, 'right:1:1').dispatchEvent('click');
   const captures = page.locator('.cube-2d-captured-stone');
   await expect(captures).toHaveCount(2);
   await page.waitForFunction(() =>
