@@ -8,13 +8,22 @@ import {
   createCube2DVisualEffectsModel,
   type CapturedStoneEffect,
 } from '../presentation/cube/Cube2DVisualEffectsModel';
-import { CUBE_2D_SVG_SIZE, createCube2DRenderModel } from '../renderer2d/Cube2DRenderer';
+import {
+  CUBE_2D_BASE_CELL_SIZE,
+  CUBE_2D_STAGE_HEIGHT,
+  CUBE_2D_STAGE_WIDTH,
+  CUBE_2D_SVG_SIZE,
+  createCube2DRenderModel,
+  cube2DContentScale,
+} from '../renderer2d/Cube2DRenderer';
+import { StoneArtworkDefs, stoneArtworkFill } from '../renderer2d/StoneArtwork';
 
 export const CUBE_2D_CAPTURE_STAGGER_MS = 150;
 export const CUBE_2D_CAPTURE_FLIGHT_MS = 520;
 
 interface Cube2DVisualEffectsProps {
   readonly layout: Cube2DLayout;
+  readonly layoutCellSize?: number;
   readonly finalScore: FinalScore | null;
   readonly finalClassification?: EndgameClassification | null;
   readonly endgameGroups?: readonly EndgameGroupPresentation[];
@@ -24,8 +33,8 @@ interface Cube2DVisualEffectsProps {
   readonly capturedStones?: readonly CapturedStoneEffect[];
 }
 
-type CaptureStyle = CSSProperties & {
-  '--capture-delay'?: string;
+type EffectsStyle = CSSProperties & {
+  '--cube-2d-cell-size'?: string;
 };
 
 const pointMap = <T extends { readonly pointId: PointId }>(points: readonly T[]) =>
@@ -33,6 +42,7 @@ const pointMap = <T extends { readonly pointId: PointId }>(points: readonly T[])
 
 export function Cube2DVisualEffects({
   layout,
+  layoutCellSize = CUBE_2D_BASE_CELL_SIZE,
   finalScore,
   finalClassification = null,
   endgameGroups = [],
@@ -53,14 +63,22 @@ export function Cube2DVisualEffects({
   });
   const size = renderModel.size;
   const step = CUBE_2D_SVG_SIZE / size;
-  const stoneRadius = step * 0.39;
+  const contentScale = cube2DContentScale(size);
+  const stoneRadius = step * 0.39 * contentScale;
   const annotationRadius = stoneRadius * 1.12;
+  const effectsStyle: EffectsStyle = { '--cube-2d-cell-size': `${layoutCellSize}px` };
+  const captureArtworkPrefix = 'cube-2d-capture-artwork';
 
   return (
-    <div className="cube-2d-effects" aria-hidden="true" data-capture-count={capturedStones.length}>
+    <div
+      className="cube-2d-effects"
+      style={effectsStyle}
+      aria-hidden="true"
+      data-capture-count={capturedStones.length}
+      data-layout-cell-size={layoutCellSize.toFixed(3)}
+    >
       {renderModel.boards.map((board) => {
         const pointsById = pointMap(board.points);
-        const boardCaptures = capturedStones.filter((effect) => pointsById.has(effect.pointId));
         return (
           <svg
             key={board.face}
@@ -92,6 +110,8 @@ export function Cube2DVisualEffects({
               {board.points.map((point) => {
                 const status = effects.pointStatuses.get(point.pointId);
                 if (!status) return null;
+                const displayX = CUBE_2D_SVG_SIZE / 2 + (point.x - CUBE_2D_SVG_SIZE / 2) * contentScale;
+                const displayY = CUBE_2D_SVG_SIZE / 2 + (point.y - CUBE_2D_SVG_SIZE / 2) * contentScale;
                 const classes = [
                   'cube-2d-group-annotation',
                   status.groupStatus ? `cube-2d-group-annotation--${status.groupStatus}` : '',
@@ -103,16 +123,16 @@ export function Cube2DVisualEffects({
                     {status.groupStatus === 'dead' ? (
                       <circle
                         className="cube-2d-dead-stone-mask"
-                        cx={point.x}
-                        cy={point.y}
+                        cx={displayX}
+                        cy={displayY}
                         r={stoneRadius * 1.02}
                       />
                     ) : null}
                     {status.groupStatus === 'seki' || status.selected || status.hovered ? (
                       <circle
                         className={classes}
-                        cx={point.x}
-                        cy={point.y}
+                        cx={displayX}
+                        cy={displayY}
                         r={annotationRadius}
                       />
                     ) : null}
@@ -120,30 +140,74 @@ export function Cube2DVisualEffects({
                 );
               })}
             </g>
-
-            <g className="cube-2d-effects__captures">
-              {boardCaptures.map((effect) => {
-                const point = pointsById.get(effect.pointId)!;
-                const style: CaptureStyle = {
-                  '--capture-delay': `${effect.order * CUBE_2D_CAPTURE_STAGGER_MS}ms`,
-                };
-                return (
-                  <circle
-                    key={effect.id}
-                    className={`cube-2d-captured-stone cube-2d-captured-stone--${effect.color}`}
-                    cx={point.x}
-                    cy={point.y}
-                    r={stoneRadius}
-                    style={style}
-                    data-logical-point-id={effect.pointId}
-                    data-captured-color={effect.color}
-                  />
-                );
-              })}
-            </g>
           </svg>
         );
       })}
+
+      {effects.capturedStones.length > 0 ? (
+        <svg
+          className="cube-2d-effects__capture-stage"
+          viewBox={`0 0 ${CUBE_2D_STAGE_WIDTH} ${CUBE_2D_STAGE_HEIGHT}`}
+          preserveAspectRatio="none"
+          data-capture-coordinate-space="stage-4x3"
+        >
+          <StoneArtworkDefs idPrefix={captureArtworkPrefix} />
+          <g className="cube-2d-effects__captures">
+            {effects.capturedStones.map((effect) => {
+              const delayMs = effect.order * CUBE_2D_CAPTURE_STAGGER_MS;
+              const dx = effect.targetStageX - effect.stageX;
+              const dy = effect.targetStageY - effect.stageY;
+              return (
+                <circle
+                  key={effect.id}
+                  className={`cube-2d-captured-stone cube-2d-captured-stone--${effect.color}`}
+                  cx={effect.stageX}
+                  cy={effect.stageY}
+                  r={effect.radius}
+                  fill={stoneArtworkFill(captureArtworkPrefix, effect.color)}
+                  stroke="none"
+                  data-stone-artwork="custom-svg"
+                  data-logical-point-id={effect.pointId}
+                  data-captured-color={effect.color}
+                  data-capture-direction={effect.color === 'white' ? 'left' : 'right'}
+                  data-capture-order={effect.order}
+                  data-capture-delay-ms={delayMs}
+                  data-source-face={effect.face}
+                  data-source-layout-row={effect.layoutRow}
+                  data-source-layout-column={effect.layoutColumn}
+                  data-source-local-x={effect.localX}
+                  data-source-local-y={effect.localY}
+                  data-source-stage-x={effect.stageX}
+                  data-source-stage-y={effect.stageY}
+                  data-target-stage-x={effect.targetStageX}
+                  data-target-stage-y={effect.targetStageY}
+                >
+                  <animateTransform
+                    attributeName="transform"
+                    type="translate"
+                    from="0 0"
+                    to={`${dx} ${dy}`}
+                    begin={`${delayMs}ms`}
+                    dur={`${CUBE_2D_CAPTURE_FLIGHT_MS}ms`}
+                    calcMode="spline"
+                    keyTimes="0;1"
+                    keySplines="0.22 0.65 0.3 1"
+                    fill="freeze"
+                  />
+                  <animate
+                    attributeName="opacity"
+                    values="1;1;0"
+                    keyTimes="0;0.78;1"
+                    begin={`${delayMs}ms`}
+                    dur={`${CUBE_2D_CAPTURE_FLIGHT_MS}ms`}
+                    fill="freeze"
+                  />
+                </circle>
+              );
+            })}
+          </g>
+        </svg>
+      ) : null}
     </div>
   );
 }
