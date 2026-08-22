@@ -58,6 +58,7 @@ describe('GameSession result persistence', () => {
     await session.execute({ type: 'place-stone', point: '0,0' });
     await session.execute({ type: 'pass' });
     await session.execute({ type: 'pass' });
+    await session.finishEndgameReview();
 
     expect(session.state().phase).toBe('finished');
     expect(session.snapshot().endgameClassification).toEqual([
