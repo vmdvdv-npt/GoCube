@@ -25,6 +25,7 @@ const CUBE_2D_NAVIGATION_GAP = 30;
 const CUBE_2D_NAVIGATION_BUTTON_SIZE = 38;
 const CUBE_2D_NAVIGATION_INSET = CUBE_2D_NAVIGATION_GAP + CUBE_2D_NAVIGATION_BUTTON_SIZE;
 const CUBE_2D_ZOOM_WHEEL_SENSITIVITY = 0.0008;
+const CUBE_2D_HOME_ZOOM = 1;
 const WHEEL_LINE_HEIGHT_PX = 16;
 const WHEEL_DELTA_LINE = 1;
 const WHEEL_DELTA_PAGE = 2;
@@ -37,6 +38,25 @@ const wheelDeltaPixels = (event: ReactWheelEvent<HTMLDivElement>): number => {
   if (event.deltaMode === WHEEL_DELTA_LINE) return event.deltaY * WHEEL_LINE_HEIGHT_PX;
   if (event.deltaMode === WHEEL_DELTA_PAGE) return event.deltaY * event.currentTarget.clientHeight;
   return event.deltaY;
+};
+
+const recenteredPanForZoomOut = (
+  currentPan: DragPanOffset,
+  currentZoom: number,
+  nextZoom: number,
+): DragPanOffset => {
+  if (currentZoom <= CUBE_2D_HOME_ZOOM || nextZoom <= CUBE_2D_HOME_ZOOM) {
+    return Object.freeze({ x: 0, y: 0 });
+  }
+
+  const currentDistanceFromHome = currentZoom - CUBE_2D_HOME_ZOOM;
+  const nextDistanceFromHome = nextZoom - CUBE_2D_HOME_ZOOM;
+  const homeProgress = nextDistanceFromHome / currentDistanceFromHome;
+
+  return Object.freeze({
+    x: currentPan.x * homeProgress,
+    y: currentPan.y * homeProgress,
+  });
 };
 
 export interface Cube2DGameProps {
@@ -76,7 +96,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
   panOffsetRef.current = dragPan.offset;
 
   useEffect(() => {
-    zoomRef.current = 1;
+    zoomRef.current = CUBE_2D_HOME_ZOOM;
     panOffsetRef.current = Object.freeze({ x: 0, y: 0 });
     dragPan.reset();
   }, [controller, dragPan.reset]);
@@ -91,14 +111,19 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
     );
     if (nextZoom === currentZoom) return;
 
-    const viewportBounds = event.currentTarget.getBoundingClientRect();
-    const sceneCenterX = viewportBounds.left + viewportBounds.width / 2 + currentPan.x;
-    const sceneCenterY = viewportBounds.top + viewportBounds.height / 2 + currentPan.y;
-    const ratio = nextZoom / currentZoom;
-    const nextPan = Object.freeze({
-      x: currentPan.x + (event.clientX - sceneCenterX) * (1 - ratio),
-      y: currentPan.y + (event.clientY - sceneCenterY) * (1 - ratio),
-    });
+    let nextPan: DragPanOffset;
+    if (nextZoom < currentZoom) {
+      nextPan = recenteredPanForZoomOut(currentPan, currentZoom, nextZoom);
+    } else {
+      const viewportBounds = event.currentTarget.getBoundingClientRect();
+      const sceneCenterX = viewportBounds.left + viewportBounds.width / 2 + currentPan.x;
+      const sceneCenterY = viewportBounds.top + viewportBounds.height / 2 + currentPan.y;
+      const ratio = nextZoom / currentZoom;
+      nextPan = Object.freeze({
+        x: currentPan.x + (event.clientX - sceneCenterX) * (1 - ratio),
+        y: currentPan.y + (event.clientY - sceneCenterY) * (1 - ratio),
+      });
+    }
 
     zoomRef.current = nextZoom;
     panOffsetRef.current = nextPan;
