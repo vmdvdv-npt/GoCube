@@ -1,7 +1,7 @@
 :root {
   --go-board-texture: url('/assets/board/board-bg.jpg');
   --cube-board-texture: url('/assets/board/cube.jpg');
-  --go-board-grid: #3f3325;
+  --go-board-grid: #201e1c;
   --go-board-surface: #d8ad68;
 }
 
@@ -28,8 +28,12 @@
   fill: transparent;
 }
 
+.torus-board__grid line,
 .cube-2d-game .cube-2d-board__grid line {
   stroke: var(--go-board-grid);
+}
+
+.cube-2d-game .cube-2d-board__grid line {
   stroke-width: 1.5px;
   stroke-linecap: butt;
 }
