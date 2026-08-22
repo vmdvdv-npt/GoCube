@@ -66,7 +66,7 @@ describe('GameSession', () => {
     expect(session.state().board['4,4']).toBe('empty');
     expect(session.state().board['4,5']).toBe('black');
 
-    const undo = await session.execute({ type: 'undo' });
+    const undo = await session.executeSessionCommand({ type: 'undo' });
     expect(undo.ok).toBe(true);
     expect(session.state()).toEqual(beforeCapture);
     expect(session.state().board['4,4']).toBe('white');
@@ -126,7 +126,7 @@ describe('GameSession', () => {
     });
     expect(session.finalScore()).not.toBeNull();
 
-    const undo = await session.execute({ type: 'undo' });
+    const undo = await session.executeSessionCommand({ type: 'undo' });
 
     expect(undo.ok).toBe(true);
     expect(session.historyLength()).toBe(2);
@@ -144,7 +144,7 @@ describe('GameSession', () => {
     const engine = new GameEngine(topology);
     const session = new GameSession(engine, sessionConfig(topology));
 
-    expect(await session.execute({ type: 'undo' })).toMatchObject({
+    expect(await session.executeSessionCommand({ type: 'undo' })).toMatchObject({
       ok: false,
       reason: 'nothing-to-undo',
     });
