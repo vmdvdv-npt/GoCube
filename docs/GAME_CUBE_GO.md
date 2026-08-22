@@ -988,7 +988,7 @@ Seki/neutral regions не должны ошибочно засчитыватьс
 Dialog также может показывать:
 
 - сколько white stones сняли black;
-- сколько black stones сняали white;
+- сколько black stones сняли white;
 - число stones/groups, признанных dead;
 - число seki groups;
 - общее количество actions;
