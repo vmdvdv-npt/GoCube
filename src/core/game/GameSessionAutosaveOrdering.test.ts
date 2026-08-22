@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { EndgameClassification, EndgameClassifier } from '../endgame/EndgameClassifier';
 import type { GameRepository, SavedGame } from '../persistence/GameRepository';
 import type { GameSessionSnapshot } from '../persistence/GameSessionSnapshot';
-import { SimpleKoPolicy } from '../rules/RepetitionPolicy';
 import { ChineseScoring } from '../scoring/ChineseScoring';
 import { TorusTopology } from '../topology/TorusTopology';
 import { GameEngine } from './GameEngine';
@@ -75,7 +74,6 @@ describe('GameSession ordered autosave revisions', () => {
     const repository = new ControlledRepository();
     const session = new GameSession(
       new GameEngine(topology),
-      new SimpleKoPolicy(),
       configFor(repository, topology),
     );
 
@@ -109,13 +107,13 @@ describe('GameSession ordered autosave revisions', () => {
     const repository = new MemoryRepository();
     const config = configFor(repository, topology);
     const engine = new GameEngine(topology);
-    const session = new GameSession(engine, new SimpleKoPolicy(), config);
+    const session = new GameSession(engine, config);
 
     await session.execute({ type: 'place-stone', point: '0,0' });
     await session.execute({ type: 'pass' });
     expect(session.snapshot().sessionRevision).toBe(2);
 
-    const restored = await GameSession.load(engine, new SimpleKoPolicy(), config);
+    const restored = await GameSession.load(engine, config);
     expect(restored?.snapshot().sessionRevision).toBe(2);
 
     await restored!.execute({ type: 'place-stone', point: '1,1' });
@@ -130,15 +128,10 @@ describe('GameSession ordered autosave revisions', () => {
       scoringStrategy: new ChineseScoring(topology),
       komi: 7.5,
     };
-    const source = new GameSession(engine, new SimpleKoPolicy(), config).snapshot();
+    const source = new GameSession(engine, config).snapshot();
     const { sessionRevision: _ignored, ...legacySnapshot } = source;
 
-    const restored = GameSession.fromSnapshot(
-      engine,
-      new SimpleKoPolicy(),
-      config,
-      legacySnapshot,
-    );
+    const restored = GameSession.fromSnapshot(engine, config, legacySnapshot);
 
     expect(restored.snapshot().sessionRevision).toBe(0);
   });
