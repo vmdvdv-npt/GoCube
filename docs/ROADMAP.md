@@ -120,22 +120,81 @@
 
 ## Цель
 
-Сократить ручную работу при финальном разборе, автоматически определяя только те статусы, которые система может установить достаточно уверенно, и сохраняя ручной fallback.
+Сократить ручную работу при финальном разборе, автоматически определяя только те статусы, которые система может доказать достаточно надёжно, и сохраняя полноценный ручной fallback для всего недоказанного.
+
+Главный приоритет 0.3 — **correctness выше процента автоматизации**. Неполная автоматическая классификация с `unresolved` предпочтительнее уверенной, но ошибочной автоматической маркировки.
 
 ## Scope
 
 В 0.3 появляются:
 
-- automatic/assisted classification очевидных alive/dead/seki;
-- работа классификатора как с TorusTopology, так и с CubeTopology;
+- automatic/assisted classification очевидных или доказуемых alive/dead/seki;
+- работа классификатора как с TorusTopology, так и с CubeTopology через общий topology-neutral contract;
 - ручной fallback для недоказанных или спорных случаев;
-- regression/fixture coverage endgame-classification для обеих topology.
+- deterministic test-position generation для массовой проверки endgame logic;
+- developer test lab для воспроизведения, прогона и сравнения сгенерированных позиций;
+- differential/oracle validation infrastructure, включая опциональный локальный AI-analysis path, не являющийся production dependency;
+- regression/fixture/property/stress coverage endgame-classification для обеих topology.
 
 Cube 3D в 0.3 не входит. Cube-партии по-прежнему стартуют и играются в Cube 2D; Torus остаётся 2D.
 
+Точные classifier contracts, выбранные algorithms/libraries, test generators, oracle adapters, local-analysis bridge и правила доверия внешнему анализу определяет только `docs/ARCHITECTURE.md`. Пользовательское поведение assisted/manual review определяет только `docs/GAME_CUBE_GO.md`.
+
+## Внутренний порядок 0.3
+
+Последовательность checkpoints является нормативной. Следующий classifier checkpoint не начинается, пока предыдущая test/verification boundary не стала воспроизводимой и автоматизируемой.
+
+1. **0.3.01 — Library/Reuse Review и contract alignment**
+   - завершить reuse review кандидатов для alive/dead/seki и test oracles;
+   - привести фактический endgame flow к proposal/review boundary с возможностью `unresolved`, не меняя scoring formula и не привязывая classifier к конкретному UI.
+
+2. **0.3.02 — Deterministic Endgame Test Lab**
+   - создать воспроизводимый генератор legal game/endgame positions;
+   - создать генератор небольших life-and-death/seki patterns;
+   - добавить topology-stress размещения для Torus seams и Cube edges/corners;
+   - каждый generated case обязан иметь стабильный seed/fixture replay.
+
+3. **0.3.03 — Differential Oracles и Local AI Lab**
+   - подключить независимые reference/oracle paths для тех классов позиций, где сравнение корректно;
+   - добавить опциональную локальную analysis infrastructure для мощного desktop-компьютера разработчика;
+   - production game не должна зависеть от наличия локального AI, внешней сети или стороннего сервиса.
+
+4. **0.3.04 — Automatic Alive core**
+   - сначала реализовать консервативное доказуемое определение живых/pass-alive групп;
+   - проверить одинаковую topology-neutral работу на Torus и Cube.
+
+5. **0.3.05 — Automatic Dead core**
+   - добавить candidate generation и строгую verification boundary для dead;
+   - недоказанный candidate остаётся `unresolved`, а не превращается в автоматический `dead`.
+
+6. **0.3.06 — Obvious/Proven Seki**
+   - автоматически resolve только те seki cases, которые проходят выбранный строгий criterion;
+   - сложные, спорные и topology-sensitive случаи остаются `unresolved`.
+
+7. **0.3.07 — Assisted Review Integration**
+   - интегрировать automatic proposal с сохраняемым ручным review;
+   - автоматически определённые группы предварительно заполнены, а ручная работа требуется только для unresolved;
+   - визуальная полировка и конкретная форма controls выполняются после стабилизации classifier core и не должны менять classifier contracts.
+
+8. **0.3.08 — Stress / Differential Hardening**
+   - массовые deterministic прогоны generated positions;
+   - fixed-seed regression corpus для всех найденных дефектов;
+   - differential checks на применимых planar/Torus/Cube-reference cases;
+   - отдельные проверки отсутствия ложных automatic resolutions и invariance итогового scoring после полного review.
+
+9. **0.3 integration / regression acceptance**
+
 ## Критерий готовности
 
-0.3 считается завершённой, когда автоматическая помощь корректно работает на обеих topology, не ухудшает ручной fallback и не создаёт расхождений в итоговом scoring.
+0.3 считается завершённой, когда:
+
+- automatic assistance корректно работает на обеих topology через общий classifier boundary;
+- нет известных случаев, где classifier автоматически присваивает недоказанный/ошибочный статус в acceptance corpus;
+- всё, что classifier не может доказать, остаётся `unresolved` и полностью разрешается ручным fallback;
+- generated/fixed fixtures и stress/differential checks воспроизводимы по seed;
+- production gameplay и final scoring не требуют KataGo, local bridge, внешнего oracle, сети или компьютера разработчика;
+- assisted flow не создаёт расхождений в итоговом scoring относительно того же полного набора resolved statuses;
+- полный regression/acceptance gate версии проходит.
 
 ---
 
