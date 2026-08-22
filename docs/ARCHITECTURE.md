@@ -866,7 +866,7 @@ Pass проходит тем же `GameCommand` path, что и постанов
 
 1. `GameSession` видит доменный phase и запускает `EndgameClassifier.analyze(...)`.
 2. Из `EndgameProposal` создаётся сохраняемый `EndgameReviewState`.
-3. Ручные/assisted statuses изменяют только review state; каждое изменение autosave-ится с новой session revision.
+3. Ручные/assisted statuses изменяют только review state; каждое изменение autosave-ится с новой session revision. Presentation/UI не хранит вторую изменяемую копию этих решений: экран читает актуальные statuses из session-owned review state и отправляет каждое изменение как session command. DOM events, synthetic clicks и replay пользовательского UI не используются как механизм синхронизации review state.
 4. Пока review incomplete, scoring не запускается.
 5. Когда review полностью resolved, создаётся полный `EndgameClassification`.
 6. `GameSession` передаёт classification в выбранный `ScoringStrategy` и получает `FinalScore`.
@@ -905,6 +905,8 @@ Renderer не реконструирует историю самостоятел
 # 19. Testing architecture
 
 Автоматические проверки делятся по владельцам ответственности.
+
+CI quality gate разделяет независимые проверки: настоящий JavaScript/TypeScript static lint, отдельный TypeScript typecheck, unit/integration tests с обязательными global coverage thresholds, production build и Playwright E2E. E2E gate исполняется как минимум в Chromium, Firefox и WebKit; прохождение только одного browser engine не считается полным regression gate.
 
 ## 19.1. GameEngine tests
 

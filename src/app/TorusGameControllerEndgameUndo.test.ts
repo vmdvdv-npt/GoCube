@@ -29,7 +29,7 @@ describe('TorusGameController endgame Undo', () => {
     expect(secondPassAgain.accepted).toBe(true);
     expect(controller.viewModel().phase).toBe('endgame');
 
-    await controller.finishEndgame({});
+    await controller.finishEndgame();
     expect(controller.viewModel().phase).toBe('finished');
   });
 });

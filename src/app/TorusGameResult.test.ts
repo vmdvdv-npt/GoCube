@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import type { GroupStatus } from '../core/endgame/EndgameClassifier';
 import { TorusGameController } from './TorusGameController';
 
 describe('TorusGameController result model', () => {
@@ -12,14 +11,13 @@ describe('TorusGameController result model', () => {
 
     expect(controller.resultModel()).toBeNull();
 
-    const groups = controller.endgameGroups();
-    const decisions: Record<string, GroupStatus> = Object.fromEntries(
-      groups.map((group): [string, GroupStatus] => [
+    for (const group of controller.endgameGroups()) {
+      await controller.setEndgameDecision(
         group.id,
         group.color === 'black' ? 'dead' : 'alive',
-      ]),
-    );
-    await controller.finishEndgame(decisions);
+      );
+    }
+    await controller.finishEndgame();
 
     expect(controller.resultModel()).toMatchObject({
       statistics: {
@@ -45,7 +43,7 @@ describe('TorusGameController result model', () => {
     const controller = new TorusGameController({ ruleSet: 'japanese', komi: 6.5 });
     await controller.pass();
     await controller.pass();
-    await controller.finishEndgame({});
+    await controller.finishEndgame();
 
     expect(controller.resultModel()).toMatchObject({
       statistics: { totalActions: 2, passes: 2, ruleSet: 'japanese' },

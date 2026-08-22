@@ -225,22 +225,11 @@ export class TorusGameController {
     return this.present(result.ok, result.ok ? null : result.reason);
   }
 
-  async finishEndgame(
-    decisions?: TorusEndgameDecisions,
-  ): Promise<TorusGameActionResult> {
+  async finishEndgame(): Promise<TorusGameActionResult> {
     const completion = this.pendingEndgameCompletion;
     const groups = this.endgameClassifier.pendingGroups();
     if (!completion || !groups || this.session.state().phase !== 'endgame') {
       throw new Error('No manual endgame classification is pending');
-    }
-
-    // Compatibility for existing 0.2 callers: even a batch passed at finish is
-    // first committed through the same session command/autosave path. The object
-    // itself is never used as the classification source of truth.
-    if (decisions) {
-      for (const [groupId, status] of Object.entries(decisions)) {
-        if (status) await this.setEndgameDecision(groupId, status);
-      }
     }
 
     const review = this.session.endgameReview();

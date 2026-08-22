@@ -264,8 +264,11 @@ for (const [zoom, deltaY] of [
 
     if (deltaY !== 0) await wheelAt(page, svg, deltaY);
 
+    await expect.poll(
+      async () => Number(await svg.getAttribute('data-view-zoom')),
+      { timeout: 1_000 },
+    ).toBeCloseTo(zoom, 2);
     const actualZoom = Number(await svg.getAttribute('data-view-zoom'));
-    expect(actualZoom).toBeCloseTo(zoom, 2);
     await expect(shell).toHaveAttribute('data-view-zoom', actualZoom.toFixed(3));
     await expect(svg).toHaveAttribute('data-vector-camera', 'viewBox');
     await expect.poll(async () => (await shell.boundingBox())?.width ?? 0).toBeCloseTo(
