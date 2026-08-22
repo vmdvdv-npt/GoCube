@@ -23,6 +23,14 @@
 
 3D Torus не входит в 0.1, 0.2, 0.3 или 0.5 и остаётся отдельной будущей возможностью без назначенного номера версии.
 
+## Текущий статус
+
+Активная разрабатываемая версия — **0.2 Cube 2D**.
+
+0.2 **ещё не принята и не считается завершённым релизом**. Наличие строки версии `0.2.0` в package/application metadata, тестах, ветках или других технических местах само по себе не означает acceptance или выпуск версии 0.2.
+
+Следующая нормативная граница — `0.2 integration / regression acceptance`. К версии 0.3 переходят только после принятия 0.2 по критерию готовности ниже.
+
 ---
 
 # Версия 0.1 — Torus 2D
@@ -78,7 +86,6 @@
 - CubeTopology;
 - Cube 2D;
 - выбор topology `Cube / Torus` при создании новой партии;
-- при первом появлении этого выбора default topology — `Cube`;
 - новая Cube-партия стартует в Cube 2D; Cube 3D ещё отсутствует;
 - Torus продолжает использовать Torus 2D;
 - пользовательский набор размеров Cube 2D;
@@ -143,6 +150,7 @@ Cube 3D в 0.3 не входит. Cube-партии по-прежнему ста
 В 0.5 появляются:
 
 - Cube 3D renderer;
+- после появления Cube 3D topology `Cube` становится default topology при открытии New Game; до 0.5 обязательного default `Cube` нет;
 - новая Cube-партия по умолчанию стартует в Cube 3D;
 - свободное переключение Cube 2D ↔ Cube 3D в рамках одной Cube-партии;
 - Torus в текущем roadmap остаётся только Torus 2D;
@@ -152,7 +160,7 @@ Cube 3D в 0.3 не входит. Cube-партии по-прежнему ста
 - feature parity основных игровых и endgame-визуализаций Cube 2D/Cube 3D;
 - 3D-specific automated/visual regression coverage.
 
-Точное 3D-поведение определяет `docs/GAME_CUBE_GO.md`; техническую границу Renderer3D и spatial mapping определяет `docs/ARCHITECTURE.md`.
+Точное 3D-поведение и пользовательская семантика default topology определяются `docs/GAME_CUBE_GO.md`; техническую границу Renderer3D и spatial mapping определяет `docs/ARCHITECTURE.md`.
 
 ## Внутренний порядок 0.5
 
