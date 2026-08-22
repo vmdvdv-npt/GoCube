@@ -21,7 +21,7 @@ test('Torus duplicate-region preference is remembered for the next Torus game', 
   await page.getByRole('button', { name: 'New game', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Start a new game?' })).toBeVisible();
   await page.getByRole('button', { name: 'New Game', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'New game' })).toBeVisible();
+  await expect(page.getByTestId('new-game-settings-grid')).toBeVisible();
   await page.getByRole('button', { name: 'Start game' }).click();
 
   await expect(page.locator('.torus-game')).toBeVisible();
