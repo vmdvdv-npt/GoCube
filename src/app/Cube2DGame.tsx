@@ -1,7 +1,8 @@
 import {
   useEffect,
+  useRef,
   type CSSProperties,
-  type WheelEvent,
+  type WheelEvent as ReactWheelEvent,
 } from 'react';
 import { CUBE_2D_LAYOUT_COLUMNS, CUBE_2D_LAYOUT_ROWS } from '../presentation/cube/Cube2DLayout';
 import {
@@ -14,7 +15,7 @@ import { Cube2DVisualEffects } from './Cube2DVisualEffects';
 import { GameResultDialog } from './GameResultDialog';
 import { GameSidebar } from './GameSidebar';
 import { CUBE_ENDGAME_STATUSES, cubeEndgameStatusLabel, useCube2DGame } from './useCube2DGame';
-import { useDragPan } from './useDragPan';
+import { useDragPan, type DragPanOffset } from './useDragPan';
 import './manual-endgame.css';
 import './cube2d-preview.css';
 import './cube2d-game-flow.css';
@@ -23,9 +24,19 @@ import './cube2d-game.css';
 const CUBE_2D_NAVIGATION_GAP = 30;
 const CUBE_2D_NAVIGATION_BUTTON_SIZE = 38;
 const CUBE_2D_NAVIGATION_INSET = CUBE_2D_NAVIGATION_GAP + CUBE_2D_NAVIGATION_BUTTON_SIZE;
+const CUBE_2D_ZOOM_WHEEL_SENSITIVITY = 0.0008;
+const WHEEL_LINE_HEIGHT_PX = 16;
+const WHEEL_DELTA_LINE = 1;
+const WHEEL_DELTA_PAGE = 2;
 
 type Cube2DNavigationArrowStyle = CSSProperties & {
   '--cube-2d-navigation-from-x'?: string;
+};
+
+const wheelDeltaPixels = (event: ReactWheelEvent<HTMLDivElement>): number => {
+  if (event.deltaMode === WHEEL_DELTA_LINE) return event.deltaY * WHEEL_LINE_HEIGHT_PX;
+  if (event.deltaMode === WHEEL_DELTA_PAGE) return event.deltaY * event.currentTarget.clientHeight;
+  return event.deltaY;
 };
 
 export interface Cube2DGameProps {
@@ -59,27 +70,39 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
     allowInteractiveDrag: true,
     onDragStart: () => g.hover(null),
   });
+  const zoomRef = useRef(g.zoom);
+  const panOffsetRef = useRef<DragPanOffset>(dragPan.offset);
+  zoomRef.current = g.zoom;
+  panOffsetRef.current = dragPan.offset;
 
   useEffect(() => {
+    zoomRef.current = 1;
+    panOffsetRef.current = Object.freeze({ x: 0, y: 0 });
     dragPan.reset();
   }, [controller, dragPan.reset]);
 
-  const handleWheel = (event: WheelEvent<HTMLDivElement>): void => {
+  const handleWheel = (event: ReactWheelEvent<HTMLDivElement>): void => {
     event.preventDefault();
 
-    const currentZoom = g.zoom;
-    const nextZoom = g.setZoom(currentZoom - event.deltaY * 0.0008);
+    const currentZoom = zoomRef.current;
+    const currentPan = panOffsetRef.current;
+    const nextZoom = g.setZoom(
+      currentZoom - wheelDeltaPixels(event) * CUBE_2D_ZOOM_WHEEL_SENSITIVITY,
+    );
     if (nextZoom === currentZoom) return;
 
     const viewportBounds = event.currentTarget.getBoundingClientRect();
-    const sceneCenterX = viewportBounds.left + viewportBounds.width / 2 + dragPan.offset.x;
-    const sceneCenterY = viewportBounds.top + viewportBounds.height / 2 + dragPan.offset.y;
+    const sceneCenterX = viewportBounds.left + viewportBounds.width / 2 + currentPan.x;
+    const sceneCenterY = viewportBounds.top + viewportBounds.height / 2 + currentPan.y;
     const ratio = nextZoom / currentZoom;
-
-    dragPan.setOffset({
-      x: dragPan.offset.x + (event.clientX - sceneCenterX) * (1 - ratio),
-      y: dragPan.offset.y + (event.clientY - sceneCenterY) * (1 - ratio),
+    const nextPan = Object.freeze({
+      x: currentPan.x + (event.clientX - sceneCenterX) * (1 - ratio),
+      y: currentPan.y + (event.clientY - sceneCenterY) * (1 - ratio),
     });
+
+    zoomRef.current = nextZoom;
+    panOffsetRef.current = nextPan;
+    dragPan.setOffset(nextPan);
   };
 
   const endgamePanel =
@@ -168,7 +191,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
           data-pan-x={dragPan.offset.x.toFixed(1)}
           data-pan-y={dragPan.offset.y.toFixed(1)}
           data-dragging={dragPan.dragging ? 'true' : 'false'}
-          style={{ touchAction: 'none' }}
+          style={{ position: 'relative', touchAction: 'none' }}
           onWheel={handleWheel}
           onPointerDown={dragPan.onPointerDown}
           onPointerMove={dragPan.onPointerMove}
@@ -181,9 +204,12 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
             data-navigation-gap={CUBE_2D_NAVIGATION_GAP}
             data-vertical-anchor-column={g.view.verticalAnchorColumn}
             style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
               width: `${navigationWidth}px`,
               height: `${navigationHeight}px`,
-              transform: `translate(${dragPan.offset.x}px, ${dragPan.offset.y}px)`,
+              transform: `translate(-50%, -50%) translate(${dragPan.offset.x}px, ${dragPan.offset.y}px)`,
             }}
           >
             <button
