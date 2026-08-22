@@ -68,7 +68,7 @@ describe('GameEngine endgame transition ownership', () => {
       });
     });
     const classifier: EndgameClassifier = {
-      classify: async () => Object.freeze([]),
+      analyze: async () => Object.freeze([]),
     };
     const session = new GameSession(engine, {
       endgameClassifier: classifier,
