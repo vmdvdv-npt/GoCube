@@ -70,6 +70,85 @@ test('new game uses board-size buttons and keeps Japanese rules as the default',
   await expect(page.getByLabel('Rules')).toHaveValue('japanese');
 });
 
+test('topology controls use a fixed animated SVG preview without button icons', async ({ page }) => {
+  await page.goto('/');
+
+  const preview = page.getByTestId('topology-preview');
+  const previewImage = page.getByTestId('topology-preview-image');
+  const cube = page.getByRole('button', { name: 'Cube 2D', exact: true });
+  const torus = page.getByRole('button', { name: 'Torus 2D', exact: true });
+
+  await expect(preview).toBeVisible();
+  await expect(preview.locator('img')).toHaveCount(1);
+  await expect(previewImage).toHaveAttribute('src', '/assets/board/torus.svg');
+  await expect(previewImage).toHaveAttribute('alt', 'Torus topology preview');
+  await expect(cube.locator('img, svg')).toHaveCount(0);
+  await expect(torus.locator('img, svg')).toHaveCount(0);
+
+  const [cubeBox, torusBox, previewBox] = await Promise.all([
+    cube.boundingBox(),
+    torus.boundingBox(),
+    preview.boundingBox(),
+  ]);
+  expect(cubeBox).not.toBeNull();
+  expect(torusBox).not.toBeNull();
+  expect(previewBox).not.toBeNull();
+  if (cubeBox && torusBox) {
+    expect(cubeBox.y).toBeCloseTo(torusBox.y, 0);
+    expect(cubeBox.x).toBeLessThan(torusBox.x);
+  }
+
+  await cube.click();
+  await expect(cube).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('Board size')).toHaveValue('4');
+  await expect(preview.locator('.topology-preview__image--exit-right')).toHaveAttribute(
+    'src',
+    '/assets/board/torus.svg',
+  );
+  await expect(preview.locator('.topology-preview__image--enter-from-left')).toHaveAttribute(
+    'src',
+    '/assets/board/cube.svg',
+  );
+  await expect(preview.locator('img')).toHaveCount(1, { timeout: 1_000 });
+  await expect(page.getByTestId('topology-preview-image')).toHaveAttribute(
+    'src',
+    '/assets/board/cube.svg',
+  );
+
+  const cubePreviewBox = await preview.boundingBox();
+  expect(cubePreviewBox).not.toBeNull();
+  if (previewBox && cubePreviewBox) {
+    expect(cubePreviewBox.height).toBeCloseTo(previewBox.height, 0);
+  }
+
+  await torus.click();
+  await expect(torus).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('Board size')).toHaveValue('9');
+  await expect(preview.locator('.topology-preview__image--exit-left')).toHaveAttribute(
+    'src',
+    '/assets/board/cube.svg',
+  );
+  await expect(preview.locator('.topology-preview__image--enter-from-right')).toHaveAttribute(
+    'src',
+    '/assets/board/torus.svg',
+  );
+
+  await cube.click();
+  await torus.click();
+  await cube.click();
+  await expect(cube).toHaveAttribute('aria-pressed', 'true');
+  await expect(preview.locator('img')).toHaveCount(1, { timeout: 1_000 });
+  await expect(page.getByTestId('topology-preview-image')).toHaveAttribute(
+    'src',
+    '/assets/board/cube.svg',
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
+});
+
 test('normalizes committed komi and remembers the normalized value for the next game', async ({ page }) => {
   await page.goto('/');
 
@@ -140,6 +219,10 @@ test('remembers the last started board type and board size separately for Torus 
   const cube = page.getByRole('button', { name: 'Cube 2D', exact: true });
 
   await expect(torus).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('topology-preview-image')).toHaveAttribute(
+    'src',
+    '/assets/board/torus.svg',
+  );
   await page.getByRole('button', { name: '13×13', exact: true }).click();
   await page.getByRole('button', { name: 'Start game' }).click();
 
@@ -147,6 +230,10 @@ test('remembers the last started board type and board size separately for Torus 
   await page.getByRole('button', { name: 'New Game', exact: true }).click();
   await expect(torus).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByLabel('Board size')).toHaveValue('13');
+  await expect(page.getByTestId('topology-preview-image')).toHaveAttribute(
+    'src',
+    '/assets/board/torus.svg',
+  );
 
   await cube.click();
   await expect(page.getByLabel('Board size')).toHaveValue('4');
@@ -157,6 +244,10 @@ test('remembers the last started board type and board size separately for Torus 
   await page.getByRole('button', { name: 'New Game', exact: true }).click();
   await expect(cube).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByLabel('Board size')).toHaveValue('6');
+  await expect(page.getByTestId('topology-preview-image')).toHaveAttribute(
+    'src',
+    '/assets/board/cube.svg',
+  );
 
   await torus.click();
   await expect(page.getByLabel('Board size')).toHaveValue('13');
@@ -166,4 +257,8 @@ test('remembers the last started board type and board size separately for Torus 
   await page.reload();
   await expect(cube).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByLabel('Board size')).toHaveValue('6');
+  await expect(page.getByTestId('topology-preview-image')).toHaveAttribute(
+    'src',
+    '/assets/board/cube.svg',
+  );
 });
