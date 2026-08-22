@@ -383,7 +383,9 @@ export class GameSession {
     }
 
     const classification = resolveEndgameClassification(this.currentEndgameReview);
-    if (!classification) throw new Error('Endgame review is incomplete');
+    if (!classification) {
+      throw new Error('Missing manual endgame decision for one or more unresolved groups');
+    }
     await this.completeEndgame(state, classification);
   }
 
@@ -510,15 +512,6 @@ export class GameSession {
 
     await this.startEndgameReview(state);
     await this.persist();
-
-    // If every group was resolved automatically (or there are no stone groups),
-    // no manual UI round-trip is necessary.
-    const automaticClassification = this.currentEndgameReview
-      ? resolveEndgameClassification(this.currentEndgameReview)
-      : null;
-    if (automaticClassification) {
-      await this.completeEndgame(state, automaticClassification);
-    }
 
     return Object.freeze({
       ok: true,
