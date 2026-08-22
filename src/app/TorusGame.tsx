@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -30,6 +31,7 @@ import {
   type TorusEndgameGroup,
   type TorusGameActionResult,
 } from './TorusGameController';
+import { useDragPan, type DragPanOffset } from './useDragPan';
 
 const ENDGAME_STATUSES: readonly GroupStatus[] = ['alive', 'dead', 'seki'];
 const TORUS_ZOOM_MIN = 0.7;
@@ -38,6 +40,7 @@ const TORUS_ZOOM_WHEEL_SENSITIVITY = 0.0015;
 const TORUS_VIEWBOX_SIZE = 1000;
 const PASS_GUARD_DURATION_MS = 1000;
 const PASS_GUARD_TICK_MS = 100;
+const TORUS_PAN_EDGE_SLACK = 48;
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
@@ -133,10 +136,39 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const [viewZoom, setViewZoom] = useState(1);
   const [passGuardUntil, setPassGuardUntil] = useState<number | null>(null);
   const [passGuardRemainingMs, setPassGuardRemainingMs] = useState(0);
+  const shellRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const rendererRef = useRef<Torus2DRenderer | null>(null);
   const actionInFlight = useRef(false);
   const previewedMovePointRef = useRef<string | null>(null);
+
+  const constrainViewPan = useCallback(
+    (candidate: DragPanOffset): DragPanOffset => {
+      const shell = shellRef.current;
+      if (!shell) return candidate;
+
+      const overflowX = (shell.offsetWidth * Math.max(0, viewZoom - 1)) / 2;
+      const overflowY = (shell.offsetHeight * Math.max(0, viewZoom - 1)) / 2;
+      const maxX = overflowX + TORUS_PAN_EDGE_SLACK;
+      const maxY = overflowY + TORUS_PAN_EDGE_SLACK;
+      return Object.freeze({
+        x: clamp(candidate.x, -maxX, maxX),
+        y: clamp(candidate.y, -maxY, maxY),
+      });
+    },
+    [viewZoom],
+  );
+
+  const clearPanHover = useCallback((): void => {
+    previewedMovePointRef.current = null;
+    rendererRef.current?.setMovePreview(null);
+    setHoveredGroupId(null);
+  }, []);
+
+  const dragPan = useDragPan({
+    constrain: constrainViewPan,
+    onDragStart: clearPanHover,
+  });
 
   const renderGroups = useMemo<readonly EndgameGroupRenderState[]>(
     () =>
@@ -162,6 +194,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   useEffect(() => {
     rendererRef.current = null;
     previewedMovePointRef.current = null;
+    dragPan.reset();
     const nextViewModel = controller.viewModel();
     setViewModel(nextViewModel);
     setFeedback(null);
@@ -177,7 +210,11 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     setEndgameGroups(
       nextViewModel.phase === 'endgame' ? controller.endgameGroups() : [],
     );
-  }, [controller]);
+  }, [controller, dragPan.reset]);
+
+  useEffect(() => {
+    dragPan.reconstrain();
+  }, [viewZoom, dragPan.reconstrain]);
 
   useEffect(() => {
     if (passGuardUntil === null) {
@@ -400,6 +437,13 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
 
   const handleBoardMouseMove = (event: ReactMouseEvent<SVGSVGElement>): void => {
     const renderer = rendererRef.current;
+    if (dragPan.dragging) {
+      previewedMovePointRef.current = null;
+      renderer?.setMovePreview(null);
+      if (hoveredGroupId !== null) setHoveredGroupId(null);
+      return;
+    }
+
     const svg = svgRef.current;
     const client = svg
       ? rendererClientPosition(svg, event.clientX, event.clientY)
@@ -642,10 +686,23 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
       />
 
       <div
+        ref={shellRef}
         className="torus-board-shell"
         aria-label="Infinite torus view"
         data-view-zoom={viewZoom.toFixed(3)}
-        style={{ transform: `scale(${viewZoom})` }}
+        data-pan-x={dragPan.offset.x.toFixed(1)}
+        data-pan-y={dragPan.offset.y.toFixed(1)}
+        data-dragging={dragPan.dragging ? 'true' : 'false'}
+        style={{
+          transform: `translate(${dragPan.offset.x}px, ${dragPan.offset.y}px) scale(${viewZoom})`,
+          transition: dragPan.dragging ? 'none' : undefined,
+          touchAction: 'none',
+        }}
+        onPointerDown={dragPan.onPointerDown}
+        onPointerMove={dragPan.onPointerMove}
+        onPointerUp={dragPan.onPointerUp}
+        onPointerCancel={dragPan.onPointerCancel}
+        onClickCapture={dragPan.onClickCapture}
       >
         <button
           className="torus-pan torus-pan--up"
