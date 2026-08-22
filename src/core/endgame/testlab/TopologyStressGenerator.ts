@@ -4,7 +4,6 @@ import {
   cubePointId,
   cubeStepPoint,
   type CubeDirection,
-  type CubeFace,
 } from '../../topology/CubeTopology';
 import type { PointId } from '../../topology/Topology';
 import { TorusTopology } from '../../topology/TorusTopology';
@@ -109,19 +108,64 @@ const makePlacements = (
   }
 
   const last = topology.size - 1;
+  const validCubePlacements = (
+    candidates: readonly {
+      readonly anchor: PointId;
+      readonly horizontal: CubeDirection;
+      readonly vertical: CubeDirection;
+    }[],
+    minimumFaces: number,
+  ): readonly (readonly SyntheticPlacement[])[] =>
+    candidates
+      .map((candidate) =>
+        cells.map((cell) => ({
+          point: cubeStressPoint(
+            topology,
+            candidate.anchor,
+            cell,
+            candidate.horizontal,
+            candidate.vertical,
+          ),
+          color: cell.color,
+        })),
+      )
+      .filter((placements) => {
+        try {
+          assertUniquePlacements(placements);
+          replaySyntheticPlacements(topology, placements);
+          const faces = new Set(placements.map((placement) => placement.point.split(':')[0]));
+          return faces.size >= minimumFaces;
+        } catch {
+          return false;
+        }
+      });
+
   if (mode === 'cube-edge') {
-    const face: CubeFace = random.pick(CUBE_FACES);
-    const anchor = cubePointId(
-      face,
-      random.integer(topology.size - height + 1),
-      last - 1,
-    );
-    const placements = cells.map((cell) => ({
-      point: cubeStressPoint(topology, anchor, cell),
-      color: cell.color,
-    }));
-    assertUniquePlacements(placements);
-    return freezePlacements(placements);
+    const edgeCandidates: {
+      readonly anchor: PointId;
+      readonly horizontal: CubeDirection;
+      readonly vertical: CubeDirection;
+    }[] = [];
+    for (const face of CUBE_FACES) {
+      for (let row = 0; row <= topology.size - height; row += 1) {
+        edgeCandidates.push(
+          { anchor: cubePointId(face, row, last - 1), horizontal: 'right', vertical: 'bottom' },
+          { anchor: cubePointId(face, row, 1), horizontal: 'left', vertical: 'bottom' },
+        );
+      }
+      for (let column = 0; column <= topology.size - width; column += 1) {
+        edgeCandidates.push(
+          { anchor: cubePointId(face, last - 1, column), horizontal: 'right', vertical: 'bottom' },
+          { anchor: cubePointId(face, 1, column), horizontal: 'right', vertical: 'top' },
+        );
+      }
+    }
+
+    const validCandidates = validCubePlacements(edgeCandidates, 2);
+    if (validCandidates.length === 0) {
+      throw new Error('No valid Cube edge embedding found for topology stress pattern');
+    }
+    return freezePlacements(random.pick(validCandidates));
   }
 
   const cornerCandidates: {
@@ -138,28 +182,7 @@ const makePlacements = (
     );
   }
 
-  const validCandidates: readonly (readonly SyntheticPlacement[])[] = cornerCandidates
-    .map((candidate) =>
-      cells.map((cell) => ({
-        point: cubeStressPoint(
-          topology,
-          candidate.anchor,
-          cell,
-          candidate.horizontal,
-          candidate.vertical,
-        ),
-        color: cell.color,
-      })),
-    )
-    .filter((placements) => {
-      try {
-        assertUniquePlacements(placements);
-        replaySyntheticPlacements(topology, placements);
-        return true;
-      } catch {
-        return false;
-      }
-    });
+  const validCandidates = validCubePlacements(cornerCandidates, 3);
 
   if (validCandidates.length === 0) {
     throw new Error('No valid Cube corner embedding found for topology stress pattern');
