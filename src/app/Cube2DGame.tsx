@@ -233,12 +233,13 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
               <Cube2DVisualEffects
                 layout={g.layout}
                 layoutCellSize={layoutCellSize}
-                captureAnimation={g.captureAnimation}
+                finalScore={g.vm.finalScore}
+                finalClassification={g.finalClassification}
                 endgameGroups={g.groups}
-                endgameDecisions={g.decisions}
-                selectedGroupId={g.selectedGroupId}
-                hoveredGroupId={g.hoveredGroupId}
-                territoryPointIds={g.result ? g.controller.territoryPointIds() : undefined}
+                decisions={g.decisions}
+                selectedGroupId={g.selectedGroup}
+                hoveredGroupId={g.hoveredGroup}
+                capturedStones={g.capturedEffects}
               />
             </div>
 
@@ -248,7 +249,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
               aria-label="Move cube right"
               disabled={navigationDisabled}
               style={{
-                right: 0,
+                left: `${CUBE_2D_NAVIGATION_INSET + stageWidth + CUBE_2D_NAVIGATION_GAP}px`,
                 top: `${sideRowCenterY - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px`,
               }}
               onClick={() => g.navigate('right')}
@@ -265,7 +266,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
               style={{
                 ...verticalArrowMotionStyle,
                 left: `${verticalPairCenterX - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px`,
-                bottom: 0,
+                top: `${CUBE_2D_NAVIGATION_INSET + stageHeight + CUBE_2D_NAVIGATION_GAP}px`,
               }}
               onClick={() => g.navigate('down')}
             >
@@ -275,12 +276,9 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
         </div>
       </div>
 
-      <GameResultDialog
-        open={Boolean(g.result && g.resultOpen)}
-        result={g.result}
-        onClose={() => g.setResultOpen(false)}
-        onNewGame={onRequestNewGame}
-      />
+      {g.result && g.resultOpen ? (
+        <GameResultDialog result={g.result} onClose={() => g.setResultOpen(false)} />
+      ) : null}
     </section>
   );
 }
