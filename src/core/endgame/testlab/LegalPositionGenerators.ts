@@ -11,7 +11,7 @@ import {
 } from './EndgameFixture';
 
 const defaultMaxMoves = (topology: Topology): number =>
-  Math.max(1, Math.min(96, Math.floor(topology.points().length * 0.45)));
+  Math.max(1, Math.min(256, Math.floor(topology.points().length * 0.65)));
 
 const assertMaxMoves = (maxMoves: number): void => {
   if (!Number.isSafeInteger(maxMoves) || maxMoves < 0) {
