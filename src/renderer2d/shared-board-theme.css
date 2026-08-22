@@ -66,16 +66,14 @@
 }
 
 /*
- * Sizes 2 and 3 use a content scale of exactly 1 and therefore intentionally
- * receive no transform at all. This avoids introducing a transform/compositor
- * boundary that changes anti-aliasing even though the geometry is unchanged.
- * Larger supported sizes retain their content-only fit; the renderer publishes
- * the exact same scale to capture geometry.
+ * All product Cube sizes use a content-only fit inside the JPEG face artwork.
+ * The renderer publishes the exact size-specific scale to both the visible SVG
+ * layers and capture geometry so grid, stones, hover and hit testing stay aligned.
  */
-.cube-2d-game .cube-2d-renderer:is([data-cube-size='4'], [data-cube-size='5'], [data-cube-size='6'], [data-cube-size='7']) .cube-2d-board__grid,
-.cube-2d-game .cube-2d-renderer:is([data-cube-size='4'], [data-cube-size='5'], [data-cube-size='6'], [data-cube-size='7']) .cube-2d-board__stones,
-.cube-2d-game .cube-2d-renderer:is([data-cube-size='4'], [data-cube-size='5'], [data-cube-size='6'], [data-cube-size='7']) .cube-2d-board__hover,
-.cube-2d-game .cube-2d-renderer:is([data-cube-size='4'], [data-cube-size='5'], [data-cube-size='6'], [data-cube-size='7']) .cube-2d-board__hit-areas {
+.cube-2d-game .cube-2d-renderer:is([data-cube-size='2'], [data-cube-size='3'], [data-cube-size='4'], [data-cube-size='5'], [data-cube-size='6'], [data-cube-size='7']) .cube-2d-board__grid,
+.cube-2d-game .cube-2d-renderer:is([data-cube-size='2'], [data-cube-size='3'], [data-cube-size='4'], [data-cube-size='5'], [data-cube-size='6'], [data-cube-size='7']) .cube-2d-board__stones,
+.cube-2d-game .cube-2d-renderer:is([data-cube-size='2'], [data-cube-size='3'], [data-cube-size='4'], [data-cube-size='5'], [data-cube-size='6'], [data-cube-size='7']) .cube-2d-board__hover,
+.cube-2d-game .cube-2d-renderer:is([data-cube-size='2'], [data-cube-size='3'], [data-cube-size='4'], [data-cube-size='5'], [data-cube-size='6'], [data-cube-size='7']) .cube-2d-board__hit-areas {
   transform-box: view-box;
   transform-origin: 50% 50%;
   transform: scale(var(--cube-2d-content-scale));
