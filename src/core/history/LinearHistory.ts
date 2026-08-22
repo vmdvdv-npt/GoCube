@@ -16,12 +16,16 @@ export class LinearHistory {
     this.snapshots = [snapshotState(initialState)];
   }
 
-  static fromStates(states: readonly GameState[]): LinearHistory {
+  static fromStates(
+    states: readonly GameState[],
+    futureStates: readonly GameState[] = [],
+  ): LinearHistory {
     const [initialState, ...rest] = states;
     if (!initialState) throw new Error('History must contain at least one state');
 
     const history = new LinearHistory(initialState);
     for (const state of rest) history.push(state);
+    history.futureSnapshots.push(...futureStates.map(snapshotState));
     return history;
   }
 
@@ -74,6 +78,11 @@ export class LinearHistory {
 
   states(): readonly GameState[] {
     return Object.freeze([...this.snapshots]);
+  }
+
+  /** Internal stack order: the last state is the next state returned by redo(). */
+  futureStates(): readonly GameState[] {
+    return Object.freeze([...this.futureSnapshots]);
   }
 
   repetitionContext(): RepetitionContext {

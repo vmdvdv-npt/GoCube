@@ -12,9 +12,9 @@ These three files are the canonical project documentation. Do not infer current 
 
 ## Documentation hygiene
 
-- Do **not** create summaries, mirrors, alternate specifications, or replacement documents for Architecture, Roadmap, or Game Cube Go unless the user explicitly asks for one.
+- Do **not** create summaries, mirrors, alternate specifications, replacement documents, ADRs, plans, reports, checklists, release notes, or any other new `.md` file unless the user explicitly approves that specific file.
 - Do **not** copy product requirements into `README.md` or this file. They should point to the canonical documents instead.
-- `docs/RELEASE_*.md` files are historical release/checkpoint records only. Never use them to override or reconstruct current requirements.
+- `docs/RELEASE_*.md` files are immutable historical snapshots of actually completed/tagged releases. Never create one in advance for an unreleased version, never use one as a release-candidate checklist, and never update one merely to match later product behavior. Edit a release record only to correct the historical record of that tagged release itself.
 - If canonical documents appear to conflict, report the conflict explicitly. Do not silently choose an interpretation and do not create a fourth document to reconcile them.
 - When a canonical requirement changes, edit the canonical document that owns it rather than duplicating the change elsewhere.
 

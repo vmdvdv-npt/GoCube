@@ -31,6 +31,8 @@ npm run test:e2e
 ## Repository documentation
 
 - `AGENTS.md` — short workflow and documentation rules for coding agents.
-- `docs/RELEASE_0.1.md`, `docs/RELEASE_0.2.md` — historical release/checkpoint records. They are not current product specifications.
+- `docs/RELEASE_0.1.md` — historical record of the actually tagged 0.1 release. It is not a current product specification.
 
-Do not create additional Markdown summaries or mirrors of the three canonical documents unless explicitly requested.
+A `docs/RELEASE_0.x.md` record is created only after that release is actually completed/tagged. Do not create release records in advance for unreleased versions.
+
+Do not create any new Markdown file anywhere in the repository without explicit user approval for that specific file.

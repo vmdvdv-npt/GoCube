@@ -21,4 +21,14 @@ describe('GameApplication persistence edge cases', () => {
     const repo=new Repo(); repo.saved={id:'current',savedAt:new Date().toISOString(),state:{version:2,snapshot:{version:1,boardSize:4,ruleSet:'japanese',komi:7.5,history:[]}} as unknown as ApplicationSavedState};
     const app=new GameApplication(repo); await expect(app.findSavedGame()).resolves.toBeNull(); expect(repo.saved).toBeNull(); expect(repo.removes).toBe(1);
   });
+
+  it('removes a corrupted redo payload instead of exposing an unusable Continue state', async () => {
+    const repo=new Repo(), app=new GameApplication(repo); const active=await app.createNewGame({gameMode:'torus-2d',size:9,ruleSet:'japanese',komi:7.5});
+    if(active.gameMode!=='torus-2d') throw new Error('Torus expected'); await active.controller.placeStone('0,0');
+    if(!repo.saved) throw new Error('Expected saved game');
+    const corrupted=structuredClone(repo.saved) as unknown as { state: { snapshot: { redo: unknown } } };
+    corrupted.state.snapshot.redo={not:'an-array'};
+    repo.saved=corrupted as unknown as SavedGame<ApplicationSavedState>;
+    await expect(new GameApplication(repo).findSavedGame()).resolves.toBeNull(); expect(repo.saved).toBeNull(); expect(repo.removes).toBe(1);
+  });
 });
