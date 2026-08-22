@@ -32,10 +32,10 @@ describe('GameSession redo', () => {
       phase: 'playing',
     });
 
-    expect((await session.execute({ type: 'undo' })).ok).toBe(true);
+    expect((await session.executeSessionCommand({ type: 'undo' })).ok).toBe(true);
     expect(session.canRedo()).toBe(true);
 
-    const redo = await session.execute({ type: 'redo' });
+    const redo = await session.executeSessionCommand({ type: 'redo' });
     expect(redo.ok).toBe(true);
     expect(session.state()).toEqual(beforeUndo);
     expect(session.canRedo()).toBe(false);
@@ -50,11 +50,11 @@ describe('GameSession redo', () => {
     const finalScore = session.finalScore();
     expect(finalScore).not.toBeNull();
 
-    expect((await session.execute({ type: 'undo' })).ok).toBe(true);
+    expect((await session.executeSessionCommand({ type: 'undo' })).ok).toBe(true);
     expect(session.state()).toMatchObject({ phase: 'playing', consecutivePasses: 1 });
     expect(session.finalScore()).toBeNull();
 
-    expect((await session.execute({ type: 'redo' })).ok).toBe(true);
+    expect((await session.executeSessionCommand({ type: 'redo' })).ok).toBe(true);
     expect(session.state()).toMatchObject({ phase: 'finished', consecutivePasses: 2 });
     expect(session.finalScore()).toEqual(finalScore);
   });
@@ -63,12 +63,12 @@ describe('GameSession redo', () => {
     const session = createSession();
     await session.execute({ type: 'place-stone', point: '0,0' });
     await session.execute({ type: 'place-stone', point: '1,0' });
-    await session.execute({ type: 'undo' });
+    await session.executeSessionCommand({ type: 'undo' });
 
     expect(session.canRedo()).toBe(true);
     expect((await session.execute({ type: 'place-stone', point: '2,0' })).ok).toBe(true);
     expect(session.canRedo()).toBe(false);
-    expect(await session.execute({ type: 'redo' })).toMatchObject({
+    expect(await session.executeSessionCommand({ type: 'redo' })).toMatchObject({
       ok: false,
       reason: 'nothing-to-redo',
     });
