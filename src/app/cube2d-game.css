@@ -11,17 +11,9 @@
   justify-self: center;
   width: min(100%, 1140px);
   margin: 0;
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) 44px;
-  grid-template-rows: 44px minmax(0, 1fr) 44px;
-  gap: 8px;
-  align-items: center;
-  justify-items: center;
 }
 
 .cube-2d-game__viewport {
-  grid-column: 2;
-  grid-row: 2;
   width: 100%;
   max-height: calc(100vh - 112px);
   overflow: auto;
@@ -30,9 +22,43 @@
   overscroll-behavior: contain;
 }
 
-.cube-2d-game__stage {
+.cube-2d-game__navigation-layer {
   position: relative;
   margin: 0 auto;
+  isolation: isolate;
+}
+
+.cube-2d-game__stage {
+  position: absolute;
+  margin: 0;
+}
+
+.cube-2d-game__navigation-arrow {
+  position: absolute;
+  z-index: 7;
+  width: 38px;
+  height: 38px;
+}
+
+.cube-2d-game__navigation-arrow--anchor-moving {
+  animation-name: cube-2d-navigation-arrow-anchor-move;
+  animation-timing-function: cubic-bezier(0.22, 0.75, 0.22, 1);
+  animation-fill-mode: both;
+  will-change: transform;
+}
+
+@keyframes cube-2d-navigation-arrow-anchor-move {
+  from {
+    transform: translateX(var(--cube-2d-navigation-from-x));
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+.cube-2d-game .cube-2d-game__navigation-arrow:not(:disabled):hover {
+  transform: none;
 }
 
 .cube-2d-game .torus-pan:disabled {
