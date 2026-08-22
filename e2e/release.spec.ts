@@ -8,7 +8,7 @@ type StartOptions = Readonly<{
 
 const startGame = async (page: Page, options: StartOptions): Promise<void> => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'New game' })).toBeVisible();
+  await expect(page.getByTestId('new-game-settings-grid')).toBeVisible();
   await page.getByLabel('Board size').selectOption(options.size);
   await page.getByLabel('Rules').selectOption(options.rules);
   await page.getByLabel('Komi').fill(options.komi);
@@ -50,7 +50,7 @@ const classifyPoint = async (
 
 test('new game exposes every supported 0.1 torus size', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'New game' })).toBeVisible();
+  await expect(page.getByTestId('new-game-settings-grid')).toBeVisible();
   await expect(page.getByLabel('Board size').locator('option')).toHaveText([
     '9×9',
     '13×13',
@@ -231,6 +231,6 @@ test('corrupted local save is discarded without blocking startup', async ({ page
   });
 
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'New game' })).toBeVisible();
+  await expect(page.getByTestId('new-game-settings-grid')).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem('gocube:game:current'))).toBeNull();
 });
