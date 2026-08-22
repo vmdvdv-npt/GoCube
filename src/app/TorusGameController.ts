@@ -1,8 +1,5 @@
-import type {
-  EndgameClassification,
-  EndgameClassifier,
-  GroupStatus,
-} from '../core/endgame/EndgameClassifier';
+import type { GroupStatus } from '../core/endgame/EndgameClassifier';
+import { DeferredEndgameClassifier } from '../core/endgame/DeferredEndgameClassifier';
 import {
   ManualEndgameClassifier,
   type ManualGroupDecision,
@@ -66,59 +63,6 @@ export type TorusEndgameDecisions = Readonly<
 const isTorusSize = (value: number): value is TorusSize =>
   TORUS_SIZES.some((size) => size === value);
 
-class DeferredEndgameClassifier implements EndgameClassifier {
-  private groups: readonly (readonly PointId[])[] | null = null;
-  private resolvePending:
-    | ((classification: EndgameClassification) => void)
-    | null = null;
-  private rejectPending: ((reason?: unknown) => void) | null = null;
-
-  classify(
-    groups: readonly (readonly PointId[])[],
-  ): Promise<EndgameClassification> {
-    if (this.resolvePending || this.rejectPending) {
-      return Promise.reject(new Error('Endgame classification is already pending'));
-    }
-
-    this.groups = Object.freeze(
-      groups.map((group) => Object.freeze([...group])),
-    );
-
-    return new Promise((resolve, reject) => {
-      this.resolvePending = resolve;
-      this.rejectPending = reject;
-    });
-  }
-
-  pendingGroups(): readonly (readonly PointId[])[] | null {
-    return this.groups;
-  }
-
-  resolve(classification: EndgameClassification): void {
-    const resolve = this.resolvePending;
-    if (!resolve || !this.groups) {
-      throw new Error('No endgame classification is pending');
-    }
-
-    this.groups = null;
-    this.resolvePending = null;
-    this.rejectPending = null;
-    resolve(classification);
-  }
-
-  cancel(): void {
-    const reject = this.rejectPending;
-    if (!reject || !this.groups) {
-      throw new Error('No endgame classification is pending');
-    }
-
-    this.groups = null;
-    this.resolvePending = null;
-    this.rejectPending = null;
-    reject(new Error('Endgame classification cancelled'));
-  }
-}
-
 const scoringFor = (ruleSet: RuleSet, topology: TorusTopology): ScoringStrategy =>
   ruleSet === 'chinese'
     ? new ChineseScoring(topology)
@@ -127,8 +71,10 @@ const scoringFor = (ruleSet: RuleSet, topology: TorusTopology): ScoringStrategy 
 /**
  * Thin application adapter used by the React screen.
  * Commands enter through GameSession; presentation exits through PresentationModel.
- * Manual endgame decisions are session-owned/autosaved and validated by
- * ManualEndgameClassifier before the deferred endgame flow reaches scoring.
+ * Manual review decisions are session-owned/autosaved. Finalization reads only
+ * that authoritative review state before ManualEndgameClassifier validates it.
+ * The deferred classifier seam is shared with Cube and can be replaced/composed
+ * by the assisted classifier introduced in 0.3 without changing this UI boundary.
  */
 export class TorusGameController {
   readonly size: TorusSize;
@@ -279,19 +225,22 @@ export class TorusGameController {
     return this.present(result.ok, result.ok ? null : result.reason);
   }
 
-  async finishEndgame(
-    decisions: TorusEndgameDecisions,
-  ): Promise<TorusGameActionResult> {
+  async finishEndgame(): Promise<TorusGameActionResult> {
     const completion = this.pendingEndgameCompletion;
     const groups = this.endgameClassifier.pendingGroups();
-    if (!completion || !groups || this.session.state().phase !== 'endgame') {
+    const review = this.session.endgameReview();
+    if (!completion || !groups || !review || this.session.state().phase !== 'endgame') {
       throw new Error('No manual endgame classification is pending');
     }
 
+    const decisionsByGroup = new Map(
+      review.groups.map((group) => [endgameGroupId(group.points), group.status] as const),
+    );
     const manualDecisions: ManualGroupDecision[] = groups.map((points) => {
-      const status = decisions[endgameGroupId(points)];
+      const id = endgameGroupId(points);
+      const status = decisionsByGroup.get(id);
       if (!status) {
-        throw new Error(`Missing manual endgame decision for group: ${endgameGroupId(points)}`);
+        throw new Error(`Missing manual endgame decision for group: ${id}`);
       }
 
       return Object.freeze({
