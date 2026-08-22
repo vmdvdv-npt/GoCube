@@ -16,7 +16,7 @@ test('Torus 2D restores a partially classified endgame review after reload', asy
   await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
 
   await page.locator(
-    '.torus-board__stone[data-logical-point-id="0,0"][data-copy-role="primary"]',
+    '.torus-board__hit-target[data-logical-point-id="0,0"][data-copy-role="primary"]',
   ).click();
   await page.getByRole('button', { name: 'Alive' }).click();
   await expect(page.locator('.endgame-progress')).toHaveText('Classified 1 of 1');
