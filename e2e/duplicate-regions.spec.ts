@@ -144,3 +144,12 @@ test('Show duplicate regions is remembered between Torus games and reloads', asy
     'true',
   );
 });
+
+test('Cube 2D hides the Torus-only duplicate regions control', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Cube', exact: true }).click();
+  await page.getByRole('button', { name: 'Start game' }).click();
+
+  await expect(page.getByLabel('Показывать дублирующие области')).toHaveCount(0);
+  await expect(page.getByLabel('Номера ходов')).toBeVisible();
+});
