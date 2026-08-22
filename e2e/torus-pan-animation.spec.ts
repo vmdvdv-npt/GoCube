@@ -98,16 +98,16 @@ test('rapid Torus navigation ignores extra arrows and keeps sidebar actions avai
   ).click();
   await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
 
-  await page.evaluate(() => {
-    for (const direction of ['right', 'right', 'left', 'down'] as const) {
-      document.querySelector<HTMLButtonElement>(
-        `[aria-label="Shift torus view ${direction}"]`,
-      )?.click();
-    }
-  });
-
   const board = page.locator('.torus-board');
+  const shiftRight = page.getByRole('button', { name: 'Shift torus view right' });
+  const shiftDown = page.getByRole('button', { name: 'Shift torus view down' });
+
+  await shiftRight.click();
   await expect(board).toHaveAttribute('data-pan-animating', 'true');
+  // Issue the extra command only after the first animation is observably active.
+  // Canonical behavior is to ignore it, not queue it.
+  await shiftDown.click();
+  await expect(board).toHaveAttribute('data-pan-direction', 'right');
   await expect(page.getByRole('button', { name: /Pass/ })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Redo' })).toBeDisabled();
@@ -116,9 +116,15 @@ test('rapid Torus navigation ignores extra arrows and keeps sidebar actions avai
   await expect(page.getByLabel('Показывать дублирующие области')).toBeEnabled();
 
   await expect(board).toHaveAttribute('data-pan-animating', 'false', { timeout: 2_000 });
-  // The first command wins; presses received during its animation are ignored.
   await expect(board).toHaveAttribute('data-view-offset-x', '1');
   await expect(board).toHaveAttribute('data-view-offset-y', '0');
+
+  // Once the active animation ends, the same command is accepted normally.
+  await shiftDown.click();
+  await expect(board).toHaveAttribute('data-pan-animating', 'true');
+  await expect(board).toHaveAttribute('data-pan-animating', 'false', { timeout: 2_000 });
+  await expect(board).toHaveAttribute('data-view-offset-x', '1');
+  await expect(board).toHaveAttribute('data-view-offset-y', '1');
 });
 
 test('Torus 2D drag-pan moves the board view without changing logical torus offsets', async ({ page }) => {
