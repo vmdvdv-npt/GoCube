@@ -52,6 +52,9 @@ const preferredKomi = (preferences: UserPreferences): number =>
 const modeLabel = (mode: GameMode): string =>
   mode === 'cube-2d' ? 'Cube 2D' : 'Torus 2D';
 
+const topologyLabel = (mode: GameMode): string =>
+  mode === 'cube-2d' ? 'Cube' : 'Torus';
+
 const topologyPreviewSrc = (mode: GameMode): string =>
   mode === 'cube-2d' ? '/assets/board/cube.svg' : '/assets/board/torus.svg';
 
@@ -252,107 +255,117 @@ export function App() {
             <p>Choose the surface, board size, scoring rules, and komi.</p>
           </div>
 
-          <fieldset className="board-size-fieldset surface-fieldset">
-            <legend>Board</legend>
-            <div className="topology-preview" data-testid="topology-preview">
-              {topologyPreviewTransition ? (
-                <>
+          <div className="new-game-settings-grid" data-testid="new-game-settings-grid">
+            <fieldset
+              className="board-size-fieldset surface-fieldset new-game-settings-column new-game-settings-column--shape"
+              data-testid="new-game-shape-column"
+            >
+              <legend>Board Shape</legend>
+              <div className="topology-preview" data-testid="topology-preview">
+                {topologyPreviewTransition ? (
+                  <>
+                    <img
+                      className={`topology-preview__image topology-preview__image--exit-${topologyPreviewTransition.direction}`}
+                      src={topologyPreviewSrc(topologyPreviewTransition.from)}
+                      alt=""
+                      aria-hidden="true"
+                      draggable={false}
+                    />
+                    <img
+                      key={topologyPreviewTransition.id}
+                      className={`topology-preview__image topology-preview__image--enter-from-${topologyPreviewTransition.direction === 'left' ? 'right' : 'left'}`}
+                      data-testid="topology-preview-image"
+                      src={topologyPreviewSrc(topologyPreviewTransition.to)}
+                      alt={topologyPreviewAlt(topologyPreviewTransition.to)}
+                      draggable={false}
+                      onAnimationEnd={() =>
+                        finishTopologyPreviewTransition(topologyPreviewTransition.id)
+                      }
+                    />
+                  </>
+                ) : (
                   <img
-                    className={`topology-preview__image topology-preview__image--exit-${topologyPreviewTransition.direction}`}
-                    src={topologyPreviewSrc(topologyPreviewTransition.from)}
-                    alt=""
-                    aria-hidden="true"
-                    draggable={false}
-                  />
-                  <img
-                    key={topologyPreviewTransition.id}
-                    className={`topology-preview__image topology-preview__image--enter-from-${topologyPreviewTransition.direction === 'left' ? 'right' : 'left'}`}
+                    className="topology-preview__image"
                     data-testid="topology-preview-image"
-                    src={topologyPreviewSrc(topologyPreviewTransition.to)}
-                    alt={topologyPreviewAlt(topologyPreviewTransition.to)}
+                    src={topologyPreviewSrc(gameMode)}
+                    alt={topologyPreviewAlt(gameMode)}
                     draggable={false}
-                    onAnimationEnd={() =>
-                      finishTopologyPreviewTransition(topologyPreviewTransition.id)
-                    }
                   />
-                </>
-              ) : (
-                <img
-                  className="topology-preview__image"
-                  data-testid="topology-preview-image"
-                  src={topologyPreviewSrc(gameMode)}
-                  alt={topologyPreviewAlt(gameMode)}
-                  draggable={false}
+                )}
+              </div>
+              <div className="board-size-options surface-options">
+                {(['cube-2d', 'torus-2d'] as const).map((mode) => (
+                  <button
+                    type="button"
+                    key={mode}
+                    className={gameMode === mode ? 'is-selected' : undefined}
+                    aria-pressed={gameMode === mode}
+                    onClick={() => chooseMode(mode)}
+                  >
+                    {topologyLabel(mode)}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+
+            <div
+              className="new-game-settings-column new-game-settings-column--details"
+              data-testid="new-game-details-column"
+            >
+              <fieldset className="board-size-fieldset">
+                <legend>Board Size</legend>
+                <div className="board-size-options">
+                  {sizes.map((option) => (
+                    <button
+                      type="button"
+                      key={option}
+                      className={size === option ? 'is-selected' : undefined}
+                      aria-pressed={size === option}
+                      onClick={() => setSize(option)}
+                    >
+                      {option}×{option}
+                    </button>
+                  ))}
+                </div>
+                <select
+                  className="board-size-native-select"
+                  aria-label="Board size"
+                  value={size}
+                  onChange={(event) => setSize(Number(event.target.value) as GameSize)}
+                  tabIndex={-1}
+                >
+                  {sizes.map((option) => (
+                    <option value={option} key={option}>
+                      {option}×{option}
+                    </option>
+                  ))}
+                </select>
+              </fieldset>
+
+              <label>
+                Rules
+                <select
+                  value={ruleSet}
+                  onChange={(event) => setRuleSet(event.target.value as RuleSet)}
+                >
+                  <option value="japanese">Japanese</option>
+                  <option value="chinese">Chinese</option>
+                </select>
+              </label>
+
+              <label>
+                Komi
+                <input
+                  type="number"
+                  step="any"
+                  value={komi}
+                  onChange={(event) => setKomi(event.target.value)}
                 />
-              )}
+              </label>
+
+              <button className="start-game-button" type="submit">Start game</button>
             </div>
-            <div className="board-size-options surface-options">
-              {(['cube-2d', 'torus-2d'] as const).map((mode) => (
-                <button
-                  type="button"
-                  key={mode}
-                  className={gameMode === mode ? 'is-selected' : undefined}
-                  aria-pressed={gameMode === mode}
-                  onClick={() => chooseMode(mode)}
-                >
-                  {modeLabel(mode)}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-
-          <fieldset className="board-size-fieldset">
-            <legend>Board size</legend>
-            <div className="board-size-options">
-              {sizes.map((option) => (
-                <button
-                  type="button"
-                  key={option}
-                  className={size === option ? 'is-selected' : undefined}
-                  aria-pressed={size === option}
-                  onClick={() => setSize(option)}
-                >
-                  {option}×{option}
-                </button>
-              ))}
-            </div>
-            <select
-              className="board-size-native-select"
-              aria-label="Board size"
-              value={size}
-              onChange={(event) => setSize(Number(event.target.value) as GameSize)}
-              tabIndex={-1}
-            >
-              {sizes.map((option) => (
-                <option value={option} key={option}>
-                  {option}×{option}
-                </option>
-              ))}
-            </select>
-          </fieldset>
-
-          <label>
-            Rules
-            <select
-              value={ruleSet}
-              onChange={(event) => setRuleSet(event.target.value as RuleSet)}
-            >
-              <option value="japanese">Japanese</option>
-              <option value="chinese">Chinese</option>
-            </select>
-          </label>
-
-          <label>
-            Komi
-            <input
-              type="number"
-              step="any"
-              value={komi}
-              onChange={(event) => setKomi(event.target.value)}
-            />
-          </label>
-
-          <button className="start-game-button" type="submit">Start game</button>
+          </div>
         </form>
       ) : null}
 
