@@ -64,7 +64,6 @@ export function GameSidebar({
         <div className="game-statistics">
           <span>{size}×{size}</span>
           <span>Move {viewModel.moveNumber}</span>
-          <span>Passes {viewModel.consecutivePasses}</span>
           <span
             className="capture-stat capture-stat--black"
             aria-label={`Black stones captured: ${viewModel.captures.white}`}
