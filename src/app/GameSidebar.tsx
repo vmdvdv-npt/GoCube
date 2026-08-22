@@ -19,6 +19,7 @@ export interface GameSidebarProps {
   readonly gameResultAvailable: boolean;
   readonly onOpenGameResult: () => void;
   readonly onRequestNewGame: () => void;
+  readonly newGameDisabled?: boolean;
   readonly endgame?: ReactNode;
   readonly feedback?: string | null;
 }
@@ -40,6 +41,7 @@ export function GameSidebar({
   gameResultAvailable,
   onOpenGameResult,
   onRequestNewGame,
+  newGameDisabled = false,
   endgame = null,
   feedback = null,
 }: GameSidebarProps) {
@@ -166,7 +168,12 @@ export function GameSidebar({
             Game result
           </button>
         ) : null}
-        <button className="new-game-control" type="button" onClick={onRequestNewGame}>
+        <button
+          className="new-game-control"
+          type="button"
+          onClick={onRequestNewGame}
+          disabled={newGameDisabled}
+        >
           New game
         </button>
       </div>
