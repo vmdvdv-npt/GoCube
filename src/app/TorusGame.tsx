@@ -364,6 +364,15 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     const renderer = rendererRef.current;
     const svg = svgRef.current;
     if (!renderer || !svg) return null;
+
+    const directPointId = (event.target as Element | null)
+      ?.closest('[data-logical-point-id]')
+      ?.getAttribute('data-logical-point-id');
+    if (directPointId) {
+      const directGroup = endgameGroupForPoint(endgameGroups, directPointId);
+      if (directGroup) return directGroup;
+    }
+
     const client = rendererClientPosition(svg, event.clientX, event.clientY);
     if (
       showDuplicateRegions &&
@@ -663,6 +672,9 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
       </section>
     ) : null;
 
+  const hasVisualTransform =
+    viewZoom !== 1 || dragPan.offset.x !== 0 || dragPan.offset.y !== 0;
+
   return (
     <section className="torus-game" aria-label="Torus 2D game">
       <GameSidebar
@@ -694,7 +706,9 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         data-pan-y={dragPan.offset.y.toFixed(1)}
         data-dragging={dragPan.dragging ? 'true' : 'false'}
         style={{
-          transform: `translate(${dragPan.offset.x}px, ${dragPan.offset.y}px) scale(${viewZoom})`,
+          transform: hasVisualTransform
+            ? `translate(${dragPan.offset.x}px, ${dragPan.offset.y}px) scale(${viewZoom})`
+            : undefined,
           transition: dragPan.dragging ? 'none' : undefined,
           touchAction: 'none',
         }}
@@ -702,6 +716,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         onPointerMove={dragPan.onPointerMove}
         onPointerUp={dragPan.onPointerUp}
         onPointerCancel={dragPan.onPointerCancel}
+        onPointerLeave={dragPan.onPointerLeave}
         onClickCapture={dragPan.onClickCapture}
       >
         <button
