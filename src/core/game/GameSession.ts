@@ -443,10 +443,12 @@ export class GameSession {
       classification,
       this.config.komi,
     );
-    this.history.replaceCurrent({
-      ...state,
-      phase: 'finished',
-    });
+    const completion = this.engine.completeEndgame(state);
+    if (!completion.ok) {
+      throw new Error(`GameEngine rejected endgame completion: ${completion.reason}`);
+    }
+
+    this.history.replaceCurrent(completion.state);
     this.currentEndgameClassification = cloneEndgameClassification(classification);
     this.currentFinalScore = finalScore;
     await this.persist();
