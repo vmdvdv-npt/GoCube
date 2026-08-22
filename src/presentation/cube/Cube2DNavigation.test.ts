@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { CUBE_FACES, CUBE_SIZES, CubeTopology } from '../../core/topology/CubeTopology';
+import {
+  CUBE_FACES,
+  CubeTopology,
+  type CubeSize,
+} from '../../core/topology/CubeTopology';
 import { CUBE_2D_CENTER, createCube2DLayout } from './Cube2DLayout';
 import {
   createCube2DViewState,
@@ -8,6 +12,8 @@ import {
   type Cube2DNavigationDirection,
 } from './Cube2DNavigation';
 import { CubeOrientation } from './CubeOrientation';
+
+const CUBE_VIEW_CONTRACT_SIZES = [2, 3, 4, 5, 6, 7, 8, 10] as const satisfies readonly CubeSize[];
 
 const allOrientations = (): readonly CubeOrientation[] => {
   const queue = [new CubeOrientation()];
@@ -121,7 +127,7 @@ describe('Cube 2D navigation and view state', () => {
   it('keeps exactly six unique faces and logical points after every transition', () => {
     const orientations = allOrientations();
 
-    for (const size of CUBE_SIZES) {
+    for (const size of CUBE_VIEW_CONTRACT_SIZES) {
       const topology = new CubeTopology(size);
 
       for (const orientation of orientations) {
