@@ -1,5 +1,5 @@
 .app-shell > .app-header {
-  margin-bottom: 6vh;
+  margin-bottom: 12vh;
 }
 
 .startup-status {
@@ -69,7 +69,7 @@
 .new-game-settings-grid {
   display: grid;
   grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
-  gap: 50px;
+  gap: 80px;
   align-items: start;
 }
 
@@ -88,11 +88,20 @@
   gap: 12px;
 }
 
+.new-game-form label,
+.new-game-control-label {
+  color: #aeb7bf;
+  font-size: 14px;
+  font-weight: 400;
+}
+
 .new-game-form label {
   display: grid;
   gap: 6px;
-  color: #aeb7bf;
-  font-size: 14px;
+}
+
+.new-game-control-label {
+  display: block;
 }
 
 .board-size-fieldset {
@@ -107,14 +116,14 @@
 }
 
 .board-size-fieldset legend {
-  margin: 0 0 10px;
+  margin: 0 0 6px;
   padding: 0;
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 400;
 }
 
 .surface-fieldset {
-  gap: 10px;
+  gap: 6px;
 }
 
 .topology-preview {

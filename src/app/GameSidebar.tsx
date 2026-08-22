@@ -124,15 +124,16 @@ export function GameSidebar({
       </div>
 
       <div className="torus-duplicates-control" role="group" aria-label="Board display options">
-        <label>
-          <input
-            type="checkbox"
-            checked={showDuplicateRegions}
-            disabled={duplicateRegionsDisabled}
-            onChange={(event) => handleDuplicateRegionsChange(event.target.checked)}
-          />
-          Показывать дублирующие области
-        </label>
+        {!duplicateRegionsDisabled ? (
+          <label>
+            <input
+              type="checkbox"
+              checked={showDuplicateRegions}
+              onChange={(event) => handleDuplicateRegionsChange(event.target.checked)}
+            />
+            Показывать дублирующие области
+          </label>
+        ) : null}
         <label>
           <input
             type="checkbox"

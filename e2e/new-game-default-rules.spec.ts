@@ -76,7 +76,7 @@ test('new game uses board-size buttons and keeps Japanese rules as the default',
   expect(confirmBackground).toBe(inGameBackground);
   await confirmNewGame.click();
 
-  await expect(page.getByRole('heading', { name: 'New game' })).toBeVisible();
+  await expect(page.getByTestId('new-game-settings-grid')).toBeVisible();
   await expect(page.getByLabel('Rules').locator('option')).toHaveText(['Japanese', 'Chinese']);
   await expect(page.getByLabel('Rules')).toHaveValue('japanese');
 });
@@ -194,7 +194,7 @@ test('normalizes committed komi and remembers the normalized value for the next 
     await expect(page.locator('.startup-card p')).toContainText(`Komi ${expected}`);
 
     await page.getByRole('button', { name: 'New game', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'New game' })).toBeVisible();
+    await expect(page.getByTestId('new-game-settings-grid')).toBeVisible();
     await expect(page.getByLabel('Komi')).toHaveValue(expected);
   }
 
