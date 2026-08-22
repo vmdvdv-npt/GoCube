@@ -4,11 +4,21 @@
 ## Why
 
 
+## CI mode
+
+Choose via PR title:
+
+- `[no-test]` — no automated test suite for this PR
+- no marker — standard CI: lint, typecheck, unit/integration coverage, build, Chromium E2E
+- `[full]` — full CI: standard checks plus Chromium, Firefox, and WebKit E2E
+
+Release finalization always runs full CI regardless of PR title.
+
 ## Verification
 
-- [ ] TypeScript/build passes
-- [ ] Unit tests pass
-- [ ] Relevant manual/e2e check completed
+- [ ] TypeScript/build passes, or `N/A` for `[no-test]`
+- [ ] Unit tests pass, or `N/A` for `[no-test]`
+- [ ] Relevant manual/e2e check completed, or `N/A` for `[no-test]`
 
 ## Documentation check
 
