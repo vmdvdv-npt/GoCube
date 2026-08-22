@@ -225,13 +225,26 @@ export class Cube2DGameController {
     return this.present(result.ok, result.ok ? null : result.reason);
   }
 
-  async finishEndgame(): Promise<Cube2DGameActionResult> {
+  async finishEndgame(
+    decisions?: Cube2DEndgameDecisions,
+  ): Promise<Cube2DGameActionResult> {
     const completion = this.pendingEndgameCompletion;
     const groups = this.endgameClassifier.pendingGroups();
-    const review = this.session.endgameReview();
-    if (!completion || !groups || !review || this.session.state().phase !== 'endgame') {
+    if (!completion || !groups || this.session.state().phase !== 'endgame') {
       throw new Error('No manual endgame classification is pending');
     }
+
+    // Compatibility for existing 0.2 callers: a batch supplied at finish is
+    // committed through GameSession/autosave before classification. Scoring never
+    // consumes the caller-owned object directly.
+    if (decisions) {
+      for (const [groupId, status] of Object.entries(decisions)) {
+        if (status) await this.setEndgameDecision(groupId, status);
+      }
+    }
+
+    const review = this.session.endgameReview();
+    if (!review) throw new Error('No manual endgame review state is available');
 
     const decisionsByGroup = new Map(
       review.groups.map((group) => [endgameGroupId(group.points), group.status] as const),
