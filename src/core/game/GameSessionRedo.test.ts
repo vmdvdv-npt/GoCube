@@ -80,6 +80,7 @@ describe('GameSession redo', () => {
     const session = createSession();
     await session.execute({ type: 'pass' });
     await session.execute({ type: 'pass' });
+    await session.finishEndgameReview();
 
     expect(session.state().phase).toBe('finished');
     const finalScore = session.finalScore();
