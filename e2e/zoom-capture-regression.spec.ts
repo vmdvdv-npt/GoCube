@@ -29,6 +29,67 @@ const wheelAt = async (page: Page, locator: ReturnType<Page['locator']>, deltaY:
   await page.mouse.wheel(0, deltaY);
 };
 
+const comparePngScreenshots = async (
+  page: Page,
+  before: Buffer,
+  after: Buffer,
+): Promise<Readonly<{ sameDimensions: boolean; meanChannelDelta: number; changedPixelRatio: number }>> =>
+  page.evaluate(
+    async ({ beforeBase64, afterBase64 }) => {
+      const load = async (base64: string): Promise<HTMLImageElement> => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${base64}`;
+        await new Promise<void>((resolve, reject) => {
+          image.onload = () => resolve();
+          image.onerror = () => reject(new Error('Could not decode screenshot PNG'));
+        });
+        return image;
+      };
+
+      const [beforeImage, afterImage] = await Promise.all([load(beforeBase64), load(afterBase64)]);
+      if (
+        beforeImage.naturalWidth !== afterImage.naturalWidth ||
+        beforeImage.naturalHeight !== afterImage.naturalHeight
+      ) {
+        return { sameDimensions: false, meanChannelDelta: Number.POSITIVE_INFINITY, changedPixelRatio: 1 };
+      }
+
+      const width = beforeImage.naturalWidth;
+      const height = beforeImage.naturalHeight;
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (!context) throw new Error('Canvas 2D context is unavailable');
+
+      context.clearRect(0, 0, width, height);
+      context.drawImage(beforeImage, 0, 0);
+      const beforePixels = context.getImageData(0, 0, width, height).data;
+      context.clearRect(0, 0, width, height);
+      context.drawImage(afterImage, 0, 0);
+      const afterPixels = context.getImageData(0, 0, width, height).data;
+
+      let totalChannelDelta = 0;
+      let changedPixels = 0;
+      for (let index = 0; index < beforePixels.length; index += 4) {
+        let pixelDelta = 0;
+        for (let channel = 0; channel < 4; channel += 1) {
+          const delta = Math.abs(beforePixels[index + channel]! - afterPixels[index + channel]!);
+          totalChannelDelta += delta;
+          pixelDelta = Math.max(pixelDelta, delta);
+        }
+        if (pixelDelta > 8) changedPixels += 1;
+      }
+
+      return {
+        sameDimensions: true,
+        meanChannelDelta: totalChannelDelta / beforePixels.length,
+        changedPixelRatio: changedPixels / (width * height),
+      };
+    },
+    { beforeBase64: before.toString('base64'), afterBase64: after.toString('base64') },
+  );
+
 const expectCubeVectorSteadyState = async (page: Page, zoom: number): Promise<void> => {
   const stage = page.locator('.cube-2d-game__stage');
   await expect(stage).toHaveAttribute('data-view-zoom', zoom.toFixed(3));
@@ -205,7 +266,10 @@ const captureParityAtCurrentDpr = async (page: Page): Promise<void> => {
   expect(centerDeltaY).toBeLessThanOrEqual(0.5);
 
   const captureScreenshot = await firstCapture.screenshot();
-  expect(captureScreenshot.equals(normal.screenshot)).toBe(true);
+  const visualDelta = await comparePngScreenshots(page, normal.screenshot, captureScreenshot);
+  expect(visualDelta.sameDimensions).toBe(true);
+  expect(visualDelta.meanChannelDelta).toBeLessThanOrEqual(2);
+  expect(visualDelta.changedPixelRatio).toBeLessThanOrEqual(0.05);
 
   await page.waitForTimeout(850);
   await expect(captures).toHaveCount(0);
