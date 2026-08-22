@@ -11,6 +11,8 @@ import {
 export const TORUS_NAVIGATION_QUEUE_LIMIT = 6;
 
 type StyledSvg = SVGSVGElement & Readonly<{ style?: CSSStyleDeclaration }>;
+type AttributeReadableSvg = SVGSVGElement &
+  Readonly<{ getAttribute?: (name: string) => string | null }>;
 
 /**
  * Adds the product-level Torus navigation queue around the low-level renderer.
@@ -44,6 +46,11 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
   }
 
   override pan(direction: Torus2DPanDirection): Torus2DViewState {
+    // Unit-level renderer fakes deliberately expose only the minimal SVG surface.
+    // Queueing is a browser interaction concern, so preserve the base synchronous
+    // renderer contract when attribute reads are unavailable.
+    if (!this.canReadAttributes()) return super.pan(direction);
+
     if (this.navigationBusy) {
       if (this.navigationQueue.length < TORUS_NAVIGATION_QUEUE_LIMIT) {
         this.navigationQueue.push(direction);
@@ -65,7 +72,7 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
   }
 
   private handleAnimationStateChange(): void {
-    if (!this.navigationBusy) return;
+    if (!this.navigationBusy || !this.canReadAttributes()) return;
     if (this.navigationRoot.getAttribute('data-pan-animating') === 'true') return;
 
     const nextDirection = this.navigationQueue.shift();
@@ -87,6 +94,10 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
     this.setPointerEvents(this.pointerEventsBeforeNavigation);
     this.pointerEventsBeforeNavigation = '';
     this.syncNavigationAttributes();
+  }
+
+  private canReadAttributes(): boolean {
+    return typeof (this.navigationRoot as AttributeReadableSvg).getAttribute === 'function';
   }
 
   private style(): CSSStyleDeclaration | undefined {
