@@ -1,12 +1,13 @@
 # GoCube 0.1 release acceptance
 
-> **Historical/release checklist, not a source of truth.** Before using this checklist for any current requirement or regression decision, read the current live Google Docs:
+> **Historical release/checkpoint record — not a source of current requirements.**
 >
-> - Roadmap: https://docs.google.com/document/d/1_z_L7-eOiMos5_6qDRjMrOokiXb2JcMk_tGZuWhiUXQ
-> - Game Cube Go: https://docs.google.com/document/d/1Hz7cQ1FuS1JunFDpSZ3q6gnJW5fbXKxb906BcvjICwY
-> - Architecture: https://docs.google.com/document/d/1XVhf5E354aH889UVyagBkchiKAns9jSNnQpd_wH6-pw
+> For current project truth, read:
+> - Architecture: `docs/ARCHITECTURE.md`
+> - Roadmap / version scope: `docs/ROADMAP.md`
+> - Detailed product behavior: `docs/GAME_CUBE_GO.md`
 >
-> If this checklist conflicts with a current live Google Doc, **the live Google Doc wins**. Do not use an old 0.1 acceptance statement to override a later corrected requirement.
+> This file records what was accepted/tested for the 0.1 checkpoint. It may intentionally preserve requirements or implementation expectations that were valid at that time and were changed later. Never use it to override or reconstruct current product requirements. Do not rewrite historical entries merely to mirror a later product change; edit them only to correct the historical record itself.
 
 This checklist records the release gate for 0.1. It supplements implementation validation but does not define or redefine game rules, architecture, or future version scope.
 
@@ -79,10 +80,10 @@ Test at the minimum desktop target equivalent to 1920×1080 at 150% browser scal
 
 ## Release hygiene
 
-Before tagging:
+Before tagging this historical 0.1 checkpoint:
 
-1. Re-read the current live Roadmap, Game Cube Go requirements, and Architecture.
-2. If this historical checklist conflicts with a corrected live requirement, update/annotate the checklist instead of overriding the live requirement.
+1. Use `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, and `docs/GAME_CUBE_GO.md` for any current requirement or architecture decision.
+2. Treat differences between this file and the canonical documents as historical differences unless the historical record itself is wrong.
 3. Keep unrelated renderer refactors and optional cleanup out of the candidate unless needed to fix a confirmed defect.
 4. Run the complete automated gate on the exact candidate commit.
 5. Perform manual full-game smoke coverage for both Chinese and Japanese rules.
