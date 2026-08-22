@@ -25,13 +25,13 @@ class MemoryRepository implements GameRepository<GameSessionSnapshot> {
 }
 
 const deadClassifier: EndgameClassifier = {
-  classify: async (groups) =>
+  analyze: async ({ groups }) =>
     Object.freeze(
       groups.map((points) =>
         Object.freeze({
           points: Object.freeze([...points]),
           status: 'dead' as const,
-          source: 'user' as const,
+          source: 'automatic' as const,
         }),
       ),
     ),
@@ -61,7 +61,7 @@ describe('GameSession result persistence', () => {
 
     expect(session.state().phase).toBe('finished');
     expect(session.snapshot().endgameClassification).toEqual([
-      { points: ['0,0'], status: 'dead', source: 'user' },
+      { points: ['0,0'], status: 'dead', source: 'automatic' },
     ]);
 
     const saved = await repository.load('current');
