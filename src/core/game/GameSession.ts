@@ -7,7 +7,6 @@ import {
   type GameSessionRedoEntrySnapshot,
   type GameSessionSnapshot,
 } from '../persistence/GameSessionSnapshot';
-import type { RepetitionPolicy } from '../rules/RepetitionPolicy';
 import type { FinalScore, ScoringStrategy } from '../scoring/Scoring';
 import type { PointId } from '../topology/Topology';
 import {
@@ -162,7 +161,6 @@ export class GameSession {
 
   constructor(
     private readonly engine: GameEngine,
-    private readonly repetitionPolicy: RepetitionPolicy,
     config: GameSessionConfig,
     initialState: GameState = engine.createInitialState(),
   ) {
@@ -188,7 +186,6 @@ export class GameSession {
 
   static fromSnapshot(
     engine: GameEngine,
-    repetitionPolicy: RepetitionPolicy,
     config: GameSessionConfig,
     snapshot: GameSessionSnapshot,
   ): GameSession {
@@ -198,7 +195,7 @@ export class GameSession {
     if (!initialState) throw new Error('Saved game history must not be empty');
 
     const redo = snapshot.redo ?? [];
-    const session = new GameSession(engine, repetitionPolicy, config, initialState);
+    const session = new GameSession(engine, config, initialState);
     session.history = LinearHistory.fromStates(
       snapshot.history,
       redo.map((entry) => entry.state),
@@ -214,7 +211,6 @@ export class GameSession {
 
   static async load(
     engine: GameEngine,
-    repetitionPolicy: RepetitionPolicy,
     config: GameSessionConfig,
   ): Promise<GameSession | null> {
     const persistence = config.persistence;
@@ -226,7 +222,7 @@ export class GameSession {
       throw new Error(`Saved game id mismatch: expected ${persistence.gameId}, got ${saved.id}`);
     }
 
-    return GameSession.fromSnapshot(engine, repetitionPolicy, config, saved.state);
+    return GameSession.fromSnapshot(engine, config, saved.state);
   }
 
   state(): GameState {
@@ -256,8 +252,7 @@ export class GameSession {
       currentState,
       point,
       currentState.currentPlayer,
-      this.repetitionPolicy,
-      this.history.repetitionContext(),
+      this.history.simpleKoContext(),
     );
 
     return Object.freeze({
@@ -326,8 +321,7 @@ export class GameSession {
       currentState,
       point,
       currentState.currentPlayer,
-      this.repetitionPolicy,
-      this.history.repetitionContext(),
+      this.history.simpleKoContext(),
     );
 
     if (!result.ok) {
