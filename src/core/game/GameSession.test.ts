@@ -13,7 +13,7 @@ import {
 } from './GameSession';
 
 const emptyClassifier: EndgameClassifier = Object.freeze({
-  classify: async () => Object.freeze([]),
+  analyze: async () => Object.freeze([]),
 });
 
 const sessionConfig = (topology: Topology): GameSessionConfig =>
