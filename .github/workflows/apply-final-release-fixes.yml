@@ -23,7 +23,14 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Apply stable Torus endgame overlay and deterministic navigation regression
+      - name: Merge latest main without losing documentation
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git fetch origin main
+          git merge --no-edit origin/main
+
+      - name: Stabilize Torus endgame overlay and navigation regression
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -35,21 +42,6 @@ jobs:
               if count != 1:
                   raise SystemExit(f'{path}: expected exactly one replacement target, found {count}')
               p.write_text(text.replace(old, new, 1))
-
-          replace_once(
-              'src/app/TorusGameBase.tsx',
-              """  const dragPan = useDragPan({
-            constrain: constrainViewPan,
-            onDragStart: clearPanHover,
-            startOnPointerDown: true,
-          });
-          """,
-              """  const dragPan = useDragPan({
-            constrain: constrainViewPan,
-            onDragStart: clearPanHover,
-          });
-          """,
-          )
 
           replace_once(
               'src/app/TorusGameBase.tsx',
@@ -268,8 +260,8 @@ jobs:
 
           await shiftRight.click();
           await expect(board).toHaveAttribute('data-pan-animating', 'true');
-          // This second command is intentionally issued only after the first animation
-          // is observably active. Canonical behavior is to ignore it, not queue it.
+          // This second command is issued only after the first animation is observably active.
+          // Canonical behavior is to ignore it, not queue it.
           await shiftDown.click();
           await expect(board).toHaveAttribute('data-pan-direction', 'right');
           await expect(page.getByRole('button', { name: /Pass/ })).toBeEnabled();
@@ -283,7 +275,7 @@ jobs:
           await expect(board).toHaveAttribute('data-view-offset-x', '1');
           await expect(board).toHaveAttribute('data-view-offset-y', '0');
 
-          // Once the first animation has ended, the same Down command is accepted.
+          // Once the first animation has ended, the same command is accepted.
           await shiftDown.click();
           await expect(board).toHaveAttribute('data-pan-animating', 'true');
           await expect(board).toHaveAttribute('data-pan-animating', 'false', { timeout: 2_000 });
@@ -318,8 +310,6 @@ jobs:
 
       - name: Commit verified fixes
         run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add src/app/TorusGameBase.tsx src/renderer2d/Torus2DRendererBase.ts e2e/torus-pan-animation.spec.ts
           git commit -m "Stabilize Torus endgame interactions across browsers"
           git push origin HEAD:fix/0.2-release-acceptance
