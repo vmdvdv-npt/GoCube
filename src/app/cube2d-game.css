@@ -30,13 +30,9 @@
   overscroll-behavior: contain;
 }
 
-.cube-2d-game__scaled-stage {
+.cube-2d-game__stage {
   position: relative;
   margin: 0 auto;
-}
-
-.cube-2d-game__stage {
-  transform-origin: top left;
 }
 
 .cube-2d-game .torus-pan:disabled {
