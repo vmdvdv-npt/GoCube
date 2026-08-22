@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, edited]
 
 permissions:
   contents: read
@@ -13,18 +14,71 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - name: Select CI mode
+        id: mode
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          mode="standard"
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            if [[ "$PR_TITLE" == *"[full]"* ]]; then
+              mode="full"
+            elif [[ "$PR_TITLE" == *"[no-test]"* ]]; then
+              mode="none"
+            fi
+          else
+            # Normal main pushes do not repeat PR CI. Release finalization is always full.
+            mode="none"
+            if [[ "$HEAD_MESSAGE" == release:\ finalize\ * ]]; then
+              mode="full"
+            fi
+          fi
+
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "CI mode: $mode"
+
       - uses: actions/checkout@v7
+        if: steps.mode.outputs.mode != 'none'
+
       - uses: actions/setup-node@v7
+        if: steps.mode.outputs.mode != 'none'
         with:
           node-version: 22
           cache: npm
+
       - run: npm ci
+        if: steps.mode.outputs.mode != 'none'
+
       - run: npm run lint
+        if: steps.mode.outputs.mode != 'none'
+
       - run: npm run typecheck
+        if: steps.mode.outputs.mode != 'none'
+
       - run: npm run test:coverage
+        if: steps.mode.outputs.mode != 'none'
+
       - run: npm run build
-      - run: npx playwright install --with-deps chromium firefox webkit
-      - run: npm run test:e2e
+        if: steps.mode.outputs.mode != 'none'
+
+      - name: Install Chromium
+        if: steps.mode.outputs.mode == 'standard'
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Chromium E2E
+        if: steps.mode.outputs.mode == 'standard'
+        run: npm run test:e2e -- --project=chromium
+
+      - name: Install all Playwright browsers
+        if: steps.mode.outputs.mode == 'full'
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Run full cross-browser E2E
+        if: steps.mode.outputs.mode == 'full'
+        run: npm run test:e2e
 
   release:
     needs: test
