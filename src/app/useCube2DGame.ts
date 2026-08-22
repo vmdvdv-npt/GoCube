@@ -142,7 +142,11 @@ export function useCube2DGame(controller: Cube2DGameController) {
   const run = async (action: () => Promise<Cube2DGameActionResult>) => { if (inFlight.current || transition || captureAnimating) return; inFlight.current = true; try { apply(await action()); } finally { inFlight.current = false; } };
   const pass = async () => { if (passGuarded || vm.phase !== 'playing' || captureAnimating) return; await run(async () => { const action = await controller.pass(); if (action.accepted && action.viewModel.phase === 'playing' && action.viewModel.consecutivePasses === 1) startPassGuard(); return action; }); };
   const finish = async () => { if (inFlight.current || vm.phase !== 'endgame') return; inFlight.current = true; try { apply(await controller.finishEndgame(decisions)); } catch (error) { setFeedback(error instanceof Error ? error.message : 'Endgame classification failed.'); } finally { inFlight.current = false; } };
-  const setZoom = (next: number) => setZoomState(clampZoom(next));
+  const setZoom = (next: number) => {
+    const clamped = clampZoom(next);
+    setZoomState(clamped);
+    return clamped;
+  };
   const selected = groups.find((group) => group.id === selectedGroup) ?? null;
   return { vm, view, layout, transition, hoveredPoint, hoverStatus, hoveredGroup, groups, decisions, setDecisions, selectedGroup, setSelectedGroup, selected, resultOpen, setResultOpen, showMoveNumbers, setShowMoveNumbers, passGuarded, feedback, zoom, setZoom, capturedEffects, captureAnimating, navigate, moveAnchor, hover, activate, run, pass, finish, classified: groups.filter((group) => Boolean(decisions[group.id])).length, allClassified: groups.every((group) => Boolean(decisions[group.id])), result: vm.phase === 'finished' ? controller.resultModel() : null, finalClassification: vm.phase === 'finished' ? controller.snapshot().endgameClassification : null } as const;
 }
