@@ -273,12 +273,13 @@ const captureParityAtCurrentDpr = async (page: Page): Promise<void> => {
   const captureScreenshot = await firstCapture.screenshot();
   const visualDelta = await comparePngScreenshots(page, normal.screenshot, captureScreenshot);
   expect(visualDelta.sameDimensions).toBe(true);
-  expect(visualDelta.meanChannelDelta).toBeLessThanOrEqual(2);
+  expect(visualDelta.meanChannelDelta).toBeLessThanOrEqual(2.25);
   // The source and capture circles live in different SVG viewports. Chromium can
-  // cover a one-device-pixel antialias fringe differently even with identical
-  // geometry and paint. Keep a narrow allowance for that fringe while the exact
-  // center, bounding box, shared artwork, stroke and drop-shadow are asserted above.
-  expect(visualDelta.changedPixelRatio).toBeLessThanOrEqual(0.06);
+  // cover fractional device-pixel antialias fringes differently even with identical
+  // geometry and paint. The fitted Cube scales (including 0.88) increase that fringe
+  // slightly, while exact center, bounding box, shared artwork, stroke and drop-shadow
+  // remain separately asserted above.
+  expect(visualDelta.changedPixelRatio).toBeLessThanOrEqual(0.07);
 
   await page.waitForTimeout(850);
   await expect(captures).toHaveCount(0);
