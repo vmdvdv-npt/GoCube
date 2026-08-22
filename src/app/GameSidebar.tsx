@@ -65,8 +65,20 @@ export function GameSidebar({
           <span>{size}×{size}</span>
           <span>Move {viewModel.moveNumber}</span>
           <span>Passes {viewModel.consecutivePasses}</span>
-          <span>Black Captured {viewModel.captures.white}</span>
-          <span>White Captured {viewModel.captures.black}</span>
+          <span
+            className="capture-stat capture-stat--black"
+            aria-label={`Black stones captured: ${viewModel.captures.white}`}
+          >
+            <i className="capture-stat__stone capture-stat__stone--black" aria-hidden="true" />
+            <strong className="capture-stat__count">{viewModel.captures.white}</strong>
+          </span>
+          <span
+            className="capture-stat capture-stat--white"
+            aria-label={`White stones captured: ${viewModel.captures.black}`}
+          >
+            <i className="capture-stat__stone capture-stat__stone--white" aria-hidden="true" />
+            <strong className="capture-stat__count">{viewModel.captures.black}</strong>
+          </span>
           <span>{viewModel.ruleSet === 'chinese' ? 'Chinese' : 'Japanese'} rules</span>
           <span>Komi {viewModel.komi}</span>
         </div>
