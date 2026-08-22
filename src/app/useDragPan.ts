@@ -245,6 +245,7 @@ export function useDragPan(options: DragPanOptions = {}) {
   return {
     offset,
     dragging,
+    setOffset: applyOffset,
     reset,
     reconstrain,
     // Cube can opt into an explicit pointer-down session and allow drags to begin
