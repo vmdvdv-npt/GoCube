@@ -15,6 +15,7 @@ interface StoredPreferences {
   readonly version: typeof PREFERENCES_VERSION;
   readonly lastCubeSize: CubeUiSize | null;
   readonly lastTorusSize: TorusSize | null;
+  readonly lastKomi: number | null;
   readonly showTorusDuplicateRegions: boolean;
 }
 
@@ -24,18 +25,26 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isTorusSize = (value: unknown): value is TorusSize =>
   typeof value === 'number' && TORUS_SIZES.some((size) => size === value);
 
+const isNormalizedKomi = (value: unknown): value is number =>
+  typeof value === 'number' &&
+  Number.isFinite(value) &&
+  value === Math.floor(value) + 0.5;
+
 const parsePreferences = (value: unknown): UserPreferences | null => {
   if (!isRecord(value) || value.version !== PREFERENCES_VERSION) return null;
 
   const cubeSize = value.lastCubeSize;
   const torusSize = value.lastTorusSize;
+  const komi = value.lastKomi ?? null;
   if (cubeSize !== null && !isCubeUiSize(cubeSize)) return null;
   if (torusSize !== null && !isTorusSize(torusSize)) return null;
+  if (komi !== null && !isNormalizedKomi(komi)) return null;
   if (typeof value.showTorusDuplicateRegions !== 'boolean') return null;
 
   return Object.freeze({
     lastCubeSize: cubeSize,
     lastTorusSize: torusSize,
+    lastKomi: komi,
     showTorusDuplicateRegions: value.showTorusDuplicateRegions,
   });
 };
@@ -84,6 +93,7 @@ export class LocalStoragePreferencesStorage implements PreferencesStorage {
       version: PREFERENCES_VERSION,
       lastCubeSize: preferences.lastCubeSize,
       lastTorusSize: preferences.lastTorusSize,
+      lastKomi: preferences.lastKomi,
       showTorusDuplicateRegions: preferences.showTorusDuplicateRegions,
     });
     this.storage.setItem(this.key, JSON.stringify(stored));
