@@ -21,11 +21,13 @@ test('first Pass is shown as Pass (1), uses no visible timer and a normal move r
   await startGame(page);
 
   const pass = page.getByRole('button', { name: /^Pass(?: \(1\))?$/ });
+  const legacyPassState = page.getByText(/^Passes \d+$/);
   await expect(pass).toHaveText('Pass');
+  await expect(legacyPassState).toHaveCount(0);
   await pass.click();
 
   await expect(page.getByText('White to move')).toBeVisible();
-  await expect(page.getByText('Passes 1')).toBeVisible();
+  await expect(legacyPassState).toHaveCount(0);
   await expect(pass).toHaveText('Pass (1)');
   await expect(pass).toBeDisabled();
   await expect(page.getByRole('progressbar', { name: 'Pass cooldown' })).toHaveCount(0);
@@ -34,7 +36,7 @@ test('first Pass is shown as Pass (1), uses no visible timer and a normal move r
   await clickPoint(page, '4,4');
 
   await expect(page.getByText('Black to move')).toBeVisible();
-  await expect(page.getByText('Passes 0')).toBeVisible();
+  await expect(legacyPassState).toHaveCount(0);
   await expect(pass).toHaveText('Pass');
   await expect(pass).toBeEnabled();
 });
@@ -43,9 +45,12 @@ test('second Pass becomes available after about one second and Undo/Redo restore
   await startGame(page);
 
   const pass = page.getByRole('button', { name: /^Pass(?: \(1\))?$/ });
+  const legacyPassState = page.getByText(/^Passes \d+$/);
+  await expect(legacyPassState).toHaveCount(0);
   await pass.click();
 
   await expect(pass).toHaveText('Pass (1)');
+  await expect(legacyPassState).toHaveCount(0);
   await expect(pass).toBeDisabled();
   await expect(pass).toBeEnabled({ timeout: 2200 });
 
@@ -59,12 +64,13 @@ test('second Pass becomes available after about one second and Undo/Redo restore
 
   await undo.click();
   await expect(page.getByText('White to move')).toBeVisible();
-  await expect(page.getByText('Passes 1')).toBeVisible();
+  await expect(legacyPassState).toHaveCount(0);
   await expect(pass).toHaveText('Pass (1)');
   await expect(pass).toBeEnabled();
   await expect(redo).toBeEnabled();
 
   await redo.click();
   await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
+  await expect(legacyPassState).toHaveCount(0);
   await expect(redo).toBeDisabled();
 });
