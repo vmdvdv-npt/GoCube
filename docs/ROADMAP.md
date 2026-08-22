@@ -217,7 +217,7 @@ Cube 3D в 0.3 не входит. Cube-партии по-прежнему ста
 - feature parity основных игровых и endgame-визуализаций Cube 2D/Cube 3D;
 - 3D-specific automated/visual regression coverage.
 
-Точное 3D-поведение и пользовательская семантика default topology определяются `docs/GAME_CUBE_GO.md`; техническую границу Renderer3D и spatial mapping определяет только `docs/ARCHITECTURE.md`.
+Точное 3D-поведение и пользовательская семантика default topology определяются `docs/GAME_CUBE_GO.md`; техническую границу Renderer3D и spatial mapping определяет `docs/ARCHITECTURE.md`.
 
 ## Внутренний порядок 0.5
 
