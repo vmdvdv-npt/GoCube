@@ -1,7 +1,14 @@
 import type { PointId, Topology } from './Topology';
 
-export const CUBE_SIZES = [2, 3, 4, 5, 6, 7] as const;
-export type CubeSize = (typeof CUBE_SIZES)[number];
+/**
+ * CubeTopology is parameterized by board size and intentionally does not know
+ * which sizes the current UI chooses to expose. Application/UI configuration
+ * owns that list.
+ */
+export type CubeSize = number;
+
+export const isValidCubeSize = (size: number): size is CubeSize =>
+  Number.isSafeInteger(size) && size >= 2;
 
 export const CUBE_FACES = ['front', 'back', 'left', 'right', 'top', 'bottom'] as const;
 export type CubeFace = (typeof CUBE_FACES)[number];
@@ -54,9 +61,6 @@ const EDGE_TRANSITIONS: Readonly<Record<CubeFace, Readonly<Record<CubeEdge, Edge
     }),
   });
 
-const isSupportedCubeSize = (size: number): size is CubeSize =>
-  CUBE_SIZES.some((supportedSize) => supportedSize === size);
-
 export const cubePointId = (face: CubeFace, row: number, column: number): PointId =>
   `${face}:${row}:${column}`;
 
@@ -99,8 +103,8 @@ export class CubeTopology implements Topology {
   private readonly allPoints: readonly PointId[];
 
   constructor(readonly size: CubeSize) {
-    if (!isSupportedCubeSize(size)) {
-      throw new Error(`Unsupported cube size: ${size}. Expected one of: ${CUBE_SIZES.join(', ')}`);
+    if (!isValidCubeSize(size)) {
+      throw new Error(`Cube size must be a safe integer >= 2, got ${String(size)}`);
     }
 
     this.id = `cube-${size}x${size}`;

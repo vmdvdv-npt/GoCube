@@ -6,7 +6,6 @@ import { CubeTopology, cubePointId } from '../core/topology/CubeTopology';
 import {
   createCube2DViewState,
   navigateCube2DViewState,
-  setCube2DVerticalAnchorColumn,
 } from '../presentation/cube/Cube2DNavigation';
 import { Cube2DGameController } from './Cube2DGameController';
 
@@ -138,12 +137,9 @@ describe('Cube2D full game flow', () => {
     },
   );
 
-  it('undoes the finishing second Pass without changing the presentation-only Cube view state', async () => {
+  it('undoes the finishing second Pass without changing the presentation-only Cube orientation', async () => {
     const controller = new Cube2DGameController({ size: 4, ruleSet: 'chinese' });
-    const viewState = setCube2DVerticalAnchorColumn(
-      navigateCube2DViewState(createCube2DViewState(), 'right'),
-      3,
-    );
+    const viewState = navigateCube2DViewState(createCube2DViewState(), 'right');
 
     await controller.pass();
     await controller.pass();
@@ -161,13 +157,12 @@ describe('Cube2D full game flow', () => {
     });
     expect(controller.resultModel()).toBeNull();
     expect(viewState.orientation.centerFace).toBe('right');
-    expect(viewState.verticalAnchorColumn).toBe(3);
+    expect('verticalAnchorColumn' in viewState).toBe(false);
 
     const redone = await controller.redo();
     expect(redone.viewModel.phase).toBe('finished');
     expect(redone.viewModel.finalScore).not.toBeNull();
     expect(viewState.orientation.centerFace).toBe('right');
-    expect(viewState.verticalAnchorColumn).toBe(3);
   });
 
   it.each([
@@ -220,4 +215,19 @@ describe('Cube2D full game flow', () => {
     expect(restored.snapshot().ruleSet).toBe('japanese');
     expect(restored.snapshot().komi).toBe(0);
   });
+
+  it.each([8, 10] as const)(
+    'runs the same headless Cube game controller on technical %dx%d sizes outside the UI set',
+    async (size) => {
+      const controller = new Cube2DGameController({ size });
+      const point = cubePointId('front', 0, 0);
+      const move = await controller.placeStone(point);
+
+      expect(controller.topology.points()).toHaveLength(6 * size * size);
+      expect(move.accepted).toBe(true);
+      expect(
+        move.viewModel.points.find((candidate) => candidate.logicalPointId === point)?.occupancy,
+      ).toBe('black');
+    },
+  );
 });
