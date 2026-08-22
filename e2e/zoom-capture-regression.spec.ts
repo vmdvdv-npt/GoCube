@@ -167,7 +167,9 @@ const comparePngScreenshots = async (
 
 const expectCubeVectorSteadyState = async (page: Page, zoom: number): Promise<void> => {
   const stage = page.locator('.cube-2d-game__stage');
+  const renderer = page.locator('.cube-2d-renderer');
   await expect(stage).toHaveAttribute('data-view-zoom', zoom.toFixed(3));
+  const anchorBeforePan = await renderer.getAttribute('data-vertical-anchor-column');
   const state = await page.evaluate(() => {
     const stageElement = document.querySelector<HTMLElement>('.cube-2d-game__stage')!;
     const board = document.querySelector<HTMLElement>('.cube-2d-board')!;
@@ -180,6 +182,7 @@ const expectCubeVectorSteadyState = async (page: Page, zoom: number): Promise<vo
   expect(state.boardWillChange).toBe('auto');
 
   const hit = await bringCubeHitIntoViewport(page);
+  await expect(renderer).toHaveAttribute('data-vertical-anchor-column', anchorBeforePan ?? '');
   const pointId = await hit.getAttribute('data-point-id');
   if (!pointId) throw new Error('Expected visible Cube hit target PointId');
   const box = await hit.boundingBox();
@@ -213,12 +216,17 @@ for (const [zoom, deltaY] of [
     });
     await expectCubeVectorSteadyState(page, zoom);
 
-    const slot = page.locator('.cube-2d-anchor-slot[data-layout-row="0"][data-layout-column="0"]');
+    const slot = page.locator('.cube-2d-anchor-slot[data-layout-row="0"]').first();
+    await expect(slot).toHaveAttribute('data-layout-column', /[0-3]/);
+    const targetAnchorColumn = await slot.getAttribute('data-layout-column');
+    if (!targetAnchorColumn) throw new Error('Expected available top anchor slot column');
     if (zoom === 4.05) await slot.dispatchEvent('click');
     else await slot.click();
-    await expect(page.locator('.cube-2d-renderer')).toHaveAttribute('data-vertical-anchor-column', '0', {
-      timeout: 1000,
-    });
+    await expect(page.locator('.cube-2d-renderer')).toHaveAttribute(
+      'data-vertical-anchor-column',
+      targetAnchorColumn,
+      { timeout: 1000 },
+    );
     await expect(page.locator('.cube-2d-renderer')).toHaveAttribute('data-animating', 'false');
     await expectCubeVectorSteadyState(page, zoom);
   });
