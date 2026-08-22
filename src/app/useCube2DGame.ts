@@ -23,7 +23,7 @@ import { type Cube2DEndgameDecisions, type Cube2DEndgameGroup, type Cube2DGameAc
 export const CUBE_ENDGAME_STATUSES: readonly GroupStatus[] = ['alive', 'dead', 'seki'];
 export const cubeEndgameStatusLabel = (status: GroupStatus) => status === 'alive' ? 'Alive' : status === 'dead' ? 'Dead' : 'Seki';
 export const CUBE_ZOOM_MIN = 0.78;
-export const CUBE_ZOOM_MAX = 1.35;
+export const CUBE_ZOOM_MAX = 4.05;
 const clampZoom = (value: number) => Math.min(CUBE_ZOOM_MAX, Math.max(CUBE_ZOOM_MIN, value));
 
 export function useCube2DGame(controller: Cube2DGameController) {
