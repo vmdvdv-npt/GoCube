@@ -107,7 +107,7 @@ describe('GameSession persistence', () => {
     expect(JSON.stringify(restored?.snapshot())).toBe(beforeRestore);
     expect(restored?.state()).toEqual(session.state());
 
-    const undo = await restored!.execute({ type: 'undo' });
+    const undo = await restored!.executeSessionCommand({ type: 'undo' });
     expect(undo.ok).toBe(true);
     expect(restored?.state()).toMatchObject({
       moveNumber: 2,
@@ -128,7 +128,7 @@ describe('GameSession persistence', () => {
     await session.execute({ type: 'place-stone', point: '1,1' });
     const stateBeforeUndo = session.state();
 
-    const undo = await session.execute({ type: 'undo' });
+    const undo = await session.executeSessionCommand({ type: 'undo' });
     expect(undo.ok).toBe(true);
     expect(session.canRedo()).toBe(true);
     expect(repository.saves.at(-1)?.state.redo).toHaveLength(1);
@@ -137,7 +137,7 @@ describe('GameSession persistence', () => {
     const restored = await GameSession.load(engine, config);
     expect(restored?.canRedo()).toBe(true);
 
-    const redo = await restored!.execute({ type: 'redo' });
+    const redo = await restored!.executeSessionCommand({ type: 'redo' });
     expect(redo.ok).toBe(true);
     expect(restored?.state()).toEqual(stateBeforeUndo);
     expect(restored?.canRedo()).toBe(false);
@@ -164,7 +164,7 @@ describe('GameSession persistence', () => {
     expect(restored?.state().phase).toBe('finished');
     expect(restored?.finalScore()).toEqual(finishedScore);
 
-    const undo = await restored!.execute({ type: 'undo' });
+    const undo = await restored!.executeSessionCommand({ type: 'undo' });
     expect(undo.ok).toBe(true);
     expect(restored?.state()).toMatchObject({
       moveNumber: 1,
@@ -182,7 +182,7 @@ describe('GameSession persistence', () => {
     expect(restoredAfterUndo?.canRedo()).toBe(true);
     expect(restoredAfterUndo?.finalScore()).toBeNull();
 
-    const redo = await restoredAfterUndo!.execute({ type: 'redo' });
+    const redo = await restoredAfterUndo!.executeSessionCommand({ type: 'redo' });
     expect(redo.ok).toBe(true);
     expect(restoredAfterUndo?.state().phase).toBe('finished');
     expect(restoredAfterUndo?.finalScore()).toEqual(finishedScore);
