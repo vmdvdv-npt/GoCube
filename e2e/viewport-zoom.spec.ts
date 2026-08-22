@@ -138,7 +138,7 @@ test('Torus wheel zoom scales the board and arrows while the sidebar stays fixed
 test('Cube arrows keep full brightness and exact 30px anchoring while the fixed sidebar ignores zoom', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
+  await page.getByRole('button', { name: 'Cube', exact: true }).click();
   await page.getByRole('button', { name: '4×4', exact: true }).click();
   await page.getByRole('button', { name: 'Start game' }).click();
 
@@ -182,7 +182,7 @@ test('Cube arrows keep full brightness and exact 30px anchoring while the fixed 
 test('Cube strong zoom reaches 4.05x and lets boards and arrows extend beyond the real viewport through pan', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
+  await page.getByRole('button', { name: 'Cube', exact: true }).click();
   await page.getByRole('button', { name: '4×4', exact: true }).click();
   await page.getByRole('button', { name: 'Start game' }).click();
 
@@ -294,7 +294,7 @@ test('Torus drag-pan moves the zoomed visual shell without placing a stone and k
 test('Cube drag-pan at 4.05x moves the complete cross with its arrows, suppresses the drag click, and preserves later gameplay clicks', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
+  await page.getByRole('button', { name: 'Cube', exact: true }).click();
   await page.getByRole('button', { name: '4×4', exact: true }).click();
   await page.getByRole('button', { name: 'Start game' }).click();
 
