@@ -1,5 +1,5 @@
 import './new-game.css';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { RuleSet } from '../core/game/types';
 import { TORUS_SIZES } from '../core/topology/TorusTopology';
 import { CUBE_UI_SIZES } from './CubeGameConfig';
@@ -19,6 +19,13 @@ import {
 import { TorusGame } from './TorusGame';
 
 type AppScreen = 'loading' | 'resume' | 'settings' | 'game';
+type TopologyPreviewDirection = 'left' | 'right';
+type TopologyPreviewTransition = Readonly<{
+  id: number;
+  from: GameMode;
+  to: GameMode;
+  direction: TopologyPreviewDirection;
+}>;
 
 const DEFAULT_KOMI = 7.5;
 
@@ -45,6 +52,12 @@ const preferredKomi = (preferences: UserPreferences): number =>
 const modeLabel = (mode: GameMode): string =>
   mode === 'cube-2d' ? 'Cube 2D' : 'Torus 2D';
 
+const topologyPreviewSrc = (mode: GameMode): string =>
+  mode === 'cube-2d' ? '/assets/board/cube.svg' : '/assets/board/torus.svg';
+
+const topologyPreviewAlt = (mode: GameMode): string =>
+  `${mode === 'cube-2d' ? 'Cube' : 'Torus'} topology preview`;
+
 const normalizeKomi = (value: number): number => Math.floor(value) + 0.5;
 
 export function App() {
@@ -56,6 +69,10 @@ export function App() {
   const [activeGame, setActiveGame] = useState<ActiveGame | null>(null);
   const [confirmNewGame, setConfirmNewGame] = useState(false);
   const [gameMode, setGameMode] = useState<GameMode>('torus-2d');
+  const [topologyPreviewTransition, setTopologyPreviewTransition] =
+    useState<TopologyPreviewTransition | null>(null);
+  const topologyPreviewTargetRef = useRef<GameMode>('torus-2d');
+  const topologyPreviewTransitionIdRef = useRef(0);
   const [size, setSize] = useState<GameSize>(9);
   const [ruleSet, setRuleSet] = useState<RuleSet>('japanese');
   const [komi, setKomi] = useState(String(DEFAULT_KOMI));
@@ -75,6 +92,8 @@ export function App() {
           : storedPreferences;
       const initialGameMode = preferredGameMode(hydratedPreferences);
       setPreferences(hydratedPreferences);
+      topologyPreviewTargetRef.current = initialGameMode;
+      setTopologyPreviewTransition(null);
       setGameMode(initialGameMode);
       setSize(preferredSizeForMode(initialGameMode, hydratedPreferences));
       setKomi(String(preferredKomi(hydratedPreferences)));
@@ -109,6 +128,8 @@ export function App() {
       setActiveGame(null);
       setSavedGame(null);
       setConfirmNewGame(false);
+      topologyPreviewTargetRef.current = nextGameMode;
+      setTopologyPreviewTransition(null);
       setGameMode(nextGameMode);
       setSize(preferredSizeForMode(nextGameMode, preferences));
       setRuleSet('japanese');
@@ -120,8 +141,25 @@ export function App() {
   };
 
   const chooseMode = (nextMode: GameMode) => {
+    const fromMode = topologyPreviewTargetRef.current;
+    if (fromMode === nextMode) return;
+
+    topologyPreviewTargetRef.current = nextMode;
+    const transitionId = ++topologyPreviewTransitionIdRef.current;
+    setTopologyPreviewTransition({
+      id: transitionId,
+      from: fromMode,
+      to: nextMode,
+      direction: nextMode === 'torus-2d' ? 'left' : 'right',
+    });
     setGameMode(nextMode);
     setSize(preferredSizeForMode(nextMode, preferences));
+  };
+
+  const finishTopologyPreviewTransition = (transitionId: number) => {
+    setTopologyPreviewTransition((current) =>
+      current?.id === transitionId ? null : current,
+    );
   };
 
   const startNewGame = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -216,6 +254,38 @@ export function App() {
 
           <fieldset className="board-size-fieldset surface-fieldset">
             <legend>Board</legend>
+            <div className="topology-preview" data-testid="topology-preview">
+              {topologyPreviewTransition ? (
+                <>
+                  <img
+                    className={`topology-preview__image topology-preview__image--exit-${topologyPreviewTransition.direction}`}
+                    src={topologyPreviewSrc(topologyPreviewTransition.from)}
+                    alt=""
+                    aria-hidden="true"
+                    draggable={false}
+                  />
+                  <img
+                    key={topologyPreviewTransition.id}
+                    className={`topology-preview__image topology-preview__image--enter-from-${topologyPreviewTransition.direction === 'left' ? 'right' : 'left'}`}
+                    data-testid="topology-preview-image"
+                    src={topologyPreviewSrc(topologyPreviewTransition.to)}
+                    alt={topologyPreviewAlt(topologyPreviewTransition.to)}
+                    draggable={false}
+                    onAnimationEnd={() =>
+                      finishTopologyPreviewTransition(topologyPreviewTransition.id)
+                    }
+                  />
+                </>
+              ) : (
+                <img
+                  className="topology-preview__image"
+                  data-testid="topology-preview-image"
+                  src={topologyPreviewSrc(gameMode)}
+                  alt={topologyPreviewAlt(gameMode)}
+                  draggable={false}
+                />
+              )}
+            </div>
             <div className="board-size-options surface-options">
               {(['cube-2d', 'torus-2d'] as const).map((mode) => (
                 <button
