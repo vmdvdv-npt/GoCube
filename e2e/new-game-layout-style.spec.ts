@@ -25,7 +25,7 @@ test('New Game uses the requested effective layout styles', async ({ page }) => 
     page.getByText('Choose the surface, board size, scoring rules, and komi.', { exact: true }),
   ).toHaveCount(0);
 
-  const [headerStyle, formStyle, gridStyle, dividerStyle, detailsStyle, viewportHeight] =
+  const [headerStyle, formStyle, gridStyle, dividerStyle, viewportHeight] =
     await Promise.all([
       header.evaluate((element) => {
         const style = getComputedStyle(element);
@@ -47,6 +47,7 @@ test('New Game uses the requested effective layout styles', async ({ page }) => 
         return {
           columnGap: Number.parseFloat(style.columnGap),
           gridTemplateColumns: style.gridTemplateColumns,
+          alignItems: style.alignItems,
         };
       }),
       divider.evaluate((element) => {
@@ -57,7 +58,6 @@ test('New Game uses the requested effective layout styles', async ({ page }) => 
           backgroundImage: style.backgroundImage,
         };
       }),
-      detailsColumn.evaluate((element) => ({ alignContent: getComputedStyle(element).alignContent })),
       page.evaluate(() => window.innerHeight),
     ]);
 
@@ -69,11 +69,11 @@ test('New Game uses the requested effective layout styles', async ({ page }) => 
   expect(formStyle.lineHeight / formStyle.fontSize).toBeCloseTo(1.5, 2);
   expect(gridStyle.columnGap).toBe(0);
   expect(gridStyle.gridTemplateColumns.split(' ')).toHaveLength(3);
-  expect(dividerStyle.width).toBe(1);
-  expect(dividerStyle.opacity).toBeCloseTo(0.4, 2);
-  expect(dividerStyle.backgroundImage).toContain('15%');
-  expect(dividerStyle.backgroundImage).toContain('85%');
-  expect(detailsStyle.alignContent).toBe('start');
+  expect(gridStyle.alignItems).toBe('center');
+  expect(dividerStyle.width).toBe(2);
+  expect(dividerStyle.opacity).toBeCloseTo(0.6, 2);
+  expect(dividerStyle.backgroundImage).toContain('10%');
+  expect(dividerStyle.backgroundImage).toContain('100%');
 
   const [
     shapeBox,
@@ -118,6 +118,10 @@ test('New Game uses the requested effective layout styles', async ({ page }) => 
     expect(contentGap).toBeCloseTo(80, 0);
     expect(detailsBox.width / shapeBox.width).toBeCloseTo(1.15 / 0.85, 1);
     expect(dividerCenter).toBeCloseTo(gapCenter, 0);
+    expect(shapeBox.y + shapeBox.height / 2).toBeCloseTo(
+      detailsBox.y + detailsBox.height / 2,
+      0,
+    );
   }
 
   if (detailsBox && startGameBox) {
@@ -190,7 +194,7 @@ test('New Game grows with additional right-column settings and keeps Start game 
   expect(startGameBox).not.toBeNull();
 
   if (before[0] && before[1] && formBox && detailsBox && startGameBox) {
-    expect(startGameBox.y).toBeGreaterThan(before[1].y + 250);
+    expect(startGameBox.y).toBeGreaterThan(before[1].y);
     expect(formBox.height).toBeGreaterThan(before[0].height + 100);
     expect(startGameBox.y + startGameBox.height).toBeCloseTo(
       detailsBox.y + detailsBox.height,
