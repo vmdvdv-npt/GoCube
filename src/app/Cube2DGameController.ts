@@ -1,8 +1,5 @@
-import type {
-  EndgameClassification,
-  EndgameClassifier,
-  GroupStatus,
-} from '../core/endgame/EndgameClassifier';
+import type { GroupStatus } from '../core/endgame/EndgameClassifier';
+import { DeferredEndgameClassifier } from '../core/endgame/DeferredEndgameClassifier';
 import {
   ManualEndgameClassifier,
   type ManualGroupDecision,
@@ -66,59 +63,6 @@ export type Cube2DEndgameDecisions = Readonly<
 
 const EMPTY_CAPTURED: readonly PointId[] = Object.freeze([]);
 
-class DeferredEndgameClassifier implements EndgameClassifier {
-  private groups: readonly (readonly PointId[])[] | null = null;
-  private resolvePending:
-    | ((classification: EndgameClassification) => void)
-    | null = null;
-  private rejectPending: ((reason?: unknown) => void) | null = null;
-
-  classify(
-    groups: readonly (readonly PointId[])[],
-  ): Promise<EndgameClassification> {
-    if (this.resolvePending || this.rejectPending) {
-      return Promise.reject(new Error('Endgame classification is already pending'));
-    }
-
-    this.groups = Object.freeze(
-      groups.map((group) => Object.freeze([...group])),
-    );
-
-    return new Promise((resolve, reject) => {
-      this.resolvePending = resolve;
-      this.rejectPending = reject;
-    });
-  }
-
-  pendingGroups(): readonly (readonly PointId[])[] | null {
-    return this.groups;
-  }
-
-  resolve(classification: EndgameClassification): void {
-    const resolve = this.resolvePending;
-    if (!resolve || !this.groups) {
-      throw new Error('No endgame classification is pending');
-    }
-
-    this.groups = null;
-    this.resolvePending = null;
-    this.rejectPending = null;
-    resolve(classification);
-  }
-
-  cancel(): void {
-    const reject = this.rejectPending;
-    if (!reject || !this.groups) {
-      throw new Error('No endgame classification is pending');
-    }
-
-    this.groups = null;
-    this.resolvePending = null;
-    this.rejectPending = null;
-    reject(new Error('Endgame classification cancelled'));
-  }
-}
-
 const scoringFor = (ruleSet: RuleSet, topology: CubeTopology): ScoringStrategy =>
   ruleSet === 'chinese'
     ? new ChineseScoring(topology)
@@ -128,6 +72,8 @@ const scoringFor = (ruleSet: RuleSet, topology: CubeTopology): ScoringStrategy =
  * Thin application adapter for the full Cube 2D game flow.
  * Game rules, history, session-owned endgame review, validation and scoring remain
  * in the shared GameSession/GameEngine/ManualEndgameClassifier/ScoringStrategy stack.
+ * Finalization reads only the session review, and the deferred classifier seam is
+ * shared with Torus so 0.3 can add assisted classification behind one boundary.
  */
 export class Cube2DGameController {
   readonly size: CubeSize;
@@ -279,19 +225,22 @@ export class Cube2DGameController {
     return this.present(result.ok, result.ok ? null : result.reason);
   }
 
-  async finishEndgame(
-    decisions: Cube2DEndgameDecisions,
-  ): Promise<Cube2DGameActionResult> {
+  async finishEndgame(): Promise<Cube2DGameActionResult> {
     const completion = this.pendingEndgameCompletion;
     const groups = this.endgameClassifier.pendingGroups();
-    if (!completion || !groups || this.session.state().phase !== 'endgame') {
+    const review = this.session.endgameReview();
+    if (!completion || !groups || !review || this.session.state().phase !== 'endgame') {
       throw new Error('No manual endgame classification is pending');
     }
 
+    const decisionsByGroup = new Map(
+      review.groups.map((group) => [endgameGroupId(group.points), group.status] as const),
+    );
     const manualDecisions: ManualGroupDecision[] = groups.map((points) => {
-      const status = decisions[endgameGroupId(points)];
+      const id = endgameGroupId(points);
+      const status = decisionsByGroup.get(id);
       if (!status) {
-        throw new Error(`Missing manual endgame decision for group: ${endgameGroupId(points)}`);
+        throw new Error(`Missing manual endgame decision for group: ${id}`);
       }
 
       return Object.freeze({
