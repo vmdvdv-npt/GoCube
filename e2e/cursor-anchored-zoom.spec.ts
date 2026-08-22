@@ -79,14 +79,15 @@ test('Torus wheel zoom works on black playfield space, anchors to the pointer, a
   expect(target.insideGame).toBe(true);
   expect(target.overBoardShell).toBe(false);
 
-  const expectedZoom = Math.exp(250 * 0.0015);
+  const wheelDelta = -120;
+  const expectedZoom = Math.exp(-wheelDelta * 0.0015);
   const centerX = shellBox.x + shellBox.width / 2;
   const centerY = shellBox.y + shellBox.height / 2;
   const expectedPanX = (anchor.x - centerX) * (1 - expectedZoom);
   const expectedPanY = (anchor.y - centerY) * (1 - expectedZoom);
 
   await page.mouse.move(anchor.x, anchor.y);
-  await page.mouse.wheel(0, -250);
+  await page.mouse.wheel(0, wheelDelta);
 
   await expect.poll(async () => Number(await shell.getAttribute('data-view-zoom'))).toBeCloseTo(
     expectedZoom,
