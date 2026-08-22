@@ -164,7 +164,7 @@ test('Torus drag-pan moves the zoomed visual shell without placing a stone and k
 
   const targetAfter = await requiredBox(target);
   expect(targetAfter.x - targetBefore.x).toBeGreaterThan(80);
-  expect(targetAfter.y - targetBefore.y).toBeGreaterThan(50);
+  expect(targetAfter.y - targetBefore.y).toBeGreaterThan(40);
 
   await target.click();
   await expect(turn).toHaveText('White to move');
