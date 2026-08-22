@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CUBE_SIZES, CubeTopology, type CubeSize } from '../core/topology/CubeTopology';
+import { CubeTopology, type CubeSize } from '../core/topology/CubeTopology';
 import { createCube2DLayout } from '../presentation/cube/Cube2DLayout';
 import { CubeOrientation } from '../presentation/cube/CubeOrientation';
 import {
@@ -7,6 +7,8 @@ import {
   createCube2DRenderModel,
   hitTestCube2DPoint,
 } from './Cube2DRenderer';
+
+const CUBE_HIT_TEST_CONTRACT_SIZES = [2, 3, 4, 5, 6, 7, 8, 10] as const satisfies readonly CubeSize[];
 
 const allOrientations = (): readonly CubeOrientation[] => {
   const queue = [new CubeOrientation()];
@@ -24,27 +26,30 @@ const allOrientations = (): readonly CubeOrientation[] => {
 };
 
 describe('Cube2D hit testing', () => {
-  it.each(CUBE_SIZES)('maps the center of every visual hit-area to one unique logical point on %dx%d', (size: CubeSize) => {
-    const topology = new CubeTopology(size);
+  it.each(CUBE_HIT_TEST_CONTRACT_SIZES)(
+    'maps the center of every visual hit-area to one unique logical point on %dx%d',
+    (size) => {
+      const topology = new CubeTopology(size);
 
-    for (const orientation of allOrientations()) {
-      for (const anchor of [0, 1, 2, 3] as const) {
-        const model = createCube2DRenderModel(createCube2DLayout(orientation, size, anchor));
-        const hitIds: string[] = [];
+      for (const orientation of allOrientations()) {
+        for (const anchor of [0, 1, 2, 3] as const) {
+          const model = createCube2DRenderModel(createCube2DLayout(orientation, size, anchor));
+          const hitIds: string[] = [];
 
-        for (const board of model.boards) {
-          for (const point of board.points) {
-            const hit = hitTestCube2DPoint(board, point.x, point.y);
-            expect(hit).toBe(point.pointId);
-            hitIds.push(hit!);
+          for (const board of model.boards) {
+            for (const point of board.points) {
+              const hit = hitTestCube2DPoint(board, point.x, point.y);
+              expect(hit).toBe(point.pointId);
+              hitIds.push(hit!);
+            }
           }
-        }
 
-        expect(hitIds).toHaveLength(6 * size * size);
-        expect(new Set(hitIds)).toEqual(new Set(topology.points()));
+          expect(hitIds).toHaveLength(6 * size * size);
+          expect(new Set(hitIds)).toEqual(new Set(topology.points()));
+        }
       }
-    }
-  });
+    },
+  );
 
   it('has no dead margin at board edges and never returns two logical points', () => {
     const size = 4;
