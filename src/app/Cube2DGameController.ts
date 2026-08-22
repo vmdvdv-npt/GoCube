@@ -126,8 +126,8 @@ const scoringFor = (ruleSet: RuleSet, topology: CubeTopology): ScoringStrategy =
 
 /**
  * Thin application adapter for the full Cube 2D game flow.
- * Game rules, history, endgame validation and scoring remain in the shared
- * GameSession/GameEngine/ManualEndgameClassifier/ScoringStrategy stack.
+ * Game rules, history, session-owned endgame review, validation and scoring remain
+ * in the shared GameSession/GameEngine/ManualEndgameClassifier/ScoringStrategy stack.
  */
 export class Cube2DGameController {
   readonly size: CubeSize;
@@ -217,6 +217,25 @@ export class Cube2DGameController {
         });
       }),
     );
+  }
+
+  endgameDecisions(): Cube2DEndgameDecisions {
+    const review = this.session.endgameReview();
+    if (!review) return Object.freeze({});
+
+    return Object.freeze(
+      Object.fromEntries(
+        review.groups.flatMap((group) =>
+          group.status ? [[endgameGroupId(group.points), group.status] as const] : [],
+        ),
+      ),
+    );
+  }
+
+  async setEndgameDecision(groupId: string, status: GroupStatus): Promise<void> {
+    const group = this.endgameGroups().find((candidate) => candidate.id === groupId);
+    if (!group) throw new Error(`Unknown manual endgame group: ${groupId}`);
+    await this.session.setEndgameReviewDecision(group.points, status);
   }
 
   moveAvailability(point: PointId): Cube2DMoveAvailability {
