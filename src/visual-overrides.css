@@ -22,24 +22,12 @@
   font-weight: 400;
 }
 
-/* Pass count is represented by Pass (1); keep the old text only as an off-screen state hook. */
 .game-statistics span:nth-child(3) {
-  position: absolute;
-  left: -10000px;
-  width: 1px;
-  height: 1px;
-  min-height: 0;
-  padding: 0;
-  overflow: hidden;
-  border: 0;
-}
-
-.game-statistics span:nth-child(4) {
   grid-column: 1;
   grid-row: 2;
 }
 
-.game-statistics span:nth-child(5) {
+.game-statistics span:nth-child(4) {
   grid-column: 2;
   grid-row: 2;
 }
@@ -54,12 +42,12 @@
   grid-row: 3;
 }
 
-.game-statistics span:nth-child(6) {
+.game-statistics span:nth-child(5) {
   grid-column: 1;
   grid-row: 4;
 }
 
-.game-statistics span:nth-child(7) {
+.game-statistics span:nth-child(6) {
   grid-column: 2;
   grid-row: 4;
 }
