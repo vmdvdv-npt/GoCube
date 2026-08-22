@@ -28,7 +28,7 @@ const currentPan = async (viewport: Locator) => ({
 test('Cube 2D drag-pan is not clamped by the board viewport or sidebar', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
+  await page.getByRole('button', { name: 'Cube', exact: true }).click();
   await page.getByRole('button', { name: '4×4', exact: true }).click();
   await page.getByRole('button', { name: 'Start game' }).click();
 
@@ -93,7 +93,7 @@ test('Cube 2D drag-pan is not clamped by the board viewport or sidebar', async (
 test('Cube 2D re-grab cancels native browser drag instead of losing pan', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
+  await page.getByRole('button', { name: 'Cube', exact: true }).click();
   await page.getByRole('button', { name: '4×4', exact: true }).click();
   await page.getByRole('button', { name: 'Start game' }).click();
 
