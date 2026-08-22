@@ -58,7 +58,7 @@ const config = (
 
 const makePosition = (
   topology: Topology,
-  stones: Readonly<Partial<Record<PointId, PointOccupancy>>>,
+  stones: Readonly<Record<PointId, PointOccupancy>>,
 ): GameState => {
   const engine = new GameEngine(topology);
   const initial = engine.createInitialState();
