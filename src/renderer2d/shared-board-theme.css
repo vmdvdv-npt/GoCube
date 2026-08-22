@@ -66,37 +66,11 @@
 }
 
 /*
- * Cube 2D only: tune the playable content independently from the JPEG face.
- * 2x2 and 3x3 use the current baseline. Larger boards shrink progressively so
- * the outer stones stay clear of the bevel in the board artwork. The JPEG itself
- * and the physical face size do not change. Scaling the hit-area group together
- * with the visible content keeps hover/click targeting aligned with the rendered
- * intersections.
+ * Cube 2D content scale is resolved by Cube2DRenderer and exposed as one CSS
+ * variable so rendered stones, hit areas and capture source geometry share the
+ * same value. The JPEG face itself and the physical layout-cell size are not
+ * affected by this content-only adjustment.
  */
-.cube-2d-game .cube-2d-renderer[data-cube-size='2'] {
-  --cube-2d-content-scale: 1;
-}
-
-.cube-2d-game .cube-2d-renderer[data-cube-size='3'] {
-  --cube-2d-content-scale: 1;
-}
-
-.cube-2d-game .cube-2d-renderer[data-cube-size='4'] {
-  --cube-2d-content-scale: 0.91;
-}
-
-.cube-2d-game .cube-2d-renderer[data-cube-size='5'] {
-  --cube-2d-content-scale: 0.85;
-}
-
-.cube-2d-game .cube-2d-renderer[data-cube-size='6'] {
-  --cube-2d-content-scale: 0.83;
-}
-
-.cube-2d-game .cube-2d-renderer[data-cube-size='7'] {
-  --cube-2d-content-scale: 0.83;
-}
-
 .cube-2d-game .cube-2d-board__grid,
 .cube-2d-game .cube-2d-board__stones,
 .cube-2d-game .cube-2d-board__hover,
