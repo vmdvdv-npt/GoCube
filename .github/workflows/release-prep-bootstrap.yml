@@ -1,0 +1,235 @@
+name: Release prep bootstrap
+
+on:
+  push:
+    branches: [fix/0.2-release-acceptance]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply release acceptance changes
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import json
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, found {count}: {old[:80]!r}')
+              file.write_text(text.replace(old, new, 1))
+
+          def replace_count(path: str, old: str, new: str, expected: int) -> None:
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != expected:
+                  raise SystemExit(f'{path}: expected {expected} matches, found {count}: {old[:80]!r}')
+              file.write_text(text.replace(old, new))
+
+          Path('src/app/TorusGame.tsx').write_text(
+              "export { TorusGame, type TorusGameProps } from './TorusGameBase';\n"
+          )
+
+          replace_once(
+              'src/app/TorusGameBase.tsx',
+              "  type TorusEndgameDecisions,\n",
+              '',
+          )
+          replace_once(
+              'src/app/TorusGameBase.tsx',
+              "  const [decisions, setDecisions] = useState<TorusEndgameDecisions>({});\n",
+              "  const decisions = controller.endgameDecisions();\n",
+          )
+          replace_count(
+              'src/app/TorusGameBase.tsx',
+              "    setDecisions({});\n",
+              '',
+              2,
+          )
+          replace_once(
+              'src/app/TorusGameBase.tsx',
+              "  const setGroupStatus = (group: TorusEndgameGroup, status: GroupStatus): void => {\n    setDecisions((current) => ({ ...current, [group.id]: status }));\n  };\n",
+              "  const setGroupStatus = async (\n    group: TorusEndgameGroup,\n    status: GroupStatus,\n  ): Promise<void> => {\n    if (actionInFlight.current || viewModel.phase !== 'endgame') return;\n\n    actionInFlight.current = true;\n    try {\n      await controller.setEndgameDecision(group.id, status);\n      setViewModel(controller.viewModel());\n      setFeedback(null);\n    } catch (error) {\n      setFeedback(\n        error instanceof Error ? error.message : 'Endgame decision could not be saved.',\n      );\n    } finally {\n      actionInFlight.current = false;\n    }\n  };\n",
+          )
+          replace_once(
+              'src/app/TorusGameBase.tsx',
+              "      applyResult(await controller.finishEndgame(decisions));\n",
+              "      applyResult(await controller.finishEndgame());\n",
+          )
+          replace_once(
+              'src/app/TorusGameBase.tsx',
+              "                      onClick={() => setGroupStatus(selectedGroup, status)}\n",
+              "                      onClick={() => void setGroupStatus(selectedGroup, status)}\n",
+          )
+
+          replace_once(
+              'src/app/TorusGameController.ts',
+              "  async finishEndgame(\n    decisions?: TorusEndgameDecisions,\n  ): Promise<TorusGameActionResult> {\n",
+              "  async finishEndgame(): Promise<TorusGameActionResult> {\n",
+          )
+          replace_once(
+              'src/app/TorusGameController.ts',
+              "    // Compatibility for existing 0.2 callers: even a batch passed at finish is\n    // first committed through the same session command/autosave path. The object\n    // itself is never used as the classification source of truth.\n    if (decisions) {\n      for (const [groupId, status] of Object.entries(decisions)) {\n        if (status) await this.setEndgameDecision(groupId, status);\n      }\n    }\n\n",
+              '',
+          )
+
+          replace_once(
+              'src/app/TorusGameController.test.ts',
+              "const allAlive = (controller: TorusGameController) =>\n  Object.fromEntries(\n    controller.endgameGroups().map((group) => [group.id, 'alive' as const]),\n  );\n",
+              "const markAllAlive = async (controller: TorusGameController): Promise<void> => {\n  for (const group of controller.endgameGroups()) {\n    await controller.setEndgameDecision(group.id, 'alive');\n  }\n};\n",
+          )
+          replace_once(
+              'src/app/TorusGameController.test.ts',
+              "    await expect(\n      controller.finishEndgame({ '[\\\"0,0\\\"]': 'alive' }),\n    ).rejects.toThrow('Missing manual endgame decision');\n",
+              "    await controller.setEndgameDecision('[\\\"0,0\\\"]', 'alive');\n    await expect(controller.finishEndgame()).rejects.toThrow(\n      'Missing manual endgame decision',\n    );\n",
+          )
+          replace_count(
+              'src/app/TorusGameController.test.ts',
+              "    const finished = await controller.finishEndgame(allAlive(controller));\n",
+              "    await markAllAlive(controller);\n    const finished = await controller.finishEndgame();\n",
+              2,
+          )
+          replace_once(
+              'src/app/TorusGameController.test.ts',
+              "    const finished = await controller.finishEndgame({});\n",
+              "    const finished = await controller.finishEndgame();\n",
+          )
+
+          package_path = Path('package.json')
+          package = json.loads(package_path.read_text())
+          package['scripts']['lint'] = 'oxlint src e2e playwright.config.ts vite.config.ts'
+          package['scripts']['typecheck'] = 'tsc -b --pretty false'
+          package['scripts']['test:coverage'] = 'vitest run --coverage'
+          package['devDependencies']['@vitest/coverage-v8'] = '4.1.11'
+          package['devDependencies']['oxlint'] = '1.79.0'
+          package_path.write_text(json.dumps(package, indent=2) + '\n')
+
+          replace_once(
+              'vite.config.ts',
+              "import { defineConfig } from 'vite';\n",
+              "import { defineConfig } from 'vitest/config';\n",
+          )
+          replace_once(
+              'vite.config.ts',
+              "  define: {\n    __BUILD_PR__: JSON.stringify(currentPullRequestLabel()),\n  },\n});\n",
+              "  define: {\n    __BUILD_PR__: JSON.stringify(currentPullRequestLabel()),\n  },\n  test: {\n    coverage: {\n      provider: 'v8',\n      include: ['src/**/*.{ts,tsx}'],\n      exclude: ['src/main.tsx', 'src/vite-env.d.ts'],\n      reporter: ['text', 'json-summary'],\n      thresholds: {\n        statements: 60,\n        branches: 50,\n        functions: 50,\n        lines: 60,\n      },\n    },\n  },\n});\n",
+          )
+
+          Path('playwright.config.ts').write_text("""import { defineConfig, devices } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './e2e',
+  webServer: {
+    command: 'npm run dev -- --host 127.0.0.1',
+    url: 'http://127.0.0.1:5173',
+    reuseExistingServer: !process.env.CI,
+  },
+  use: { baseURL: 'http://127.0.0.1:5173' },
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+  ],
+});
+""")
+
+          Path('.github/workflows/ci.yml').write_text("""name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:coverage
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npm run test:e2e
+
+  release:
+    needs: test
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      startsWith(github.event.head_commit.message, 'release: finalize ')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Create release tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          tag="$(printf '%s\\n' "$RELEASE_MESSAGE" | sed -n '1s/^release: finalize //p')"
+          if [[ ! "$tag" =~ ^[0-9]+\\.[0-9]+(\\.[0-9]+)?$ ]]; then
+            echo "Invalid release tag: $tag" >&2
+            exit 1
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; nothing to do."
+            exit 0
+          fi
+          gh release create "$tag" --target "$GITHUB_SHA" --title "GoCube $tag" --generate-notes
+""")
+
+          replace_once(
+              'docs/ARCHITECTURE.md',
+              "3. Ручные/assisted statuses изменяют только review state; каждое изменение autosave-ится с новой session revision.\n4. Пока review incomplete, scoring не запускается.\n",
+              "3. Ручные/assisted statuses изменяют только review state; каждое изменение autosave-ится с новой session revision. Presentation/UI не хранит вторую изменяемую копию этих решений: экран читает актуальные statuses из session-owned review state и отправляет каждое изменение как session command. DOM events, synthetic clicks и replay пользовательского UI не используются как механизм синхронизации review state.\n4. Пока review incomplete, scoring не запускается.\n",
+          )
+          replace_once(
+              'docs/ARCHITECTURE.md',
+              "# 19. Testing architecture\n\nАвтоматические проверки делятся по владельцам ответственности.\n\n## 19.1. GameEngine tests\n",
+              "# 19. Testing architecture\n\nАвтоматические проверки делятся по владельцам ответственности.\n\nCI quality gate разделяет независимые проверки: настоящий JavaScript/TypeScript static lint, отдельный TypeScript typecheck, unit/integration tests с обязательными global coverage thresholds, production build и Playwright E2E. E2E gate исполняется как минимум в Chromium, Firefox и WebKit; прохождение только одного browser engine не считается полным regression gate.\n\n## 19.1. GameEngine tests\n",
+          )
+
+          replace_once(
+              'docs/ROADMAP.md',
+              "## Текущий статус\n\nАктивная разрабатываемая версия — **0.2 Cube 2D**.\n\n0.2 **ещё не принята и не считается завершённым релизом**. Наличие строки версии `0.2.0` в package/application metadata, тестах, ветках или других технических местах само по себе не означает acceptance или выпуск версии 0.2.\n\nСледующая нормативная граница — `0.2 integration / regression acceptance`. К версии 0.3 переходят только после принятия 0.2 по критерию готовности ниже.\n",
+              "## Текущий статус\n\nВерсия **0.2 Cube 2D завершена и принята** по границе `0.2 integration / regression acceptance`.\n\nАктивная разрабатываемая версия — **0.3 Automatic/Assisted alive-dead-seki**. Переход к 0.3 открыт; дальнейший порядок определяется milestones и checkpoints раздела 0.3 ниже.\n",
+          )
+          PY
+
+          npm install --package-lock-only --ignore-scripts
+          rm .github/workflows/release-prep-bootstrap.yml
+          git diff --check
+      - name: Commit prepared release branch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Finalize 0.2 release acceptance"
+          git push origin HEAD:${GITHUB_REF_NAME}
