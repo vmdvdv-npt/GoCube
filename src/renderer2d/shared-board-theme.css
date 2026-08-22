@@ -66,18 +66,19 @@
 }
 
 /*
- * Cube 2D content scale is resolved by Cube2DRenderer and exposed as one CSS
- * variable so rendered stones, hit areas and capture source geometry share the
- * same value. The JPEG face itself and the physical layout-cell size are not
- * affected by this content-only adjustment.
+ * Sizes 2 and 3 use a content scale of exactly 1 and therefore intentionally
+ * receive no transform at all. This avoids introducing a transform/compositor
+ * boundary that changes anti-aliasing even though the geometry is unchanged.
+ * Larger supported sizes retain their content-only fit; the renderer publishes
+ * the exact same scale to capture geometry.
  */
-.cube-2d-game .cube-2d-board__grid,
-.cube-2d-game .cube-2d-board__stones,
-.cube-2d-game .cube-2d-board__hover,
-.cube-2d-game .cube-2d-board__hit-areas {
+.cube-2d-game .cube-2d-renderer:is([data-cube-size='4'], [data-cube-size='5'], [data-cube-size='6'], [data-cube-size='7']) .cube-2d-board__grid,
+.cube-2d-game .cube-2d-renderer:is([data-cube-size='4'], [data-cube-size='5'], [data-cube-size='6'], [data-cube-size='7']) .cube-2d-board__stones,
+.cube-2d-game .cube-2d-renderer:is([data-cube-size='4'], [data-cube-size='5'], [data-cube-size='6'], [data-cube-size='7']) .cube-2d-board__hover,
+.cube-2d-game .cube-2d-renderer:is([data-cube-size='4'], [data-cube-size='5'], [data-cube-size='6'], [data-cube-size='7']) .cube-2d-board__hit-areas {
   transform-box: view-box;
   transform-origin: 50% 50%;
-  transform: scale(var(--cube-2d-content-scale, 1));
+  transform: scale(var(--cube-2d-content-scale));
 }
 
 .cube-2d-game .cube-2d-board--central {
