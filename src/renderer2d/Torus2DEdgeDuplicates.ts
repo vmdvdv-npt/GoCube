@@ -342,9 +342,9 @@ export const renderTorus2DEdgeDuplicates = (
 };
 
 /**
- * The old hover helper intentionally snaps across the whole SVG. While the new
- * duplicate strips are visible, board input is restricted to the canonical square
- * so the decorative wrap preview cannot place, hover, or classify stones.
+ * Duplicate strips remain non-interactive, but the canonical edge intersections
+ * keep their normal circular hit area even where that circle extends visually into
+ * a duplicate strip. The duplicate centers themselves remain outside this allowance.
  */
 export const isTorus2DPrimaryBoardClientPosition = (
   svg: SVGSVGElement,
@@ -356,6 +356,14 @@ export const isTorus2DPrimaryBoardClientPosition = (
 
   const x = ((clientX - bounds.left) / bounds.width) * VIEW_BOX_SIZE;
   const y = ((clientY - bounds.top) / bounds.height) * VIEW_BOX_SIZE;
-  return x >= BOARD_PADDING && x <= VIEW_BOX_SIZE - BOARD_PADDING &&
-    y >= BOARD_PADDING && y <= VIEW_BOX_SIZE - BOARD_PADDING;
+  const primaryHitTarget = svg.querySelector<SVGCircleElement>(
+    '.torus-board__hit-target[data-copy-role="primary"]',
+  );
+  const hitRadius = Number(primaryHitTarget?.getAttribute('r') ?? 0);
+  const edgeHitAllowance = Number.isFinite(hitRadius) && hitRadius > 0 ? hitRadius : 0;
+
+  return x >= BOARD_PADDING - edgeHitAllowance &&
+    x <= VIEW_BOX_SIZE - BOARD_PADDING + edgeHitAllowance &&
+    y >= BOARD_PADDING - edgeHitAllowance &&
+    y <= VIEW_BOX_SIZE - BOARD_PADDING + edgeHitAllowance;
 };
