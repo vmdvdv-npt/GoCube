@@ -1,5 +1,5 @@
 import type { GameState } from '../game/types';
-import type { RepetitionContext } from '../rules/RepetitionPolicy';
+import type { SimpleKoContext } from '../rules/SimpleKoPolicy';
 
 const snapshotState = (state: GameState): GameState =>
   Object.freeze({
@@ -85,7 +85,8 @@ export class LinearHistory {
     return Object.freeze([...this.futureSnapshots]);
   }
 
-  repetitionContext(): RepetitionContext {
-    return Object.freeze({ states: this.states() });
+  simpleKoContext(): SimpleKoContext {
+    const previousState = this.snapshots[this.snapshots.length - 2];
+    return Object.freeze({ previousBoard: previousState?.board ?? null });
   }
 }
