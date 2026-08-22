@@ -55,6 +55,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
     : {};
 
   const dragPan = useDragPan({
+    startOnPointerDown: true,
     onDragStart: () => g.hover(null),
   });
 
@@ -232,13 +233,12 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
               <Cube2DVisualEffects
                 layout={g.layout}
                 layoutCellSize={layoutCellSize}
-                finalScore={g.vm.finalScore}
-                finalClassification={g.finalClassification}
+                captureAnimation={g.captureAnimation}
                 endgameGroups={g.groups}
-                decisions={g.decisions}
-                selectedGroupId={g.selectedGroup}
-                hoveredGroupId={g.hoveredGroup}
-                capturedStones={g.capturedEffects}
+                endgameDecisions={g.decisions}
+                selectedGroupId={g.selectedGroupId}
+                hoveredGroupId={g.hoveredGroupId}
+                territoryPointIds={g.result ? g.controller.territoryPointIds() : undefined}
               />
             </div>
 
@@ -248,7 +248,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
               aria-label="Move cube right"
               disabled={navigationDisabled}
               style={{
-                left: `${CUBE_2D_NAVIGATION_INSET + stageWidth + CUBE_2D_NAVIGATION_GAP}px`,
+                right: 0,
                 top: `${sideRowCenterY - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px`,
               }}
               onClick={() => g.navigate('right')}
@@ -265,7 +265,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
               style={{
                 ...verticalArrowMotionStyle,
                 left: `${verticalPairCenterX - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px`,
-                top: `${CUBE_2D_NAVIGATION_INSET + stageHeight + CUBE_2D_NAVIGATION_GAP}px`,
+                bottom: 0,
               }}
               onClick={() => g.navigate('down')}
             >
@@ -275,9 +275,12 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
         </div>
       </div>
 
-      {g.result && g.resultOpen ? (
-        <GameResultDialog result={g.result} onClose={() => g.setResultOpen(false)} />
-      ) : null}
+      <GameResultDialog
+        open={Boolean(g.result && g.resultOpen)}
+        result={g.result}
+        onClose={() => g.setResultOpen(false)}
+        onNewGame={onRequestNewGame}
+      />
     </section>
   );
 }
