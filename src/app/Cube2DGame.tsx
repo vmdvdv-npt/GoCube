@@ -56,6 +56,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
 
   const dragPan = useDragPan({
     startOnPointerDown: true,
+    allowInteractiveDrag: true,
     onDragStart: () => g.hover(null),
   });
 
