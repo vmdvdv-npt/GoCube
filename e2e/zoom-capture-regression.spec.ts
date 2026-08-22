@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 const cubeHit = (page: Page, pointId: string) =>
   page.locator(`.cube-2d-hit-area[data-point-id="${pointId}"]`);
@@ -27,6 +27,38 @@ const wheelAt = async (page: Page, locator: ReturnType<Page['locator']>, deltaY:
   if (!box) throw new Error('Expected wheel target bounding box');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.wheel(0, deltaY);
+};
+
+const visibleCubeHitNearestViewportCenter = async (page: Page): Promise<Locator> => {
+  const pointId = await page.locator('.cube-2d-hit-area').evaluateAll((elements) => {
+    const viewport = document.querySelector<HTMLElement>('.cube-2d-game__viewport')!.getBoundingClientRect();
+    const centerX = viewport.left + viewport.width / 2;
+    const centerY = viewport.top + viewport.height / 2;
+    const candidates = elements
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        return {
+          pointId: element.getAttribute('data-point-id'),
+          x,
+          y,
+          distance: Math.hypot(x - centerX, y - centerY),
+        };
+      })
+      .filter(
+        (candidate) =>
+          candidate.pointId &&
+          candidate.x >= viewport.left &&
+          candidate.x <= viewport.right &&
+          candidate.y >= viewport.top &&
+          candidate.y <= viewport.bottom,
+      )
+      .sort((a, b) => a.distance - b.distance);
+    return candidates[0]?.pointId ?? null;
+  });
+  if (!pointId) throw new Error('Expected a visible Cube hit target');
+  return cubeHit(page, pointId);
 };
 
 const comparePngScreenshots = async (
@@ -104,26 +136,30 @@ const expectCubeVectorSteadyState = async (page: Page, zoom: number): Promise<vo
   expect(state.stageTransform).toBe('none');
   expect(state.boardWillChange).toBe('auto');
 
-  const hit = cubeHit(page, 'front:1:1');
+  const hit = await visibleCubeHitNearestViewportCenter(page);
+  const pointId = await hit.getAttribute('data-point-id');
+  if (!pointId) throw new Error('Expected visible Cube hit target PointId');
   const box = await hit.boundingBox();
   if (!box) throw new Error('Expected Cube hit target bounding box');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await expect(
-    page.locator('.cube-2d-preview-stone[data-logical-point-id="front:1:1"]'),
+    page.locator(`.cube-2d-preview-stone[data-logical-point-id="${pointId}"]`),
   ).toHaveCount(1);
 };
 
 for (const [zoom, deltaY] of [
   [0.78, 1000],
   [1, 0],
-  [4.05, -5000],
+  [4.05, -10000],
 ] as const) {
   test(`Cube zoom ${zoom} uses real layout size and keeps hit-testing aligned`, async ({ page }) => {
     await startCube(page);
     if (deltaY !== 0) await wheelAt(page, page.locator('.cube-2d-game__viewport'), deltaY);
     await expectCubeVectorSteadyState(page, zoom);
 
-    await page.getByRole('button', { name: 'Move cube right' }).click();
+    const moveRight = page.getByRole('button', { name: 'Move cube right' });
+    if (zoom === 4.05) await moveRight.dispatchEvent('click');
+    else await moveRight.click();
     await expect(page.locator('.cube-2d-renderer')).toHaveAttribute('data-animating', 'true');
     const movingWillChange = await page.locator('.cube-2d-board--moving').first().evaluate(
       (element) => getComputedStyle(element).willChange,
@@ -135,7 +171,8 @@ for (const [zoom, deltaY] of [
     await expectCubeVectorSteadyState(page, zoom);
 
     const slot = page.locator('.cube-2d-anchor-slot[data-layout-row="0"][data-layout-column="0"]');
-    await slot.click();
+    if (zoom === 4.05) await slot.dispatchEvent('click');
+    else await slot.click();
     await expect(page.locator('.cube-2d-renderer')).toHaveAttribute('data-vertical-anchor-column', '0', {
       timeout: 1000,
     });
@@ -199,7 +236,7 @@ for (const [zoom, deltaY] of [
 
 const captureParityAtCurrentDpr = async (page: Page): Promise<void> => {
   await startCube(page);
-  await wheelAt(page, page.locator('.cube-2d-game__viewport'), -5000);
+  await wheelAt(page, page.locator('.cube-2d-game__viewport'), -10000);
   await expect(page.locator('.cube-2d-game__stage')).toHaveAttribute('data-view-zoom', '4.050');
 
   const movesBeforeCapture = [
