@@ -57,6 +57,7 @@ const expectShift = async (
 
   const board = page.locator('.torus-board');
   await expect(board).toHaveAttribute('data-pan-animating', 'false', { timeout: 2_000 });
+  await expect(board).toHaveAttribute('data-navigation-busy', 'false');
   await expect(board).toHaveAttribute('data-view-offset-x', String(expectedOffsetX));
   await expect(board).toHaveAttribute('data-view-offset-y', String(expectedOffsetY));
 };
@@ -87,4 +88,97 @@ test('Torus 2D arrows physically slide grid and stones with seamless wrap', asyn
   await secondPoint.click();
   await expect(page.getByText('Black to move')).toBeVisible();
   await expect(page.getByText('Move 2')).toBeVisible();
+});
+
+test('rapid Torus navigation is queued in order and blocks sidebar session actions', async ({ page }) => {
+  await start9x9Game(page);
+
+  await page.locator(
+    '.torus-board__hit-target[data-logical-point-id="0,0"][data-copy-role="primary"]',
+  ).click();
+  await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
+
+  await page.evaluate(() => {
+    for (const direction of ['right', 'right', 'left', 'down'] as const) {
+      document.querySelector<HTMLButtonElement>(
+        `[aria-label="Shift torus view ${direction}"]`,
+      )?.click();
+    }
+  });
+
+  const board = page.locator('.torus-board');
+  await expect(board).toHaveAttribute('data-navigation-busy', 'true');
+  await expect(board).toHaveAttribute('data-navigation-queue-length', '3');
+  await expect(page.getByRole('button', { name: /Pass/ })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Undo' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Redo' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'New game', exact: true })).toBeDisabled();
+  await expect(page.getByLabel('Номера ходов')).toBeEnabled();
+  await expect(page.getByLabel('Показывать дублирующие области')).toBeEnabled();
+
+  await page.getByLabel('Показывать дублирующие области').check();
+  await expect(page.getByLabel('Показывать дублирующие области')).toBeChecked();
+  await expect(board).toHaveAttribute('data-duplicate-regions-visible', 'false');
+
+  await expect(board).toHaveAttribute('data-navigation-busy', 'false', { timeout: 3_000 });
+  await expect(board).toHaveAttribute('data-navigation-queue-length', '0');
+  await expect(board).toHaveAttribute('data-view-offset-x', '1');
+  await expect(board).toHaveAttribute('data-view-offset-y', '1');
+  await expect(board).toHaveAttribute('data-duplicate-regions-visible', 'true');
+  await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'New game', exact: true })).toBeEnabled();
+});
+
+test('Torus navigation keeps at most six pending commands without cancelling opposites', async ({ page }) => {
+  await start9x9Game(page);
+
+  await page.evaluate(() => {
+    for (const direction of [
+      'right',
+      'right',
+      'right',
+      'right',
+      'right',
+      'right',
+      'right',
+      'right',
+    ] as const) {
+      document.querySelector<HTMLButtonElement>(
+        `[aria-label="Shift torus view ${direction}"]`,
+      )?.click();
+    }
+  });
+
+  const board = page.locator('.torus-board');
+  await expect(board).toHaveAttribute('data-navigation-queue-length', '6');
+  await expect(board).toHaveAttribute('data-navigation-busy', 'false', { timeout: 4_000 });
+  // One active shift + six pending shifts are accepted; the eighth click is ignored.
+  await expect(board).toHaveAttribute('data-view-offset-x', '7');
+  await expect(board).toHaveAttribute('data-view-offset-y', '0');
+});
+
+test('Torus 2D drag-pan moves the board view without changing logical torus offsets', async ({ page }) => {
+  await start9x9Game(page);
+
+  const shell = page.locator('.torus-board-shell');
+  const bounds = await shell.boundingBox();
+  expect(bounds).not.toBeNull();
+  if (!bounds) return;
+
+  const startX = bounds.x + bounds.width / 2;
+  const startY = bounds.y + bounds.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 90, startY + 55, { steps: 4 });
+  await page.mouse.up();
+
+  const pan = await shell.evaluate((element) => ({
+    x: Number(element.getAttribute('data-pan-x')),
+    y: Number(element.getAttribute('data-pan-y')),
+  }));
+  expect(Math.abs(pan.x)).toBeGreaterThan(30);
+  expect(Math.abs(pan.y)).toBeGreaterThan(20);
+  await expect(page.locator('.torus-board')).toHaveAttribute('data-view-offset-x', '0');
+  await expect(page.locator('.torus-board')).toHaveAttribute('data-view-offset-y', '0');
+  await expect(page.getByText('Move 0')).toBeVisible();
 });
