@@ -1,6 +1,6 @@
-import { expect, test, type Locator } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
-const startTorus = async (page: Parameters<typeof test>[0] extends never ? never : any) => {
+const startTorus = async (page: Page): Promise<void> => {
   await page.goto('/');
   await page.getByLabel('Board size').selectOption('9');
   await page.getByRole('button', { name: 'Start game' }).click();
@@ -12,21 +12,32 @@ const pointOutsideEdge = async (
   direction: 'left' | 'right' | 'up' | 'down',
   radiusFactor: number,
 ): Promise<Readonly<{ x: number; y: number }>> =>
-  hitTarget.evaluate((element, args) => {
-    const circle = element as SVGCircleElement;
-    const svg = circle.ownerSVGElement;
-    const matrix = svg?.getScreenCTM();
-    if (!svg || !matrix) throw new Error('Expected Torus SVG screen transform');
+  hitTarget.evaluate(
+    (element, args) => {
+      const circle = element as SVGCircleElement;
+      const svg = circle.ownerSVGElement;
+      const matrix = svg?.getScreenCTM();
+      if (!svg || !matrix) throw new Error('Expected Torus SVG screen transform');
 
-    const cx = Number(circle.getAttribute('cx'));
-    const cy = Number(circle.getAttribute('cy'));
-    const radius = Number(circle.getAttribute('r'));
-    const point = svg.createSVGPoint();
-    point.x = cx + (args.direction === 'left' ? -1 : args.direction === 'right' ? 1 : 0) * radius * args.radiusFactor;
-    point.y = cy + (args.direction === 'up' ? -1 : args.direction === 'down' ? 1 : 0) * radius * args.radiusFactor;
-    const screenPoint = point.matrixTransform(matrix);
-    return { x: screenPoint.x, y: screenPoint.y };
-  }, { direction, radiusFactor });
+      const cx = Number(circle.getAttribute('cx'));
+      const cy = Number(circle.getAttribute('cy'));
+      const radius = Number(circle.getAttribute('r'));
+      const point = svg.createSVGPoint();
+      point.x =
+        cx +
+        (args.direction === 'left' ? -1 : args.direction === 'right' ? 1 : 0) *
+          radius *
+          args.radiusFactor;
+      point.y =
+        cy +
+        (args.direction === 'up' ? -1 : args.direction === 'down' ? 1 : 0) *
+          radius *
+          args.radiusFactor;
+      const screenPoint = point.matrixTransform(matrix);
+      return { x: screenPoint.x, y: screenPoint.y };
+    },
+    { direction, radiusFactor },
+  );
 
 test('Torus keeps the system cursor and no persistent compositor hint', async ({ page }) => {
   await startTorus(page);
@@ -60,7 +71,9 @@ test('Japanese rules stat has no stale capture-stone decoration', async ({ page 
   expect(style.flexDirection).toBe('row');
 });
 
-test('duplicate strips preserve the normal hit influence of all four primary board edges', async ({ page }) => {
+test('duplicate strips preserve the normal hit influence of all four primary board edges', async ({
+  page,
+}) => {
   await startTorus(page);
   await page.getByLabel('Показывать дублирующие области').check();
 
