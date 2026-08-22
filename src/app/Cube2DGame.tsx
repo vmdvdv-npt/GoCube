@@ -66,7 +66,20 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
 
   const handleWheel = (event: WheelEvent<HTMLDivElement>): void => {
     event.preventDefault();
-    g.setZoom(g.zoom - event.deltaY * 0.0008);
+
+    const currentZoom = g.zoom;
+    const nextZoom = g.setZoom(currentZoom - event.deltaY * 0.0008);
+    if (nextZoom === currentZoom) return;
+
+    const viewportBounds = event.currentTarget.getBoundingClientRect();
+    const sceneCenterX = viewportBounds.left + viewportBounds.width / 2 + dragPan.offset.x;
+    const sceneCenterY = viewportBounds.top + viewportBounds.height / 2 + dragPan.offset.y;
+    const ratio = nextZoom / currentZoom;
+
+    dragPan.setOffset({
+      x: dragPan.offset.x + (event.clientX - sceneCenterX) * (1 - ratio),
+      y: dragPan.offset.y + (event.clientY - sceneCenterY) * (1 - ratio),
+    });
   };
 
   const endgamePanel =
