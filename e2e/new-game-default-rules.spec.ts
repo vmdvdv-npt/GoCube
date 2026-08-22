@@ -69,6 +69,29 @@ test('new game uses board-size buttons and keeps Japanese rules as the default',
   await expect(page.getByLabel('Rules')).toHaveValue('japanese');
 });
 
+test('normalizes committed komi to canonical half-point values before saving', async ({ page }) => {
+  await page.goto('/');
+
+  const cases = [
+    ['6.9', '6.5'],
+    ['7.0', '7.5'],
+    ['3.1415', '3.5'],
+    ['7.5', '7.5'],
+  ] as const;
+
+  for (const [input, expected] of cases) {
+    await page.getByLabel('Komi').fill(input);
+    await page.getByRole('button', { name: 'Start game' }).click();
+
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Continue saved game?' })).toBeVisible();
+    await expect(page.locator('.startup-card p')).toContainText(`Komi ${expected}`);
+
+    await page.getByRole('button', { name: 'New game', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'New game' })).toBeVisible();
+  }
+});
+
 test('Cube 2D adds 6×6 and 7×7 beside 5×5 in the second size row', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
