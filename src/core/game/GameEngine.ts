@@ -109,6 +109,10 @@ export class GameEngine {
 
   constructor(private readonly topology: Topology) {}
 
+  logicalTopology(): Topology {
+    return this.topology;
+  }
+
   createInitialState(): GameState {
     const board: Record<PointId, PointOccupancy> = {};
     for (const point of this.topology.points()) board[point] = 'empty';
