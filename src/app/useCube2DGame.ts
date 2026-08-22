@@ -1,12 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { GroupStatus } from '../core/endgame/EndgameClassifier';
-import type { StoneColor } from '../core/game/types';
 import type { PointId } from '../core/topology/Topology';
 import { endgameGroupForPoint } from '../presentation/EndgameGroupPresentation';
 import { createCube2DLayout, type Cube2DLayoutColumn } from '../presentation/cube/Cube2DLayout';
 import { createCube2DViewState, navigateCube2DViewState, setCube2DVerticalAnchorColumn, type Cube2DNavigationDirection, type Cube2DViewState } from '../presentation/cube/Cube2DNavigation';
-import type { CapturedStoneEffect } from '../presentation/cube/Cube2DVisualEffectsModel';
-import { CUBE_2D_TRANSITION_MS, type Cube2DHoverStatus, type Cube2DRendererTransition } from '../renderer2d/Cube2DRenderer';
+import {
+  buildCube2DCaptureEffects,
+  type CapturedStoneEffect,
+  type Cube2DCaptureSource,
+} from '../presentation/cube/Cube2DVisualEffectsModel';
+import {
+  CUBE_2D_STAGE_WIDTH,
+  CUBE_2D_TRANSITION_MS,
+  createCube2DStagePointMap,
+  type Cube2DHoverStatus,
+  type Cube2DRendererTransition,
+} from '../renderer2d/Cube2DRenderer';
 import { type Cube2DEndgameDecisions, type Cube2DEndgameGroup, type Cube2DGameActionResult, Cube2DGameController } from './Cube2DGameController';
 import { CUBE_2D_CAPTURE_FLIGHT_MS, CUBE_2D_CAPTURE_STAGGER_MS } from './Cube2DVisualEffects';
 
@@ -15,14 +24,6 @@ export const cubeEndgameStatusLabel = (status: GroupStatus) => status === 'alive
 export const CUBE_ZOOM_MIN = 0.78;
 export const CUBE_ZOOM_MAX = 1.35;
 const clampZoom = (value: number) => Math.min(CUBE_ZOOM_MAX, Math.max(CUBE_ZOOM_MIN, value));
-
-const capturedColorFor = (
-  pointId: PointId,
-  previousPoints: ReadonlyMap<PointId, StoneColor | 'empty'>,
-): StoneColor | null => {
-  const occupancy = previousPoints.get(pointId);
-  return occupancy === 'black' || occupancy === 'white' ? occupancy : null;
-};
 
 export function useCube2DGame(controller: Cube2DGameController) {
   const initial = controller.viewModel();
@@ -76,21 +77,21 @@ export function useCube2DGame(controller: Cube2DGameController) {
   };
   const startCaptureEffects = (
     captured: readonly PointId[],
-    previousPoints: ReadonlyMap<PointId, StoneColor | 'empty'>,
+    previousSources: ReadonlyMap<PointId, Cube2DCaptureSource>,
   ) => {
     if (captureTimer.current !== null) window.clearTimeout(captureTimer.current);
     captureId.current += 1;
-    const effects = captured.flatMap((pointId, order) => {
-      const color = capturedColorFor(pointId, previousPoints);
-      return color
-        ? [Object.freeze({ id: `${captureId.current}:${pointId}`, pointId, color, order })]
-        : [];
+    const effects = buildCube2DCaptureEffects({
+      generation: captureId.current,
+      capturedPointIds: captured,
+      previousSources,
+      stageWidth: CUBE_2D_STAGE_WIDTH,
     });
     if (effects.length === 0) {
       setCapturedEffects([]);
       return;
     }
-    setCapturedEffects(Object.freeze(effects));
+    setCapturedEffects(effects);
     captureTimer.current = window.setTimeout(
       () => {
         setCapturedEffects([]);
@@ -115,14 +116,24 @@ export function useCube2DGame(controller: Cube2DGameController) {
     if (transition || captureAnimating || inFlight.current) return;
     if (vm.phase === 'endgame') { const group = endgameGroupForPoint(groups, point); if (group) setSelectedGroup(group.id); return; }
     if (vm.phase !== 'playing' || !controller.moveAvailability(point).allowed) { hover(point); return; }
-    const previousPoints = new Map(
-      vm.points.map((viewPoint) => [viewPoint.logicalPointId, viewPoint.occupancy] as const),
-    );
+
+    const renderedGeometry = createCube2DStagePointMap(layout);
+    const previousSources = new Map<PointId, Cube2DCaptureSource>();
+    for (const viewPoint of vm.points) {
+      if (viewPoint.occupancy !== 'black' && viewPoint.occupancy !== 'white') continue;
+      const geometry = renderedGeometry.get(viewPoint.logicalPointId);
+      if (!geometry) continue;
+      previousSources.set(
+        viewPoint.logicalPointId,
+        Object.freeze({ ...geometry, color: viewPoint.occupancy }),
+      );
+    }
+
     inFlight.current = true;
     try {
       const action = await controller.placeStone(point);
       apply(action);
-      if (action.accepted) startCaptureEffects(action.captured, previousPoints);
+      if (action.accepted) startCaptureEffects(action.captured, previousSources);
     } finally {
       inFlight.current = false;
     }
