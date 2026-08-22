@@ -50,6 +50,21 @@ export interface RejectedPassResult {
 
 export type PassResult = AcceptedPassResult | RejectedPassResult;
 
+export interface AcceptedCompleteEndgameResult {
+  readonly ok: true;
+  readonly state: GameState;
+}
+
+export interface RejectedCompleteEndgameResult {
+  readonly ok: false;
+  readonly state: GameState;
+  readonly reason: 'not-endgame';
+}
+
+export type CompleteEndgameResult =
+  | AcceptedCompleteEndgameResult
+  | RejectedCompleteEndgameResult;
+
 const opponentOf = (color: StoneColor): StoneColor =>
   color === 'black' ? 'white' : 'black';
 
@@ -81,6 +96,9 @@ const rejectedMove = (
 
 const rejectedPass = (state: GameState): RejectedPassResult =>
   Object.freeze({ ok: false, state, reason: 'not-playing' });
+
+const rejectedCompleteEndgame = (state: GameState): RejectedCompleteEndgameResult =>
+  Object.freeze({ ok: false, state, reason: 'not-endgame' });
 
 export class GameEngine {
   constructor(private readonly topology: Topology) {}
@@ -176,6 +194,22 @@ export class GameEngine {
         state.moveNumber + 1,
         consecutivePasses,
         nextPhase,
+        state.captures,
+      ),
+    });
+  }
+
+  completeEndgame(state: GameState): CompleteEndgameResult {
+    if (state.phase !== 'endgame') return rejectedCompleteEndgame(state);
+
+    return Object.freeze({
+      ok: true,
+      state: freezeState(
+        state.board,
+        state.currentPlayer,
+        state.moveNumber,
+        state.consecutivePasses,
+        'finished',
         state.captures,
       ),
     });
