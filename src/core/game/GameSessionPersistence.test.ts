@@ -266,6 +266,7 @@ describe('GameSession persistence', () => {
 
     await session.execute({ type: 'pass' });
     await session.execute({ type: 'pass' });
+    await session.finishEndgameReview();
 
     const finishedScore = session.finalScore();
     const stored = repository.saves.at(-1)?.state;
