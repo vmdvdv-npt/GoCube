@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
 const currentPullRequestLabel = (): string => {
@@ -24,5 +24,19 @@ export default defineConfig({
   plugins: [react()],
   define: {
     __BUILD_PR__: JSON.stringify(currentPullRequestLabel()),
+  },
+  test: {
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['src/main.tsx', 'src/vite-env.d.ts'],
+      reporter: ['text', 'json-summary'],
+      thresholds: {
+        statements: 60,
+        branches: 50,
+        functions: 50,
+        lines: 60,
+      },
+    },
   },
 });

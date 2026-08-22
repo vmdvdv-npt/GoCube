@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { TorusGameController } from './TorusGameController';
 
-const allAlive = (controller: TorusGameController) =>
-  Object.fromEntries(
-    controller.endgameGroups().map((group) => [group.id, 'alive' as const]),
-  );
+const markAllAlive = async (controller: TorusGameController): Promise<void> => {
+  for (const group of controller.endgameGroups()) {
+    await controller.setEndgameDecision(group.id, 'alive');
+  }
+};
 
 describe('TorusGameController manual endgame flow', () => {
   it('exposes Pass and enters manual endgame after two consecutive passes', async () => {
@@ -72,9 +73,10 @@ describe('TorusGameController manual endgame flow', () => {
     await controller.pass();
     await controller.pass();
 
-    await expect(
-      controller.finishEndgame({ '[\"0,0\"]': 'alive' }),
-    ).rejects.toThrow('Missing manual endgame decision');
+    await controller.setEndgameDecision('[\"0,0\"]', 'alive');
+    await expect(controller.finishEndgame()).rejects.toThrow(
+      'Missing manual endgame decision',
+    );
 
     expect(controller.viewModel().phase).toBe('endgame');
     expect(controller.endgameGroups()).toHaveLength(2);
@@ -87,7 +89,8 @@ describe('TorusGameController manual endgame flow', () => {
     await controller.pass();
     await controller.pass();
 
-    const finished = await controller.finishEndgame(allAlive(controller));
+    await markAllAlive(controller);
+    const finished = await controller.finishEndgame();
 
     expect(finished.accepted).toBe(true);
     expect(finished.viewModel.phase).toBe('finished');
@@ -107,7 +110,8 @@ describe('TorusGameController manual endgame flow', () => {
     await controller.pass();
     await controller.pass();
 
-    const finished = await controller.finishEndgame(allAlive(controller));
+    await markAllAlive(controller);
+    const finished = await controller.finishEndgame();
 
     expect(finished.viewModel.finalScore?.ruleSet).toBe('japanese');
     expect(finished.viewModel.finalScore?.black).toBe(0);
@@ -118,7 +122,7 @@ describe('TorusGameController manual endgame flow', () => {
     const controller = new TorusGameController();
     await controller.pass();
     await controller.pass();
-    const finished = await controller.finishEndgame({});
+    const finished = await controller.finishEndgame();
 
     expect(finished.viewModel.phase).toBe('finished');
 

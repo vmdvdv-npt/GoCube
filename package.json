@@ -9,7 +9,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "lint": "tsc -b --pretty false"
+    "lint": "oxlint src e2e playwright.config.ts vite.config.ts",
+    "typecheck": "tsc -b --pretty false",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@vitejs/plugin-react": "6.1.0",
@@ -23,6 +25,8 @@
     "@types/node": "26.2.0",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
-    "vitest": "4.1.11"
+    "vitest": "4.1.11",
+    "@vitest/coverage-v8": "4.1.11",
+    "oxlint": "1.79.0"
   }
 }
