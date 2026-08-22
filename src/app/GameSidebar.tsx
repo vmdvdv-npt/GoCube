@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import type { GameViewModel } from '../presentation/PresentationModel';
 import { LocalStoragePreferencesStorage } from './persistence/LocalStoragePreferencesStorage';
 
@@ -52,6 +52,25 @@ export function GameSidebar({
       : viewModel.phase === 'endgame'
         ? 'Classify groups'
         : 'Game finished';
+
+  useEffect(() => {
+    if (duplicateRegionsDisabled || !onShowDuplicateRegionsChange) return;
+
+    let cancelled = false;
+    void preferencesStorage.loadPreferences().then((preferences) => {
+      if (!cancelled) {
+        onShowDuplicateRegionsChange(preferences.showTorusDuplicateRegions);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    duplicateRegionsDisabled,
+    onShowDuplicateRegionsChange,
+    preferencesStorage,
+  ]);
 
   const handleDuplicateRegionsChange = (visible: boolean): void => {
     onShowDuplicateRegionsChange?.(visible);
