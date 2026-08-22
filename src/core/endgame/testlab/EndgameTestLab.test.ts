@@ -144,6 +144,34 @@ describe('Deterministic Endgame Test Lab', () => {
     expect(lab.replay(corner)).toEqual(corner);
   });
 
+  it('keeps Cube edge/corner stress embeddings valid across a fixed-seed sweep', () => {
+    const lab = new EndgameTestLab();
+    const patterns = ['single-eye', 'false-eye', 'shared-liberties'] as const;
+    const modes = ['cube-edge', 'cube-corner'] as const;
+
+    for (let seedIndex = 0; seedIndex < 24; seedIndex += 1) {
+      for (const pattern of patterns) {
+        for (const mode of modes) {
+          const fixture = lab.generate({
+            kind: 'topology-stress',
+            topology: new CubeTopology(5),
+            seed: `cube-stress-${seedIndex}`,
+            mode,
+            pattern,
+          });
+
+          expect(new Set(fixture.placements.map((placement) => placement.point)).size).toBe(
+            fixture.placements.length,
+          );
+          expect(cubeFixtureFaces(fixture).length).toBeGreaterThanOrEqual(
+            mode === 'cube-corner' ? 3 : 2,
+          );
+          expect(lab.replay(fixture)).toEqual(fixture);
+        }
+      }
+    }
+  });
+
   it('runs the current classifier headlessly against generated fixtures', async () => {
     const lab = new EndgameTestLab();
     const fixture = lab.generate({
