@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { GroupStatus } from '../core/endgame/EndgameClassifier';
 import {
   TorusGame as TorusGameBase,
@@ -25,12 +25,37 @@ const nextFrame = (view: Window): Promise<void> =>
  * session replays its saved review choices into the presentation on mount.
  */
 export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
+  const selectedGroupIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     const root = document.querySelector<HTMLElement>('.torus-game');
     const board = root?.querySelector<SVGSVGElement>('.torus-board');
     if (!root || !board) return;
 
     let cancelled = false;
+
+    const trackSelectedGroup = (event: Event): void => {
+      const target = event.target;
+      if (!(target instanceof Element) || !target.closest('.torus-board')) return;
+
+      const directGroupId = target
+        .closest('[data-endgame-group-id]')
+        ?.getAttribute('data-endgame-group-id');
+      if (directGroupId) {
+        selectedGroupIdRef.current = directGroupId;
+        return;
+      }
+
+      const pointId = target
+        .closest('[data-logical-point-id]')
+        ?.getAttribute('data-logical-point-id');
+      if (!pointId) return;
+
+      const group = controller
+        .endgameGroups()
+        .find((candidate) => candidate.points.includes(pointId));
+      if (group) selectedGroupIdRef.current = group.id;
+    };
 
     const persistStatusClick = (event: Event): void => {
       const target = event.target;
@@ -40,15 +65,19 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
       const status = statusFromButton(target);
       if (!status) return;
 
-      const selectedLine = board.querySelector<SVGElement>(
+      const temporaryLine = board.querySelector<SVGElement>(
         '.torus-board__endgame-line[data-endgame-temporary="true"]',
       );
-      const groupId = selectedLine?.getAttribute('data-endgame-group-id');
+      const groupId =
+        selectedGroupIdRef.current ??
+        temporaryLine?.getAttribute('data-endgame-group-id') ??
+        null;
       if (!groupId) return;
 
       void controller.setEndgameDecision(groupId, status);
     };
 
+    root.addEventListener('click', trackSelectedGroup, true);
     root.addEventListener('click', persistStatusClick, true);
 
     const restoreReview = async (): Promise<void> => {
@@ -96,6 +125,8 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
 
     return () => {
       cancelled = true;
+      selectedGroupIdRef.current = null;
+      root.removeEventListener('click', trackSelectedGroup, true);
       root.removeEventListener('click', persistStatusClick, true);
     };
   }, [controller]);
