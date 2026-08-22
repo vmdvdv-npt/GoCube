@@ -309,14 +309,14 @@ export class Cube2DGameController {
       void pendingCompletion.catch(() => undefined);
     }
 
-    const result = await this.session.execute({ type: 'undo' });
+    const result = await this.session.executeSessionCommand({ type: 'undo' });
     return this.present(result.ok, result.ok ? null : result.reason);
   }
 
   async redo(): Promise<Cube2DGameActionResult> {
     if (this.pendingEndgameCompletion) return this.present(false, 'not-playing');
 
-    const result = await this.session.execute({ type: 'redo' });
+    const result = await this.session.executeSessionCommand({ type: 'redo' });
     if (!result.ok) return this.present(false, result.reason);
 
     if (result.state.phase === 'endgame') {
