@@ -72,6 +72,7 @@ describe('GameSession persistence', () => {
         version: 1,
         ruleSet: 'chinese',
         komi: 7.5,
+        redo: [],
       },
     });
     expect(repository.saves[0]?.state.history).toHaveLength(2);
@@ -118,7 +119,34 @@ describe('GameSession persistence', () => {
     expect(repository.saves).toHaveLength(4);
   });
 
-  it('persists and restores a finished result, then Undo clears that result', async () => {
+  it('persists the Redo future across Undo, save and reload', async () => {
+    const topology = new TorusTopology(9);
+    const repository = new MemoryRepository();
+    const config = persistentConfig(repository, new ChineseScoring(topology));
+    const engine = new GameEngine(topology);
+    const session = new GameSession(engine, new SimpleKoPolicy(), config);
+
+    await session.execute({ type: 'place-stone', point: '0,0' });
+    await session.execute({ type: 'place-stone', point: '1,1' });
+    const stateBeforeUndo = session.state();
+
+    const undo = await session.execute({ type: 'undo' });
+    expect(undo.ok).toBe(true);
+    expect(session.canRedo()).toBe(true);
+    expect(repository.saves.at(-1)?.state.redo).toHaveLength(1);
+    expect(repository.saves.at(-1)?.state.redo?.at(-1)?.state).toEqual(stateBeforeUndo);
+
+    const restored = await GameSession.load(engine, new SimpleKoPolicy(), config);
+    expect(restored?.canRedo()).toBe(true);
+
+    const redo = await restored!.execute({ type: 'redo' });
+    expect(redo.ok).toBe(true);
+    expect(restored?.state()).toEqual(stateBeforeUndo);
+    expect(restored?.canRedo()).toBe(false);
+    expect(repository.saves.at(-1)?.state.redo).toEqual([]);
+  });
+
+  it('persists and restores a finished result, then preserves that result through reload and Redo', async () => {
     const topology = new TorusTopology(9);
     const repository = new MemoryRepository();
     const config = persistentConfig(repository, new ChineseScoring(topology), 5.5);
@@ -128,14 +156,15 @@ describe('GameSession persistence', () => {
     await session.execute({ type: 'pass' });
     await session.execute({ type: 'pass' });
 
+    const finishedScore = session.finalScore();
     const stored = repository.saves.at(-1)?.state;
     expect(stored?.history.at(-1)?.phase).toBe('finished');
-    expect(stored?.finalScore).toEqual(session.finalScore());
+    expect(stored?.finalScore).toEqual(finishedScore);
     expect(JSON.parse(JSON.stringify(stored))).toEqual(stored);
 
     const restored = await GameSession.load(engine, new SimpleKoPolicy(), config);
     expect(restored?.state().phase).toBe('finished');
-    expect(restored?.finalScore()).toEqual(session.finalScore());
+    expect(restored?.finalScore()).toEqual(finishedScore);
 
     const undo = await restored!.execute({ type: 'undo' });
     expect(undo.ok).toBe(true);
@@ -146,6 +175,19 @@ describe('GameSession persistence', () => {
     });
     expect(restored?.finalScore()).toBeNull();
     expect(repository.saves.at(-1)?.state.finalScore).toBeNull();
+    expect(repository.saves.at(-1)?.state.redo?.at(-1)).toMatchObject({
+      state: { phase: 'finished' },
+      finalScore: finishedScore,
+    });
+
+    const restoredAfterUndo = await GameSession.load(engine, new SimpleKoPolicy(), config);
+    expect(restoredAfterUndo?.canRedo()).toBe(true);
+    expect(restoredAfterUndo?.finalScore()).toBeNull();
+
+    const redo = await restoredAfterUndo!.execute({ type: 'redo' });
+    expect(redo.ok).toBe(true);
+    expect(restoredAfterUndo?.state().phase).toBe('finished');
+    expect(restoredAfterUndo?.finalScore()).toEqual(finishedScore);
   });
 
   it('rejects restoration through a different rule set or komi', async () => {
