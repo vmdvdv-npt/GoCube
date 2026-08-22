@@ -1,8 +1,5 @@
 import type { GroupStatus } from '../core/endgame/EndgameClassifier';
-import {
-  compareEndgamePointIds,
-  endgameGroupId,
-} from '../core/endgame/EndgameGroupIdentity';
+import { compareEndgamePointIds } from '../core/endgame/EndgameGroupIdentity';
 import type { StoneColor } from '../core/game/types';
 import type { PointId, Topology } from '../core/topology/Topology';
 
