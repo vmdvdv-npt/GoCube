@@ -28,9 +28,8 @@ export interface DragPanOptions {
   readonly allowInteractiveDrag?: boolean;
 }
 
-const DRAG_PAN_THRESHOLD_PX = 6;
-const DRAG_PAN_INTERACTIVE_SELECTOR =
-  'button, input, select, textarea, a, [data-drag-pan-ignore="true"]';
+const DRAG_PAN_INTERACTIVE_SELECTOR = 'button, input, select, textarea, a';
+const DRAG_PAN_ALWAYS_IGNORE_SELECTOR = '[data-drag-pan-ignore="true"]';
 
 const sameOffset = (left: DragPanOffset, right: DragPanOffset): boolean =>
   left.x === right.x && left.y === right.y;
@@ -52,8 +51,10 @@ export function useDragPan(options: DragPanOptions = {}) {
   const suppressResetTimerRef = useRef<number | null>(null);
 
   const shouldIgnoreTarget = useCallback(
-    (target: Element | null): boolean =>
-      !allowInteractiveDrag && Boolean(target?.closest(DRAG_PAN_INTERACTIVE_SELECTOR)),
+    (target: Element | null): boolean => {
+      if (target?.closest(DRAG_PAN_ALWAYS_IGNORE_SELECTOR)) return true;
+      return !allowInteractiveDrag && Boolean(target?.closest(DRAG_PAN_INTERACTIVE_SELECTOR));
+    },
     [allowInteractiveDrag],
   );
 
