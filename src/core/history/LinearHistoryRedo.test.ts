@@ -24,6 +24,29 @@ describe('LinearHistory redo', () => {
     expect(history.canRedo()).toBe(false);
   });
 
+  it('restores a persisted future stack with the same next-Redo order', () => {
+    const engine = new GameEngine(new TorusTopology(9));
+    const initial = engine.createInitialState();
+    const first = engine.placeStone(initial, '0,0', 'black');
+    if (!first.ok) throw new Error(`Expected first move, got ${first.reason}`);
+    const second = engine.placeStone(first.state, '1,0', 'white');
+    if (!second.ok) throw new Error(`Expected second move, got ${second.reason}`);
+
+    const source = new LinearHistory(initial);
+    source.push(first.state);
+    source.push(second.state);
+    source.undo();
+    source.undo();
+
+    const restored = LinearHistory.fromStates(source.states(), source.futureStates());
+
+    expect(restored.current()).toEqual(initial);
+    expect(restored.futureStates()).toEqual(source.futureStates());
+    expect(restored.redo()).toEqual(first.state);
+    expect(restored.redo()).toEqual(second.state);
+    expect(restored.canRedo()).toBe(false);
+  });
+
   it('discards the old future after a new action from an undone state', () => {
     const engine = new GameEngine(new TorusTopology(9));
     const initial = engine.createInitialState();

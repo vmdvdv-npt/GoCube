@@ -3,6 +3,7 @@ import { LinearHistory } from '../history/LinearHistory';
 import type { GameRepository } from '../persistence/GameRepository';
 import {
   GAME_SESSION_SNAPSHOT_VERSION,
+  type GameSessionRedoEntrySnapshot,
   type GameSessionSnapshot,
 } from '../persistence/GameSessionSnapshot';
 import type { RepetitionPolicy } from '../rules/RepetitionPolicy';
@@ -126,6 +127,14 @@ const cloneFinalScore = (score: FinalScore | null): FinalScore | null => {
   });
 };
 
+const cloneHistoryMetadata = (
+  metadata: Pick<GameSessionRedoEntrySnapshot, 'endgameClassification' | 'finalScore'>,
+): HistoryMetadata =>
+  Object.freeze({
+    endgameClassification: cloneEndgameClassification(metadata.endgameClassification),
+    finalScore: cloneFinalScore(metadata.finalScore),
+  });
+
 const assertBoardSize = (boardSize: number): void => {
   if (!Number.isInteger(boardSize) || boardSize <= 0) {
     throw new Error(`Board size must be a positive integer, got ${String(boardSize)}`);
@@ -173,8 +182,13 @@ export class GameSession {
     const [initialState] = snapshot.history;
     if (!initialState) throw new Error('Saved game history must not be empty');
 
+    const redo = snapshot.redo ?? [];
     const session = new GameSession(engine, repetitionPolicy, config, initialState);
-    session.history = LinearHistory.fromStates(snapshot.history);
+    session.history = LinearHistory.fromStates(
+      snapshot.history,
+      redo.map((entry) => entry.state),
+    );
+    session.futureMetadata.push(...redo.map(cloneHistoryMetadata));
     session.currentFinalScore = cloneFinalScore(snapshot.finalScore);
     session.currentEndgameClassification = cloneEndgameClassification(
       snapshot.endgameClassification,
@@ -237,12 +251,29 @@ export class GameSession {
   }
 
   snapshot(): GameSessionSnapshot {
+    const futureStates = this.history.futureStates();
+    if (futureStates.length !== this.futureMetadata.length) {
+      throw new Error('Redo state and metadata stacks are out of sync');
+    }
+
+    const redo = Object.freeze(
+      futureStates.map((state, index) => {
+        const metadata = this.futureMetadata[index]!;
+        return Object.freeze({
+          state,
+          endgameClassification: cloneEndgameClassification(metadata.endgameClassification),
+          finalScore: cloneFinalScore(metadata.finalScore),
+        });
+      }),
+    );
+
     return Object.freeze({
       version: GAME_SESSION_SNAPSHOT_VERSION,
       boardSize: this.config.boardSize,
       ruleSet: this.config.scoringStrategy.ruleSet,
       komi: this.config.komi,
       history: this.history.states(),
+      redo,
       endgameClassification: cloneEndgameClassification(this.currentEndgameClassification),
       finalScore: cloneFinalScore(this.currentFinalScore),
     });
@@ -481,25 +512,46 @@ export class GameSession {
       throw new Error('Saved game history must not be empty');
     }
 
-    const currentState = snapshot.history[snapshot.history.length - 1]!;
-    if (currentState.phase === 'finished' && !snapshot.finalScore) {
-      throw new Error('Finished saved game must include FinalScore');
+    GameSession.assertStateMetadata(
+      snapshot.history[snapshot.history.length - 1]!,
+      snapshot.endgameClassification ?? null,
+      snapshot.finalScore,
+      snapshot.ruleSet,
+      snapshot.komi,
+      'current saved state',
+    );
+
+    for (const entry of snapshot.redo ?? []) {
+      GameSession.assertStateMetadata(
+        entry.state,
+        entry.endgameClassification,
+        entry.finalScore,
+        snapshot.ruleSet,
+        snapshot.komi,
+        'saved Redo state',
+      );
     }
-    if (currentState.phase !== 'finished' && snapshot.finalScore) {
-      throw new Error('Unfinished saved game must not include FinalScore');
+  }
+
+  private static assertStateMetadata(
+    state: GameState,
+    endgameClassification: EndgameClassification | null,
+    finalScore: FinalScore | null,
+    ruleSet: GameSessionSnapshot['ruleSet'],
+    komi: number,
+    label: string,
+  ): void {
+    if (state.phase === 'finished' && !finalScore) {
+      throw new Error(`Finished ${label} must include FinalScore`);
     }
-    if (
-      currentState.phase !== 'finished' &&
-      snapshot.endgameClassification !== undefined &&
-      snapshot.endgameClassification !== null
-    ) {
-      throw new Error('Unfinished saved game must not include endgame classification');
+    if (state.phase !== 'finished' && finalScore) {
+      throw new Error(`Unfinished ${label} must not include FinalScore`);
     }
-    if (
-      snapshot.finalScore &&
-      (snapshot.finalScore.ruleSet !== snapshot.ruleSet || snapshot.finalScore.komi !== snapshot.komi)
-    ) {
-      throw new Error('Saved FinalScore does not match saved game configuration');
+    if (state.phase !== 'finished' && endgameClassification !== null) {
+      throw new Error(`Unfinished ${label} must not include endgame classification`);
+    }
+    if (finalScore && (finalScore.ruleSet !== ruleSet || finalScore.komi !== komi)) {
+      throw new Error(`Saved FinalScore for ${label} does not match saved game configuration`);
     }
   }
 }

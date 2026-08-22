@@ -27,7 +27,7 @@
 9\) Renderer никогда не решает правила игры и не изменяет GameState напрямую.  
 10\) Scoring не определяет самостоятельно жизнь/смерть групп. Он получает готовую EndgameClassification.  
 11\) EndgameClassifier не содержит формулу Chinese/Japanese scoring.  
-12\) History восстанавливает точное игровое состояние, но не отвечает за визуализацию.  
+12\) GameState представляет один текущий доменный snapshot. History владеет линейной последовательностью past/current/redo snapshots и восстанавливает точное игровое состояние, но не отвечает за визуализацию.  
 13\) GameStorage скрывает физический способ хранения.  
 14\) Animation является только визуальной реакцией на уже совершившееся доменное событие. Анимация не должна менять результат хода и не должна быть частью GameEngine.  
 15\) Переход 2D ↔ 3D не меняет GameState.  
@@ -35,12 +35,15 @@
 17\) Все rule-relevant данные должны быть сериализуемыми и детерминированно восстанавливаемыми.  
 18\) Основные модули зависят от абстракций/контрактов, а не от конкретных реализаций.  
 19\) Стрелка A → B в архитектурной документации означает: A использует контракт B или передаёт ему данные/команду. Она не означает наследование.  
-20\) Сеть должна подключаться снаружи доменного ядра. Topology, ScoringStrategy, EndgameClassifier и GameEngine не должны знать о наличии сети.
+20\) Сеть должна подключаться снаружи доменного ядра. Topology, ScoringStrategy, EndgameClassifier и GameEngine не должны знать о наличии сети.  
+21\) History никогда не является полем GameState, а GameEngine никогда не владеет объектом History и не вызывает его. Для проверки повторений GameEngine получает только минимальный RepetitionContext, подготовленный application/session layer из History.
 
 # 2\. Верхнеуровневый путь команды
 
 Базовый путь локальной команды:  
 UI/Input → GameSession → GameEngine → GameState \+ DomainEvents → GameSession.  
+Перед rule-check, которому требуется история повторений:  
+GameSession → History → RepetitionContext → GameEngine/RepetitionPolicy.  
 После получения нового состояния GameSession выполняет необходимые побочные действия:  
 GameSession → History.  
 GameSession → GameStorage.  
@@ -50,7 +53,7 @@ GameSession → EndgameClassifier → ScoringStrategy → FinalResult.
 GameEngine внутри обработки хода использует:  
 GameEngine → Topology.  
 GameEngine → RepetitionPolicy.  
-GameEngine не должен напрямую вызывать History, GameStorage, Renderer, EndgameClassifier или ScoringStrategy.
+GameEngine не должен напрямую вызывать или получать объект History, а также не должен вызывать GameStorage, Renderer, EndgameClassifier или ScoringStrategy.
 
 # 3\. UI / Input
 
@@ -71,12 +74,14 @@ UI не знает алгоритмы групп, дыханий, взятий, 
 # 4\. GameSession
 
 GameSession — application-level координатор одной партии и основная точка входа для игровых команд от UI.  
+GameSession является владельцем orchestration вокруг History: именно он выбирает current GameState из History, запрашивает у History минимальный RepetitionContext, передаёт его GameEngine/RepetitionPolicy и после принятого действия обновляет History. GameEngine объект History не получает.  
 GameSession отвечает за:  
 — принять command от UI;  
 — передать доменную команду в GameAuthority или непосредственно в GameEngine в локальной реализации;  
 — получить новое GameState и DomainEvents;  
 — обновить History;  
 — инициировать autosave через GameStorage;  
+— сериализовать session snapshot, включающий current/past History, redo-future и связанные endgame/result metadata, необходимые для точного продолжения;  
 — запустить endgame после двух последовательных пасов;  
 — передать финальную классификацию в выбранную ScoringStrategy;  
 — сохранить FinalResult в состоянии/сессии;  
@@ -105,7 +110,7 @@ NetworkTransport, login, matchmaking, reconnect, spectator mode и cloud synchro
 
 GameEngine — чистое доменное ядро механики ГО.  
 Предпочтительная модель: command \+ state → new state \+ domain events.  
-Пример контракта: applyCommand(state, command, topology, repetitionPolicy) → EngineResult.  
+Пример контракта: applyCommand(state, command, topology, repetitionPolicy, repetitionContext) → EngineResult.  
 EngineResult содержит новое GameState либо ошибку/причину недопустимости и набор DomainEvents.  
 GameEngine реализует:  
 — постановку камня;  
@@ -118,27 +123,24 @@ GameEngine реализует:
 — счётчик последовательных пасов;  
 — изменения счётчиков снятых камней;  
 — move/action number;  
-— формирование данных, необходимых для ko/repetition check.  
-GameEngine использует только доменные зависимости, прежде всего Topology и RepetitionPolicy.  
-GameEngine не использует Renderer, PresentationModel, GameStorage, localStorage/IndexedDB, React/DOM, Three.js, EndgameClassifier, ScoringStrategy или NetworkTransport.
+— формирование candidate-state данных, необходимых для ko/repetition check.  
+GameEngine использует только доменные зависимости, прежде всего Topology и RepetitionPolicy, и получает repetition context как данные, а не как History service.  
+GameEngine не использует и не владеет History, Renderer, PresentationModel, GameStorage, localStorage/IndexedDB, React/DOM, Three.js, EndgameClassifier, ScoringStrategy или NetworkTransport.
 
 # 7\. GameState
 
-GameState — сериализуемое доменное состояние, достаточное для точного продолжения партии и восстановления истории.  
-GameState должен содержать или однозначно позволять восстановить:  
+GameState — один сериализуемый доменный snapshot изменяемого rule-relevant состояния в конкретный момент партии. Он не является контейнером всей сессии и не содержит History/redo-future.  
+GameState должен содержать или однозначно позволять восстановить динамические данные текущего состояния, необходимые GameEngine и точному Undo/Redo, в том числе:  
 — board occupancy по logical pointId;  
 — currentPlayer;  
-— board size/config;  
-— rule set selection;  
-— komi;  
 — capture counters;  
 — action/move number;  
 — consecutivePasses;  
-— ko/repetition-relevant state;  
+— ko/repetition-relevant state текущего snapshot, если оно не выводится из переданного RepetitionContext;  
 — game phase/status: playing / endgame / finished;  
-— данные завершения партии, если партия завершена;  
-— все данные, влияющие на точное продолжение игры.  
-History не обязана быть вложена внутрь одного GameState: History может хранить последовательность GameState snapshots.  
+— другие динамические данные, влияющие на применение правил из этого snapshot.  
+Статическая конфигурация партии — topology identity/size, rule set и komi — может храниться один раз в GameSession/GameSessionSnapshot и не обязана дублироваться внутри каждого GameState. EndgameClassification и FinalScore также могут быть session-level metadata, если они сериализуются вместе с соответствующим current/redo snapshot и детерминированно восстанавливаются.  
+History является отдельным модулем и хранит последовательность GameState snapshots; redo-future также принадлежит History, а не GameState.  
 View/camera state не является обязательной частью GameState.  
 DOM nodes, Three.js objects, SVG elements и другие несериализуемые визуальные объекты запрещены внутри GameState.
 
@@ -163,14 +165,16 @@ CubeTopology: шесть логических досок; корректные �
 — SuperkoPolicy — реализованная расширенная политика повторения; архитектура допускает выбор policy без изменения GameEngine.  
 SimpleKoPolicy запрещает немедленное возвращение к позиции, существовавшей перед предыдущим ходом соперника.  
 GameEngine должен делегировать проверку повторения политике, а не зашивать единственный вариант ko глубоко внутрь постановки камня.  
-History предоставляет policy только необходимые данные/хэши/позиции; это не делает GameEngine владельцем History.
+GameSession запрашивает у History только необходимые для выбранной policy данные/хэши/позиции, формирует минимальный RepetitionContext и передаёт его вместе с командой в доменный вызов. Ни RepetitionPolicy, ни GameEngine не получают владение History.
 
 # 10\. History
 
-Контракт: push(state/action), undo(), redo(), canUndo(), canRedo(), current(), при необходимости — получение минимального repetition context.  
+Контракт: push(state/action), undo(), redo(), canUndo(), canRedo(), current(), получение минимального repetition context и сериализуемого состояния past/current/redo timeline.  
 Реализации:  
 — LinearHistory — 0.1.  
 LinearHistory в 0.1 поддерживает окончательную модель Undo и Redo. Отдельного этапа 0.4 с Advanced/Branching History в актуальном roadmap нет и возвращать его без нового продуктового решения нельзя. Пасы являются обычными действиями истории. Undo переносит отменённое состояние в линейное «будущее», Redo точно восстанавливает его; любое новое принятое игровое действие после Undo очищает redo-будущее. currentPlayer, captures, ko/repetition state, consecutivePasses, move/action number, last move и endgame/finished state восстанавливаются детерминированно.  
+History владеет последовательностью GameState snapshots и redo-future; GameState не владеет History. GameSession координирует History и сохраняет её сериализуемое состояние. GameEngine не получает History как dependency.  
+После autosave/reload доступное redo-будущее обязано сохраняться. Если перед reload `canRedo() = true`, после точного восстановления той же сохранённой партии Redo должно оставаться доступным и возвращать тот же следующий snapshot. Для finished/endgame redo вместе с GameState сохраняются связанные EndgameClassification/FinalScore metadata, если они нужны для полного восстановления.  
 History должна восстанавливать rule-relevant state, а не только расположение камней.
 
 # 11\. EndgameClassifier
@@ -215,8 +219,7 @@ PresentationModel не должен принимать доменные реше
 
 Минимальный общий контракт: render(viewModel), hitTest(pointer) → logical pointId | null, setView/viewState при необходимости.  
 Конкретные реализации:  
-Начиная с 0.2 Torus2DRenderer и Cube2DRenderer обязаны использовать общий BoardTheme и общие visual assets. В общий слой входят как минимум фактура/цвет доски, палитра и характер сетки, SVG-artwork чёрного и белого камня, его highlight/shadow semantics, hover-preview, last-move marker, move numbers, forbidden marker, endgame alive/dead/seki annotation и финальная territory/dead-stone визуализация. Геометрия, размеры сетки, толщина линий, расположение досок, стыки и навигация остаются renderer-specific. Cube 2D визуальных копий не создаёт; renderer-only copies существуют только в специально определённых режимах вроде Torus one-line edge strips. BoardTheme и stone SVG не входят в GameState и не должны дублироваться отдельными несовместимыми реализациями для Torus 2D и Cube 2D. Normal stone, hover-preview и captured stone обоих 2D-renderer-ов обязаны получать black/white artwork из одного shared StoneArtwork implementation; отдельные Cube/Torus или normal/capture paint definitions запрещены.  
-Zoom обоих 2D-renderer-ов является исключительно ViewState и не входит в GameState. Пользовательский zoom не должен реализовываться долгоживущим compositor-layer с CSS `transform: scale()`/`scale` на корневой игровой сцене. В Cube 2D steady-state zoom меняет фактический размер 4×3 layout: базовый размер одной face cell логически равен 190, а конечный rendered cell size равен `190 × zoom`; Cube2DRenderer, пустые anchor slots и Cube2DVisualEffects используют один общий layoutCellSize. Корневая Cube stage в steady state не имеет scale-transform; `will-change: transform` допустим только на время 260-ms navigation/anchor transition и удаляется вместе с transition state. В Torus 2D пользовательский zoom и size-specific edge fit образуют SVG/vector camera через root `viewBox` или эквивалентную внутреннюю SVG camera; корневой SVG не compositor-scale-ится. Hit-testing преобразует pointer через текущую vector camera обратно в стабильные logical scene coordinates, а renderer redraw не имеет права сбрасывать application-owned camera.  
+Начиная с 0.2 Torus2DRenderer и Cube2DRenderer обязаны использовать общий BoardTheme и общие visual assets. В общий слой входят как минимум фактура/цвет доски, палитра и характер сетки, SVG-artwork чёрного и белого камня, его highlight/shadow semantics, hover-preview, last-move marker, move numbers, forbidden marker, endgame alive/dead/seki annotation и финальная territory/dead-stone визуализация. Геометрия, размеры сетки, толщина линий, расположение досок, стыки и навигация остаются renderer-specific. Cube 2D визуальных копий не создаёт; renderer-only copies существуют только в специально определённых режимах вроде Torus one-line edge strips. BoardTheme и stone SVG не входят в GameState и не должны дублироваться отдельными несовместимыми реализациями для Torus 2D и Cube 2D.  
 — Torus2DRenderer — 0.1.  
 — Cube2DRenderer — 0.2+.  
 — Cube3DRenderer — 0.5+.  
@@ -229,7 +232,7 @@ Cube2DRenderer:
 — в каждом стабильном интерактивном состоянии каждая logical point куба отображается ровно одним VisualPoint в одной из шести занятых ячеек; duplicate boards, duplicate cells и duplicate hit targets как постоянная модель Cube 2D запрещены; временный animation-only clone для бесшовного горизонтального wrap не считается VisualPoint layout и не участвует в input;  
 — hover и hit-testing работают только с единственным стабильным VisualPoint logical point; animation-only clone горизонтальной галереи всегда non-interactive и не требует синхронизации input;  
 — 2D grid визуально ортогональная квадратная;  
-— visual layout, бесконечный horizontal gallery shift, vertical rebuild, zoom и animation-only transition elements являются renderer/ViewState concern и не меняют GameState; постоянное дублирование CubeFace/PointId в Cube 2D запрещено.  
+— visual layout, бесконечный horizontal gallery shift, vertical rebuild и animation-only transition elements являются renderer/ViewState concern и не меняют GameState; постоянное дублирование CubeFace/PointId в Cube 2D запрещено.  
 Cube3DRenderer:  
 — 3D-куб с шестью игровыми гранями;  
 — rotation, zoom, reset view;  
@@ -258,9 +261,6 @@ Animation получает DomainEvents/ViewEvents и создаёт визуа�
 — интерактивная основная копия снятого камня получает полёт, визуальные edge-duplicates только быстро затухают;  
 — обычная постановка камня получает короткую мягкую animation около 100 мс без изменения момента доменного хода;  
 — в Cube 2D каждый логический камень имеет ровно одно визуальное представление; анимация снятия применяется к этому единственному камню, без дополнительного исчезновения дублей;  
-— Cube 2D capture строится только из snapshot предыдущей реально отрисованной сцены, снятого до применения нового визуального состояния. Для каждой captured PointId snapshot содержит как минимум color, исходную CubeFace, прежний 4×3 layout row/column, локальные face x/y, stage-space x/y и порядок. После удаления камня запрещено заново искать PointId в новом layout и использовать эту новую экранную позицию как источник полёта;  
-— все снимаемые Cube 2D stones рендерятся в единой coordinate system всей 4×3 stage, предпочтительно отдельным stage-level SVG capture layer. В `t=0` captured stone обязан иметь тот же shared StoneArtwork, размер, центр и shadow semantics, что normal stone; capture-only flat fill или stroke запрещены. До окончания собственного stagger-delay координата не меняется. White летит за левую границу stage, Black — за правую; target и траектория вычисляются в stage/SVG units, допускается небольшой уклон вверх;  
-— Undo/Redo и renderer-only navigation не должны сами по себе создавать ложную capture animation; один captured PointId получает ровно один capture effect;  
 — во время cubeLayoutTransition, torusShift или 2D↔3D transition UI может временно блокировать игровые клики;  
 — после завершения визуального перехода input снова разрешается.
 
@@ -272,7 +272,8 @@ GameSession зависит от GameStorage, а не от browser API напря
 — LocalStorageGameStorage — простой кандидат для 0.1 и одной текущей партии.  
 — IndexedDbGameStorage — допустимая локальная альтернатива, если история станет слишком объёмной.  
 — Будущее серверное сохранение может быть реализовано отдельным Remote/Cloud storage adapter, но это не должно смешиваться с NetworkTransport игровой партии.  
-Сохранять минимум: GameState, полную требуемую историю, выбранный размер, rule set, komi, captured stones, ko/repetition data, consecutive passes и данные, нужные для точного продолжения.  
+Сохраняется сериализуемый GameSessionSnapshot или эквивалентный session envelope: статическая конфигурация партии (topology/size, rule set, komi), текущая past/current часть History, полное redo-future, а также EndgameClassification/FinalScore metadata, необходимые для точного восстановления current и будущих Redo states. Один GameState внутри этой структуры остаётся только одним snapshot и не содержит History.  
+После `Undo → save/load` `canRedo()` и точный следующий Redo должны восстанавливаться. Новое принятое действие после восстановления по-прежнему очищает redo-future по обычному контракту LinearHistory.  
 Не обязательно сохранять точный режим 2D/3D, ракурс, текущую CubeOrientation/Cube2DLayout и zoom, если отдельная задача не делает это обязательным.
 
 # 17\. NetworkTransport — future only
@@ -290,15 +291,15 @@ GameEngine не должен содержать socket callbacks или remote-s
 2\) Активный Renderer выполняет hitTest и получает logical pointId.  
 3\) UI создаёт PlaceStone(pointId).  
 4\) UI передаёт command в GameSession.  
-5\) GameSession передаёт command в LocalGameAuthority/GameEngine.  
+5\) GameSession получает current GameState и минимальный RepetitionContext из History и передаёт доменную команду в LocalGameAuthority/GameEngine.  
 6\) GameEngine через Topology получает соседей.  
 7\) GameEngine рассчитывает группы/liberties/captures.  
 8\) GameEngine проверяет suicide.  
-9\) GameEngine через RepetitionPolicy проверяет ko/repetition.  
+9\) GameEngine через RepetitionPolicy и переданный RepetitionContext проверяет ko/repetition.  
 10\) При допустимом ходе создаётся новое GameState.  
 11\) GameEngine возвращает GameState \+ DomainEvents.  
 12\) GameSession добавляет состояние в History.  
-13\) GameSession запускает GameStorage.save.  
+13\) GameSession запускает GameStorage.save полного session snapshot.  
 14\) GameSession передаёт новое состояние в PresentationModel.  
 15\) PresentationModel строит ViewModel.  
 16\) Renderer отображает новый ViewModel.  
@@ -329,16 +330,17 @@ ScoringStrategy создаёт FinalScore.
 GameSession фиксирует finished/final result.  
 PresentationModel показывает территорию, dead stones и окно результата.  
 Новые игровые ходы блокируются; навигация/просмотр 2D/3D остаются разрешены.  
-Undo после завершения: GameSession отменяет второй Pass через History; finished/endgame result удаляется, первый Pass остаётся, доска снова принимает ходы, а временная защита Pass не восстанавливается. Redo после такого Undo повторно применяет отменённый второй Pass и возвращает соответствующее endgame/finished state, если пользователь не сделал нового игрового действия.
+Undo после завершения: GameSession отменяет второй Pass через History; finished/endgame result удаляется, первый Pass остаётся, доска снова принимает ходы, а временная защита Pass не восстанавливается. Redo после такого Undo повторно применяет отменённый второй Pass и возвращает соответствующее endgame/finished state, если пользователь не сделал нового игрового действия. Session persistence обязана сохранить этот Redo вместе с его endgame/result metadata через reload.
 
 # 21\. Поток Undo и Redo
 
 UI → GameSession.undo/redo.  
 GameSession получает точный GameState от History.  
 Это состояние становится текущим authoritative state локальной сессии.  
-GameSession сохраняет восстановленное состояние при необходимости.  
+GameSession сохраняет полный session snapshot: past/current History, redo-future и связанные session-level metadata.  
 PresentationModel и Renderer получают восстановленный state.  
 currentPlayer, captures, move numbers, ko, passes, last move marker и прочие rule-relevant данные должны совпасть с восстановленным history state.  
+После сохранения и reload доступное redo-future не исчезает: если до reload Redo был возможен, он остаётся возможен после восстановления и возвращает тот же следующий state/result.  
 Renderer не реконструирует прошлое самостоятельно.
 
 # 22\. Поток переключения 2D ↔ 3D
@@ -361,6 +363,7 @@ LocalGameAuthority → GameEngine.
 GameEngine → Topology.  
 GameEngine → RepetitionPolicy.  
 GameSession → History.  
+GameSession получает из History RepetitionContext как данные и передаёт его доменному вызову.  
 GameSession → GameStorage.  
 GameSession → EndgameClassifier.  
 GameSession/endgame flow → ScoringStrategy.  
@@ -372,6 +375,8 @@ RemoteGameAuthority → NetworkTransport в будущем.
 Запрещённые зависимости:  
 UI → GameEngine напрямую.  
 Renderer → GameEngine для изменения состояния.  
+GameEngine → History.  
+GameState → History или вложенная History внутри GameState.  
 GameEngine → Renderer.  
 GameEngine → GameStorage.  
 GameEngine → NetworkTransport.  
@@ -396,12 +401,12 @@ Future online:
 
 # 25\. Тестовые границы
 
-GameEngine tests: группы, liberties, captures, suicide, pass, turn switching, move/action numbering, integration с RepetitionPolicy.  
+GameEngine tests: группы, liberties, captures, suicide, pass, turn switching, move/action numbering, integration с RepetitionPolicy через переданный RepetitionContext без зависимости GameEngine от History.  
 Topology tests: у каждой точки ровно четыре соседа; симметрия/корректность соседств; Torus wrap; Cube edges; Cube corners; группы и взятия через стыки. Для CubeTopology тесты запускаются на нескольких N, включая чётные и нечётные размеры и как минимум один технический размер, не представленный в текущем UI-наборе, чтобы доказать отсутствие hardcode под конкретные кнопки размеров.  
 Scoring tests: ChineseScoring и JapaneseScoring на одной и той же классифицированной позиции; komi; dead/alive/seki; нейтральная территория; captures не добавляются ошибочно в Chinese area score.  
-History tests: undo/redo stone; undo/redo pass; canUndo/canRedo; восстановление currentPlayer; ko/repetition state; captures; consecutivePasses; undo/redo second pass around endgame/finish; очистка redo-будущего новым действием.  
-Renderer contract tests: renderer не создаёт собственную игровую истину; hitTest возвращает logical pointId. Для Cube 2D обязательно проверяются: в каждом стабильном состоянии матрица layout ровно 3×4; ровно 6 непустых cells и 6 null; каждая CubeFace присутствует ровно один раз; каждая logical PointId имеет ровно одно игровое визуальное представление; общее число стабильных visual points равно 6 × N × N; rotation приходит из Cube2DLayout/CubeOrientation и не вычисляется renderer-ом. Дополнительно для verticalAnchorColumn \= 0/1/2/3 проверяется перенос TOP/BOTTOM кликом по пустым slots: обе доски переезжают вместе, пустой slot получает только layout-control interaction, не logical PointId/stone hit target, CubeOrientation и GameState не меняются, а уникальность шести CubeFace и корректность стыков сохраняются. Отдельно проверяется бесконечная горизонтальная галерея: повторные moveLeft()/moveRight() циклически переставляют четыре боковые грани без накопления дублей; временный animation-only clone, если используется для wrap, не входит в layout, не участвует в hitTest и исчезает после transition. Отдельно проверяется совместимость shared BoardTheme и единственного StoneArtwork. Для Cube zoom автоматически проверяются 0.78/1.0/1.35: steady root stage не имеет CSS scale, неподвижные boards не имеют постоянного `will-change`, hit-testing и anchor/navigation сохраняют тот же PointId. Для Torus zoom автоматически проверяются 0.7/1.0/1.5/2.5: root SVG использует vector camera, а не compositor scale, и hit-testing остаётся согласованным с camera. Для Cube capture проверяются previous-rendered-scene source coordinates, white→left/black→right, stagger 0/150/300…, отсутствие flat fallback artwork, одна animation на PointId, отсутствие ложной capture при Undo/Redo, все verticalAnchorColumn и направления navigation, несколько Cube sizes и zoom 0.78/1.0/1.35. Browser regression сравнивает normal stone с первым кадром capture с допуском центра не более 0.5 CSS px; visual screenshots выполняются как минимум при DPR 1 и DPR 1.5. Для Torus 2D renderer-only edge duplicates тестируются отдельно.  
-Persistence tests: serialize → save → load → exact rule-relevant state restoration. Storage implementation можно заменить без изменения GameSession API.  
+History tests: undo/redo stone; undo/redo pass; canUndo/canRedo; восстановление currentPlayer; ko/repetition state; captures; consecutivePasses; undo/redo second pass around endgame/finish; очистка redo-будущего новым действием; сериализация/restoration past/current/redo stack с сохранением порядка следующего Redo.  
+Renderer contract tests: renderer не создаёт собственную игровую истину; hitTest возвращает logical pointId. Для Cube 2D обязательно проверяются: в каждом стабильном состоянии матрица layout ровно 3×4; ровно 6 непустых cells и 6 null; каждая CubeFace присутствует ровно один раз; каждая logical PointId имеет ровно одно игровое визуальное представление; общее число стабильных visual points равно 6 × N × N; rotation приходит из Cube2DLayout/CubeOrientation и не вычисляется renderer-ом. Дополнительно для verticalAnchorColumn \= 0/1/2/3 проверяется перенос TOP/BOTTOM кликом по пустым slots: обе доски переезжают вместе, пустой slot получает только layout-control interaction, не logical PointId/stone hit target, CubeOrientation и GameState не меняются, а уникальность шести CubeFace и корректность стыков сохраняются. Отдельно проверяется бесконечная горизонтальная галерея: повторные moveLeft()/moveRight() циклически переставляют четыре боковые грани без накопления дублей; временный animation-only clone, если используется для wrap, не входит в layout, не участвует в hitTest и исчезает после transition. Отдельно проверяется совместимость shared BoardTheme. Для Torus 2D renderer-only edge duplicates тестируются отдельно.  
+Persistence tests: serialize → save → load → exact session restoration, включая current GameState, past History, redo-future, порядок следующего Redo и EndgameClassification/FinalScore для redo завершённой партии. Отдельный regression test обязан покрывать `Undo → save → load → Redo`. Storage implementation можно заменить без изменения GameSession API.  
 Network-readiness tests после появления сети: одни и те же commands применимы к LocalGameAuthority и RemoteGameAuthority; UI не зависит от network API; серверный state authoritative.
 
 # 26\. Архитектурные анти-паттерны
@@ -413,12 +418,12 @@ Network-readiness tests после появления сети: одни и те
 — зашивать ChineseScoring в общую механику;  
 — автоматически определять dead/alive внутри ScoringStrategy;  
 — читать localStorage из GameEngine;  
+— давать GameEngine владение/доступ к History вместо минимального RepetitionContext;  
+— вкладывать History или redo-future внутрь GameState;  
+— терять redo-future или его endgame/result metadata при autosave/reload;  
 — вызывать Three.js из Topology;  
 — заставлять Renderer менять captures/currentPlayer/history;  
 — делать animation callback источником момента фактического хода;  
-— масштабировать steady-state 2D scene как долгоживущую compositor bitmap через root CSS scale вместо renderer/vector camera;  
-— поддерживать независимые black/white stone artwork для Cube/Torus или normal/captured states;  
-— после capture вычислять исходную позицию камня из уже перестроенного нового Cube2DLayout вместо snapshot предыдущей rendered scene;  
 — размазывать сетевые проверки по UI и GameEngine;  
 — создавать отдельный GameState для 2D и отдельный для 3D;  
 — создавать отдельный GameEngine для Torus и Cube;  
@@ -437,7 +442,7 @@ Network-readiness tests после появления сети: одни и те
 8\) Можно ли заменить TorusTopology на CubeTopology без изменения этой логики?  
 9\) Можно ли заменить LocalStorageGameStorage на IndexedDbGameStorage без изменения этой логики?  
 10\) Можно ли в будущем заменить local command execution на RemoteGameAuthority без изменения UI?  
-11\) Сохраняется ли один authoritative GameState?  
+11\) Сохраняется ли один authoritative current GameState при отдельной History/session envelope?  
 12\) Не дублируется ли правило в нескольких слоях?  
 Если ответ показывает нарушение границы, сначала исправить архитектуру или ввести узкий adapter/contract, затем писать функцию.
 
@@ -445,13 +450,14 @@ Network-readiness tests после появления сети: одни и те
 
 При любой задаче считать систему следующей цепочкой:  
 Пользователь создаёт intent в UI.  
-GameSession координирует.  
+GameSession координирует и владеет orchestration вокруг History.  
 GameAuthority определяет, где исполняется команда: локально или в будущем удалённо.  
-GameEngine решает, что произошло по правилам.  
+GameEngine решает, что произошло по правилам, используя current GameState и переданный RepetitionContext, но не History service.  
 Topology сообщает, кто сосед.  
 RepetitionPolicy решает допустимость повторения.  
-GameState является источником истины о партии.  
-History хранит и восстанавливает GameState.  
+GameState является одним current snapshot состояния правил.  
+History владеет линейной последовательностью GameState past/current/redo и восстанавливает её.  
+GameSessionSnapshot/GameStorage сохраняет конфигурацию партии, History timeline и session-level endgame/result metadata, необходимые для точного reload.  
 EndgameClassifier классифицирует финальные группы.  
 ScoringStrategy считает очки.  
 PresentationModel переводит состояние в данные для показа.  
