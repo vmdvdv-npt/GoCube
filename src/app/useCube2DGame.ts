@@ -5,6 +5,8 @@ import { endgameGroupForPoint } from '../presentation/EndgameGroupPresentation';
 import { createCube2DLayout, type Cube2DLayoutColumn } from '../presentation/cube/Cube2DLayout';
 import { createCube2DViewState, navigateCube2DViewState, setCube2DVerticalAnchorColumn, type Cube2DNavigationDirection, type Cube2DViewState } from '../presentation/cube/Cube2DNavigation';
 import {
+  CUBE_2D_CAPTURE_FLIGHT_MS,
+  CUBE_2D_CAPTURE_STAGGER_MS,
   buildCube2DCaptureEffects,
   type CapturedStoneEffect,
   type Cube2DCaptureSource,
@@ -17,7 +19,6 @@ import {
   type Cube2DRendererTransition,
 } from '../renderer2d/Cube2DRenderer';
 import { type Cube2DEndgameDecisions, type Cube2DEndgameGroup, type Cube2DGameActionResult, Cube2DGameController } from './Cube2DGameController';
-import { CUBE_2D_CAPTURE_FLIGHT_MS, CUBE_2D_CAPTURE_STAGGER_MS } from './Cube2DVisualEffects';
 
 export const CUBE_ENDGAME_STATUSES: readonly GroupStatus[] = ['alive', 'dead', 'seki'];
 export const cubeEndgameStatusLabel = (status: GroupStatus) => status === 'alive' ? 'Alive' : status === 'dead' ? 'Dead' : 'Seki';
