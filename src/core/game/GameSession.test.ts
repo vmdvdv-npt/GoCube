@@ -1,22 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { EndgameClassifier } from '../endgame/EndgameClassifier';
-import type { RepetitionContext, RepetitionPolicy } from '../rules/RepetitionPolicy';
-import { SimpleKoPolicy } from '../rules/RepetitionPolicy';
 import { ChineseScoring } from '../scoring/ChineseScoring';
 import type { Topology } from '../topology/Topology';
 import { TorusTopology } from '../topology/TorusTopology';
 import type { GameState } from './types';
 import { GameEngine } from './GameEngine';
 import { GameSession, type GameSessionConfig } from './GameSession';
-
-class RecordingPolicy implements RepetitionPolicy {
-  readonly contexts: RepetitionContext[] = [];
-
-  isAllowed(context: RepetitionContext): boolean {
-    this.contexts.push(context);
-    return true;
-  }
-}
 
 const emptyClassifier: EndgameClassifier = Object.freeze({
   classify: async () => Object.freeze([]),
@@ -33,7 +22,7 @@ describe('GameSession', () => {
   it('is the command entry point and records only successful actions', async () => {
     const topology = new TorusTopology(9);
     const engine = new GameEngine(topology);
-    const session = new GameSession(engine, new SimpleKoPolicy(), sessionConfig(topology));
+    const session = new GameSession(engine, sessionConfig(topology));
 
     expect(session.historyLength()).toBe(1);
 
@@ -70,12 +59,7 @@ describe('GameSession', () => {
         '4,3': 'black',
       },
     };
-    const session = new GameSession(
-      engine,
-      new SimpleKoPolicy(),
-      sessionConfig(topology),
-      beforeCapture,
-    );
+    const session = new GameSession(engine, sessionConfig(topology), beforeCapture);
 
     const capture = await session.execute({ type: 'place-stone', point: '4,5' });
     expect(capture.ok).toBe(true);
@@ -95,7 +79,7 @@ describe('GameSession', () => {
     });
   });
 
-  it('uses LinearHistory as the repetition context and does not record a rejected ko recapture', async () => {
+  it('gets minimal SimpleKoContext from LinearHistory and does not record a rejected recapture', async () => {
     const topology = new TorusTopology(9);
     const engine = new GameEngine(topology);
     const initial = engine.createInitialState();
@@ -112,12 +96,7 @@ describe('GameSession', () => {
         '4,6': 'white',
       },
     };
-    const session = new GameSession(
-      engine,
-      new SimpleKoPolicy(),
-      sessionConfig(topology),
-      beforeCapture,
-    );
+    const session = new GameSession(engine, sessionConfig(topology), beforeCapture);
 
     expect((await session.execute({ type: 'place-stone', point: '4,5' })).ok).toBe(true);
     expect(session.historyLength()).toBe(2);
@@ -133,7 +112,7 @@ describe('GameSession', () => {
   it('undo after the second Pass returns from finished to playing and keeps the first Pass', async () => {
     const topology = new TorusTopology(9);
     const engine = new GameEngine(topology);
-    const session = new GameSession(engine, new SimpleKoPolicy(), sessionConfig(topology));
+    const session = new GameSession(engine, sessionConfig(topology));
 
     await session.execute({ type: 'pass' });
     const secondPass = await session.execute({ type: 'pass' });
@@ -160,30 +139,10 @@ describe('GameSession', () => {
     });
   });
 
-  it('restores repetition context after undo by dropping the undone future state', async () => {
-    const topology = new TorusTopology(9);
-    const engine = new GameEngine(topology);
-    const policy = new RecordingPolicy();
-    const session = new GameSession(engine, policy, sessionConfig(topology));
-
-    await session.execute({ type: 'place-stone', point: '1,1' });
-    const secondMove = await session.execute({ type: 'place-stone', point: '2,2' });
-    if (!secondMove.ok) throw new Error(`Expected accepted move, got ${secondMove.reason}`);
-
-    expect((await session.execute({ type: 'undo' })).ok).toBe(true);
-    await session.execute({ type: 'place-stone', point: '3,3' });
-
-    const restoredContext = policy.contexts.at(-1);
-    expect(restoredContext?.states).toHaveLength(2);
-    expect(restoredContext?.states.at(-1)?.board['1,1']).toBe('black');
-    expect(restoredContext?.states.at(-1)?.board['2,2']).toBe('empty');
-    expect(restoredContext?.states).not.toContain(secondMove.state);
-  });
-
   it('rejects undo when there is no successful action to undo', async () => {
     const topology = new TorusTopology(9);
     const engine = new GameEngine(topology);
-    const session = new GameSession(engine, new SimpleKoPolicy(), sessionConfig(topology));
+    const session = new GameSession(engine, sessionConfig(topology));
 
     expect(await session.execute({ type: 'undo' })).toMatchObject({
       ok: false,
