@@ -61,6 +61,29 @@ const isSizeForMode = (mode: GameMode, value: unknown): value is GameSize =>
 const isPhase = (value: unknown): value is SavedGameSummary['phase'] =>
   value === 'playing' || value === 'endgame' || value === 'finished';
 
+const hasValidStateMetadata = (
+  state: unknown,
+  endgameClassification: unknown,
+  finalScore: unknown,
+): boolean => {
+  if (!isRecord(state) || !isPhase(state.phase)) return false;
+  if (state.phase === 'finished') return isRecord(finalScore);
+  return (endgameClassification === null || endgameClassification === undefined) && finalScore === null;
+};
+
+const hasValidRedo = (redo: unknown): boolean =>
+  redo === undefined ||
+  (Array.isArray(redo) &&
+    redo.every(
+      (entry) =>
+        isRecord(entry) &&
+        hasValidStateMetadata(
+          entry.state,
+          entry.endgameClassification,
+          entry.finalScore,
+        ),
+    ));
+
 /**
  * Bridges the shared GameSession persistence contract to the application save envelope.
  * GameSession continues to persist only GameSessionSnapshot; the application adds gameMode.
@@ -236,20 +259,15 @@ export class GameApplication {
         typeof snapshot.komi !== 'number' ||
         !Number.isFinite(snapshot.komi) ||
         !Array.isArray(snapshot.history) ||
-        snapshot.history.length === 0
+        snapshot.history.length === 0 ||
+        !hasValidRedo(snapshot.redo)
       ) {
         throw new Error('Invalid saved session snapshot');
       }
 
       const current: unknown = snapshot.history.at(-1);
-      if (!isRecord(current) || !isPhase(current.phase)) {
+      if (!hasValidStateMetadata(current, snapshot.endgameClassification, snapshot.finalScore)) {
         throw new Error('Invalid saved current state');
-      }
-      if (current.phase === 'finished' && !snapshot.finalScore) {
-        throw new Error('Finished save must include FinalScore');
-      }
-      if (current.phase !== 'finished' && snapshot.finalScore) {
-        throw new Error('Unfinished save must not include FinalScore');
       }
 
       return saved;
