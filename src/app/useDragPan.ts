@@ -248,10 +248,9 @@ export function useDragPan(options: DragPanOptions = {}) {
     setOffset: applyOffset,
     reset,
     reconstrain,
-    // Cube can opt into an explicit pointer-down session and allow drags to begin
-    // on its own buttons: a short press remains a click, while crossing the movement
-    // threshold becomes pan and suppresses that click. Torus deliberately keeps the
-    // move-start fallback and interactive-target ignore to protect endgame SVG clicks.
+    // Callers can opt into an explicit pointer-down session so a short press
+    // remains a click, while crossing the movement threshold becomes pan and suppresses
+    // that click. Interactive controls stay excluded unless explicitly allowed.
     onPointerDown: startOnPointerDown ? handlePointerDown : undefined,
     onPointerMove: handlePointerMove,
     onPointerUp: undefined,

@@ -170,6 +170,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const dragPan = useDragPan({
     constrain: constrainViewPan,
     onDragStart: clearPanHover,
+    startOnPointerDown: true,
   });
   const panOffsetRef = useRef<DragPanOffset>(dragPan.offset);
 
@@ -197,6 +198,24 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   useEffect(() => {
     panOffsetRef.current = dragPan.offset;
   }, [dragPan.offset]);
+
+  useEffect(() => {
+    if (viewModel.phase !== 'endgame') {
+      if (selectedGroupId !== null) setSelectedGroupId(null);
+      return;
+    }
+
+    if (
+      selectedGroupId !== null &&
+      endgameGroups.some((group) => group.id === selectedGroupId)
+    ) {
+      return;
+    }
+
+    const restoredSelection =
+      endgameGroups.find((group) => Boolean(decisions[group.id]))?.id ?? null;
+    if (restoredSelection !== null) setSelectedGroupId(restoredSelection);
+  }, [decisions, endgameGroups, selectedGroupId, viewModel.phase]);
 
   useEffect(() => {
     rendererRef.current = null;
@@ -401,9 +420,17 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     const svg = svgRef.current;
     if (!renderer || !svg) return null;
 
-    const directPointId = (event.target as Element | null)
-      ?.closest('[data-logical-point-id]')
-      ?.getAttribute('data-logical-point-id');
+    const pathPoint = event.nativeEvent
+      .composedPath()
+      .find(
+        (target): target is Element =>
+          target instanceof Element && target.hasAttribute('data-logical-point-id'),
+      );
+    const directPointId =
+      pathPoint?.getAttribute('data-logical-point-id') ??
+      (event.target as Element | null)
+        ?.closest('[data-logical-point-id]')
+        ?.getAttribute('data-logical-point-id');
     if (directPointId) {
       const directGroup = endgameGroupForPoint(endgameGroups, directPointId);
       if (directGroup) return directGroup;
