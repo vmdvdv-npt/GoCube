@@ -67,6 +67,11 @@ test('Torus wheel zoom scales the board and arrows while the sidebar stays fixed
   await board.hover();
   await page.mouse.wheel(0, -250);
   await expect(shell).not.toHaveAttribute('data-view-zoom', '1.000');
+  const zoom = Number(await shell.getAttribute('data-view-zoom'));
+  await expect.poll(async () => (await shell.boundingBox())?.width ?? 0).toBeCloseTo(
+    shellBefore.width * zoom,
+    0,
+  );
 
   const sidebarAfter = await requiredBox(sidebar);
   const shellAfter = await requiredBox(shell);
