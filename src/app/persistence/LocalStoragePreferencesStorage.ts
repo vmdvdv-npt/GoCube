@@ -13,6 +13,7 @@ type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 interface StoredPreferences {
   readonly version: typeof PREFERENCES_VERSION;
+  readonly lastGameMode: UserPreferences['lastGameMode'];
   readonly lastCubeSize: CubeUiSize | null;
   readonly lastTorusSize: TorusSize | null;
   readonly lastKomi: number | null;
@@ -21,6 +22,9 @@ interface StoredPreferences {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
+
+const isGameMode = (value: unknown): value is NonNullable<UserPreferences['lastGameMode']> =>
+  value === 'torus-2d' || value === 'cube-2d';
 
 const isTorusSize = (value: unknown): value is TorusSize =>
   typeof value === 'number' && TORUS_SIZES.some((size) => size === value);
@@ -33,15 +37,18 @@ const isNormalizedKomi = (value: unknown): value is number =>
 const parsePreferences = (value: unknown): UserPreferences | null => {
   if (!isRecord(value) || value.version !== PREFERENCES_VERSION) return null;
 
+  const gameMode = value.lastGameMode ?? null;
   const cubeSize = value.lastCubeSize;
   const torusSize = value.lastTorusSize;
   const komi = value.lastKomi ?? null;
+  if (gameMode !== null && !isGameMode(gameMode)) return null;
   if (cubeSize !== null && !isCubeUiSize(cubeSize)) return null;
   if (torusSize !== null && !isTorusSize(torusSize)) return null;
   if (komi !== null && !isNormalizedKomi(komi)) return null;
   if (typeof value.showTorusDuplicateRegions !== 'boolean') return null;
 
   return Object.freeze({
+    lastGameMode: gameMode,
     lastCubeSize: cubeSize,
     lastTorusSize: torusSize,
     lastKomi: komi,
@@ -91,6 +98,7 @@ export class LocalStoragePreferencesStorage implements PreferencesStorage {
 
     const stored: StoredPreferences = Object.freeze({
       version: PREFERENCES_VERSION,
+      lastGameMode: preferences.lastGameMode,
       lastCubeSize: preferences.lastCubeSize,
       lastTorusSize: preferences.lastTorusSize,
       lastKomi: preferences.lastKomi,

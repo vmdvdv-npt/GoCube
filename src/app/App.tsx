@@ -28,6 +28,9 @@ const sizesForMode = (mode: GameMode): readonly GameSize[] =>
 const defaultSizeForMode = (mode: GameMode): GameSize =>
   mode === 'cube-2d' ? 4 : 9;
 
+const preferredGameMode = (preferences: UserPreferences): GameMode =>
+  preferences.lastGameMode ?? 'torus-2d';
+
 const preferredSizeForMode = (
   mode: GameMode,
   preferences: UserPreferences,
@@ -66,9 +69,15 @@ export function App() {
       preferencesStorage.loadPreferences(),
     ]).then(([summary, storedPreferences]) => {
       if (cancelled) return;
-      setPreferences(storedPreferences);
-      setSize(preferredSizeForMode('torus-2d', storedPreferences));
-      setKomi(String(preferredKomi(storedPreferences)));
+      const hydratedPreferences: UserPreferences =
+        storedPreferences.lastGameMode === null && summary
+          ? Object.freeze({ ...storedPreferences, lastGameMode: summary.gameMode })
+          : storedPreferences;
+      const initialGameMode = preferredGameMode(hydratedPreferences);
+      setPreferences(hydratedPreferences);
+      setGameMode(initialGameMode);
+      setSize(preferredSizeForMode(initialGameMode, hydratedPreferences));
+      setKomi(String(preferredKomi(hydratedPreferences)));
       setSavedGame(summary);
       setScreen(summary ? 'resume' : 'settings');
     });
@@ -96,11 +105,12 @@ export function App() {
     setError(null);
     try {
       await application.discardSavedGame();
+      const nextGameMode = preferredGameMode(preferences);
       setActiveGame(null);
       setSavedGame(null);
       setConfirmNewGame(false);
-      setGameMode('torus-2d');
-      setSize(preferredSizeForMode('torus-2d', preferences));
+      setGameMode(nextGameMode);
+      setSize(preferredSizeForMode(nextGameMode, preferences));
       setRuleSet('japanese');
       setKomi(String(preferredKomi(preferences)));
       setScreen('settings');
@@ -138,6 +148,7 @@ export function App() {
         .catch(() => preferences);
       const nextPreferences: UserPreferences = Object.freeze({
         ...storedPreferences,
+        lastGameMode: gameMode,
         lastCubeSize:
           gameMode === 'cube-2d'
             ? (size as UserPreferences['lastCubeSize'])

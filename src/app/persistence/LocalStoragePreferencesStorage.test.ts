@@ -19,7 +19,7 @@ class MemoryStorage {
 }
 
 describe('LocalStoragePreferencesStorage', () => {
-  it('defaults to no remembered size or komi and duplicate regions off', async () => {
+  it('defaults to no remembered board type, size, or komi and duplicate regions off', async () => {
     const storage = new MemoryStorage();
     const preferences = new LocalStoragePreferencesStorage(storage, 'test:preferences');
 
@@ -30,6 +30,7 @@ describe('LocalStoragePreferencesStorage', () => {
     const storage = new MemoryStorage();
     const preferences = new LocalStoragePreferencesStorage(storage, 'test:preferences');
     const expected = Object.freeze({
+      lastGameMode: 'cube-2d' as const,
       lastCubeSize: 6 as const,
       lastTorusSize: 13 as const,
       lastKomi: 6.5,
@@ -41,7 +42,7 @@ describe('LocalStoragePreferencesStorage', () => {
     await expect(preferences.loadPreferences()).resolves.toEqual(expected);
   });
 
-  it('loads older preference payloads without komi as no remembered komi', async () => {
+  it('loads older preference payloads without board type or komi', async () => {
     const storage = new MemoryStorage();
     storage.values.set(
       'test:preferences',
@@ -55,6 +56,7 @@ describe('LocalStoragePreferencesStorage', () => {
     const preferences = new LocalStoragePreferencesStorage(storage, 'test:preferences');
 
     await expect(preferences.loadPreferences()).resolves.toEqual({
+      lastGameMode: null,
       lastCubeSize: 5,
       lastTorusSize: 19,
       lastKomi: null,
@@ -68,10 +70,30 @@ describe('LocalStoragePreferencesStorage', () => {
       'test:preferences',
       JSON.stringify({
         version: 1,
+        lastGameMode: 'torus-2d',
         lastCubeSize: 99,
         lastTorusSize: 13,
         lastKomi: 6.5,
         showTorusDuplicateRegions: true,
+      }),
+    );
+    const preferences = new LocalStoragePreferencesStorage(storage, 'test:preferences');
+
+    await expect(preferences.loadPreferences()).resolves.toEqual(DEFAULT_USER_PREFERENCES);
+    expect(storage.values.has('test:preferences')).toBe(false);
+  });
+
+  it('rejects an unsupported remembered board type', async () => {
+    const storage = new MemoryStorage();
+    storage.values.set(
+      'test:preferences',
+      JSON.stringify({
+        version: 1,
+        lastGameMode: 'sphere-3d',
+        lastCubeSize: 6,
+        lastTorusSize: 13,
+        lastKomi: 6.5,
+        showTorusDuplicateRegions: false,
       }),
     );
     const preferences = new LocalStoragePreferencesStorage(storage, 'test:preferences');
@@ -86,6 +108,7 @@ describe('LocalStoragePreferencesStorage', () => {
       'test:preferences',
       JSON.stringify({
         version: 1,
+        lastGameMode: 'cube-2d',
         lastCubeSize: 6,
         lastTorusSize: 13,
         lastKomi: 6.9,
