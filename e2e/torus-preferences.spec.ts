@@ -12,6 +12,11 @@ test('Torus duplicate-region preference is remembered for the next Torus game', 
     'data-duplicate-regions-visible',
     'true',
   );
+  await page.waitForFunction(() => {
+    const raw = window.localStorage.getItem('gocube:preferences');
+    if (!raw) return false;
+    return JSON.parse(raw).showTorusDuplicateRegions === true;
+  });
 
   await page.getByRole('button', { name: 'New game', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Start a new game?' })).toBeVisible();
