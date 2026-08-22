@@ -15,7 +15,6 @@ import {
 } from '../core/game/GameSession';
 import type { RuleSet } from '../core/game/types';
 import type { GameSessionSnapshot } from '../core/persistence/GameSessionSnapshot';
-import { SimpleKoPolicy } from '../core/rules/RepetitionPolicy';
 import { ChineseScoring } from '../core/scoring/ChineseScoring';
 import { JapaneseScoring } from '../core/scoring/JapaneseScoring';
 import type { ScoringStrategy } from '../core/scoring/Scoring';
@@ -157,7 +156,6 @@ export class Cube2DGameController {
     this.size = requestedSize;
     this.topology = new CubeTopology(this.size);
     const engine = new GameEngine(this.topology);
-    const repetitionPolicy = new SimpleKoPolicy();
     const config = {
       endgameClassifier: this.endgameClassifier,
       scoringStrategy: scoringFor(ruleSet, this.topology),
@@ -167,8 +165,8 @@ export class Cube2DGameController {
     } as const;
 
     this.session = snapshot
-      ? GameSession.fromSnapshot(engine, repetitionPolicy, config, snapshot)
-      : new GameSession(engine, repetitionPolicy, config);
+      ? GameSession.fromSnapshot(engine, config, snapshot)
+      : new GameSession(engine, config);
 
     if (this.session.state().phase === 'endgame') {
       this.pendingEndgameCompletion = this.session.resumeEndgame();

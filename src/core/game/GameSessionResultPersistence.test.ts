@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { EndgameClassifier } from '../endgame/EndgameClassifier';
 import type { GameRepository, SavedGame } from '../persistence/GameRepository';
 import type { GameSessionSnapshot } from '../persistence/GameSessionSnapshot';
-import { SimpleKoPolicy } from '../rules/RepetitionPolicy';
 import { ChineseScoring } from '../scoring/ChineseScoring';
 import { TorusTopology } from '../topology/TorusTopology';
 import { GameEngine } from './GameEngine';
@@ -54,7 +53,7 @@ describe('GameSession result persistence', () => {
       },
     } as const;
     const engine = new GameEngine(topology);
-    const session = new GameSession(engine, new SimpleKoPolicy(), config);
+    const session = new GameSession(engine, config);
 
     await session.execute({ type: 'place-stone', point: '0,0' });
     await session.execute({ type: 'pass' });
@@ -70,7 +69,7 @@ describe('GameSession result persistence', () => {
       session.snapshot().endgameClassification,
     );
 
-    const restored = await GameSession.load(engine, new SimpleKoPolicy(), config);
+    const restored = await GameSession.load(engine, config);
     expect(restored?.snapshot().endgameClassification).toEqual(
       session.snapshot().endgameClassification,
     );

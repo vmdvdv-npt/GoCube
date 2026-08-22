@@ -3,7 +3,6 @@ import type {
   EndgameClassification,
   EndgameClassifier,
 } from '../endgame/EndgameClassifier';
-import { SimpleKoPolicy } from '../rules/RepetitionPolicy';
 import { ChineseScoring } from '../scoring/ChineseScoring';
 import { JapaneseScoring } from '../scoring/JapaneseScoring';
 import type { FinalScore, ScoringStrategy } from '../scoring/Scoring';
@@ -66,7 +65,6 @@ describe('GameSession endgame flow', () => {
     const classifier = new RecordingClassifier();
     const session = new GameSession(
       new GameEngine(topology),
-      new SimpleKoPolicy(),
       config(classifier, new ChineseScoring(topology)),
     );
 
@@ -86,7 +84,6 @@ describe('GameSession endgame flow', () => {
     const classifier = new RecordingClassifier();
     const session = new GameSession(
       new GameEngine(topology),
-      new SimpleKoPolicy(),
       config(classifier, new ChineseScoring(topology)),
     );
 
@@ -135,7 +132,6 @@ describe('GameSession endgame flow', () => {
     };
     session = new GameSession(
       engine,
-      new SimpleKoPolicy(),
       config(classifier, scoring, 0),
       position,
     );
@@ -160,7 +156,6 @@ describe('GameSession endgame flow', () => {
     const classifier = new RecordingClassifier();
     const session = new GameSession(
       new GameEngine(topology),
-      new SimpleKoPolicy(),
       config(classifier, new ChineseScoring(topology), 6.5),
     );
 
@@ -185,7 +180,6 @@ describe('GameSession endgame flow', () => {
     const classifier = new RecordingClassifier();
     const session = new GameSession(
       new GameEngine(topology),
-      new SimpleKoPolicy(),
       config(classifier, new JapaneseScoring(topology), 5.5),
     );
 
@@ -208,7 +202,6 @@ describe('GameSession endgame flow', () => {
     const topology = new TorusTopology(9);
     const session = new GameSession(
       new GameEngine(topology),
-      new SimpleKoPolicy(),
       config(new RecordingClassifier(), new ChineseScoring(topology)),
     );
 
@@ -236,7 +229,6 @@ describe('GameSession endgame flow', () => {
     const scoring = new RecordingScoring(new ChineseScoring(topology));
     const session = new GameSession(
       new GameEngine(topology),
-      new SimpleKoPolicy(),
       config(classifier, scoring, 7.5),
     );
 

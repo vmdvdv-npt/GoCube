@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { EndgameClassification, EndgameClassifier } from '../endgame/EndgameClassifier';
 import type { GameRepository, SavedGame } from '../persistence/GameRepository';
 import type { GameSessionSnapshot } from '../persistence/GameSessionSnapshot';
-import { SimpleKoPolicy } from '../rules/RepetitionPolicy';
 import { ChineseScoring } from '../scoring/ChineseScoring';
 import { JapaneseScoring } from '../scoring/JapaneseScoring';
 import { TorusTopology } from '../topology/TorusTopology';
@@ -58,7 +57,6 @@ describe('GameSession persistence', () => {
     const repository = new MemoryRepository();
     const session = new GameSession(
       new GameEngine(topology),
-      new SimpleKoPolicy(),
       persistentConfig(repository, new ChineseScoring(topology)),
     );
 
@@ -95,14 +93,14 @@ describe('GameSession persistence', () => {
     const repository = new MemoryRepository();
     const config = persistentConfig(repository, new ChineseScoring(topology), 6.5);
     const engine = new GameEngine(topology);
-    const session = new GameSession(engine, new SimpleKoPolicy(), config);
+    const session = new GameSession(engine, config);
 
     await session.execute({ type: 'place-stone', point: '0,0' });
     await session.execute({ type: 'pass' });
     await session.execute({ type: 'place-stone', point: '1,1' });
 
     const beforeRestore = JSON.stringify(session.snapshot());
-    const restored = await GameSession.load(engine, new SimpleKoPolicy(), config);
+    const restored = await GameSession.load(engine, config);
 
     expect(restored).not.toBeNull();
     expect(restored?.historyLength()).toBe(4);
@@ -124,7 +122,7 @@ describe('GameSession persistence', () => {
     const repository = new MemoryRepository();
     const config = persistentConfig(repository, new ChineseScoring(topology));
     const engine = new GameEngine(topology);
-    const session = new GameSession(engine, new SimpleKoPolicy(), config);
+    const session = new GameSession(engine, config);
 
     await session.execute({ type: 'place-stone', point: '0,0' });
     await session.execute({ type: 'place-stone', point: '1,1' });
@@ -136,7 +134,7 @@ describe('GameSession persistence', () => {
     expect(repository.saves.at(-1)?.state.redo).toHaveLength(1);
     expect(repository.saves.at(-1)?.state.redo?.at(-1)?.state).toEqual(stateBeforeUndo);
 
-    const restored = await GameSession.load(engine, new SimpleKoPolicy(), config);
+    const restored = await GameSession.load(engine, config);
     expect(restored?.canRedo()).toBe(true);
 
     const redo = await restored!.execute({ type: 'redo' });
@@ -151,7 +149,7 @@ describe('GameSession persistence', () => {
     const repository = new MemoryRepository();
     const config = persistentConfig(repository, new ChineseScoring(topology), 5.5);
     const engine = new GameEngine(topology);
-    const session = new GameSession(engine, new SimpleKoPolicy(), config);
+    const session = new GameSession(engine, config);
 
     await session.execute({ type: 'pass' });
     await session.execute({ type: 'pass' });
@@ -162,7 +160,7 @@ describe('GameSession persistence', () => {
     expect(stored?.finalScore).toEqual(finishedScore);
     expect(JSON.parse(JSON.stringify(stored))).toEqual(stored);
 
-    const restored = await GameSession.load(engine, new SimpleKoPolicy(), config);
+    const restored = await GameSession.load(engine, config);
     expect(restored?.state().phase).toBe('finished');
     expect(restored?.finalScore()).toEqual(finishedScore);
 
@@ -180,7 +178,7 @@ describe('GameSession persistence', () => {
       finalScore: finishedScore,
     });
 
-    const restoredAfterUndo = await GameSession.load(engine, new SimpleKoPolicy(), config);
+    const restoredAfterUndo = await GameSession.load(engine, config);
     expect(restoredAfterUndo?.canRedo()).toBe(true);
     expect(restoredAfterUndo?.finalScore()).toBeNull();
 
@@ -195,14 +193,13 @@ describe('GameSession persistence', () => {
     const repository = new MemoryRepository();
     const engine = new GameEngine(topology);
     const chinese = persistentConfig(repository, new ChineseScoring(topology), 7.5);
-    const session = new GameSession(engine, new SimpleKoPolicy(), chinese);
+    const session = new GameSession(engine, chinese);
 
     await session.execute({ type: 'place-stone', point: '0,0' });
 
     await expect(
       GameSession.load(
         engine,
-        new SimpleKoPolicy(),
         persistentConfig(repository, new JapaneseScoring(topology), 7.5),
       ),
     ).rejects.toThrow('Saved rule set mismatch');
@@ -210,7 +207,6 @@ describe('GameSession persistence', () => {
     await expect(
       GameSession.load(
         engine,
-        new SimpleKoPolicy(),
         persistentConfig(repository, new ChineseScoring(topology), 6.5),
       ),
     ).rejects.toThrow('Saved komi mismatch');
@@ -221,8 +217,6 @@ describe('GameSession persistence', () => {
     const repository = new MemoryRepository();
     const config = persistentConfig(repository, new ChineseScoring(topology));
 
-    await expect(
-      GameSession.load(new GameEngine(topology), new SimpleKoPolicy(), config),
-    ).resolves.toBeNull();
+    await expect(GameSession.load(new GameEngine(topology), config)).resolves.toBeNull();
   });
 });

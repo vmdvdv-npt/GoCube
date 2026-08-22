@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import type { EndgameClassifier } from '../endgame/EndgameClassifier';
-import { SimpleKoPolicy } from '../rules/RepetitionPolicy';
 import { ChineseScoring } from '../scoring/ChineseScoring';
 import { TorusTopology } from '../topology/TorusTopology';
 import { GameEngine } from './GameEngine';
@@ -12,7 +11,7 @@ const emptyClassifier: EndgameClassifier = Object.freeze({
 
 const createSession = (): GameSession => {
   const topology = new TorusTopology(9);
-  return new GameSession(new GameEngine(topology), new SimpleKoPolicy(), {
+  return new GameSession(new GameEngine(topology), {
     endgameClassifier: emptyClassifier,
     scoringStrategy: new ChineseScoring(topology),
     komi: 0,

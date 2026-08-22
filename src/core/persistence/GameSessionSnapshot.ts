@@ -15,6 +15,8 @@ export interface GameSessionSnapshot {
   readonly version: typeof GAME_SESSION_SNAPSHOT_VERSION;
   /** Present for application-created saves; optional only for v1 backward compatibility. */
   readonly boardSize?: number;
+  /** Monotonic session autosave revision. Optional only for existing v1 saves. */
+  readonly sessionRevision?: number;
   readonly ruleSet: RuleSet;
   readonly komi: number;
   readonly history: readonly GameState[];

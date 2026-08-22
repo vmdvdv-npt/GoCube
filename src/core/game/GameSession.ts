@@ -1,12 +1,12 @@
 import type { EndgameClassification, EndgameClassifier } from '../endgame/EndgameClassifier';
 import { LinearHistory } from '../history/LinearHistory';
 import type { GameRepository } from '../persistence/GameRepository';
+import { OrderedGameSaveCoordinator } from '../persistence/OrderedGameSaveCoordinator';
 import {
   GAME_SESSION_SNAPSHOT_VERSION,
   type GameSessionRedoEntrySnapshot,
   type GameSessionSnapshot,
 } from '../persistence/GameSessionSnapshot';
-import type { RepetitionPolicy } from '../rules/RepetitionPolicy';
 import type { FinalScore, ScoringStrategy } from '../scoring/Scoring';
 import type { PointId } from '../topology/Topology';
 import {
@@ -141,16 +141,26 @@ const assertBoardSize = (boardSize: number): void => {
   }
 };
 
+const assertSessionRevision = (sessionRevision: number | undefined): void => {
+  if (sessionRevision === undefined) return;
+  if (!Number.isSafeInteger(sessionRevision) || sessionRevision < 0) {
+    throw new Error(
+      `Session revision must be a non-negative safe integer, got ${String(sessionRevision)}`,
+    );
+  }
+};
+
 export class GameSession {
   private history: LinearHistory;
   private readonly config: GameSessionConfig;
   private currentFinalScore: FinalScore | null = null;
   private currentEndgameClassification: EndgameClassification | null = null;
   private readonly futureMetadata: HistoryMetadata[] = [];
+  private sessionRevision = 0;
+  private readonly saveCoordinator: OrderedGameSaveCoordinator<GameSessionSnapshot> | null;
 
   constructor(
     private readonly engine: GameEngine,
-    private readonly repetitionPolicy: RepetitionPolicy,
     config: GameSessionConfig,
     initialState: GameState = engine.createInitialState(),
   ) {
@@ -168,12 +178,14 @@ export class GameSession {
           })
         : undefined,
     });
+    this.saveCoordinator = config.persistence
+      ? new OrderedGameSaveCoordinator(config.persistence.repository)
+      : null;
     this.history = new LinearHistory(initialState);
   }
 
   static fromSnapshot(
     engine: GameEngine,
-    repetitionPolicy: RepetitionPolicy,
     config: GameSessionConfig,
     snapshot: GameSessionSnapshot,
   ): GameSession {
@@ -183,7 +195,7 @@ export class GameSession {
     if (!initialState) throw new Error('Saved game history must not be empty');
 
     const redo = snapshot.redo ?? [];
-    const session = new GameSession(engine, repetitionPolicy, config, initialState);
+    const session = new GameSession(engine, config, initialState);
     session.history = LinearHistory.fromStates(
       snapshot.history,
       redo.map((entry) => entry.state),
@@ -193,12 +205,12 @@ export class GameSession {
     session.currentEndgameClassification = cloneEndgameClassification(
       snapshot.endgameClassification,
     );
+    session.sessionRevision = snapshot.sessionRevision ?? 0;
     return session;
   }
 
   static async load(
     engine: GameEngine,
-    repetitionPolicy: RepetitionPolicy,
     config: GameSessionConfig,
   ): Promise<GameSession | null> {
     const persistence = config.persistence;
@@ -210,7 +222,7 @@ export class GameSession {
       throw new Error(`Saved game id mismatch: expected ${persistence.gameId}, got ${saved.id}`);
     }
 
-    return GameSession.fromSnapshot(engine, repetitionPolicy, config, saved.state);
+    return GameSession.fromSnapshot(engine, config, saved.state);
   }
 
   state(): GameState {
@@ -240,8 +252,7 @@ export class GameSession {
       currentState,
       point,
       currentState.currentPlayer,
-      this.repetitionPolicy,
-      this.history.repetitionContext(),
+      this.history.simpleKoContext(),
     );
 
     return Object.freeze({
@@ -270,6 +281,7 @@ export class GameSession {
     return Object.freeze({
       version: GAME_SESSION_SNAPSHOT_VERSION,
       boardSize: this.config.boardSize,
+      sessionRevision: this.sessionRevision,
       ruleSet: this.config.scoringStrategy.ruleSet,
       komi: this.config.komi,
       history: this.history.states(),
@@ -309,8 +321,7 @@ export class GameSession {
       currentState,
       point,
       currentState.currentPlayer,
-      this.repetitionPolicy,
-      this.history.repetitionContext(),
+      this.history.simpleKoContext(),
     );
 
     if (!result.ok) {
@@ -455,13 +466,21 @@ export class GameSession {
   }
 
   private async persist(): Promise<void> {
-    const persistence = this.config.persistence;
-    if (!persistence) return;
+    if (this.sessionRevision >= Number.MAX_SAFE_INTEGER) {
+      throw new Error('Session revision overflow');
+    }
+    this.sessionRevision += 1;
 
-    await persistence.repository.save({
+    const persistence = this.config.persistence;
+    const coordinator = this.saveCoordinator;
+    if (!persistence || !coordinator) return;
+
+    const snapshot = this.snapshot();
+    const savedAt = (persistence.now ?? (() => new Date().toISOString()))();
+    await coordinator.save({
       id: persistence.gameId,
-      savedAt: (persistence.now ?? (() => new Date().toISOString()))(),
-      state: this.snapshot(),
+      savedAt,
+      state: snapshot,
     });
   }
 
@@ -493,6 +512,7 @@ export class GameSession {
       throw new Error(`Unsupported saved game version: ${String(snapshot.version)}`);
     }
     if (snapshot.boardSize !== undefined) assertBoardSize(snapshot.boardSize);
+    assertSessionRevision(snapshot.sessionRevision);
     if (
       config.boardSize !== undefined &&
       snapshot.boardSize !== undefined &&

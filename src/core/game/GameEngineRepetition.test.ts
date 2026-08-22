@@ -8,8 +8,6 @@ import {
   type RejectedPlaceStoneResult,
 } from './GameEngine';
 import type { GameState, StoneColor } from './types';
-import type { RepetitionContext, RepetitionPolicy } from '../rules/RepetitionPolicy';
-import { SimpleKoPolicy } from '../rules/RepetitionPolicy';
 
 const stateWith = (
   engine: GameEngine,
@@ -38,23 +36,9 @@ const expectRejected = (
   return result;
 };
 
-class RecordingPolicy implements RepetitionPolicy {
-  calls = 0;
-  lastCandidate: GameState | null = null;
-
-  constructor(private readonly allowed: boolean) {}
-
-  isAllowed(_context: RepetitionContext, candidateState: GameState): boolean {
-    this.calls += 1;
-    this.lastCandidate = candidateState;
-    return this.allowed;
-  }
-}
-
-describe('GameEngine repetition integration', () => {
+describe('GameEngine Simple Ko integration', () => {
   it('rejects a classic immediate ko recapture and preserves the current state', () => {
     const engine = new GameEngine(new TorusTopology(9));
-    const policy = new SimpleKoPolicy();
     const beforeCapture = stateWith(engine, {
       '4,4': 'white',
       '3,4': 'black',
@@ -69,13 +53,9 @@ describe('GameEngine repetition integration', () => {
     expect(blackCapture.captured).toEqual(['4,4']);
 
     const recapture = expectRejected(
-      engine.placeStone(
-        blackCapture.state,
-        '4,4',
-        'white',
-        policy,
-        { states: [beforeCapture, blackCapture.state] },
-      ),
+      engine.placeStone(blackCapture.state, '4,4', 'white', {
+        previousBoard: beforeCapture.board,
+      }),
       'repetition',
     );
 
@@ -84,9 +64,8 @@ describe('GameEngine repetition integration', () => {
     expect(recapture.state.board['4,5']).toBe('black');
   });
 
-  it('calls repetition policy only after captures and passes the post-capture candidate state', () => {
+  it('compares Simple Ko against the post-capture candidate board', () => {
     const engine = new GameEngine(new TorusTopology(9));
-    const policy = new RecordingPolicy(false);
     const state = stateWith(engine, {
       '4,4': 'white',
       '3,4': 'black',
@@ -94,40 +73,42 @@ describe('GameEngine repetition integration', () => {
       '4,3': 'black',
     });
 
-    const result = expectRejected(
-      engine.placeStone(state, '4,5', 'black', policy, { states: [state] }),
+    const candidate = expectAccepted(engine.placeStone(state, '4,5', 'black'));
+    expect(candidate.captured).toEqual(['4,4']);
+
+    const repeatedCandidate = expectRejected(
+      engine.placeStone(state, '4,5', 'black', {
+        previousBoard: candidate.state.board,
+      }),
       'repetition',
     );
 
-    expect(policy.calls).toBe(1);
-    expect(policy.lastCandidate?.board['4,4']).toBe('empty');
-    expect(policy.lastCandidate?.board['4,5']).toBe('black');
-    expect(result.state).toBe(state);
-    expect(state.board['4,4']).toBe('white');
-    expect(state.board['4,5']).toBe('empty');
+    expect(repeatedCandidate.state).toBe(state);
   });
 
-  it('does not call repetition policy when the move already fails suicide validation', () => {
+  it('does not implement superko when only an older board would match', () => {
     const engine = new GameEngine(new TorusTopology(9));
-    const policy = new RecordingPolicy(false);
     const state = stateWith(engine, {
-      '3,4': 'white',
-      '5,4': 'white',
-      '4,3': 'white',
-      '4,5': 'white',
+      '4,4': 'white',
+      '3,4': 'black',
+      '5,4': 'black',
+      '4,3': 'black',
     });
+    const candidate = expectAccepted(engine.placeStone(state, '4,5', 'black'));
+    const unrelatedImmediateBoard = {
+      ...candidate.state.board,
+      '0,0': candidate.state.board['0,0'] === 'black' ? 'empty' : 'black',
+    } as const;
 
-    expectRejected(
-      engine.placeStone(state, '4,4', 'black', policy, { states: [state] }),
-      'suicide',
+    expectAccepted(
+      engine.placeStone(state, '4,5', 'black', {
+        previousBoard: unrelatedImmediateBoard,
+      }),
     );
-    expect(policy.calls).toBe(0);
   });
 });
 
 describe.each(TORUS_SIZES)('Simple ko across torus seams %dx%d', (size: TorusSize) => {
-  const policy = new SimpleKoPolicy();
-
   it('rejects immediate ko recapture across the left/right seam', () => {
     const engine = new GameEngine(new TorusTopology(size));
     const last = size - 1;
@@ -150,13 +131,9 @@ describe.each(TORUS_SIZES)('Simple ko across torus seams %dx%d', (size: TorusSiz
     expect(blackCapture.captured).toEqual([capturedPoint]);
 
     const recapture = expectRejected(
-      engine.placeStone(
-        blackCapture.state,
-        capturedPoint,
-        'white',
-        policy,
-        { states: [beforeCapture, blackCapture.state] },
-      ),
+      engine.placeStone(blackCapture.state, capturedPoint, 'white', {
+        previousBoard: beforeCapture.board,
+      }),
       'repetition',
     );
 
@@ -185,13 +162,9 @@ describe.each(TORUS_SIZES)('Simple ko across torus seams %dx%d', (size: TorusSiz
     expect(blackCapture.captured).toEqual([capturedPoint]);
 
     const recapture = expectRejected(
-      engine.placeStone(
-        blackCapture.state,
-        capturedPoint,
-        'white',
-        policy,
-        { states: [beforeCapture, blackCapture.state] },
-      ),
+      engine.placeStone(blackCapture.state, capturedPoint, 'white', {
+        previousBoard: beforeCapture.board,
+      }),
       'repetition',
     );
 
