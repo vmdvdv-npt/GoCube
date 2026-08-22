@@ -166,21 +166,16 @@
 }
 
 /*
- * The renderer keeps a fixed internal SVG padding, which made the wooden margin
- * look progressively wider relative to one grid step on 13x13 and 19x19 boards.
- * Scale the whole SVG inside its clipped viewport so the visible edge margin is
- * consistently about 0.8 of one grid step. The existing inline transform remains
- * the user's ViewState zoom; the independent `scale` property composes with it.
+ * User zoom and the size-specific edge fit are now composed in the SVG viewBox
+ * camera. The root SVG remains at its real layout size and is never compositor-
+ * scaled in steady state, so grid, stones and text are rasterized from vectors at
+ * the final viewport resolution.
  */
 .torus-board {
   background-image: url('/assets/board/board-bg.jpg');
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
-  scale: var(--torus-board-edge-fit-scale, 1);
-  transition:
-    transform 120ms ease-out,
-    scale 120ms ease-out;
 }
 
 /* Let the one-step duplicate stones use the room created by the duplicate-on fit. */
@@ -191,17 +186,6 @@
 /* Let the board texture show through the renderer's former solid SVG background. */
 .torus-board__background {
   fill: transparent;
-}
-
-/*
- * Black stones use the same restrained top-left highlight and dark falloff as
- * the Black-to-move chip. The shared SVG paint server keeps the look consistent
- * for normal stones, legal move previews and captured-stone flight animations.
- */
-.torus-board__stone--black,
-.torus-board__preview-stone--black,
-.torus-board__captured-stone--black {
-  fill: url(#torus-black-stone-gradient);
 }
 
 /*
@@ -216,28 +200,4 @@
 
 .torus-board[aria-label^='19 by 19'] .torus-board__grid line {
   stroke-width: 0.8px;
-}
-
-.torus-board[aria-label^='9 by 9'][data-duplicate-regions-visible='false'] {
-  --torus-board-edge-fit-scale: 1.09649;
-}
-
-.torus-board[aria-label^='9 by 9'][data-duplicate-regions-visible='true'] {
-  --torus-board-edge-fit-scale: 0.95;
-}
-
-.torus-board[aria-label^='13 by 13'][data-duplicate-regions-visible='false'] {
-  --torus-board-edge-fit-scale: 1.16099;
-}
-
-.torus-board[aria-label^='13 by 13'][data-duplicate-regions-visible='true'] {
-  --torus-board-edge-fit-scale: 1.04;
-}
-
-.torus-board[aria-label^='19 by 19'][data-duplicate-regions-visible='false'] {
-  --torus-board-edge-fit-scale: 1.20838;
-}
-
-.torus-board[aria-label^='19 by 19'][data-duplicate-regions-visible='true'] {
-  --torus-board-edge-fit-scale: 1.11;
 }
