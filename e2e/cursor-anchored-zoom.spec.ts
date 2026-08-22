@@ -9,7 +9,7 @@ const requiredBox = async (locator: Locator) => {
 test('Cube wheel zoom works on black playfield space and keeps the pointer as the zoom anchor', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
+  await page.getByRole('button', { name: 'Cube', exact: true }).click();
   await page.getByRole('button', { name: '4×4', exact: true }).click();
   await page.getByRole('button', { name: 'Start game' }).click();
 
