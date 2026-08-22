@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { SimpleKoPolicy } from '../rules/RepetitionPolicy';
 import { CubeTopology, cubePointId } from '../topology/CubeTopology';
 import type { PointId } from '../topology/Topology';
 import {
@@ -97,7 +96,7 @@ describe('GameEngine with CubeTopology', () => {
     expect(result.state.board[frontEdge]).toBe('empty');
   });
 
-  it('applies the existing ko policy to an immediate recapture across an edge', () => {
+  it('applies simple ko to an immediate recapture across an edge', () => {
     const beforeCapture = stateWith(engine, {
       [rightEdge]: 'white',
       [cubePointId('front', 1, 1)]: 'white',
@@ -112,13 +111,9 @@ describe('GameEngine with CubeTopology', () => {
     expect(capture.captured).toEqual([rightEdge]);
 
     const recapture = expectRejected(
-      engine.placeStone(
-        capture.state,
-        rightEdge,
-        'white',
-        new SimpleKoPolicy(),
-        { states: [beforeCapture, capture.state] },
-      ),
+      engine.placeStone(capture.state, rightEdge, 'white', {
+        previousBoard: beforeCapture.board,
+      }),
       'repetition',
     );
 
