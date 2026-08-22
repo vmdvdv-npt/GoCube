@@ -39,12 +39,14 @@ export interface BuildCube2DCaptureEffectsInput {
 
 /**
  * Builds capture flights only from the previous rendered scene snapshot.
- * No lookup in the next/current layout is permitted here.
+ * No lookup in the next/current layout is permitted here. Duplicate PointIds are
+ * collapsed defensively so one logical captured stone can never receive two flights.
  */
 export const buildCube2DCaptureEffects = (
   input: BuildCube2DCaptureEffectsInput,
 ): readonly CapturedStoneEffect[] => {
-  const effects = input.capturedPointIds.flatMap((pointId, order) => {
+  const uniqueCapturedPointIds = [...new Set(input.capturedPointIds)];
+  const effects = uniqueCapturedPointIds.flatMap((pointId, order) => {
     const source = input.previousSources.get(pointId);
     if (!source) return [];
 
