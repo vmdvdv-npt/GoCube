@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 const hit = (page: Page, pointId: string) =>
   page.locator(`.cube-2d-hit-area[data-point-id="${pointId}"]`);
@@ -11,6 +11,70 @@ const expectSixBoards = async (page: Page) => {
   await expect(page.locator('.cube-2d-renderer')).toHaveAttribute('data-board-count', '6');
   await expect(page.locator('.cube-2d-board__diagnostic')).toHaveCount(0);
 };
+
+const requiredBox = async (locator: Locator) => {
+  const box = await locator.boundingBox();
+  expect(box).not.toBeNull();
+  return box!;
+};
+
+const expectNear = (actual: number, expected: number, tolerance = 1) => {
+  expect(Math.abs(actual - expected)).toBeLessThanOrEqual(tolerance);
+};
+
+const expectNavigationAnchored = async (page: Page) => {
+  const leftBoard = await requiredBox(
+    page.locator('.cube-2d-board[data-layout-row="1"][data-layout-column="0"]'),
+  );
+  const rightBoard = await requiredBox(
+    page.locator('.cube-2d-board[data-layout-row="1"][data-layout-column="3"]'),
+  );
+  const topBoard = await requiredBox(page.locator('.cube-2d-board[data-layout-row="0"]'));
+  const bottomBoard = await requiredBox(page.locator('.cube-2d-board[data-layout-row="2"]'));
+  const leftArrow = await requiredBox(page.getByRole('button', { name: 'Move cube left' }));
+  const rightArrow = await requiredBox(page.getByRole('button', { name: 'Move cube right' }));
+  const upArrow = await requiredBox(page.getByRole('button', { name: 'Move cube up' }));
+  const downArrow = await requiredBox(page.getByRole('button', { name: 'Move cube down' }));
+
+  expectNear(leftBoard.x - (leftArrow.x + leftArrow.width), 30);
+  expectNear(leftArrow.y + leftArrow.height / 2, leftBoard.y + leftBoard.height / 2);
+
+  expectNear(rightArrow.x - (rightBoard.x + rightBoard.width), 30);
+  expectNear(rightArrow.y + rightArrow.height / 2, rightBoard.y + rightBoard.height / 2);
+
+  expectNear(topBoard.y - (upArrow.y + upArrow.height), 30);
+  expectNear(upArrow.x + upArrow.width / 2, topBoard.x + topBoard.width / 2);
+
+  expectNear(downArrow.y - (bottomBoard.y + bottomBoard.height), 30);
+  expectNear(downArrow.x + downArrow.width / 2, bottomBoard.x + bottomBoard.width / 2);
+};
+
+test('Cube 2D navigation arrows stay anchored to face edges through anchor movement and zoom', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
+  await page.getByRole('button', { name: '4×4', exact: true }).click();
+  await page.getByRole('button', { name: 'Start game' }).click();
+
+  const renderer = page.locator('.cube-2d-renderer');
+  const navigationLayer = page.locator('.cube-2d-game__navigation-layer');
+  await expect(navigationLayer).toHaveAttribute('data-navigation-gap', '30');
+  await expectNavigationAnchored(page);
+
+  await page
+    .getByRole('button', { name: 'Move top and bottom to column 4 using top slot' })
+    .click();
+  await expect(renderer).toHaveAttribute('data-animating', 'true');
+  await expect(renderer).toHaveAttribute('data-animating', 'false', { timeout: 1000 });
+  await expect(renderer).toHaveAttribute('data-vertical-anchor-column', '3');
+  await expect(navigationLayer).toHaveAttribute('data-vertical-anchor-column', '3');
+  await expectNavigationAnchored(page);
+
+  const cubeViewport = page.locator('.cube-2d-game__viewport');
+  await cubeViewport.hover();
+  await page.mouse.wheel(0, -250);
+  await expect(cubeViewport).toHaveAttribute('data-view-zoom', '1.200');
+  await expectNavigationAnchored(page);
+});
 
 test('0.2 production Cube flow: New Game, seam capture, history, zoom, resume and endgame', async ({ page }) => {
   const pageErrors: Error[] = [];
