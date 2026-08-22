@@ -1,5 +1,6 @@
 import type { WheelEvent } from 'react';
-import { Cube2DRenderer } from '../renderer2d/Cube2DRenderer';
+import { CUBE_2D_LAYOUT_COLUMNS, CUBE_2D_LAYOUT_ROWS } from '../presentation/cube/Cube2DLayout';
+import { CUBE_2D_BASE_CELL_SIZE, Cube2DRenderer } from '../renderer2d/Cube2DRenderer';
 import { Cube2DGameController } from './Cube2DGameController';
 import { Cube2DVisualEffects } from './Cube2DVisualEffects';
 import { GameResultDialog } from './GameResultDialog';
@@ -17,6 +18,7 @@ export interface Cube2DGameProps {
 
 export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
   const g = useCube2DGame(controller);
+  const layoutCellSize = CUBE_2D_BASE_CELL_SIZE * g.zoom;
 
   const handleWheel = (event: WheelEvent<HTMLDivElement>): void => {
     event.preventDefault();
@@ -128,36 +130,37 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
           onWheel={handleWheel}
         >
           <div
-            className="cube-2d-game__scaled-stage"
-            style={{ width: `${760 * g.zoom}px`, height: `${570 * g.zoom}px` }}
+            className="cube-2d-stage cube-2d-game__stage"
+            data-view-zoom={g.zoom.toFixed(3)}
+            style={{
+              width: `${layoutCellSize * CUBE_2D_LAYOUT_COLUMNS}px`,
+              height: `${layoutCellSize * CUBE_2D_LAYOUT_ROWS}px`,
+            }}
           >
-            <div
-              className="cube-2d-stage cube-2d-game__stage"
-              style={{ transform: `scale(${g.zoom})` }}
-            >
-              <Cube2DRenderer
-                layout={g.layout}
-                transition={g.transition ?? undefined}
-                onVerticalAnchorColumnChange={g.moveAnchor}
-                viewModel={g.vm}
-                hoveredPointId={g.hoveredPoint}
-                hoverStatus={g.hoverStatus}
-                showMoveNumbers={g.showMoveNumbers}
-                inputDisabled={Boolean(g.transition) || g.captureAnimating || g.vm.phase === 'finished'}
-                onPointHover={g.hover}
-                onPointActivate={(point) => void g.activate(point)}
-              />
-              <Cube2DVisualEffects
-                layout={g.layout}
-                finalScore={g.vm.finalScore}
-                finalClassification={g.finalClassification}
-                endgameGroups={g.groups}
-                decisions={g.decisions}
-                selectedGroupId={g.selectedGroup}
-                hoveredGroupId={g.hoveredGroup}
-                capturedStones={g.capturedEffects}
-              />
-            </div>
+            <Cube2DRenderer
+              layout={g.layout}
+              layoutCellSize={layoutCellSize}
+              transition={g.transition ?? undefined}
+              onVerticalAnchorColumnChange={g.moveAnchor}
+              viewModel={g.vm}
+              hoveredPointId={g.hoveredPoint}
+              hoverStatus={g.hoverStatus}
+              showMoveNumbers={g.showMoveNumbers}
+              inputDisabled={Boolean(g.transition) || g.captureAnimating || g.vm.phase === 'finished'}
+              onPointHover={g.hover}
+              onPointActivate={(point) => void g.activate(point)}
+            />
+            <Cube2DVisualEffects
+              layout={g.layout}
+              layoutCellSize={layoutCellSize}
+              finalScore={g.vm.finalScore}
+              finalClassification={g.finalClassification}
+              endgameGroups={g.groups}
+              decisions={g.decisions}
+              selectedGroupId={g.selectedGroup}
+              hoveredGroupId={g.hoveredGroup}
+              capturedStones={g.capturedEffects}
+            />
           </div>
         </div>
 
