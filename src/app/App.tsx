@@ -20,6 +20,8 @@ import { TorusGame } from './TorusGame';
 
 type AppScreen = 'loading' | 'resume' | 'settings' | 'game';
 
+const DEFAULT_KOMI = 7.5;
+
 const sizesForMode = (mode: GameMode): readonly GameSize[] =>
   mode === 'cube-2d' ? CUBE_UI_SIZES : TORUS_SIZES;
 
@@ -33,6 +35,9 @@ const preferredSizeForMode = (
   mode === 'cube-2d'
     ? preferences.lastCubeSize ?? defaultSizeForMode(mode)
     : preferences.lastTorusSize ?? defaultSizeForMode(mode);
+
+const preferredKomi = (preferences: UserPreferences): number =>
+  preferences.lastKomi ?? DEFAULT_KOMI;
 
 const modeLabel = (mode: GameMode): string =>
   mode === 'cube-2d' ? 'Cube 2D' : 'Torus 2D';
@@ -50,7 +55,7 @@ export function App() {
   const [gameMode, setGameMode] = useState<GameMode>('torus-2d');
   const [size, setSize] = useState<GameSize>(9);
   const [ruleSet, setRuleSet] = useState<RuleSet>('japanese');
-  const [komi, setKomi] = useState('7.5');
+  const [komi, setKomi] = useState(String(DEFAULT_KOMI));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -63,6 +68,7 @@ export function App() {
       if (cancelled) return;
       setPreferences(storedPreferences);
       setSize(preferredSizeForMode('torus-2d', storedPreferences));
+      setKomi(String(preferredKomi(storedPreferences)));
       setSavedGame(summary);
       setScreen(summary ? 'resume' : 'settings');
     });
@@ -96,7 +102,7 @@ export function App() {
       setGameMode('torus-2d');
       setSize(preferredSizeForMode('torus-2d', preferences));
       setRuleSet('japanese');
-      setKomi('7.5');
+      setKomi(String(preferredKomi(preferences)));
       setScreen('settings');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not reset saved game.');
@@ -140,6 +146,7 @@ export function App() {
           gameMode === 'torus-2d'
             ? (size as UserPreferences['lastTorusSize'])
             : storedPreferences.lastTorusSize,
+        lastKomi: normalizedKomi,
       });
       setPreferences(nextPreferences);
       try {
