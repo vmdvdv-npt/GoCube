@@ -1,12 +1,13 @@
 # Game Cube Go 0.2.0 — release audit
 
-> **Release checklist, not a source of truth.** Before using this checklist, read the current live Roadmap, live Game Cube Go requirements, and live Architecture:
+> **Historical release/checkpoint record — not a source of current requirements.**
 >
-> - Roadmap: https://docs.google.com/document/d/1_z_L7-eOiMos5_6qDRjMrOokiXb2JcMk_tGZuWhiUXQ
-> - Game Cube Go: https://docs.google.com/document/d/1Hz7cQ1FuS1JunFDpSZ3q6gnJW5fbXKxb906BcvjICwY
-> - Architecture: https://docs.google.com/document/d/1XVhf5E354aH889UVyagBkchiKAns9jSNnQpd_wH6-pw
+> For current project truth, read:
+> - Architecture: `docs/ARCHITECTURE.md`
+> - Roadmap / version scope: `docs/ROADMAP.md`
+> - Detailed product behavior: `docs/GAME_CUBE_GO.md`
 >
-> If this checklist conflicts with a current live Google Doc, **the live Google Doc wins**. This checklist must be updated rather than used to override current requirements.
+> This file records what was accepted/tested for the 0.2 checkpoint. It may intentionally preserve requirements or implementation expectations that were valid at that time and were changed later. Never use it to override or reconstruct current product requirements. Do not rewrite historical entries merely to mirror a later product change; edit them only to correct the historical record itself.
 
 Version 0.2 makes Cube 2D a normal application mode while preserving Torus 2D and the shared domain/session stack.
 
@@ -83,12 +84,11 @@ All commands must pass before tagging 0.2.0.
 
 ## Documentation gate
 
-Before tagging 0.2.0:
+For any current requirement or architecture decision, use `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, and `docs/GAME_CUBE_GO.md` rather than this historical checklist.
 
-1. Re-read the three live Google Docs.
-2. Confirm this checklist and repository summaries do not contradict them.
-3. If a live requirement changed, update this checklist; do not preserve an obsolete release expectation merely because it appeared in an older repository file.
-4. Run the full automated gate on the exact candidate commit.
-5. Play the required manual Cube/Torus smoke scenarios on the candidate build.
+1. Treat differences between this file and the canonical documents as historical differences unless the historical record itself is wrong.
+2. Do not update this record solely to mirror a later product decision.
+3. Run the full automated gate on the exact historical candidate commit when validating/reconstructing the checkpoint.
+4. Play the required manual Cube/Torus smoke scenarios when validating/reconstructing the checkpoint.
 
-Do not create the 0.2.0 tag/release until these gates pass.
+Do not use this file to define current 0.2 behavior after later requirements changed.
