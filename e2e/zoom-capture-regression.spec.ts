@@ -40,11 +40,26 @@ const dragCubeViewportBy = async (page: Page, dx: number, dy: number) => {
     const maxStepY = Math.max(1, box.height * 0.35);
     const stepX = Math.max(-maxStepX, Math.min(maxStepX, remainingX));
     const stepY = Math.max(-maxStepY, Math.min(maxStepY, remainingY));
-    const startX = box.x + box.width / 2;
-    const startY = box.y + box.height / 2;
-    await page.mouse.move(startX, startY);
+    const start = await page.evaluate(() => {
+      const viewportElement = document.querySelector<HTMLElement>('.cube-2d-game__viewport')!;
+      const rect = viewportElement.getBoundingClientRect();
+      const interactive = 'button, input, select, textarea, a, [data-drag-pan-ignore="true"]';
+      for (let row = 1; row <= 7; row += 1) {
+        for (let column = 1; column <= 7; column += 1) {
+          const x = rect.left + rect.width * (column / 8);
+          const y = rect.top + rect.height * (row / 8);
+          const target = document.elementFromPoint(x, y);
+          if (target && viewportElement.contains(target) && !target.closest(interactive)) {
+            return { x, y };
+          }
+        }
+      }
+      return null;
+    });
+    if (!start) throw new Error('Expected a non-interactive Cube viewport point for drag-pan');
+    await page.mouse.move(start.x, start.y);
     await page.mouse.down();
-    await page.mouse.move(startX + stepX, startY + stepY, { steps: 8 });
+    await page.mouse.move(start.x + stepX, start.y + stepY, { steps: 8 });
     await page.mouse.up();
     remainingX -= stepX;
     remainingY -= stepY;
