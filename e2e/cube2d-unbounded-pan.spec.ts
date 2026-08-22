@@ -20,6 +20,11 @@ const dragViewportCenterToTopLeft = async (page: Page, viewport: Locator) => {
   await page.mouse.up();
 };
 
+const currentPan = async (viewport: Locator) => ({
+  x: Number(await viewport.getAttribute('data-pan-x')),
+  y: Number(await viewport.getAttribute('data-pan-y')),
+});
+
 test('Cube 2D drag-pan is not clamped by the board viewport or sidebar', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
@@ -46,10 +51,7 @@ test('Cube 2D drag-pan is not clamped by the board viewport or sidebar', async (
 
   await dragViewportCenterToTopLeft(page, viewport);
 
-  const pan = {
-    x: Number(await viewport.getAttribute('data-pan-x')),
-    y: Number(await viewport.getAttribute('data-pan-y')),
-  };
+  const pan = await currentPan(viewport);
   expect(pan.x).toBeLessThan(-formerClamp.maxX - 200);
   expect(pan.y).toBeLessThan(-formerClamp.maxY - 200);
 
@@ -86,4 +88,41 @@ test('Cube 2D drag-pan is not clamped by the board viewport or sidebar', async (
   expect(pageMetrics.sidebarZ).toBeGreaterThan(pageMetrics.playfieldZ);
   expect(pageMetrics.scrollWidth).toBeLessThanOrEqual(pageMetrics.innerWidth);
   expect(pageMetrics.scrollHeight).toBeLessThanOrEqual(pageMetrics.innerHeight);
+});
+
+test('Cube 2D drag-pan can start again after releasing the mouse', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
+  await page.getByRole('button', { name: '4×4', exact: true }).click();
+  await page.getByRole('button', { name: 'Start game' }).click();
+
+  const viewport = page.locator('.cube-2d-game__viewport');
+  await viewport.hover();
+  await page.mouse.wheel(0, -500);
+
+  const box = await requiredBox(viewport);
+  const startX = box.x + box.width / 2;
+  const startY = box.y + box.height / 2;
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 120, startY + 80, { steps: 8 });
+  await page.mouse.up();
+  await expect(viewport).toHaveAttribute('data-dragging', 'false');
+
+  const firstPan = await currentPan(viewport);
+  expect(firstPan.x).toBeGreaterThan(90);
+  expect(firstPan.y).toBeGreaterThan(60);
+
+  // Start the next gesture exactly where the first one ended. Releasing a drag must
+  // completely finish the old pointer session so this new press creates a fresh one.
+  await page.mouse.down();
+  await page.mouse.move(startX + 210, startY + 140, { steps: 8 });
+  await page.mouse.up();
+  await expect(viewport).toHaveAttribute('data-dragging', 'false');
+
+  const secondPan = await currentPan(viewport);
+  expect(secondPan.x).toBeGreaterThan(firstPan.x + 70);
+  expect(secondPan.y).toBeGreaterThan(firstPan.y + 40);
 });
