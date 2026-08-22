@@ -41,9 +41,14 @@ test('game screen uses compact statistics and uniform history controls', async (
   expect(rulesStyle).toEqual(standardStatStyle);
   expect(moveNumbersLabelStyle).toEqual(standardStatStyle);
 
+  const blackCaptureStat = page.locator('.capture-stat--black');
   const blackCaptureStone = page.locator('.capture-stat--black .capture-stat__stone');
   const blackCaptureCount = page.locator('.capture-stat--black .capture-stat__count');
   const blackCaptureStoneBox = await blackCaptureStone.boundingBox();
+  const blackCaptureLayout = await blackCaptureStat.evaluate((element) => ({
+    flexDirection: getComputedStyle(element).flexDirection,
+    legacyPseudoContent: getComputedStyle(element, '::before').content,
+  }));
   const blackCaptureCountStyle = await blackCaptureCount.evaluate((element) => ({
     color: getComputedStyle(element).color,
     fontSize: getComputedStyle(element).fontSize,
@@ -52,6 +57,7 @@ test('game screen uses compact statistics and uniform history controls', async (
   expect(blackCaptureStoneBox).not.toBeNull();
   expect(blackCaptureStoneBox?.width).toBeCloseTo(36, 0);
   expect(blackCaptureStoneBox?.height).toBeCloseTo(36, 0);
+  expect(blackCaptureLayout).toEqual({ flexDirection: 'row', legacyPseudoContent: 'none' });
   expect(blackCaptureCountStyle).toEqual({ color: 'rgb(133, 133, 133)', fontSize: '26px' });
 
   const pass = page.getByRole('button', { name: /^Pass(?: \(1\))?$/ });
