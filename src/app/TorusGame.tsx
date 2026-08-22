@@ -13,6 +13,7 @@ import {
 import { GameResultDialog } from './GameResultDialog';
 import { GameSidebar } from './GameSidebar';
 import './manual-endgame.css';
+import './game-viewport.css';
 import {
   isTorus2DPrimaryBoardClientPosition,
   renderTorus2DEdgeDuplicates,
@@ -49,11 +50,10 @@ const torusEdgeFitScale = (size: Torus2DSize, duplicatesVisible: boolean): numbe
 
 const applyTorusVectorCamera = (
   svg: SVGSVGElement,
-  viewZoom: number,
   size: Torus2DSize,
   duplicatesVisible: boolean,
 ): void => {
-  const cameraScale = viewZoom * torusEdgeFitScale(size, duplicatesVisible);
+  const cameraScale = torusEdgeFitScale(size, duplicatesVisible);
   const span = TORUS_VIEWBOX_SIZE / cameraScale;
   const origin = (TORUS_VIEWBOX_SIZE - span) / 2;
   svg.setAttribute('viewBox', `${origin} ${origin} ${span} ${span}`);
@@ -62,9 +62,10 @@ const applyTorusVectorCamera = (
 };
 
 /**
- * Torus2DRenderer intentionally owns logical 0..1000 scene coordinates. When the
- * root SVG viewBox is a zoom camera, convert the real pointer through that camera
- * to the synthetic client coordinate expected by the renderer's stable hit-test API.
+ * Torus2DRenderer intentionally owns logical 0..1000 scene coordinates. Convert
+ * the real pointer through the stable vector-fit viewBox to the synthetic client
+ * coordinate expected by the renderer's hit-test API. CSS zoom of the whole
+ * board shell is already reflected by getBoundingClientRect().
  */
 const rendererClientPosition = (
   svg: SVGSVGElement,
@@ -136,8 +137,6 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const rendererRef = useRef<Torus2DRenderer | null>(null);
   const actionInFlight = useRef(false);
   const previewedMovePointRef = useRef<string | null>(null);
-  const viewZoomRef = useRef(viewZoom);
-  viewZoomRef.current = viewZoom;
 
   const renderGroups = useMemo<readonly EndgameGroupRenderState[]>(
     () =>
@@ -260,18 +259,18 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     if (!svg) return;
 
     const applyCamera = (): void =>
-      applyTorusVectorCamera(svg, viewZoom, controller.size, showDuplicateRegions);
+      applyTorusVectorCamera(svg, controller.size, showDuplicateRegions);
 
     // Torus2DRenderer still owns the scene lifecycle and may perform one final
     // initial render after React's first effect pass. Apply immediately and once
-    // again on the next frame so the vector camera is the steady-state owner of
-    // the root viewBox even at the untouched 1.0 user zoom.
+    // again on the next frame so the stable vector-fit camera remains the owner
+    // of the root viewBox while user zoom is applied to the whole board shell.
     applyCamera();
     const frameId = view?.requestAnimationFrame(applyCamera) ?? null;
     return () => {
       if (frameId !== null) view?.cancelAnimationFrame(frameId);
     };
-  }, [controller, showDuplicateRegions, viewZoom]);
+  }, [controller, showDuplicateRegions]);
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -290,12 +289,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         );
       }
       renderTorus2DStoneAnnotations(svg, viewModel, showMoveNumbers);
-      applyTorusVectorCamera(
-        svg,
-        viewZoomRef.current,
-        controller.size,
-        showDuplicateRegions,
-      );
+      applyTorusVectorCamera(svg, controller.size, showDuplicateRegions);
     });
     observer.observe(svg, { childList: true });
     return () => observer.disconnect();
@@ -647,7 +641,12 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         feedback={feedback}
       />
 
-      <div className="torus-board-shell" aria-label="Infinite torus view">
+      <div
+        className="torus-board-shell"
+        aria-label="Infinite torus view"
+        data-view-zoom={viewZoom.toFixed(3)}
+        style={{ transform: `scale(${viewZoom})` }}
+      >
         <button
           className="torus-pan torus-pan--up"
           type="button"
