@@ -51,7 +51,7 @@ const expectNavigationAnchored = async (page: Page) => {
 
 test('Cube 2D navigation arrows stay anchored to face edges through anchor movement and zoom', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
+  await page.getByRole('button', { name: 'Cube', exact: true }).click();
   await page.getByRole('button', { name: '4×4', exact: true }).click();
   await page.getByRole('button', { name: 'Start game' }).click();
 
@@ -81,7 +81,7 @@ test('0.2 production Cube flow: New Game, seam capture, history, zoom, resume an
   page.on('pageerror', (error) => pageErrors.push(error));
 
   await page.goto('/');
-  await page.getByRole('button', { name: 'Cube 2D', exact: true }).click();
+  await page.getByRole('button', { name: 'Cube', exact: true }).click();
   await page.getByRole('button', { name: '4×4', exact: true }).click();
   await page.getByLabel('Rules').selectOption('japanese');
   await page.getByLabel('Komi').fill('7.5');
