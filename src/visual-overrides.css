@@ -11,6 +11,10 @@
   font-size: 13px;
 }
 
+.game-statistics span {
+  justify-content: center;
+}
+
 .game-statistics::before {
   color: #858585;
   font-size: 15px;
