@@ -116,7 +116,7 @@ const expectCubeVectorSteadyState = async (page: Page, zoom: number): Promise<vo
 for (const [zoom, deltaY] of [
   [0.78, 1000],
   [1, 0],
-  [1.35, -1000],
+  [4.05, -5000],
 ] as const) {
   test(`Cube zoom ${zoom} uses real layout size and keeps hit-testing aligned`, async ({ page }) => {
     await startCube(page);
@@ -199,8 +199,8 @@ for (const [zoom, deltaY] of [
 
 const captureParityAtCurrentDpr = async (page: Page): Promise<void> => {
   await startCube(page);
-  await wheelAt(page, page.locator('.cube-2d-game__viewport'), -1000);
-  await expect(page.locator('.cube-2d-game__stage')).toHaveAttribute('data-view-zoom', '1.350');
+  await wheelAt(page, page.locator('.cube-2d-game__viewport'), -5000);
+  await expect(page.locator('.cube-2d-game__stage')).toHaveAttribute('data-view-zoom', '4.050');
 
   const movesBeforeCapture = [
     'front:1:1',
