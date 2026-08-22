@@ -139,7 +139,21 @@ test('0.2 production Cube flow: New Game, seam capture, history, zoom, resume an
   const occupiedPointIds = await page.locator('.cube-2d-stone').evaluateAll((nodes) =>
     [...new Set(nodes.map((node) => node.getAttribute('data-logical-point-id')).filter(Boolean))] as string[],
   );
-  for (const pointId of occupiedPointIds) {
+  expect(occupiedPointIds.length).toBeGreaterThan(0);
+
+  // Acceptance checkpoint: persist a partial manual review, reload before scoring,
+  // and require Continue to restore the already classified group.
+  await hit(page, occupiedPointIds[0]!).click();
+  await page.getByRole('button', { name: 'Alive' }).click();
+  await expect(page.locator('.endgame-progress')).toContainText('Classified 1 of');
+
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Continue saved game?' })).toBeVisible();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
+  await expect(page.locator('.endgame-progress')).toContainText('Classified 1 of');
+
+  for (const pointId of occupiedPointIds.slice(1)) {
     await hit(page, pointId).click();
     await page.getByRole('button', { name: 'Alive' }).click();
   }
