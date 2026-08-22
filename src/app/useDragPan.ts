@@ -24,11 +24,13 @@ interface DragPanSession {
 export interface DragPanOptions {
   readonly constrain?: (offset: DragPanOffset) => DragPanOffset;
   readonly onDragStart?: () => void;
+  readonly startOnPointerDown?: boolean;
+  readonly allowInteractiveDrag?: boolean;
 }
 
 const DRAG_PAN_THRESHOLD_PX = 6;
-const DRAG_PAN_INTERACTIVE_SELECTOR =
-  'button, input, select, textarea, a, [data-drag-pan-ignore="true"]';
+const DRAG_PAN_INTERACTIVE_SELECTOR = 'button, input, select, textarea, a';
+const DRAG_PAN_ALWAYS_IGNORE_SELECTOR = '[data-drag-pan-ignore="true"]';
 
 const sameOffset = (left: DragPanOffset, right: DragPanOffset): boolean =>
   left.x === right.x && left.y === right.y;
@@ -36,13 +38,26 @@ const sameOffset = (left: DragPanOffset, right: DragPanOffset): boolean =>
 const frozenOffset = (x: number, y: number): DragPanOffset => Object.freeze({ x, y });
 
 export function useDragPan(options: DragPanOptions = {}) {
-  const { constrain, onDragStart } = options;
+  const {
+    constrain,
+    onDragStart,
+    startOnPointerDown = false,
+    allowInteractiveDrag = false,
+  } = options;
   const [offset, setOffsetState] = useState<DragPanOffset>(() => frozenOffset(0, 0));
   const [dragging, setDragging] = useState(false);
   const sessionRef = useRef<DragPanSession | null>(null);
   const captureElementRef = useRef<HTMLDivElement | null>(null);
   const suppressClickRef = useRef(false);
   const suppressResetTimerRef = useRef<number | null>(null);
+
+  const shouldIgnoreTarget = useCallback(
+    (target: Element | null): boolean => {
+      if (target?.closest(DRAG_PAN_ALWAYS_IGNORE_SELECTOR)) return true;
+      return !allowInteractiveDrag && Boolean(target?.closest(DRAG_PAN_INTERACTIVE_SELECTOR));
+    },
+    [allowInteractiveDrag],
+  );
 
   const finishPointer = useCallback((pointerId: number): void => {
     const session = sessionRef.current;
@@ -116,12 +131,42 @@ export function useDragPan(options: DragPanOptions = {}) {
     });
   }, [constrainOffset]);
 
+  const handlePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>): void => {
+      if (!startOnPointerDown || event.button !== 0 || (event.buttons & 1) !== 1) return;
+
+      const previousSession = sessionRef.current;
+      const captureElement = captureElementRef.current;
+      if (
+        previousSession &&
+        captureElement?.hasPointerCapture(previousSession.pointerId)
+      ) {
+        captureElement.releasePointerCapture(previousSession.pointerId);
+      }
+
+      const target = event.target as Element | null;
+      captureElementRef.current = null;
+      sessionRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        origin: offset,
+        ignored: shouldIgnoreTarget(target),
+        dragging: false,
+      };
+      setDragging(false);
+    },
+    [offset, shouldIgnoreTarget, startOnPointerDown],
+  );
+
   const handlePointerMove = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>): void => {
       if ((event.buttons & 1) !== 1) return;
 
       let session = sessionRef.current;
       if (!session) {
+        if (startOnPointerDown) return;
+
         const target = event.target as Element | null;
         const movementX = Number.isFinite(event.movementX) ? event.movementX : 0;
         const movementY = Number.isFinite(event.movementY) ? event.movementY : 0;
@@ -130,7 +175,7 @@ export function useDragPan(options: DragPanOptions = {}) {
           startX: event.clientX - movementX,
           startY: event.clientY - movementY,
           origin: offset,
-          ignored: Boolean(target?.closest(DRAG_PAN_INTERACTIVE_SELECTOR)),
+          ignored: shouldIgnoreTarget(target),
           dragging: false,
         };
         sessionRef.current = session;
@@ -154,7 +199,7 @@ export function useDragPan(options: DragPanOptions = {}) {
       event.preventDefault();
       applyOffset(frozenOffset(session.origin.x + deltaX, session.origin.y + deltaY));
     },
-    [applyOffset, offset, onDragStart],
+    [applyOffset, offset, onDragStart, shouldIgnoreTarget, startOnPointerDown],
   );
 
   const handleClickCapture = useCallback((event: ReactMouseEvent<HTMLDivElement>): void => {
@@ -174,12 +219,11 @@ export function useDragPan(options: DragPanOptions = {}) {
     dragging,
     reset,
     reconstrain,
-    // Deliberately do not register React pointerdown/up handlers. Torus endgame
-    // hover updates replace SVG children; React discrete pointer events can flush
-    // that replacement between native down/up and retarget an otherwise valid
-    // click. Dragging starts from pointermove while button 1 is held, and native
-    // window pointerup/cancel listeners finish the gesture without disturbing click.
-    onPointerDown: undefined,
+    // Cube can opt into an explicit pointer-down session and allow drags to begin
+    // on its own buttons: a short press remains a click, while crossing the movement
+    // threshold becomes pan and suppresses that click. Torus deliberately keeps the
+    // move-start fallback and interactive-target ignore to protect endgame SVG clicks.
+    onPointerDown: startOnPointerDown ? handlePointerDown : undefined,
     onPointerMove: handlePointerMove,
     onPointerUp: undefined,
     onPointerCancel: undefined,
