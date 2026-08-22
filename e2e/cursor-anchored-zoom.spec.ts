@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 const requiredBox = async (locator: Locator) => {
   const box = await locator.boundingBox();
@@ -6,12 +6,31 @@ const requiredBox = async (locator: Locator) => {
   return box!;
 };
 
-test('Cube wheel zoom works on black playfield space and keeps the pointer as the zoom anchor', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 720 });
+const boxCenter = (box: { x: number; y: number; width: number; height: number }) => ({
+  x: box.x + box.width / 2,
+  y: box.y + box.height / 2,
+});
+
+const expectCenterAt = async (
+  locator: Locator,
+  expected: { x: number; y: number },
+  tolerance = 1.5,
+) => {
+  const center = boxCenter(await requiredBox(locator));
+  expect(Math.abs(center.x - expected.x)).toBeLessThanOrEqual(tolerance);
+  expect(Math.abs(center.y - expected.y)).toBeLessThanOrEqual(tolerance);
+};
+
+const startCube = async (page: Page) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Cube', exact: true }).click();
   await page.getByRole('button', { name: '4×4', exact: true }).click();
   await page.getByRole('button', { name: 'Start game' }).click();
+};
+
+test('Cube wheel zoom works on black playfield space and keeps the pointer as the zoom anchor', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await startCube(page);
 
   const viewport = page.locator('.cube-2d-game__viewport');
   const viewportBox = await requiredBox(viewport);
@@ -48,6 +67,76 @@ test('Cube wheel zoom works on black playfield space and keeps the pointer as th
     expectedPanY,
     0,
   );
+});
+
+test('Cube keeps a real board point pinned through repeated zoom all the way to 4.05x', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await startCube(page);
+
+  const viewport = page.locator('.cube-2d-game__viewport');
+  const target = page
+    .locator('.cube-2d-board[data-central="true"] .cube-2d-hit-area')
+    .first();
+  const anchor = boxCenter(await requiredBox(target));
+
+  await page.mouse.move(anchor.x, anchor.y);
+  for (let index = 0; index < 20; index += 1) {
+    await page.mouse.wheel(0, -250);
+  }
+
+  await expect(viewport).toHaveAttribute('data-view-zoom', '4.050');
+  await expectCenterAt(target, anchor);
+
+  for (let index = 0; index < 10; index += 1) {
+    await page.mouse.wheel(0, 250);
+  }
+  await expect(viewport).toHaveAttribute('data-view-zoom', '2.050');
+  await expectCenterAt(target, anchor);
+
+  const layer = await requiredBox(page.locator('.cube-2d-game__navigation-layer'));
+  const viewportBox = await requiredBox(viewport);
+  expect(layer.width).toBeGreaterThan(viewportBox.width);
+  expect(layer.height).toBeGreaterThan(viewportBox.height);
+});
+
+test('Cube preserves the pointer anchor after drag-pan and accumulates a rapid wheel burst', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await startCube(page);
+
+  const viewport = page.locator('.cube-2d-game__viewport');
+  const target = page
+    .locator('.cube-2d-board[data-central="true"] .cube-2d-hit-area')
+    .nth(5);
+  const initial = boxCenter(await requiredBox(target));
+
+  await page.mouse.move(initial.x, initial.y);
+  await page.mouse.down();
+  await page.mouse.move(initial.x + 120, initial.y + 80, { steps: 8 });
+  await page.mouse.up();
+
+  const afterPan = boxCenter(await requiredBox(target));
+  expect(afterPan.x - initial.x).toBeGreaterThan(100);
+  expect(afterPan.y - initial.y).toBeGreaterThan(60);
+
+  await page.evaluate(({ x, y }) => {
+    const viewportElement = document.querySelector<HTMLElement>('.cube-2d-game__viewport');
+    if (!viewportElement) throw new Error('Cube viewport missing');
+    for (let index = 0; index < 10; index += 1) {
+      viewportElement.dispatchEvent(
+        new WheelEvent('wheel', {
+          bubbles: true,
+          cancelable: true,
+          clientX: x,
+          clientY: y,
+          deltaY: -50,
+          deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+        }),
+      );
+    }
+  }, afterPan);
+
+  await expect(viewport).toHaveAttribute('data-view-zoom', '1.400');
+  await expectCenterAt(target, afterPan);
 });
 
 test('Torus wheel zoom works on black playfield space, anchors to the pointer, and ignores the sidebar', async ({ page }) => {
