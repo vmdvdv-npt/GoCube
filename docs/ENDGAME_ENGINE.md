@@ -1311,26 +1311,35 @@ Acceptance закрыт:
 
 Итог Work 5A зафиксирован в разделе 43.
 
-## Work 5B — Safe Connection
+## Work 5B — Safe Connection — CLOSED 2026-08-23
 
-На готовой bounded Relevance Zone доказать простой forced connection к Benson-alive group. Не включать сложные cut/fight варианты.
+На bounded Relevance Zone реализован узкий proof `miai-two-shared-liberties-to-benson`: target group автоматически становится `alive` только если имеет две actual shared liberties с same-color Benson/pass-alive group и обе direct cut-order ветви безопасно проходят authoritative `GameEngine`.
 
-Acceptance:
+Acceptance закрыт:
 
-- safe connection to Benson-alive group;
-- defender completeness в разрешённом bounded scope;
-- ko/budget/boundary uncertainty не повышается до automatic `alive`.
+- safe connection к Benson-alive group доказывается только внутри bounded Relevance Zone;
+- defender completeness для этого узкого miai-theorem покрывает обе прямые блокировки connectors; ход defender вне connectors оставляет оба connector свободными, поэтому immediate connection сохраняется;
+- одна shared liberty не считается forced connection;
+- capture/sacrifice/deeper cut/fight variants остаются `not-proven`;
+- boundary/budget uncertainty возвращает `unknown-boundary` и не повышается до automatic `alive`;
+- safe-connected group не становится новым Benson separator и не расширяет proof транзитивно.
 
-## Work 5C — Cut + hardening
+Итог Work 5B зафиксирован в разделе 44.
 
-Добавить только простые доказанные разрезания, негативные случаи и regression/acceptance. После Work 5C закрыть исходный Work 5 целиком.
+## Work 5C — Cut + hardening — CLOSED 2026-08-23
 
-Acceptance:
+Добавлен узкий proof `single-shared-liberty-benson-block`: attacker-first cut считается доказанным только если единственная direct shared liberty с Benson-alive friendly group legal quiet move'ом занята attacker, после чего blocker сам Benson/pass-alive, target и safe group остаются раздельными, а direct shared-liberty connection исчезает.
 
-- простые proven cuts;
-- negative connection/cut cases;
-- regression на false proof и boundary escape;
-- финальный Work 5 acceptance поверх 5A + 5B + 5C.
+Acceptance закрыт:
+
+- простой quiet proven cut возвращается отдельным Connection Reader fact `simple-cut-v1`;
+- cut **не** превращается в automatic `dead`;
+- две shared liberties, capture-on-cut и нестабильный non-Benson blocker остаются `not-proven`;
+- far-away mutation за неизменившейся safe boundary сохраняет exact proof;
+- point-budget и whole-board localisation возвращают `unknown-boundary`;
+- финальный Work 5 acceptance закрыт совместно поверх 5A + 5B + 5C.
+
+Итог Work 5C и closure исходного Work 5 зафиксированы в разделе 45.
 
 ## Work 6 — Full Local Life/Death Search
 
@@ -2152,7 +2161,202 @@ Work 5A закрывает только localisation foundation:
 - Benson-alive groups используются как доказанные separators;
 - far-away occupancy за неизменившейся safe boundary не меняет bounded result;
 - open/global/budget/stale-target cases fail closed как `unknown-boundary`;
-- user-facing classification не расширена;
-- Safe Connection и Cut остаются отдельными следующими этапами.
+- user-facing classification не расширена.
 
-**Следующий этап — Work 5B: Safe Connection.**
+Продолжение Work 5 закрыто отдельно в разделах 44 и 45.
+
+---
+
+# 44. Work 5B — Safe Connection: финальный результат
+
+Срез на **2026-08-23**. **Work 5B закрыт.** Реализован intentionally narrow topology-neutral connection proof поверх Work 5A `RelevanceZone`, Work 3 Benson/pass-alive certificate и authoritative legal-move semantics `GameEngine`.
+
+## 44.1. Accepted proof boundary
+
+Production proof имеет evidence id:
+
+```text
+algorithm = safe-connection-v1
+proof = miai-two-shared-liberties-to-benson
+```
+
+Для automatic `alive` одновременно требуются:
+
+1. `RelevanceZone` target group имеет outcome `bounded`;
+2. same-color friendly string на boundary имеет действующий Benson/pass-alive proof;
+3. target и эта Benson-alive string имеют минимум две **actual shared liberties** из `EndgameGraphCore.possibleConnections` внутри zone;
+4. оба connector moves target являются legal quiet non-capturing direct connections по `GameEngine`;
+5. для пары connectors проверены обе прямые defender orders: block first connector -> connect second и block second connector -> connect first;
+6. legal defender block с capture или response, требующий capture/fight, не принимается этим proof и оставляет result `not-proven`.
+
+Одна shared liberty недостаточна. Capture, sacrifice, multi-step cut, deeper fight и иные более сложные connection shapes намеренно не входят в Work 5B.
+
+## 44.2. Defender completeness узкого miai-theorem
+
+Пусть `c1` и `c2` — две distinct shared liberties target и Benson-alive friendly string.
+
+Если defender ходит **не** в `c1` и не в `c2`, обе точки остаются пустыми. Target может сыграть в любую из них и непосредственно соединиться с Benson-alive string; вторая shared liberty остаётся liberty уже объединённой группы. Поэтому такой внешний one-ply defender move не может разрушить theorem.
+
+Единственные one-ply defenses, которые непосредственно удаляют один из двух connector, — ходы в `c1` или `c2`. Verifier симулирует обе orders через authoritative `GameEngine`. Illegal blocker не является допустимой защитой. Если blocker создаёт capture/fight semantics либо ответ перестаёт быть quiet direct connection, proof fail-closed и не выдаётся.
+
+Ko/history не используется как optimistic shortcut. Target response принимается только как non-capturing move в ранее пустой connector, поэтому такой ход не является restoring simple-ko recapture. Для defender synthetic check отсутствие historical ko restriction консервативно: потенциально исторически запрещённый block может быть рассмотрен как legal и только лишить proof, но не создать ложный automatic `alive`.
+
+Любой `maxPoints` overflow, whole-board localisation или другой `RelevanceZone` failure как есть распространяется как `unknown-boundary`.
+
+## 44.3. Classifier integration
+
+`AssistedEndgameClassifier` запускает Safe Connection только для unresolved string, которая уже имеет structural candidate shared-liberty connection к Benson/pass-alive group.
+
+Разрешение происходит в порядке:
+
+```text
+Benson alive
+-> Safe Connection alive
+-> existing dead proofs
+-> bounded tactical dead
+-> existing seki proof
+-> unresolved
+```
+
+Safe-connected group **не добавляется** обратно в `passAliveGroupKeys`, не становится новым Benson/RelevanceZone separator и не используется как transitive safe anchor в этом этапе. Это сохраняет proof strength Benson boundary и не превращает простой Work 5B theorem в недоказанную цепочку connections.
+
+## 44.4. Regression / acceptance coverage
+
+Отдельный deterministic arbitrary-graph corpus проверяет:
+
+1. positive quiet two-shared-liberty miai connection к Benson-alive group;
+2. exact equality connection proof после irrelevant far-away occupancy mutation за той же safe boundary;
+3. one-shared-liberty negative case -> `not-proven`;
+4. RelevanceZone `maxPoints` overflow -> `unknown-boundary`;
+5. whole-board/open localisation -> `unknown-boundary`;
+6. assisted classifier действительно повышает только proven target до automatic `alive` с `safe-connection-v1` evidence.
+
+Общий deterministic endgame hardening corpus также знает новый automatic evidence id и продолжает проверять proposal/scoring invariants.
+
+## 44.5. Validation
+
+Code-head `a394ab4305252ec6362926c59f1fc1c215c108c5` на PR #159 прошёл полный CI run #738:
+
+- lint — pass;
+- typecheck — pass;
+- unit/coverage — **553 tests pass**;
+- build — pass;
+- full Playwright E2E — pass.
+
+Поскольку PR #159 был stacked в Work 5A branch, а не напрямую в `engine`, final integrated acceptance Work 5B выполняется также в PR #161 вместе с Work 5C.
+
+## 44.6. Closure
+
+Work 5B закрывает только простой доказанный Safe Connection:
+
+- bounded localisation обязательна;
+- proof anchor остаётся Benson/pass-alive group;
+- две shared liberties дают проверяемый miai theorem;
+- обе direct defender cuts проверяются authoritative rules engine;
+- one-liberty, boundary/budget uncertainty и fight/capture variants не повышаются до `alive`;
+- safe-connected groups не становятся новыми transitive safe boundaries.
+
+Work 5C добавляет симметричный узкий cut fact и финально закрывает Work 5.
+
+---
+
+# 45. Work 5C — Cut + hardening: финальный результат
+
+Срез на **2026-08-23**. **Work 5C закрыт; исходный Work 5 закрыт целиком.** Добавлен topology-neutral attacker-first cut proof поверх той же Work 5A Relevance Zone и authoritative `GameEngine` transitions.
+
+## 45.1. Accepted cut proof boundary
+
+Production fact имеет ids:
+
+```text
+algorithm = simple-cut-v1
+proof = single-shared-liberty-benson-block
+```
+
+Proof выдаётся только если одновременно выполняются все условия:
+
+1. target `RelevanceZone` доказанно `bounded`;
+2. target сам не Benson/pass-alive;
+3. target имеет ровно одну actual shared liberty с same-color Benson/pass-alive boundary group;
+4. эта cut point находится внутри certified zone;
+5. attacker legal ходом `GameEngine.placeStone()` занимает cut point без capture;
+6. исходная target structure и исходная safe structure после хода обе сохраняются и остаются разными strings;
+7. между ними больше нет direct shared-liberty `possibleConnection`;
+8. attacker blocker, содержащий cut point, после хода сам имеет Benson/pass-alive proof.
+
+Это намеренно сильнее, чем визуальное «attacker поставил камень между группами». Нестабильный blocker не считается доказанным cut, потому что немедленная локальная борьба может восстановить connection. Capture, sacrifice, ko-dependent restoration, multi-step cut и deeper fight не анализируются Work 5C и остаются `not-proven`/scope последующего search.
+
+Cut proof является **Connection Reader fact**, а не life/death verdict:
+
+```text
+simple-cut-v1 != PROVEN_DEAD
+```
+
+Поэтому Work 5C намеренно не добавляет classifier path, который повышал бы target до automatic `dead` только из факта cut.
+
+## 45.2. Fail-closed hardening
+
+Зафиксированы основные отрицательные границы:
+
+- две shared liberties -> simple one-point cut не доказан, потому что сохраняется alternate connector;
+- legal cut move с capture -> не принимается этим quiet theorem;
+- legal quiet block, который после хода не Benson/pass-alive -> не принимается как stable proven cut;
+- stale/global/open/budget localisation -> `unknown-boundary`, а не positive cut;
+- изменение за неизменившейся Benson-safe boundary не должно менять local proof certificate.
+
+Это сохраняет общий Work 5 invariant: все новые connection/cut facts зависят только от доказанной bounded zone и не превращают неполный tactical search в automatic status.
+
+## 45.3. Regression / acceptance coverage
+
+`SimpleCut.test.ts` содержит семь targeted arbitrary-graph regressions:
+
+1. positive quiet single-shared-liberty cut, где blocking attacker string после хода Benson-alive;
+2. exact equality cut proof после irrelevant far-away mutation за неизменившейся safe boundary;
+3. two-connectors negative case;
+4. unstable non-Benson blocker negative case;
+5. capture-on-cut negative case;
+6. deterministic `maxPoints` overflow -> `unknown-boundary`;
+7. whole-board/open localisation -> `unknown-boundary`.
+
+Эти tests дополняют шесть Safe Connection regressions Work 5B и Relevance Zone corpus Work 5A.
+
+## 45.4. Integrated validation
+
+Первый integrated code-head `5978908f729dfc71e8d331e19b0dd8b882421d4a` на PR #161 прошёл CI run #745:
+
+- lint — pass (два существующих non-blocking warnings вне Work 5 scope);
+- typecheck — pass;
+- unit/coverage — **560 tests pass**;
+- build — pass;
+- Chromium Playwright — **72/72 pass**.
+
+После добавления отдельного unstable-blocker regression code-head стал `05291cd2bd562527babaae13e410baf143b2d4da`; final PR title переведён в `[full]`, чтобы exact documentation head прошёл полный multi-browser CI перед merge/acceptance.
+
+## 45.5. Final Work 5 acceptance
+
+Исходный Work 5 теперь состоит из трёх закрытых proof layers:
+
+```text
+5A Relevance Zone
+  proves locality or UNKNOWN_BOUNDARY
+
+5B Safe Connection
+  proves narrow forced connection to Benson-safe group
+  -> automatic alive only for the proven target
+
+5C Simple Cut
+  proves narrow stable attacker-first disconnection fact
+  -> never automatic dead by itself
+```
+
+Общие invariants Work 5:
+
+- topology-neutral через `Topology.neighbors(PointId)`;
+- legal transitions только через authoritative `GameEngine`;
+- Benson/pass-alive остаётся единственным safe boundary/anchor данного scope;
+- far-away changes за неизменившейся certified boundary не меняют local proof;
+- budget/global/boundary uncertainty fail closed;
+- Safe Connection не создаёт transitive Benson anchors;
+- cut fact не подменяет full life/death proof.
+
+**Следующий этап — Work 6: Full Local Life/Death Search.**
