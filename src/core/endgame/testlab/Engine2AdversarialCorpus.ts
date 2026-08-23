@@ -108,7 +108,7 @@ const makeFilledState = (
   });
 };
 
-const observation = (
+const observe = (
   id: string,
   category: Engine2AdversarialCategory,
   expected: string,
@@ -129,13 +129,10 @@ const observation = (
     transpositionHits: options.transpositionHits ?? 0,
   });
 
-const groupKeyAt = (
-  state: GameState,
-  topology: Topology,
-  point: PointId,
-): string => buildEndgameGraph(state, topology).pointOwner.get(point) ?? 'missing-group';
+const groupKeyAt = (state: GameState, topology: Topology, point: PointId): string =>
+  buildEndgameGraph(state, topology).pointOwner.get(point) ?? 'missing-group';
 
-const semeaiPairKeys = (
+const pairKeys = (
   state: GameState,
   topology: Topology,
   left: PointId,
@@ -148,31 +145,22 @@ const semeaiPairKeys = (
   ]);
 };
 
-const oneLibertyDeadCase = (): Engine2AdversarialObservation => {
-  const topology = makeTopology('e2-11-one-lib-dead', {
+const oneLibertyCases = (): readonly Engine2AdversarialObservation[] => {
+  const deadTopology = makeTopology('e2-11-one-lib-dead', {
     w: Object.freeze(['x', 'b']),
     x: Object.freeze(['w', 'b']),
     b: Object.freeze(['w', 'x', 'be']),
     be: Object.freeze(['b']),
   });
-  const state = makeState(topology, Object.freeze({ w: 'white', b: 'black' }));
-  const result = readOneLibertyTactics(
-    state,
-    topology,
-    buildEndgameGraph(state, topology),
+  const deadState = makeState(deadTopology, Object.freeze({ w: 'white', b: 'black' }));
+  const dead = readOneLibertyTactics(
+    deadState,
+    deadTopology,
+    buildEndgameGraph(deadState, deadTopology),
     endgameGroupId(['w']),
   );
-  return observation(
-    'one-liberty-forced-dead',
-    'one-liberty',
-    'proven-dead',
-    result?.outcome ?? 'missing',
-    { exploredNodes: result?.exploredNodes ?? 0 },
-  );
-};
 
-const oneLibertyKoCase = (): Engine2AdversarialObservation => {
-  const topology = makeTopology('e2-11-one-lib-ko', {
+  const koTopology = makeTopology('e2-11-one-lib-ko', {
     w: Object.freeze(['x', 'b1', 'b2']),
     x: Object.freeze(['w', 'c1', 'c2']),
     b1: Object.freeze(['w', 'b1e']),
@@ -184,33 +172,30 @@ const oneLibertyKoCase = (): Engine2AdversarialObservation => {
     c2: Object.freeze(['x', 'c2e']),
     c2e: Object.freeze(['c2']),
   });
-  const state = makeState(
-    topology,
-    Object.freeze({
-      w: 'white',
-      c1: 'white',
-      c2: 'white',
-      b1: 'black',
-      b2: 'black',
-    }),
+  const koState = makeState(
+    koTopology,
+    Object.freeze({ w: 'white', c1: 'white', c2: 'white', b1: 'black', b2: 'black' }),
   );
-  const result = readOneLibertyTactics(
-    state,
-    topology,
-    buildEndgameGraph(state, topology),
+  const ko = readOneLibertyTactics(
+    koState,
+    koTopology,
+    buildEndgameGraph(koState, koTopology),
     endgameGroupId(['w']),
   );
-  return observation(
-    'one-liberty-unknown-root-ko',
-    'one-liberty',
-    'ko-dependent',
-    result?.outcome ?? 'missing',
-    { mustNotProve: true, exploredNodes: result?.exploredNodes ?? 0 },
-  );
+
+  return Object.freeze([
+    observe('one-liberty-forced-dead', 'one-liberty', 'proven-dead', dead?.outcome ?? 'missing', {
+      exploredNodes: dead?.exploredNodes ?? 0,
+    }),
+    observe('one-liberty-unknown-root-ko', 'one-liberty', 'ko-dependent', ko?.outcome ?? 'missing', {
+      mustNotProve: true,
+      exploredNodes: ko?.exploredNodes ?? 0,
+    }),
+  ]);
 };
 
-const twoLibertyOracleCase = (): Engine2AdversarialObservation => {
-  const topology = makeTopology('e2-11-two-lib-oracle', {
+const twoLibertyCases = (): readonly Engine2AdversarialObservation[] => {
+  const proofTopology = makeTopology('e2-11-two-lib-proof', {
     w: Object.freeze(['a', 'b']),
     a: Object.freeze(['w', 'q']),
     b: Object.freeze(['w', 'q']),
@@ -221,26 +206,16 @@ const twoLibertyOracleCase = (): Engine2AdversarialObservation => {
     x: Object.freeze(['r']),
     y: Object.freeze(['r']),
   });
-  const state = makeState(
-    topology,
+  const proofState = makeState(
+    proofTopology,
     Object.freeze({ w: 'white', q: 'black', r: 'white' }),
   );
-  const graph = buildEndgameGraph(state, topology);
-  const target = endgameGroupId(['w']);
-  const exhaustive = readTwoLibertyTactics(state, topology, graph, target);
-  const pruned = readTwoLibertyTacticsPruned(state, topology, graph, target);
-  const actual = `${exhaustive?.outcome ?? 'missing'}/${pruned?.outcome ?? 'missing'}`;
-  return observation(
-    'two-liberty-pruned-matches-exhaustive-proof',
-    'two-liberty',
-    'proven-dead/proven-dead',
-    actual,
-    { exploredNodes: pruned?.exploredNodes ?? 0 },
-  );
-};
+  const proofGraph = buildEndgameGraph(proofState, proofTopology);
+  const proofTarget = endgameGroupId(['w']);
+  const exhaustive = readTwoLibertyTactics(proofState, proofTopology, proofGraph, proofTarget);
+  const pruned = readTwoLibertyTacticsPruned(proofState, proofTopology, proofGraph, proofTarget);
 
-const twoLibertyRemoteKoCase = (): Engine2AdversarialObservation => {
-  const topology = makeTopology('e2-11-two-lib-remote-ko', {
+  const koTopology = makeTopology('e2-11-two-lib-ko', {
     w: Object.freeze(['a', 'b']),
     a: Object.freeze(['w', 'q']),
     b: Object.freeze(['w', 'q']),
@@ -250,26 +225,35 @@ const twoLibertyRemoteKoCase = (): Engine2AdversarialObservation => {
     k: Object.freeze(['c']),
     c: Object.freeze(['k']),
   });
-  const state = makeState(
-    topology,
+  const koState = makeState(
+    koTopology,
     Object.freeze({ w: 'white', q: 'black', k: 'black' }),
   );
-  const graph = buildEndgameGraph(state, topology);
-  const target = endgameGroupId(['w']);
-  const exhaustive = readTwoLibertyTactics(state, topology, graph, target);
-  const pruned = readTwoLibertyTacticsPruned(state, topology, graph, target);
-  const actual = `${exhaustive?.outcome ?? 'missing'}/${pruned?.outcome ?? 'missing'}`;
-  return observation(
-    'two-liberty-remote-root-ko',
-    'two-liberty',
-    'ko-dependent/ko-dependent',
-    actual,
-    { mustNotProve: true, exploredNodes: pruned?.exploredNodes ?? 0 },
-  );
+  const koGraph = buildEndgameGraph(koState, koTopology);
+  const koTarget = endgameGroupId(['w']);
+  const koExhaustive = readTwoLibertyTactics(koState, koTopology, koGraph, koTarget);
+  const koPruned = readTwoLibertyTacticsPruned(koState, koTopology, koGraph, koTarget);
+
+  return Object.freeze([
+    observe(
+      'two-liberty-pruned-matches-exhaustive-proof',
+      'two-liberty',
+      'proven-dead/proven-dead',
+      `${exhaustive?.outcome ?? 'missing'}/${pruned?.outcome ?? 'missing'}`,
+      { exploredNodes: pruned?.exploredNodes ?? 0 },
+    ),
+    observe(
+      'two-liberty-remote-root-ko',
+      'two-liberty',
+      'ko-dependent/ko-dependent',
+      `${koExhaustive?.outcome ?? 'missing'}/${koPruned?.outcome ?? 'missing'}`,
+      { mustNotProve: true, exploredNodes: koPruned?.exploredNodes ?? 0 },
+    ),
+  ]);
 };
 
-const threeLibertyKillCase = (): Engine2AdversarialObservation => {
-  const topology = makeTopology('e2-11-three-lib-kill', {
+const threeAndFourLibertyCases = (): readonly Engine2AdversarialObservation[] => {
+  const threeTopology = makeTopology('e2-11-three-lib-kill', {
     w: Object.freeze(['a', 'b', 'c']),
     q: Object.freeze(['a', 'b', 'c', 'q1', 'q2']),
     a: Object.freeze(['q', 'w']),
@@ -278,61 +262,39 @@ const threeLibertyKillCase = (): Engine2AdversarialObservation => {
     q1: Object.freeze(['q']),
     q2: Object.freeze(['q']),
   });
-  const state = makeState(topology, Object.freeze({ w: 'white', q: 'black' }));
-  const node = createEndgameProofSearchNode(
-    topology,
-    state,
+  const threeState = makeState(threeTopology, Object.freeze({ w: 'white', q: 'black' }));
+  const threeNode = createEndgameProofSearchNode(
+    threeTopology,
+    threeState,
     'white',
     Object.freeze(['w']),
     'attacker',
   );
-  const result = searchDeterministicAndOrProof(
-    node,
-    createThreeLibertyProofSearchGoAdapter(topology),
+  const three = searchDeterministicAndOrProof(
+    threeNode,
+    createThreeLibertyProofSearchGoAdapter(threeTopology),
   );
-  return observation(
-    'three-liberty-positive-kill',
-    'three-liberty',
-    'proven-kill',
-    result.outcome,
-    { exploredNodes: result.exploredNodes, transpositionHits: result.transpositionHits },
-  );
-};
 
-const threeLibertyIncompleteCase = (): Engine2AdversarialObservation => {
-  const topology = makeTopology('e2-11-three-lib-incomplete', {
+  const incompleteTopology = makeTopology('e2-11-three-lib-incomplete', {
     w: Object.freeze(['a', 'b', 'c']),
     a: Object.freeze(['w']),
     b: Object.freeze(['w']),
     c: Object.freeze(['w']),
   });
-  const state = makeState(topology, Object.freeze({ w: 'white' }));
-  const node = createEndgameProofSearchNode(
-    topology,
-    state,
+  const incompleteState = makeState(incompleteTopology, Object.freeze({ w: 'white' }));
+  const incompleteNode = createEndgameProofSearchNode(
+    incompleteTopology,
+    incompleteState,
     'white',
     Object.freeze(['w']),
     'attacker',
   );
-  const result = searchDeterministicAndOrProof(
-    node,
-    createThreeLibertyProofSearchGoAdapter(topology),
+  const incomplete = searchDeterministicAndOrProof(
+    incompleteNode,
+    createThreeLibertyProofSearchGoAdapter(incompleteTopology),
   );
-  return observation(
-    'three-liberty-incomplete-attack-boundary',
-    'three-liberty',
-    'unresolved',
-    result.outcome,
-    {
-      mustNotProve: true,
-      exploredNodes: result.exploredNodes,
-      transpositionHits: result.transpositionHits,
-    },
-  );
-};
 
-const fourLibertyKillCase = (): Engine2AdversarialObservation => {
-  const topology = makeTopology('e2-11-four-lib-kill', {
+  const fourTopology = makeTopology('e2-11-four-lib-kill', {
     w: Object.freeze(['a', 'b', 'c', 'd']),
     q: Object.freeze(['a', 'b', 'c', 'd', 'q1', 'q2']),
     a: Object.freeze(['q', 'w']),
@@ -342,76 +304,92 @@ const fourLibertyKillCase = (): Engine2AdversarialObservation => {
     q1: Object.freeze(['q']),
     q2: Object.freeze(['q']),
   });
-  const state = makeState(topology, Object.freeze({ w: 'white', q: 'black' }));
-  const node = createEndgameProofSearchNode(
-    topology,
-    state,
+  const fourState = makeState(fourTopology, Object.freeze({ w: 'white', q: 'black' }));
+  const fourNode = createEndgameProofSearchNode(
+    fourTopology,
+    fourState,
     'white',
     Object.freeze(['w']),
     'attacker',
   );
-  const result = searchDeterministicAndOrProof(
-    node,
-    createFourLibertyProofSearchGoAdapter(topology),
+  const four = searchDeterministicAndOrProof(
+    fourNode,
+    createFourLibertyProofSearchGoAdapter(fourTopology),
   );
-  return observation(
-    'four-liberty-positive-kill',
-    'four-liberty',
-    'proven-kill',
-    result.outcome,
-    { exploredNodes: result.exploredNodes, transpositionHits: result.transpositionHits },
-  );
+
+  return Object.freeze([
+    observe('three-liberty-positive-kill', 'three-liberty', 'proven-kill', three.outcome, {
+      exploredNodes: three.exploredNodes,
+      transpositionHits: three.transpositionHits,
+    }),
+    observe(
+      'three-liberty-incomplete-attack-boundary',
+      'three-liberty',
+      'unresolved',
+      incomplete.outcome,
+      {
+        mustNotProve: true,
+        exploredNodes: incomplete.exploredNodes,
+        transpositionHits: incomplete.transpositionHits,
+      },
+    ),
+    observe('four-liberty-positive-kill', 'four-liberty', 'proven-kill', four.outcome, {
+      exploredNodes: four.exploredNodes,
+      transpositionHits: four.transpositionHits,
+    }),
+  ]);
 };
 
-const eyeSpaceExactCase = (): Engine2AdversarialObservation => {
-  const topology = makeTopology('e2-11-eye-exact', {
+const eyeSpaceCases = (): readonly Engine2AdversarialObservation[] => {
+  const exactTopology = makeTopology('e2-11-eye-exact', {
     b1: Object.freeze(['b2', 'e1', 'e2']),
     b2: Object.freeze(['b1', 'e1', 'e2']),
     e1: Object.freeze(['b1', 'b2']),
     e2: Object.freeze(['b1', 'b2']),
   });
-  const state = makeState(topology, Object.freeze({ b1: 'black', b2: 'black' }));
-  const result = analyzeSmallEyeSpace(state, topology, groupKeyAt(state, topology, 'b1'));
-  const actual = result
-    ? `complete=${String(result.complete)};eyes=${result.minEyes}-${result.maxEyes}`
-    : 'missing';
-  return observation(
-    'small-eye-exact-two-eyes',
-    'eye-space',
-    'complete=true;eyes=2-2',
-    actual,
+  const exactState = makeState(exactTopology, Object.freeze({ b1: 'black', b2: 'black' }));
+  const exact = analyzeSmallEyeSpace(
+    exactState,
+    exactTopology,
+    groupKeyAt(exactState, exactTopology, 'b1'),
   );
-};
 
-const eyeSpaceBudgetCase = (): Engine2AdversarialObservation => {
-  const topology = makeTopology('e2-11-eye-budget', {
+  const budgetTopology = makeTopology('e2-11-eye-budget', {
     t: Object.freeze(['a', 'b', 'c']),
     a: Object.freeze(['t', 'b']),
     b: Object.freeze(['t', 'a', 'c']),
     c: Object.freeze(['t', 'b']),
   });
-  const state = makeState(topology, Object.freeze({ t: 'black' }));
-  const result = analyzeSmallEyeSpace(
-    state,
-    topology,
-    groupKeyAt(state, topology, 't'),
+  const budgetState = makeState(budgetTopology, Object.freeze({ t: 'black' }));
+  const budget = analyzeSmallEyeSpace(
+    budgetState,
+    budgetTopology,
+    groupKeyAt(budgetState, budgetTopology, 't'),
     { nodeBudget: 1 },
   );
-  const actual = result
-    ? `complete=${String(result.complete)};budget=${String(
-        result.unresolvedReasons.includes('node-budget-exhausted'),
-      )}`
-    : 'missing';
-  return observation(
-    'small-eye-budget-fail-closed',
-    'eye-space',
-    'complete=false;budget=true',
-    actual,
-    { mustNotProve: true },
-  );
+
+  return Object.freeze([
+    observe(
+      'small-eye-exact-two-eyes',
+      'eye-space',
+      'complete=true;eyes=2-2',
+      exact ? `complete=${String(exact.complete)};eyes=${exact.minEyes}-${exact.maxEyes}` : 'missing',
+    ),
+    observe(
+      'small-eye-budget-fail-closed',
+      'eye-space',
+      'complete=false;budget=true',
+      budget
+        ? `complete=${String(budget.complete)};budget=${String(
+            budget.unresolvedReasons.includes('node-budget-exhausted'),
+          )}`
+        : 'missing',
+      { mustNotProve: true },
+    ),
+  ]);
 };
 
-const tacticalConnectionSurvivalCase = (): Engine2AdversarialObservation => {
+const tacticalCase = (): Engine2AdversarialObservation => {
   const topology = makeTopology('e2-11-tactical-connection', {
     a: Object.freeze(['x']),
     x: Object.freeze(['a', 'b']),
@@ -431,7 +409,7 @@ const tacticalConnectionSurvivalCase = (): Engine2AdversarialObservation => {
     node,
     createTacticalExtensionProofSearchGoAdapter(topology),
   );
-  return observation(
+  return observe(
     'tactical-connection-to-pass-alive',
     'tactical-extension',
     'proven-survival',
@@ -440,51 +418,31 @@ const tacticalConnectionSurvivalCase = (): Engine2AdversarialObservation => {
   );
 };
 
-const semeaiKillCase = (): Engine2AdversarialObservation => {
-  const topology = makeTopology('e2-11-semeai-kill', {
+const semeaiSekiCases = (): readonly Engine2AdversarialObservation[] => {
+  const killTopology = makeTopology('e2-11-semeai-kill', {
     b: Object.freeze(['x', 'be']),
     be: Object.freeze(['b']),
     w: Object.freeze(['x']),
     x: Object.freeze(['b', 'w']),
   });
-  const state = makeState(topology, Object.freeze({ b: 'black', w: 'white' }), 'black');
-  const [blackKey, whiteKey] = semeaiPairKeys(state, topology, 'b', 'w');
-  const analysis = analyzeSemeaiSeki(state, topology, blackKey, whiteKey);
-  const proof = analysis?.killProofs.find((candidate) => candidate.targetColor === 'white');
-  return observation(
-    'semeai-side-to-move-kill',
-    'semeai-seki',
-    'proven-kill',
-    proof?.result.outcome ?? 'missing',
-    {
-      exploredNodes: proof?.result.exploredNodes ?? 0,
-      transpositionHits: proof?.result.transpositionHits ?? 0,
-    },
-  );
-};
+  const killState = makeState(killTopology, Object.freeze({ b: 'black', w: 'white' }), 'black');
+  const [killBlack, killWhite] = pairKeys(killState, killTopology, 'b', 'w');
+  const killAnalysis = analyzeSemeaiSeki(killState, killTopology, killBlack, killWhite);
+  const whiteKill = killAnalysis?.killProofs.find((entry) => entry.targetColor === 'white');
 
-const sekiCertificateCase = (): Engine2AdversarialObservation => {
-  const topology = makeTopology('e2-11-seki-positive', {
+  const sekiTopology = makeTopology('e2-11-seki-positive', {
     b: Object.freeze(['w', 'x', 'y']),
     w: Object.freeze(['b', 'x', 'y']),
     x: Object.freeze(['b', 'w', 'y']),
     y: Object.freeze(['b', 'w', 'x']),
   });
-  const state = makeState(topology, Object.freeze({ b: 'black', w: 'white' }));
-  const [blackKey, whiteKey] = semeaiPairKeys(state, topology, 'b', 'w');
-  const analysis = analyzeSemeaiSeki(state, topology, blackKey, whiteKey, {
+  const sekiState = makeState(sekiTopology, Object.freeze({ b: 'black', w: 'white' }));
+  const [sekiBlack, sekiWhite] = pairKeys(sekiState, sekiTopology, 'b', 'w');
+  const seki = analyzeSemeaiSeki(sekiState, sekiTopology, sekiBlack, sekiWhite, {
     includeKillProofs: false,
   });
-  return observation(
-    'closed-mutual-capture-seki-certificate',
-    'semeai-seki',
-    'proven-seki',
-    analysis?.seki.status ?? 'missing',
-  );
-};
 
-const sekiThirdGroupCase = (): Engine2AdversarialObservation => {
-  const topology = makeTopology('e2-11-seki-third-group', {
+  const thirdTopology = makeTopology('e2-11-seki-third-group', {
     b: Object.freeze(['w', 'x', 'y']),
     w: Object.freeze(['b', 'x', 'y']),
     x: Object.freeze(['b', 'w', 'y', 't']),
@@ -492,69 +450,82 @@ const sekiThirdGroupCase = (): Engine2AdversarialObservation => {
     t: Object.freeze(['x', 'te']),
     te: Object.freeze(['t']),
   });
-  const state = makeState(
-    topology,
+  const thirdState = makeState(
+    thirdTopology,
     Object.freeze({ b: 'black', w: 'white', t: 'black' }),
   );
-  const [blackKey, whiteKey] = semeaiPairKeys(state, topology, 'b', 'w');
-  const analysis = analyzeSemeaiSeki(state, topology, blackKey, whiteKey, {
+  const [thirdBlack, thirdWhite] = pairKeys(thirdState, thirdTopology, 'b', 'w');
+  const third = analyzeSemeaiSeki(thirdState, thirdTopology, thirdBlack, thirdWhite, {
     includeKillProofs: false,
   });
-  const actual =
-    analysis?.seki.status === 'unresolved'
-      ? `unresolved:${analysis.seki.reason}`
-      : analysis?.seki.status ?? 'missing';
-  return observation(
-    'seki-third-group-boundary',
-    'semeai-seki',
-    'unresolved:third-group-boundary',
-    actual,
-    { mustNotProve: true },
-  );
+  const thirdActual =
+    third?.seki.status === 'unresolved'
+      ? `unresolved:${third.seki.reason}`
+      : third?.seki.status ?? 'missing';
+
+  return Object.freeze([
+    observe(
+      'semeai-side-to-move-kill',
+      'semeai-seki',
+      'proven-kill',
+      whiteKill?.result.outcome ?? 'missing',
+      {
+        exploredNodes: whiteKill?.result.exploredNodes ?? 0,
+        transpositionHits: whiteKill?.result.transpositionHits ?? 0,
+      },
+    ),
+    observe(
+      'closed-mutual-capture-seki-certificate',
+      'semeai-seki',
+      'proven-seki',
+      seki?.seki.status ?? 'missing',
+    ),
+    observe(
+      'seki-third-group-boundary',
+      'semeai-seki',
+      'unresolved:third-group-boundary',
+      thirdActual,
+      { mustNotProve: true },
+    ),
+  ]);
 };
 
-const torusSeamEyeCase = (): Engine2AdversarialObservation => {
-  const topology = new TorusTopology(9);
-  const state = makeFilledState(topology, ['0,0', '8,0', '4,4']);
-  const result = analyzeSmallEyeSpace(
-    state,
-    topology,
-    groupKeyAt(state, topology, '1,0'),
+const topologyCase = (): Engine2AdversarialObservation => {
+  const torus = new TorusTopology(9);
+  const torusState = makeFilledState(torus, ['0,0', '8,0', '4,4']);
+  const torusEye = analyzeSmallEyeSpace(
+    torusState,
+    torus,
+    groupKeyAt(torusState, torus, '1,0'),
   );
-  const seam = result?.regions.find((region) => region.points.includes('0,0'));
-  const actual = seam
-    ? `${seam.boundary};complete=${String(seam.complete)};points=${seam.points.join(',')}`
-    : 'missing';
-  return observation(
-    'torus-seam-graph-native-eye-space',
-    'topology',
-    'strict-target-boundary;complete=true;points=0,0,8,0',
-    actual,
-  );
-};
+  const seam = torusEye?.regions.find((region) => region.points.includes('0,0'));
+  const torusOk =
+    seam?.complete === true &&
+    seam.boundary === 'strict-target-boundary' &&
+    JSON.stringify(seam.points) === JSON.stringify(['0,0', '8,0']);
 
-const cubeEdgeConnectionCase = (): Engine2AdversarialObservation => {
-  const topology = new CubeTopology(2);
-  const state = makeState(
-    topology,
+  const cube = new CubeTopology(2);
+  const cubeState = makeState(
+    cube,
     Object.freeze({ 'front:0:0': 'black', 'right:0:0': 'black' }),
   );
-  const node = createEndgameProofSearchNode(
-    topology,
-    state,
+  const cubeNode = createEndgameProofSearchNode(
+    cube,
+    cubeState,
     'black',
     Object.freeze(['front:0:0']),
     'defender',
   );
-  const candidate = analyzeTacticalExtensionMoves(node, topology).candidates.find(
+  const connection = analyzeTacticalExtensionMoves(cubeNode, cube).candidates.find(
     (entry) => entry.point === 'front:0:1',
   );
-  const actual = candidate?.reasons.includes('connection') ? 'connection' : 'missing';
-  return observation(
-    'cube-face-edge-graph-native-connection',
+  const cubeOk = connection?.reasons.includes('connection') === true;
+
+  return observe(
+    'torus-seam-and-cube-edge-graph-native',
     'topology',
-    'connection',
-    actual,
+    'torus=true;cube=true',
+    `torus=${String(torusOk)};cube=${String(cubeOk)}`,
   );
 };
 
@@ -572,90 +543,58 @@ interface ToyMove {
 }
 
 const toyAdapter: DeterministicProofSearchAdapter<ToyNode, ToyMove> = Object.freeze({
-  nodeKey: (node) => node.key,
-  role: (node) => node.role,
-  terminal: (node) => node.terminal ?? null,
-  expand: (node): ProofSearchExpansion<ToyMove> =>
+  nodeKey: (node: ToyNode): string => node.key,
+  role: (node: ToyNode): ProofSearchRole => node.role,
+  terminal: (node: ToyNode): ProofSearchTerminal | null => node.terminal ?? null,
+  expand: (node: ToyNode): ProofSearchExpansion<ToyMove> =>
     Object.freeze({
-      moves: node.moves ?? Object.freeze([]),
+      moves: node.moves ?? Object.freeze([] as ToyMove[]),
       completeness: node.completeness ?? Object.freeze({ kind: 'complete' as const }),
     }),
-  apply: (_node, move) => move.child,
-  moveKey: (move) => move.key,
+  apply: (_node: ToyNode, move: ToyMove): ToyNode => move.child,
+  moveKey: (move: ToyMove): string => move.key,
 });
 
-const toyTerminal = (
-  key: string,
-  outcome: ProofSearchTerminal['outcome'],
-): ToyNode => Object.freeze({ key, role: 'attacker', terminal: Object.freeze({ outcome }) });
+const toyTerminal = (key: string, outcome: ProofSearchTerminal['outcome']): ToyNode =>
+  Object.freeze({ key, role: 'attacker' as const, terminal: Object.freeze({ outcome }) });
 
 const toyMove = (key: string, child: ToyNode): ToyMove => Object.freeze({ key, child });
 
-const transpositionParityCase = (): Engine2AdversarialObservation => {
+const andOrCases = (): readonly Engine2AdversarialObservation[] => {
   const leaf = toyTerminal('leaf', 'proven-survival');
   const shared: ToyNode = Object.freeze({
     key: 'shared',
     role: 'attacker',
     moves: Object.freeze([toyMove('finish', leaf)]),
   });
-  const root: ToyNode = Object.freeze({
+  const transpositionRoot: ToyNode = Object.freeze({
     key: 'root',
     role: 'attacker',
     moves: Object.freeze([toyMove('b-route', shared), toyMove('a-route', shared)]),
   });
-  const optimized = searchDeterministicAndOrProof(root, toyAdapter);
+  const optimized = searchDeterministicAndOrProof(transpositionRoot, toyAdapter);
   const baseline = searchDeterministicAndOrProof(
-    root,
+    transpositionRoot,
     toyAdapter,
     Object.freeze({ useTranspositions: false }),
   );
-  const sameSemantics =
+  const parity =
     optimized.outcome === baseline.outcome &&
     optimized.reason === baseline.reason &&
     JSON.stringify(optimized.principalVariation) === JSON.stringify(baseline.principalVariation) &&
-    optimized.maxDepth === baseline.maxDepth;
-  const actual =
-    sameSemantics &&
+    optimized.maxDepth === baseline.maxDepth &&
     optimized.exploredNodes < baseline.exploredNodes &&
-    optimized.transpositionHits > 0
-      ? 'semantic-parity-with-reuse'
-      : 'mismatch';
-  return observation(
-    'transposition-semantic-parity',
-    'and-or-core',
-    'semantic-parity-with-reuse',
-    actual,
-    {
-      exploredNodes: optimized.exploredNodes,
-      transpositionHits: optimized.transpositionHits,
-    },
-  );
-};
+    optimized.transpositionHits > 0;
 
-const incompleteDefenderCase = (): Engine2AdversarialObservation => {
-  const dead = toyTerminal('dead', 'proven-kill');
-  const root: ToyNode = Object.freeze({
-    key: 'incomplete-defender-root',
+  const incompleteRoot: ToyNode = Object.freeze({
+    key: 'incomplete-root',
     role: 'defender',
-    moves: Object.freeze([toyMove('known-defense', dead)]),
-    completeness: Object.freeze({ kind: 'incomplete', reason: 'remote defenses unknown' }),
+    moves: Object.freeze([toyMove('known-defense', toyTerminal('dead', 'proven-kill'))]),
+    completeness: Object.freeze({ kind: 'incomplete' as const, reason: 'remote defenses unknown' }),
   });
-  const result = searchDeterministicAndOrProof(root, toyAdapter);
-  return observation(
-    'and-or-incomplete-defender-universal-proof-blocked',
-    'and-or-core',
-    'unresolved',
-    result.outcome,
-    {
-      mustNotProve: true,
-      exploredNodes: result.exploredNodes,
-      transpositionHits: result.transpositionHits,
-    },
-  );
-};
+  const incomplete = searchDeterministicAndOrProof(incompleteRoot, toyAdapter);
 
-const budgetExhaustionCase = (): Engine2AdversarialObservation => {
-  const root: ToyNode = Object.freeze({
+  const budgetRoot: ToyNode = Object.freeze({
     key: 'budget-root',
     role: 'attacker',
     moves: Object.freeze([
@@ -663,22 +602,43 @@ const budgetExhaustionCase = (): Engine2AdversarialObservation => {
       toyMove('z-kill', toyTerminal('kill', 'proven-kill')),
     ]),
   });
-  const result = searchDeterministicAndOrProof(
-    root,
+  const budget = searchDeterministicAndOrProof(
+    budgetRoot,
     toyAdapter,
     Object.freeze({ nodeBudget: 2 }),
   );
-  return observation(
-    'and-or-budget-exhaustion-propagates',
-    'and-or-core',
-    'budget-exhausted',
-    result.outcome,
-    {
-      mustNotProve: true,
-      exploredNodes: result.exploredNodes,
-      transpositionHits: result.transpositionHits,
-    },
-  );
+
+  return Object.freeze([
+    observe(
+      'transposition-semantic-parity',
+      'and-or-core',
+      'semantic-parity-with-reuse',
+      parity ? 'semantic-parity-with-reuse' : 'mismatch',
+      { exploredNodes: optimized.exploredNodes, transpositionHits: optimized.transpositionHits },
+    ),
+    observe(
+      'and-or-incomplete-defender-universal-proof-blocked',
+      'and-or-core',
+      'unresolved',
+      incomplete.outcome,
+      {
+        mustNotProve: true,
+        exploredNodes: incomplete.exploredNodes,
+        transpositionHits: incomplete.transpositionHits,
+      },
+    ),
+    observe(
+      'and-or-budget-exhaustion-propagates',
+      'and-or-core',
+      'budget-exhausted',
+      budget.outcome,
+      {
+        mustNotProve: true,
+        exploredNodes: budget.exploredNodes,
+        transpositionHits: budget.transpositionHits,
+      },
+    ),
+  ]);
 };
 
 const isAuthoritativeFate = (actual: string): boolean =>
@@ -690,24 +650,14 @@ const isAuthoritativeFate = (actual: string): boolean =>
 
 export const runEngine2AdversarialCorpus = (): Engine2AdversarialEvaluation => {
   const observations = Object.freeze([
-    oneLibertyDeadCase(),
-    oneLibertyKoCase(),
-    twoLibertyOracleCase(),
-    twoLibertyRemoteKoCase(),
-    threeLibertyKillCase(),
-    threeLibertyIncompleteCase(),
-    fourLibertyKillCase(),
-    eyeSpaceExactCase(),
-    eyeSpaceBudgetCase(),
-    tacticalConnectionSurvivalCase(),
-    semeaiKillCase(),
-    sekiCertificateCase(),
-    sekiThirdGroupCase(),
-    torusSeamEyeCase(),
-    cubeEdgeConnectionCase(),
-    transpositionParityCase(),
-    incompleteDefenderCase(),
-    budgetExhaustionCase(),
+    ...oneLibertyCases(),
+    ...twoLibertyCases(),
+    ...threeAndFourLibertyCases(),
+    ...eyeSpaceCases(),
+    tacticalCase(),
+    ...semeaiSekiCases(),
+    topologyCase(),
+    ...andOrCases(),
   ]);
   const failedCaseIds = Object.freeze(
     observations.filter((entry) => entry.actual !== entry.expected).map((entry) => entry.id),
