@@ -23,6 +23,13 @@ import {
   type TopologyStressMode,
 } from './EndgameFixture';
 import {
+  runDifferentialOracle,
+  type DifferentialOracleAdapter,
+  type DifferentialOracleRunOptions,
+  type DifferentialOracleRunResult,
+  type OracleResultComparator,
+} from './DifferentialOracle';
+import {
   generateEndgamePositionFixture,
   generateLegalGameFixture,
   replayGeneratedCommands,
@@ -239,6 +246,28 @@ export class EndgameTestLab {
     const topology = createTopology(fixture.topology);
     const groups = collectStoneGroups(fixture.state, topology);
     return classifier.analyze(Object.freeze({ state: fixture.state, topology, groups }));
+  }
+
+  async compareWithOracle<TResult>(
+    fixture: EndgameTestFixture,
+    classifier: EndgameClassifier,
+    adapter: DifferentialOracleAdapter<TResult>,
+    comparator: OracleResultComparator<TResult>,
+    options: DifferentialOracleRunOptions,
+  ): Promise<DifferentialOracleRunResult<TResult>> {
+    const topology = createTopology(fixture.topology);
+    const groups = collectStoneGroups(fixture.state, topology);
+    const internalResult = await classifier.analyze(
+      Object.freeze({ state: fixture.state, topology, groups }),
+    );
+    return runDifferentialOracle(
+      fixture,
+      topology,
+      internalResult,
+      adapter,
+      comparator,
+      options,
+    );
   }
 }
 

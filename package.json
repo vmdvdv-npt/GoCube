@@ -11,7 +11,8 @@
     "test:e2e": "playwright test",
     "lint": "oxlint src e2e playwright.config.ts vite.config.ts",
     "typecheck": "tsc -b --pretty false",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "lab:local-ai": "node tools/local-ai/bridge.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "6.1.0",
