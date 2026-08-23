@@ -10,6 +10,8 @@ Before planning, reviewing, editing, or implementing work, read the repository d
 
 These three files are the canonical project documentation. Do not infer current requirements from release records, README, issues, PR descriptions, comments, old tasks, chat excerpts, cached copies, or exports.
 
+For work specifically on the automatic/assisted endgame engine, after reading the relevant canonical documents also read `docs/ENDGAME_ENGINE.md`. It is an explicitly approved, rapidly changing working plan: agents should keep it current as research, benchmarks and implementation evolve, but it never overrides the three canonical documents.
+
 ## Documentation hygiene
 
 - Do **not** create summaries, mirrors, alternate specifications, replacement documents, ADRs, plans, reports, checklists, release notes, or any other new `.md` file unless the user explicitly approves that specific file.
