@@ -3376,3 +3376,122 @@ Work 8A закрывает только TerritoryResolver foundation:
 - no new life/death proofs.
 
 Следующий этап именно TerritoryResolver track — **Work 8B: Seki / Dame + Scoring Handoff**. Work 7D остаётся отдельным ранее запланированным classifier hardening/integration scope и этим этапом не считается закрытым.
+
+---
+
+# 53. Work 8B — Seki / Dame + Scoring Handoff: финальный результат
+
+Срез на **2026-08-24**. **Work 8B закрыт по implementation scope.** `TerritoryResolver` теперь является единственным источником territory/seki/dame facts для существующего scoring path. Новых life/death/seki proofs этим этапом не добавлено.
+
+## 53.1. Accepted Resolver semantics
+
+`ResolvedRegion` расширен полем:
+
+```text
+touchesSeki: boolean
+```
+
+Итоговая Work 8B semantics:
+
+1. dead-only virtual removal Work 8A сохраняется без изменений: виртуально удаляются только classified `dead` stones;
+2. `alive`, `seki` и unclassified stones остаются на virtual board;
+3. empty regions и их `borderingColors` / `borderingGroups` по-прежнему строятся через `EndgameGraphCore`, то есть connectivity зависит только от `Topology.neighbors()`;
+4. `touchesSeki = true`, если хотя бы одна empty point region через `Topology.neighbors()` непосредственно соседствует с stone point, classified как `seki`;
+5. любой region с `touchesSeki = true` принудительно получает `owner = NEUTRAL`, даже если surviving boundary имеет только один цвет;
+6. region без seki interaction и с ровно одним bordering color получает `BLACK` или `WHITE` как раньше;
+7. region без seki interaction, но с mixed-color либо empty boundary получает `NEUTRAL`; такой neutral region является обычным dame для scoring handoff;
+8. исходный `GameState` не мутируется.
+
+Таким образом `owner = NEUTRAL` больше не смешивает две downstream причины: seki-neutral region различим через `touchesSeki = true`, а ordinary dame — через `touchesSeki = false`.
+
+## 53.2. Scoring handoff
+
+До Work 8B `Scoring.ts` отдельно повторял часть TerritoryResolver logic: сам создавал effective board после dead removal, сам flood-fill'ил empty regions и отдельно искал seki adjacency.
+
+Work 8B удаляет этот duplicate territory traversal. `analyzeScoringPosition(...)` теперь сначала вызывает:
+
+```text
+resolveTerritory(state, classification, topology)
+```
+
+и использует `TerritoryResolution.regions` как authoritative territory handoff для обеих существующих scoring strategies.
+
+Mapping фиксирован явно:
+
+```text
+region.touchesSeki == true -> territory.seki
+region.owner == BLACK      -> territory.black
+region.owner == WHITE      -> territory.white
+otherwise NEUTRAL          -> territory.neutral   // ordinary dame
+```
+
+Stone/dead accounting остаётся в scoring position, потому что правила используют его по-разному:
+
+- Chinese scoring по-прежнему считает surviving stones + owned territory и не добавляет captures второй раз;
+- Japanese scoring по-прежнему считает owned territory + captures during play + opponent dead stones как prisoners;
+- seki/dame empty points не дают territory ни одной стороне.
+
+`ChineseScoring.ts` и `JapaneseScoring.ts` не потребовали отдельной переписи: оба уже используют общий `analyzeScoringPosition(...)` и поэтому получают Resolver facts через существующий contract.
+
+## 53.3. Regression coverage
+
+Work 8B расширяет существующий Work 8A corpus без удаления его safety cases.
+
+`TerritoryResolver.test.ts` дополнительно проверяет:
+
+1. single-color region рядом с classified seki получает `touchesSeki = true` и forced `NEUTRAL`;
+2. mixed-color ordinary dame остаётся `NEUTRAL`, но имеет `touchesSeki = false`;
+3. существующие dead-removal, survivor, BLACK/WHITE, opaque-topology и invalid-classification regressions продолжают проходить.
+
+`Scoring.test.ts` дополнительно проверяет handoff, а не параллельную scoring implementation:
+
+1. exact seki-neutral Resolver region передаётся одинаково в Chinese и Japanese scoring как `territory.seki`;
+2. ordinary dame передаётся одинаково в оба scorer как `territory.neutral`, а не `territory.seki`;
+3. dead virtual removal и Japanese prisoner credit сохраняют прежний результат;
+4. существующие area/territory formulas, captures, komi, Torus wraparound, opaque topology и immutability regressions сохраняются.
+
+## 53.4. Scope boundary
+
+Work 8B не добавляет и не расширяет:
+
+- automatic life/death proof;
+- semeai proof;
+- seki proof;
+- classifier integration Work 7D;
+- `goscorer` differential;
+- Torus seam / Cube edge/corner-specific TerritoryResolver fixtures;
+- graph-isomorphism/metamorphic hardening;
+- performance acceptance gate.
+
+Все последние пункты остаются строго Work 8C либо отдельным Work 7D scope согласно decomposition.
+
+## 53.5. Validation boundary
+
+PR **#182 — `[full] Engine Work 8B: Seki / Dame + Scoring Handoff`** создан от exact `engine` HEAD:
+
+```text
+8084def8a26a1032c01cdc35dcd7c754f9b9980e
+```
+
+Code-head `9a434c06b231b08ed271c75817e9f418238d096e` в CI #851 уже прошёл:
+
+- lint — pass;
+- typecheck — pass;
+- unit/coverage — pass;
+- build — pass.
+
+На момент documentation closure full Playwright того же code-head ещё выполнялся. Exact final documentation head обязан пройти новый полный `[full]` CI перед merge; merge при красном final head запрещён.
+
+## 53.6. Closure
+
+Work 8B закрывает Seki / Dame + Scoring Handoff layer:
+
+- `touchesSeki` теперь является explicit Resolver fact;
+- seki-adjacent empty regions всегда neutral;
+- ordinary dame различается от seki через `touchesSeki = false`;
+- duplicate scoring flood-fill удалён;
+- Chinese/Japanese scoring получают один и тот же Resolver result через существующий `analyzeScoringPosition`;
+- scoring formulas и prisoner semantics не переписаны;
+- никаких новых life/death/seki proofs не введено.
+
+**Следующий этап TerritoryResolver track — Work 8C: Hardening + Differential.** Work 7D остаётся отдельным classifier-hardening/integration scope и Work 8B его не закрывает.
