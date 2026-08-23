@@ -176,7 +176,7 @@ Acceptance:
 
 Существующий Benson/pass-alive слой сохраняется как ранний conservative proof.
 
-Он должен использовать Graph Core, а не собственный параллельный extraction groups/regions.
+Он использует общий Graph Core, а не собственный параллельный extraction groups/regions.
 
 Результат:
 
@@ -363,20 +363,26 @@ ProofResult {
 
 ## E2-1 — Graph Core
 
-Статус: **ACTIVE**.
+Статус: **IMPLEMENTED / INTEGRATED**.
 
-Сделать единый structural graph:
+Сделано:
 
-- stone strings;
+- topology-neutral stone strings;
 - liberties;
 - empty regions;
 - boundary/vital relations;
 - shared liberties;
-- direct friendly connection candidates.
+- direct friendly connection candidates;
+- deterministic point/group ordering;
+- partial-board guard;
+- graph-edge topology test;
+- `AssistedEndgameClassifier` переведён на общий Graph Core для Benson/dead/seki proofs.
 
-Затем переключить Benson и последующие readers на этот слой.
+Следующий шаг — E2-2.
 
 ## E2-2 — Tactical facts + 1-liberty reader
+
+Статус: **NEXT**.
 
 - immediate capture;
 - legal atari escape;
@@ -479,13 +485,14 @@ precision first, then coverage, then cost
 
 # 18. Текущий прогресс
 
-На старте `engine2`:
+На текущем состоянии `engine2`:
 
 - branch создана от актуального `main`;
-- старый `engine` не является ancestor рабочего изменения `engine2`;
+- старый `engine` не является источником изменений `engine2`;
 - выбран независимый GNU-Go-inspired graph-native path;
-- первым implementation layer выбран standalone Graph Core;
-- существующие safe Benson/dead/seki layers пока остаются production baseline и будут постепенно подключаться к новому core;
+- standalone Graph Core реализован;
+- существующие Benson/dead/seki proofs используют новый Graph Core;
+- следующий implementation target — tactical facts и strict 1-liberty reader;
 - сравнение с `engine` выполняется только после появления сопоставимого practical coverage.
 
 Этот документ должен обновляться при каждом изменении направления, search semantics, benchmark conclusion или существенном Engine-specific решении.
