@@ -1,8 +1,8 @@
 import {
   buildReuseSpikeCorpus,
   type ReuseSpikeCorpusCase,
+  type ReuseSpikeReferenceStatus,
 } from './ReuseSpikeCorpus';
-import type { ReferenceStatus } from './TestCase';
 
 export type ReuseSpikeCandidateId =
   | 'tsumego-js'
@@ -48,7 +48,7 @@ export type ReuseSpikeCorrectness = 'match' | 'mismatch' | 'not-scored';
 
 export interface ReuseSpikeBenchmarkCaseResult {
   readonly id: string;
-  readonly sourceStatus: ReferenceStatus;
+  readonly sourceStatus: ReuseSpikeReferenceStatus;
   readonly solverOutcome: ReuseSpikeTargetOutcome;
   readonly correctness: ReuseSpikeCorrectness;
   readonly elapsedMs: number;
@@ -75,7 +75,7 @@ export interface ReuseSpikeBenchmarkSummary {
 export type ReuseSpikeClock = () => number;
 
 const expectedOutcome = (
-  status: ReferenceStatus,
+  status: ReuseSpikeReferenceStatus,
 ): ReuseSpikeTargetOutcome | undefined => {
   switch (status) {
     case 'alive':
@@ -91,7 +91,7 @@ const expectedOutcome = (
 };
 
 const classifyCorrectness = (
-  sourceStatus: ReferenceStatus,
+  sourceStatus: ReuseSpikeReferenceStatus,
   solverOutcome: ReuseSpikeTargetOutcome,
 ): ReuseSpikeCorrectness => {
   const expected = expectedOutcome(sourceStatus);
