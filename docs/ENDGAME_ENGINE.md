@@ -1427,7 +1427,7 @@ failure to prove relevance boundary
 small eye-space -> dead
 surrounded visually -> dead
 ownership 90% -> dead
-search did not find escape -> alive
+search did not find escape -> dead
 search did not find kill -> alive
 ```
 
