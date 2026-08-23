@@ -25,8 +25,6 @@ type Torus2DEndgameShape = Readonly<{
   edges: readonly Readonly<{ from: PointId; to: PointId }>[];
 }>;
 
-type Coordinate = Readonly<{ x: number; y: number }>;
-
 const sameViewState = (
   left: Torus2DViewState | null,
   right: Torus2DViewState,
