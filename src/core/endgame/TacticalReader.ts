@@ -98,6 +98,11 @@ interface SearchRuntime {
   readonly sortedPoints: readonly PointId[];
 }
 
+interface DefenderMoveSet {
+  readonly children: readonly Readonly<{ move: PointId; state: GameState }>[];
+  readonly complete: boolean;
+}
+
 const targetGroupAt = (runtime: SearchRuntime, state: GameState): StoneGroup | null => {
   const surviving = runtime.crucialStones.find(
     (point) => state.board[point] === runtime.targetColor,
@@ -194,7 +199,8 @@ const atariSavingCandidates = (
 const allLegalDefenderMoves = (
   runtime: SearchRuntime,
   node: SearchNode,
-): readonly Readonly<{ move: PointId; state: GameState }>[] => {
+  limit: number,
+): DefenderMoveSet => {
   const results: Array<Readonly<{ move: PointId; state: GameState }>> = [];
   for (const point of runtime.sortedPoints) {
     if (node.state.board[point] !== 'empty') continue;
@@ -204,9 +210,13 @@ const allLegalDefenderMoves = (
       node.mover,
       { previousBoard: node.previousBoard },
     );
-    if (result.ok) results.push(Object.freeze({ move: point, state: result.state }));
+    if (!result.ok) continue;
+    if (results.length >= limit) {
+      return Object.freeze({ children: Object.freeze(results), complete: false });
+    }
+    results.push(Object.freeze({ move: point, state: result.state }));
   }
-  return Object.freeze(results);
+  return Object.freeze({ children: Object.freeze(results), complete: true });
 };
 
 const terminalCaptureDependsOnKo = (
@@ -323,7 +333,10 @@ const search = (
     // gets the next local move while no target-adjacent occupancy has changed.
     defenderChildren.push(Object.freeze({ move: null, state: node.state }));
   } else {
-    for (const child of allLegalDefenderMoves(runtime, node)) defenderChildren.push(child);
+    const remainingChildBudget = Math.max(0, runtime.maxNodes - runtime.nodes);
+    const legalDefenses = allLegalDefenderMoves(runtime, node, remainingChildBudget);
+    if (!legalDefenses.complete) return unknown('budget');
+    for (const child of legalDefenses.children) defenderChildren.push(child);
     defenderChildren.push(Object.freeze({ move: null, state: node.state }));
   }
 
