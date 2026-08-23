@@ -13,6 +13,9 @@ import {
   TorusTopology,
   type TorusSize,
 } from '../../topology/TorusTopology';
+import {
+  generateControlledEndgameTestCase,
+} from './ControlledEndgameGenerator';
 import type { PlanarOraclePosition } from './DifferentialOracle';
 import { DeterministicRandom } from './DeterministicRandom';
 import { EndgameTestLab, type EndgameTestTopology } from './EndgameTestLab';
@@ -48,7 +51,10 @@ import {
 
 export const SYNTHETIC_ENDGAME_GENERATOR_VERSION = 1 as const;
 export const EXTERNAL_CORPUS_IMPORTER_VERSION = 1 as const;
+/** Historical full-legal live endgame variant retained for Test ID replay compatibility. */
 export const LIVE_ENDGAME_TEST_CASE_VARIANT = 63 as const;
+/** Current manual Generate endgame contract with explicit classifier control groups. */
+export const CONTROLLED_ENDGAME_TEST_CASE_VARIANT = 62 as const;
 
 interface SyntheticScenario {
   readonly variant: number;
@@ -209,10 +215,13 @@ const generateFullEndgameCase = (
   throw new Error('Could not generate a full legal endgame position for this Test ID');
 };
 
-const generateSyntheticCase = (identity: TestCaseIdentity): ReplayableTestCase => {
+const generateSyntheticCase = async (identity: TestCaseIdentity): Promise<ReplayableTestCase> => {
   const topology = createTestCaseTopology(identity);
   const testId = encodeTestCaseId(identity);
 
+  if (identity.variant === CONTROLLED_ENDGAME_TEST_CASE_VARIANT) {
+    return generateControlledEndgameTestCase(identity, topology, testId);
+  }
   if (identity.variant === LIVE_ENDGAME_TEST_CASE_VARIANT) {
     return generateFullEndgameCase(identity, topology, testId);
   }
@@ -418,7 +427,7 @@ export class TestCaseReplayService {
       throw new Error(`Generated Test ID payload must be uint32, got ${String(payload)}`);
     }
     const variant = source === 'synthetic-endgame'
-      ? LIVE_ENDGAME_TEST_CASE_VARIANT
+      ? CONTROLLED_ENDGAME_TEST_CASE_VARIANT
       : 0;
     return makeTestCaseIdentity({
       source,
