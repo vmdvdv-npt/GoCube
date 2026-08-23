@@ -53,9 +53,10 @@ test('Cube 2D capture can be undone/redone without creating face duplicates', as
 });
 
 test('Cube 2D completes assisted endgame, stays navigable when finished, and Undo reopens play', async ({ page }) => {
-  await hit(page, 'front:1:2').click();
-  await hit(page, 'back:0:0').click();
-  await hit(page, 'right:1:0').click();
+  const reviewPoints = ['front:1:2', 'back:0:0', 'right:1:0', 'front:0:0'] as const;
+  await hit(page, reviewPoints[0]).click();
+  await hit(page, reviewPoints[1]).click();
+  await hit(page, reviewPoints[2]).click();
 
   const pass = page.getByRole('button', { name: /^Pass(?: \(1\))?$/ });
   await pass.click();
@@ -63,7 +64,7 @@ test('Cube 2D completes assisted endgame, stays navigable when finished, and Und
   await page.waitForTimeout(1050);
   await expect(page.getByRole('button', { name: 'Pass (1)' })).toBeEnabled();
 
-  await hit(page, 'front:0:0').click();
+  await hit(page, reviewPoints[3]).click();
   await expect(page.getByRole('button', { name: 'Pass' })).toBeEnabled();
 
   await page.getByRole('button', { name: 'Pass' }).click();
@@ -71,16 +72,19 @@ test('Cube 2D completes assisted endgame, stays navigable when finished, and Und
   await page.getByRole('button', { name: 'Pass (1)' }).click();
 
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
-  await expect(page.getByText(/Manual review 0 of/)).toBeVisible();
+  await expect(page.locator('.endgame-progress')).toContainText('Resolved 0 of');
 
   const statuses = page.getByRole('group', { name: 'Selected group status' });
-  for (let index = 0; index < 3; index += 1) {
+  for (const pointId of reviewPoints) {
+    await hit(page, pointId).click();
     await statuses.getByRole('button', { name: 'Alive' }).click();
   }
 
+  await expect(page.getByRole('button', { name: 'Finish scoring' })).toBeEnabled();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Finish scoring' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByText('Chinese scoring')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Calculate final score' })).toHaveCount(0);
   await expectSixBoards(page);
 
   await page.getByRole('button', { name: 'Close game result' }).click();
