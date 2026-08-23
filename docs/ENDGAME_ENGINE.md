@@ -1654,20 +1654,19 @@ Work 1 **не доказал преимущество раннего PNS/df-pn �
 
 Три текущих corpus cases достаточны для **reuse/foundation decision**, потому что различия проявились уже на execution contract level. Они недостаточны для будущего выбора search scheduler и performance budgets; расширение known-answer corpus продолжается в последующих Work stages, а не удерживает Work 1 открытым.
 
-## 39.6. Project validation и внешний CI blocker
+## 39.6. Project validation
 
-На Work 1 validation PR #143 Engine tree подтверждён стандартным pipeline:
+На Work 1 validation PR #143 финальный очищенный head `e12fad7` прошёл полный CI run #645:
 
 - lint — pass (существующие warnings не блокируют);
 - typecheck — pass;
 - coverage/unit — **519 tests pass**;
-- build — pass.
+- build — pass;
+- full Playwright E2E — pass.
 
-Full Playwright на проверенных heads дважды дал **215/216 pass** и один и тот же WebKit failure вне Engine scope: `e2e/torus-pan-animation.spec.ts`, где test ожидает `data-pan-direction="right"`, но получает `"down"` после rapid navigation. Этот Torus UI race не связан с Work 1 files и не исправляется внутри Engine spike.
+На двух более ранних validation heads WebKit дважды давал **215/216 pass** с failure вне Engine scope в `e2e/torus-pan-animation.spec.ts`: test ожидал `data-pan-direction="right"`, но получал `"down"` после rapid navigation. Финальный clean-head run прошёл, поэтому этот эпизод фиксируется как non-Engine timing/flaky observation, а не как текущий Work 1 blocker. В рамках Engine spike Torus code не менялся.
 
-Поэтому нельзя утверждать «полный project CI зелёный». Корректный статус: **Work 1 Engine checks green; project-wide full CI blocked by independently reproducible non-Engine WebKit Torus failure**.
-
-Временный runtime-probe workflow должен быть удалён после фиксации этих результатов; он не является постоянной project infrastructure.
+Временный runtime-probe workflow удалён перед финальной проверкой; в PR остались только Work 1 code/tests и этот рабочий документ.
 
 ## 39.7. Closure
 
@@ -1680,6 +1679,6 @@ Work 1 закрыт со следующими fulfilled outputs:
 5. measured Cameron timing/nodes и воспроизводимые execution constraints/failures остальных candidates;
 6. license/topology/runtime matrix;
 7. окончательное решение `graph-native production shell + selective permissive reuse/reference`;
-8. подтверждённые lint/typecheck/unit+coverage/build checks, при отдельно зафиксированном unrelated WebKit E2E blocker.
+8. полный clean-head CI: lint/typecheck/unit+coverage/build/Playwright E2E — pass.
 
 **Work 2 может начинаться.** Он не должен зависеть от внешней solver library как production foundation.
