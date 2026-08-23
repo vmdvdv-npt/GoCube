@@ -137,6 +137,24 @@ describe('SimpleCut', () => {
     expect(result).toEqual({ outcome: 'not-proven', reason: 'no-simple-safe-cut' });
   });
 
+  it('rejects a quiet cut when the blocking attacker string is not Benson-alive', () => {
+    const topology = new GraphTopology('simple-cut-unstable-blocker', [
+      ['t', 'c'],
+      ['t', 'x'],
+      ['s', 'c'],
+      ['s', 'e1'],
+      ['s', 'e2'],
+      ['s', 'far'],
+      ['c', 'q'],
+    ]);
+    const board = makeBoard(topology, { t: 'black', s: 'black' });
+    const target = targetAt(board, topology, 't');
+
+    const result = proveSimpleCutFromBenson(target, board, topology);
+
+    expect(result).toEqual({ outcome: 'not-proven', reason: 'no-simple-safe-cut' });
+  });
+
   it('rejects a cutting move that captures instead of producing a quiet cut', () => {
     const { topology } = singleCutFixture();
     const board = makeBoard(topology, {
