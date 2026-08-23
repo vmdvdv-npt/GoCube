@@ -27,7 +27,7 @@
 
 Версия **0.2 Cube 2D завершена и принята** по границе `0.2 integration / regression acceptance`.
 
-Активная разрабатываемая версия — **0.3 Automatic/Assisted alive-dead-seki**. Checkpoints **0.3.01 Library/Reuse Review и contract alignment** и **0.3.02 Deterministic Endgame Test Lab** завершены. Следующий активный checkpoint — **0.3.03 Differential Oracles и Local AI Lab**.
+Активная разрабатываемая версия — **0.3 Automatic/Assisted alive-dead-seki**. Checkpoints **0.3.01 Library/Reuse Review и contract alignment**, **0.3.02 Deterministic Endgame Test Lab** и **0.3.03 Differential Oracles и Local AI Lab** завершены. Следующий активный checkpoint — **0.3.04 Automatic Alive core**.
 
 ---
 
