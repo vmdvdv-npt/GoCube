@@ -200,3 +200,5 @@ Work 6B закрывает первый настоящий bounded local life/de
           git diff --cached --check
           git commit -m "Document Work 6B closure"
           git push origin HEAD:engine-work6b-local-life-death
+
+# retrigger after workflow is present on branch
