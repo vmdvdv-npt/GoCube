@@ -152,11 +152,16 @@ describe('OneLibertyTacticalReader', () => {
   it('enumerates a counter-capture of an adjacent attacker in atari', () => {
     const topology = makeTopology({
       w: Object.freeze(['x', 'b']),
-      x: Object.freeze(['w']),
+      x: Object.freeze(['w', 'anchor']),
+      anchor: Object.freeze(['x', 'ae']),
+      ae: Object.freeze(['anchor']),
       b: Object.freeze(['w', 'c']),
       c: Object.freeze(['b']),
     });
-    const state = makeState(topology, Object.freeze({ w: 'white', b: 'black' }));
+    const state = makeState(
+      topology,
+      Object.freeze({ w: 'white', b: 'black', anchor: 'black' }),
+    );
 
     const result = readTarget(topology, state);
 
@@ -169,6 +174,63 @@ describe('OneLibertyTacticalReader', () => {
       reasons: ['counter-capture'],
       result: 'escapes-immediate-capture',
     });
+  });
+
+  it('marks an attacker-first ko-shaped capture as ko-dependent without previous-board context', () => {
+    const topology = makeTopology({
+      w: Object.freeze(['x', 'b1', 'b2']),
+      x: Object.freeze(['w', 'c1', 'c2']),
+      b1: Object.freeze(['w', 'b1e']),
+      b1e: Object.freeze(['b1']),
+      b2: Object.freeze(['w', 'b2e']),
+      b2e: Object.freeze(['b2']),
+      c1: Object.freeze(['x', 'c1e']),
+      c1e: Object.freeze(['c1']),
+      c2: Object.freeze(['x', 'c2e']),
+      c2e: Object.freeze(['c2']),
+    });
+    const state = makeState(
+      topology,
+      Object.freeze({
+        w: 'white',
+        c1: 'white',
+        c2: 'white',
+        b1: 'black',
+        b2: 'black',
+      }),
+    );
+
+    const result = readTarget(topology, state);
+
+    expect(result?.attackerFirst).toEqual({ move: 'x', result: 'ko-dependent' });
+    expect(result?.outcome).toBe('ko-dependent');
+    expect(result?.principalVariation).toEqual([]);
+  });
+
+  it('marks a defender-first ko-shaped counter-capture as ko-dependent', () => {
+    const topology = makeTopology({
+      w: Object.freeze(['x', 'b']),
+      x: Object.freeze(['w', 'k']),
+      k: Object.freeze(['x', 'ke']),
+      ke: Object.freeze(['k']),
+      b: Object.freeze(['w', 'c']),
+      c: Object.freeze(['b']),
+    });
+    const state = makeState(
+      topology,
+      Object.freeze({ w: 'white', b: 'black', k: 'black' }),
+    );
+
+    const result = readTarget(topology, state);
+
+    expect(result?.attackerFirst.result).toBe('kill');
+    expect(result?.defenderFirst.result).toBe('ko-dependent');
+    expect(result?.defenderFirst.lines).toContainEqual({
+      move: 'c',
+      reasons: ['counter-capture'],
+      result: 'ko-dependent',
+    });
+    expect(result?.outcome).toBe('ko-dependent');
   });
 
   it('returns null instead of pretending the one-liberty proof covers wider groups', () => {
