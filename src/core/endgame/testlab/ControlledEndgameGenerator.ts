@@ -156,7 +156,7 @@ const buildControlLayout = (
 
   const controlColor = oppositeColor(scaffoldColor);
 
-  for (let attempt = 0; attempt < 16_384; attempt += 1) {
+  for (let attempt = 0; attempt < 1_024; attempt += 1) {
     const eyeCandidates = random.shuffle(deep).slice(0, 2);
     if (eyeCandidates.length !== 2) return null;
     const eyes = Object.freeze([eyeCandidates[0]!, eyeCandidates[1]!] as const);
@@ -208,7 +208,7 @@ const buildControlLayout = (
       if (liberties.length !== 1 || liberties[0] !== control.liberty) return false;
       if (topology.neighbors(control.point).some((neighbor) => occupancy(neighbor) === controlColor)) return false;
       return topology.neighbors(control.liberty).every(
-        (neighbor) => neighbor === control.point || occupancy(neighbor) !== 'empty',
+        (neighbor) => neighbor === control.point || occupancy(neighbor) === scaffoldColor,
       );
     });
     if (!deadValid) continue;
@@ -293,11 +293,17 @@ const cubeSekiEmbeddings = (
   topology: CubeTopology,
   random: DeterministicRandom,
 ): readonly SekiEmbedding[] => {
-  if (topology.size < 5) return Object.freeze([]);
+  if (topology.size < 6) return Object.freeze([]);
   const embeddings: SekiEmbedding[] = [];
   for (const face of random.shuffle(CUBE_FACES)) {
     for (let anchorRow = 0; anchorRow <= topology.size - 5; anchorRow += 1) {
       for (let anchorColumn = 0; anchorColumn <= topology.size - 5; anchorColumn += 1) {
+        if (
+          anchorRow === 0 ||
+          anchorColumn === 0 ||
+          anchorRow + 5 === topology.size ||
+          anchorColumn + 5 === topology.size
+        ) continue;
         const pointAt = (row: number, column: number): PointId =>
           cubePointId(face as CubeFace, anchorRow + row, anchorColumn + column);
         const placements = SEKI_PATTERN.flatMap((line, row) =>
@@ -467,27 +473,28 @@ export const generateControlledEndgameTestCase = async (
   testId: string,
 ): Promise<ControlledEndgameTestCase> => {
   const seed = String(identity.payload);
-  const pointCount = topology.points().length;
+  const allPoints = topology.points();
+  const pointCount = allPoints.length;
   const deadCount = pointCount >= 90 || topology instanceof TorusTopology ? 2 : 1;
   const radius = deadCount >= 2 ? 5 : 4;
-  const includeSeki = identity.size >= 5 && new DeterministicRandom(
+  const requestSeki = identity.size >= 5 && new DeterministicRandom(
     `controlled-endgame-seki-v${String(CONTROLLED_ENDGAME_GENERATOR_VERSION)}:${identity.topology}:${identity.size}:${seed}`,
   ).integer(3) === 0;
+  const background = generateLiveTestCase({
+    generator: 'game-like',
+    topology: identity.topology,
+    size: identity.size,
+    seed: `${seed}:controlled-background`,
+  });
 
-  for (let outerAttempt = 0; outerAttempt < 96; outerAttempt += 1) {
+  for (let outerAttempt = 0; outerAttempt < 48; outerAttempt += 1) {
     const attemptSeed = `${seed}:controlled:${String(outerAttempt)}`;
     const random = new DeterministicRandom(
       `controlled-endgame-v${String(CONTROLLED_ENDGAME_GENERATOR_VERSION)}:${identity.topology}:${identity.size}:${attemptSeed}`,
     );
-    const background = generateLiveTestCase({
-      generator: 'game-like',
-      topology: identity.topology,
-      size: identity.size,
-      seed: `${attemptSeed}:background`,
-    });
     const anchors = topologySpecificAnchors(topology);
-    const anchor = random.pick(anchors.length > 0 ? anchors : topology.points());
-    const patch = bfsBall(topology, anchor, radius);
+    const anchor = random.pick(anchors.length > 0 ? anchors : allPoints);
+    const patch = pointCount <= 24 ? new Set(allPoints) : bfsBall(topology, anchor, radius);
     const scaffoldColor: StoneColor = random.integer(2) === 0 ? 'black' : 'white';
     const layout = buildControlLayout(topology, patch, scaffoldColor, deadCount, random);
     if (!layout) continue;
@@ -496,7 +503,7 @@ export const generateControlledEndgameTestCase = async (
     for (const point of layout.patch) board[point] = occupancyForLayout(point, layout);
 
     let seki: SekiEmbedding | null = null;
-    if (includeSeki) {
+    if (requestSeki && outerAttempt < 8) {
       seki = selectSekiEmbedding(topology, layout, random);
       if (!seki) continue;
       for (const placement of seki.placements) board[placement.point] = placement.occupancy;
