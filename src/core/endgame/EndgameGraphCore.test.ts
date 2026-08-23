@@ -14,6 +14,16 @@ const makeBoard = (
   return Object.freeze(board);
 };
 
+const makeFilledBoard = (
+  topology: Topology,
+  occupancy: PointOccupancy,
+  overrides: Readonly<Partial<Record<PointId, PointOccupancy>>> = {},
+): BoardOccupancy => {
+  const board: Record<PointId, PointOccupancy> = {};
+  for (const point of topology.points()) board[point] = overrides[point] ?? occupancy;
+  return Object.freeze(board);
+};
+
 class FixtureTopology implements Topology {
   readonly id: string;
   private readonly pointSet: ReadonlySet<PointId>;
@@ -186,6 +196,21 @@ describe('EndgameGraphCore', () => {
     expect(graph.stringByPoint.get('0,0')).toBe(graph.stringByPoint.get('8,0'));
   });
 
+  it('joins an empty region across a Torus seam through Topology.neighbors()', () => {
+    const topology = new TorusTopology(3);
+    const graph = buildEndgameGraph(
+      makeFilledBoard(topology, 'black', {
+        '0,0': 'empty',
+        '2,0': 'empty',
+      }),
+      topology,
+    );
+
+    expect(graph.emptyRegions).toHaveLength(1);
+    expect(graph.emptyRegions[0]!.points).toEqual(['0,0', '2,0']);
+    expect(graph.regionByPoint.get('0,0')).toBe(graph.regionByPoint.get('2,0'));
+  });
+
   it('joins a stone string across a Cube face edge through the same graph path', () => {
     const topology = new CubeTopology(3);
     const graph = buildEndgameGraph(
@@ -203,6 +228,23 @@ describe('EndgameGraphCore', () => {
     });
     expect(graph.stringByPoint.get('front:1:2')).toBe(
       graph.stringByPoint.get('right:1:0'),
+    );
+  });
+
+  it('joins an empty region across a Cube face edge through the same graph path', () => {
+    const topology = new CubeTopology(3);
+    const graph = buildEndgameGraph(
+      makeFilledBoard(topology, 'black', {
+        'front:1:2': 'empty',
+        'right:1:0': 'empty',
+      }),
+      topology,
+    );
+
+    expect(graph.emptyRegions).toHaveLength(1);
+    expect(graph.emptyRegions[0]!.points).toEqual(['front:1:2', 'right:1:0']);
+    expect(graph.regionByPoint.get('front:1:2')).toBe(
+      graph.regionByPoint.get('right:1:0'),
     );
   });
 
