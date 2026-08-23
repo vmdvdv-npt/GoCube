@@ -1273,7 +1273,7 @@ Acceptance закрыт:
 - существующий deterministic two-eye/pass-alive corpus остаётся proven alive;
 - one-eye, false-eye и seki-like negative cases остаются unresolved;
 - отдельный opponent-in-region case проверяет Moka non-color semantics;
-- Torus seam и Cube face edge дают тот же Benson proof signature, что и interior placement;
+- Torus seam и Cube face edge дают тот же Benson proof signature, что interior placement;
 - fixed-point elimination и partial-analysis fail-closed behavior сохранены.
 
 Итог Work 3 и semantic boundary зафиксированы в разделе 41.
@@ -1756,7 +1756,7 @@ Pinned revision жёстко фиксирует `BOARD_SIZE = 19`, поэтом�
 - RZ требует GPU/CUDA host dependency поверх pinned image;
 - Darkforest pinned `tsumego` source internally inconsistent и не собирается as-is.
 
-Получить четыре сравнимых `elapsed/nodes` числа можно только если изменить хотя бы один из трех факторов: candidate source, candidate runtime environment или общий corpus/problem semantics. Такое сравнение уже не отвечало бы исходному вопросу Work 1 — «что можно реально взять/адатировать в GoCube без скрытой подмены правил и assumptions».
+Получить четыре сравнимых `elapsed/nodes` числа можно только если изменить хотя бы один из трех факторов: candidate source, candidate runtime environment или общий corpus/problem semantics. Такое сравнение уже не отвечало бы исходному вопросу Work 1 — «что можно реально взять/адаптировать в GoCube без скрытой подмены правил и assumptions».
 
 Поэтому executable compatibility itself включается в reuse decision.
 
