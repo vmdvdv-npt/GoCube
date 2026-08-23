@@ -156,11 +156,13 @@ describe('OneLibertyTacticalReader', () => {
       anchor: Object.freeze(['x', 'ae']),
       ae: Object.freeze(['anchor']),
       b: Object.freeze(['w', 'c']),
-      c: Object.freeze(['b']),
+      c: Object.freeze(['b', 'friend']),
+      friend: Object.freeze(['c', 'fe']),
+      fe: Object.freeze(['friend']),
     });
     const state = makeState(
       topology,
-      Object.freeze({ w: 'white', b: 'black', anchor: 'black' }),
+      Object.freeze({ w: 'white', b: 'black', anchor: 'black', friend: 'white' }),
     );
 
     const result = readTarget(topology, state);
