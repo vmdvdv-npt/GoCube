@@ -71,9 +71,6 @@ const DEFAULT_MAX_EXCLUSIVE_LIBERTIES = 5;
 const comparePoints = (left: PointId, right: PointId): number =>
   left < right ? -1 : left > right ? 1 : 0;
 
-const compareStrings = (left: string, right: string): number =>
-  left < right ? -1 : left > right ? 1 : 0;
-
 const sortedPoints = (points: Iterable<PointId>): readonly PointId[] =>
   Object.freeze([...points].sort(comparePoints));
 
@@ -362,7 +359,9 @@ export const analyzeSimpleSemeai = (
     return unresolvedResult(suppliedLeft, suppliedRight, fallbackLiberties, 'stale-group');
   }
 
-  const sharedSet = new Set(currentLeft.liberties.filter((point) => currentRight.liberties.includes(point)));
+  const sharedSet = new Set(
+    currentLeft.liberties.filter((point) => currentRight.liberties.includes(point)),
+  );
   const liberties: SimpleSemeaiLibertyCounts = Object.freeze({
     leftExclusive: sortedPoints(currentLeft.liberties.filter((point) => !sharedSet.has(point))),
     rightExclusive: sortedPoints(currentRight.liberties.filter((point) => !sharedSet.has(point))),
