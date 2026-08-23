@@ -1,4 +1,4 @@
-import type { EndgameClassification } from './EndgameClassifier';
+import type { EndgameClassification, GroupStatus } from './EndgameClassifier';
 import { buildEndgameGraph } from './EndgameGraphCore';
 import type { BoardOccupancy, GameState, StoneColor } from '../game/types';
 import type { PointId, Topology } from '../topology/Topology';
@@ -10,12 +10,19 @@ export interface ResolvedRegion {
   readonly points: readonly PointId[];
   readonly borderingColors: readonly StoneColor[];
   readonly borderingGroups: readonly string[];
+  /** True when at least one point in this empty region is adjacent to a classified seki stone. */
+  readonly touchesSeki: boolean;
   readonly owner: TerritoryOwner;
 }
 
 export interface TerritoryResolution {
   readonly regions: readonly ResolvedRegion[];
   readonly regionByPoint: ReadonlyMap<PointId, string>;
+}
+
+interface VirtualScoringView {
+  readonly board: BoardOccupancy;
+  readonly statuses: ReadonlyMap<PointId, GroupStatus>;
 }
 
 const occupancyAt = (
@@ -29,12 +36,12 @@ const occupancyAt = (
   return occupancy;
 };
 
-const buildVirtualBoard = (
+const buildVirtualScoringView = (
   state: GameState,
   classification: EndgameClassification,
   topology: Topology,
-): BoardOccupancy => {
-  const statuses = new Map<PointId, 'alive' | 'dead' | 'seki'>();
+): VirtualScoringView => {
+  const statuses = new Map<PointId, GroupStatus>();
 
   for (const group of classification) {
     for (const point of group.points) {
@@ -62,7 +69,10 @@ const buildVirtualBoard = (
     if (statuses.get(point) === 'dead') virtualBoard[point] = 'empty';
   }
 
-  return Object.freeze(virtualBoard);
+  return Object.freeze({
+    board: Object.freeze(virtualBoard),
+    statuses,
+  });
 };
 
 const ownerFromColors = (colors: readonly StoneColor[]): TerritoryOwner => {
@@ -70,28 +80,43 @@ const ownerFromColors = (colors: readonly StoneColor[]): TerritoryOwner => {
   return colors[0] === 'black' ? 'BLACK' : 'WHITE';
 };
 
+const regionTouchesSeki = (
+  points: readonly PointId[],
+  statuses: ReadonlyMap<PointId, GroupStatus>,
+  topology: Topology,
+): boolean =>
+  points.some((point) =>
+    topology.neighbors(point).some((neighbor) => statuses.get(neighbor) === 'seki'),
+  );
+
 /**
  * Builds topology-neutral territory facts from a final endgame classification.
  *
- * Work 8A intentionally stops at basic ownership. Seki-aware neutrality and
- * scoring handoff are separate downstream work.
+ * Only dead stones are virtually removed. A region touching classified seki is
+ * always neutral; other mixed/no-boundary neutral regions are ordinary dame.
  */
 export const resolveTerritory = (
   state: GameState,
   classification: EndgameClassification,
   topology: Topology,
 ): TerritoryResolution => {
-  const virtualBoard = buildVirtualBoard(state, classification, topology);
+  const { board: virtualBoard, statuses } = buildVirtualScoringView(
+    state,
+    classification,
+    topology,
+  );
   const graph = buildEndgameGraph(virtualBoard, topology);
   const regionByPoint = new Map<PointId, string>();
 
   const regions = graph.emptyRegions.map((region): ResolvedRegion => {
+    const touchesSeki = regionTouchesSeki(region.points, statuses, topology);
     const resolved = Object.freeze({
       key: region.key,
       points: Object.freeze([...region.points]),
       borderingColors: Object.freeze([...region.boundaryColors]),
       borderingGroups: Object.freeze([...region.boundaryGroups]),
-      owner: ownerFromColors(region.boundaryColors),
+      touchesSeki,
+      owner: touchesSeki ? ('NEUTRAL' as const) : ownerFromColors(region.boundaryColors),
     });
 
     for (const point of resolved.points) regionByPoint.set(point, resolved.key);
