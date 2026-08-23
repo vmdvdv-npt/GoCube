@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { GameEngine } from '../../game/GameEngine';
 import { LinearHistory } from '../../history/LinearHistory';
+import { controlledExpectedGroups } from './ControlledEndgameGenerator';
 import { LocalAnalysisClient } from './LocalAnalysisClient';
 import {
+  CONTROLLED_ENDGAME_TEST_CASE_VARIANT,
   createTestCaseTopology,
   LIVE_ENDGAME_TEST_CASE_VARIANT,
   TestCaseReplayService,
@@ -166,7 +168,7 @@ describe('TestCaseReplayService', () => {
     { topology: 'torus' as const, size: 9, payload: 271828 },
     { topology: 'cube' as const, size: 5, payload: 161803 },
     { topology: 'cube' as const, size: 2, payload: 42 },
-  ])('creates manual endgame Test IDs as full legal late-game positions', async (shape) => {
+  ])('creates manual endgame Test IDs with guaranteed classifier control groups', async (shape) => {
     const service = new TestCaseReplayService();
     const identity = service.identityForGenerated(
       'synthetic-endgame',
@@ -174,21 +176,55 @@ describe('TestCaseReplayService', () => {
       shape.size,
       shape.payload,
     );
-    expect(identity.variant).toBe(LIVE_ENDGAME_TEST_CASE_VARIANT);
+    expect(identity.variant).toBe(CONTROLLED_ENDGAME_TEST_CASE_VARIANT);
 
     const generated = await service.createFromIdentity(identity, false);
     const topology = createTestCaseTopology(identity);
-    const replayed = await replayCommands(service, generated.testId);
+    const expected = controlledExpectedGroups(generated);
     const minimumOccupied = Math.max(6, Math.floor(topology.points().length * 0.25));
+    const dead = expected.filter((group) => group.role === 'mandatory-dead');
+    const alive = expected.filter((group) => group.role === 'control-alive');
+    const unresolved = expected.filter((group) => group.role === 'intentional-unresolved');
 
-    expect(generated.loadStrategy).toBe('replay-commands');
-    expect(generated.commands.length).toBeGreaterThan(0);
+    expect(generated.loadStrategy).toBe('snapshot');
+    expect(generated.commands).toHaveLength(0);
     expect(generated.state.phase).toBe('playing');
-    expect(generated.scenario).toBe('full-endgame');
-    expect(generated.tags).toContain('full-position');
+    expect(generated.scenario).toBe('controlled-mixed-endgame');
+    expect(generated.tags).toEqual(expect.arrayContaining([
+      'full-position',
+      'game-like-background',
+      'mandatory-dead',
+      'control-alive',
+      'intentional-unresolved',
+      'topology-specific-contact',
+    ]));
     expect(occupiedCount(generated.state.board)).toBeGreaterThanOrEqual(minimumOccupied);
-    expect(replayed.replayed).toEqual(generated.state);
+    expect(dead.length).toBeGreaterThanOrEqual(1);
+    expect(alive).toHaveLength(1);
+    expect(unresolved.length).toBeGreaterThanOrEqual(2);
+    expect(dead.every((group) => group.expected === 'dead')).toBe(true);
+    expect(alive.every((group) => group.expected === 'alive')).toBe(true);
+    expect(unresolved.every((group) => group.expected === 'unresolved')).toBe(true);
     expect((await finishTwoPasses(generated.testId)).phase).toBe('endgame');
+    expect(await service.createFromId(generated.testId, false)).toEqual(generated);
+  }, 30_000);
+
+  it('keeps the previous full-legal manual endgame variant replayable by its existing Test ID', async () => {
+    const service = new TestCaseReplayService();
+    const identity = makeTestCaseIdentity({
+      source: 'synthetic-endgame',
+      topology: 'torus',
+      size: 9,
+      variant: LIVE_ENDGAME_TEST_CASE_VARIANT,
+      transform: 0,
+      payload: 271828,
+    });
+    const generated = await service.createFromIdentity(identity, false);
+    const replayed = await replayCommands(service, generated.testId);
+
+    expect(generated.scenario).toBe('full-endgame');
+    expect(generated.loadStrategy).toBe('replay-commands');
+    expect(replayed.replayed).toEqual(generated.state);
   });
 
   it('keeps topology-specific historical synthetic variants explicitly encoded and replayable', async () => {
