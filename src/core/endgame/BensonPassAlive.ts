@@ -3,7 +3,7 @@ import type { EndgameGraph } from './EndgameGraphCore';
 import type { BoardOccupancy, StoneColor } from '../game/types';
 import type { PointId, Topology } from '../topology/Topology';
 
-export const BENSON_PASS_ALIVE_ALGORITHM = 'benson-pass-alive-v2';
+export const BENSON_PASS_ALIVE_ALGORITHM = 'benson-pass-alive-v1';
 
 const REQUIRED_VITAL_REGION_COUNT = 2;
 
@@ -147,7 +147,7 @@ export const proveBensonPassAlive = (
     const removedGroups = new Set(groupsToRemove);
     for (const groupKey of removedGroups) remainingGroups.delete(groupKey);
 
-    for (const regionKey of [...remainingRegions]) {
+    for (const regionKey of remainingRegions) {
       const region = regionsByKey.get(regionKey);
       if (!region) throw new Error(`Missing Benson region: ${regionKey}`);
       if (region.boundaryGroups.some((groupKey) => removedGroups.has(groupKey))) {
