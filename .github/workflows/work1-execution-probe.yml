@@ -36,8 +36,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          docker pull rockmanray/gorzone
-          docker image inspect rockmanray/gorzone --format '{{json .RepoDigests}}'
+          docker buildx imagetools inspect rockmanray/gorzone
 
       - name: Pinned source revisions are fetchable
         shell: bash
