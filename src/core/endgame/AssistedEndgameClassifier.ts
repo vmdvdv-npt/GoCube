@@ -21,6 +21,7 @@ import {
 import { buildEndgameGraph } from './EndgameGraphCore';
 import { endgameGroupId } from './EndgameGroupIdentity';
 import { ManualEndgameClassifier } from './ManualEndgameClassifier';
+import { verifyTacticalDead, type TacticalDeadProof } from './TacticalReader';
 import type { StoneColor } from '../game/types';
 
 const COLORS: readonly StoneColor[] = Object.freeze(['black', 'white']);
@@ -29,10 +30,10 @@ const COLORS: readonly StoneColor[] = Object.freeze(['black', 'white']);
  * Conservative assisted classifier.
  *
  * It proves unconditional/pass-alive groups using Benson's fixed-point
- * criterion, sends only narrow single-liberty dead candidates through a
- * separate strict verifier, and resolves seki only for a closed mutual
- * two-liberty proof. Any group not proven by one of those boundaries remains
- * unresolved.
+ * criterion, preserves the narrow sealed single-liberty proof, adds bounded
+ * tactical forced-capture proofs for contested low-liberty strings, and
+ * resolves seki only for the existing closed mutual two-liberty proof. Any
+ * group not proven by one of those boundaries remains unresolved.
  */
 export class AssistedEndgameClassifier implements EndgameClassifier {
   private readonly manual = new ManualEndgameClassifier();
@@ -74,9 +75,44 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
       if (verification.proven) deadProofs.set(candidate.groupKey, verification.evidence);
     }
 
+    const safeGroupPoints = Object.freeze(
+      [...passAliveGroupKeys]
+        .sort()
+        .flatMap((groupKey) => graph.stringsByKey.get(groupKey)?.points ?? []),
+    );
+    const tacticalDeadProofs = new Map<string, TacticalDeadProof>();
+    for (const group of graph.strings) {
+      if (
+        passAliveGroupKeys.has(group.key) ||
+        deadProofs.has(group.key) ||
+        group.liberties.length === 0 ||
+        group.liberties.length > 3
+      ) {
+        continue;
+      }
+
+      const opponent: StoneColor = group.color === 'black' ? 'white' : 'black';
+      const tacticalFrontier = [...group.points, ...group.liberties];
+      const contested = tacticalFrontier.some((point) =>
+        context.topology
+          .neighbors(point)
+          .some((neighbor) => context.state.board[neighbor] === opponent),
+      );
+      if (!contested) continue;
+
+      const verification = verifyTacticalDead(
+        group,
+        context.state,
+        context.topology,
+        safeGroupPoints,
+      );
+      if (verification.proven) tacticalDeadProofs.set(group.key, verification.evidence);
+    }
+
     const alreadyResolvedGroupKeys = new Set<string>([
       ...passAliveGroupKeys,
       ...deadProofs.keys(),
+      ...tacticalDeadProofs.keys(),
     ]);
     const sekiProofs = new Map<string, AutomaticSekiProof>();
     for (const candidate of generateSekiCandidates(
@@ -119,6 +155,16 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
             status: 'dead' as const,
             source: 'automatic' as const,
             evidence: Object.freeze({ ...deadProof }),
+          });
+        }
+
+        const tacticalDeadProof = tacticalDeadProofs.get(groupKey);
+        if (tacticalDeadProof) {
+          return Object.freeze({
+            points: proposal.points,
+            status: 'dead' as const,
+            source: 'automatic' as const,
+            evidence: Object.freeze({ ...tacticalDeadProof }),
           });
         }
 
