@@ -1,4 +1,9 @@
 import type { RuleSet } from '../core/game/types';
+import {
+  generateLiveTestCase,
+  type LiveTestGeneratedCase,
+  type LiveTestGeneratorType,
+} from '../core/endgame/testlab/LiveTestGenerators';
 import type { GameRepository, SavedGame } from '../core/persistence/GameRepository';
 import {
   GAME_SESSION_SNAPSHOT_VERSION,
@@ -36,6 +41,11 @@ export interface SavedGameSummary extends NewGameSettings {
 export type ActiveGame =
   | Readonly<{ gameMode: 'torus-2d'; controller: TorusGameController }>
   | Readonly<{ gameMode: 'cube-2d'; controller: Cube2DGameController }>;
+
+export interface GeneratedActiveGame {
+  readonly activeGame: ActiveGame;
+  readonly generation: LiveTestGeneratedCase;
+}
 
 export interface ApplicationSavedState {
   readonly version: typeof APPLICATION_SAVE_VERSION;
@@ -179,6 +189,36 @@ export class GameApplication {
     });
 
     return active;
+  }
+
+  async createGeneratedGame(
+    settings: NewGameSettings,
+    generator: LiveTestGeneratorType,
+    seed: string | number,
+  ): Promise<GeneratedActiveGame> {
+    this.assertSettings(settings);
+    const generation = generateLiveTestCase({
+      generator,
+      topology: settings.gameMode === 'cube-2d' ? 'cube' : 'torus',
+      size: settings.size,
+      seed: String(seed),
+    });
+    const activeGame = await this.createNewGame(settings);
+
+    for (const command of generation.commands) {
+      const result = command.type === 'pass'
+        ? await activeGame.controller.pass()
+        : await activeGame.controller.placeStone(command.point);
+      if (!result.accepted) {
+        throw new Error(
+          `Generated ${generator} replay was rejected at move ${String(
+            result.viewModel.moveNumber + 1,
+          )}: ${String(result.reason)}`,
+        );
+      }
+    }
+
+    return Object.freeze({ activeGame, generation });
   }
 
   async restoreSavedGame(): Promise<ActiveGame | null> {
