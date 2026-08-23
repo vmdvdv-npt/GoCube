@@ -211,7 +211,7 @@ const transformedShape = (
 
 const freezeBoard = (
   topology: Topology,
-  placements: readonly Readonly<{ point: PointId; color: StoneColor }>[],
+  placements: ReadonlyArray<Readonly<{ point: PointId; color: StoneColor }>>,
 ): BoardOccupancy => {
   const board: Record<PointId, PointOccupancy> = {};
   for (const point of topology.points()) board[point] = 'empty';
