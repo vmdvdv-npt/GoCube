@@ -24,7 +24,6 @@ type Torus2DEndgameShape = Readonly<{
   points: readonly PointId[];
   edges: readonly Readonly<{ from: PointId; to: PointId }>[];
 }>;
-type AxisDirection = Readonly<{ x: -1 | 0 | 1; y: -1 | 0 | 1 }>;
 
 type Coordinate = Readonly<{ x: number; y: number }>;
 
@@ -48,13 +47,10 @@ const contourColor = (status: string | null): string => {
   return '#a8e85e';
 };
 
-const axisDirection = (from: Coordinate, to: Coordinate): AxisDirection => {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  if (Math.abs(dx) >= Math.abs(dy)) {
-    return { x: Math.sign(dx) as -1 | 0 | 1, y: 0 };
-  }
-  return { x: 0, y: Math.sign(dy) as -1 | 0 | 1 };
+const contourPaintPriority = (status: string | null): number => {
+  if (status === 'dead') return 0;
+  if (status === 'alive') return 1;
+  return 2;
 };
 
 export class Torus2DRenderer extends BaseTorus2DRenderer {
@@ -163,11 +159,8 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
     radius: number,
   ): void {
     const document = this.navigationRoot.ownerDocument;
-    const directionsByPoint = new Map<PointId, AxisDirection[]>();
     const visibleEdges: Array<
       Readonly<{
-        fromId: PointId;
-        toId: PointId;
         from: Torus2DScenePoint;
         to: Torus2DScenePoint;
       }>
@@ -179,15 +172,7 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
       if (!from || !to) continue;
       const distance = Math.hypot(to.x - from.x, to.y - from.y);
       if (distance > scene.spacing * 1.5) continue;
-
-      const direction = axisDirection(from, to);
-      const fromDirections = directionsByPoint.get(edge.from) ?? [];
-      const toDirections = directionsByPoint.get(edge.to) ?? [];
-      fromDirections.push(direction);
-      toDirections.push({ x: -direction.x as -1 | 0 | 1, y: -direction.y as -1 | 0 | 1 });
-      directionsByPoint.set(edge.from, fromDirections);
-      directionsByPoint.set(edge.to, toDirections);
-      visibleEdges.push({ fromId: edge.from, toId: edge.to, from, to });
+      visibleEdges.push({ from, to });
     }
 
     for (const edge of visibleEdges) {
@@ -199,47 +184,9 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
       target.appendChild(line);
     }
 
-    const filletSize = radius * 0.42;
-    for (const pointId of group.points) {
-      const point = pointsById.get(pointId);
-      if (!point) continue;
-      const uniqueDirections = Array.from(
-        new Map(
-          (directionsByPoint.get(pointId) ?? []).map((direction) => [
-            `${direction.x},${direction.y}`,
-            direction,
-          ]),
-        ).values(),
-      );
-
-      for (let first = 0; first < uniqueDirections.length; first += 1) {
-        for (let second = first + 1; second < uniqueDirections.length; second += 1) {
-          const a = uniqueDirections[first];
-          const b = uniqueDirections[second];
-          if (!a || !b || a.x * b.x + a.y * b.y !== 0) continue;
-
-          const corner = {
-            x: point.x + (a.x + b.x) * radius,
-            y: point.y + (a.y + b.y) * radius,
-          };
-          const tangentA = {
-            x: corner.x + a.x * filletSize,
-            y: corner.y + a.y * filletSize,
-          };
-          const tangentB = {
-            x: corner.x + b.x * filletSize,
-            y: corner.y + b.y * filletSize,
-          };
-          const fillet = document.createElementNS(SVG_NS, 'path');
-          setAttributes(fillet, {
-            d: `M ${tangentA.x} ${tangentA.y} L ${corner.x} ${corner.y} L ${tangentB.x} ${tangentB.y} Q ${corner.x} ${corner.y} ${tangentA.x} ${tangentA.y} Z`,
-            fill: 'currentColor',
-          });
-          target.appendChild(fillet);
-        }
-      }
-    }
-
+    // A round-ended capsule for every real edge plus one circle at every stone is
+    // already the exact smooth union we need. Extra corner patches create local
+    // bulges and duplicate inner bands when the outline is produced by subtraction.
     for (const pointId of group.points) {
       const point = pointsById.get(pointId);
       if (!point) continue;
@@ -370,11 +317,22 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
       const outlineWidth = 3.7;
       const sekiRegions = buildEndgameSekiRegions(overlay.groups, new TorusTopology(scene.size));
       const sekiGroupIds = new Set(sekiRegions.flatMap((region) => region.groupIds));
+      const regularGroups = overlay.groups
+        .map((group, index) => ({
+          group,
+          index,
+          status: group.status === 'unknown' ? null : group.status,
+        }))
+        .filter(({ group }) => !sekiGroupIds.has(group.id))
+        .sort(
+          (left, right) =>
+            contourPaintPriority(left.status) - contourPaintPriority(right.status) ||
+            left.index - right.index,
+        );
 
-      overlay.groups.forEach((group, index) => {
-        if (sekiGroupIds.has(group.id)) return;
-
-        const status = group.status === 'unknown' ? null : group.status;
+      // Paint red first. Any coincident unresolved or seki contour is then one
+      // visible non-red stroke, while the red contour naturally continues as a branch.
+      for (const { group, index, status } of regularGroups) {
         const color = contourColor(status);
         const maskId = `torus-endgame-outline-mask-${index}`;
 
@@ -398,7 +356,7 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
           maskId,
         );
         groupsLayer.appendChild(groupLayer);
-      });
+      }
 
       sekiRegions.forEach((region, index) => {
         const maskId = `torus-endgame-seki-outline-mask-${index}`;
