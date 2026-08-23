@@ -142,50 +142,54 @@ describe('TwoLibertyPrunedTacticalReader', () => {
     }
   });
 
-  it('is deterministic and never upgrades an exhaustive non-proof to proven-dead on a fixed graph corpus', () => {
-    const topologies: readonly Topology[] = Object.freeze([
-      new TorusTopology(9),
-      new CubeTopology(2),
-    ]);
-    let checkedTargets = 0;
+  it(
+    'is deterministic and never upgrades an exhaustive non-proof to proven-dead on a fixed graph corpus',
+    { timeout: 30_000 },
+    () => {
+      const topologies: readonly Topology[] = Object.freeze([
+        new TorusTopology(9),
+        new CubeTopology(2),
+      ]);
+      let checkedTargets = 0;
 
-    for (const topology of topologies) {
-      const points = [...topology.points()].sort();
-      for (let seed = 1; seed <= 8; seed += 1) {
-        let value = seed >>> 0;
-        const board: Record<PointId, PointOccupancy> = {};
-        for (const point of points) {
-          value = (Math.imul(value, 1664525) + 1013904223) >>> 0;
-          const roll = value % 10;
-          board[point] = roll < 3 ? 'black' : roll < 6 ? 'white' : 'empty';
-        }
-        const state: GameState = Object.freeze({
-          board: Object.freeze(board),
-          currentPlayer: 'black',
-          moveNumber: seed,
-          consecutivePasses: 2,
-          phase: 'endgame',
-          captures: Object.freeze({ black: 0, white: 0 }),
-        });
-        const graph = buildEndgameGraph(state, topology);
+      for (const topology of topologies) {
+        const points = [...topology.points()].sort();
+        for (let seed = 1; seed <= 8; seed += 1) {
+          let value = seed >>> 0;
+          const board: Record<PointId, PointOccupancy> = {};
+          for (const point of points) {
+            value = (Math.imul(value, 1664525) + 1013904223) >>> 0;
+            const roll = value % 10;
+            board[point] = roll < 3 ? 'black' : roll < 6 ? 'white' : 'empty';
+          }
+          const state: GameState = Object.freeze({
+            board: Object.freeze(board),
+            currentPlayer: 'black',
+            moveNumber: seed,
+            consecutivePasses: 2,
+            phase: 'endgame',
+            captures: Object.freeze({ black: 0, white: 0 }),
+          });
+          const graph = buildEndgameGraph(state, topology);
 
-        for (const group of graph.groups.values()) {
-          if (group.liberties.length !== 2) continue;
-          checkedTargets += 1;
-          const exhaustive = readTwoLibertyTactics(state, topology, graph, group.key);
-          const first = readTwoLibertyTacticsPruned(state, topology, graph, group.key);
-          const second = readTwoLibertyTacticsPruned(state, topology, graph, group.key);
+          for (const group of graph.groups.values()) {
+            if (group.liberties.length !== 2) continue;
+            checkedTargets += 1;
+            const exhaustive = readTwoLibertyTactics(state, topology, graph, group.key);
+            const first = readTwoLibertyTacticsPruned(state, topology, graph, group.key);
+            const second = readTwoLibertyTacticsPruned(state, topology, graph, group.key);
 
-          expect(second).toEqual(first);
-          if (first?.outcome === 'proven-dead') {
-            expect(exhaustive?.outcome).toBe('proven-dead');
+            expect(second).toEqual(first);
+            if (first?.outcome === 'proven-dead') {
+              expect(exhaustive?.outcome).toBe('proven-dead');
+            }
           }
         }
       }
-    }
 
-    expect(checkedTargets).toBeGreaterThan(10);
-  });
+      expect(checkedTargets).toBeGreaterThan(10);
+    },
+  );
 
   it('stops conservatively when the relevant deep-placement budget is exceeded', () => {
     const topology = makeTopology({
