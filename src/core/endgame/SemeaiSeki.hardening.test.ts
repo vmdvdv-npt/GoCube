@@ -4,6 +4,7 @@ import type { PointId, Topology } from '../topology/Topology';
 import { AssistedEndgameClassifier } from './AssistedEndgameClassifier';
 import { buildEndgameGraph, type EndgameStoneString } from './EndgameGraphCore';
 import { BASIC_SEKI_ALGORITHM, analyzeBasicSeki, type BasicSekiResult } from './SekiSearch';
+import { SIMPLE_SEMEAI_ALGORITHM, analyzeSimpleSemeai } from './SemeaiCore';
 import {
   BOUNDED_SEMEAI_ALGORITHM,
   analyzeBoundedSemeai,
@@ -89,21 +90,27 @@ const stableLeftRace = (
     ['L', 'R'],
     ['L', 's'],
     ['R', 's'],
-    ['s', 'B'],
-    ['B', 'b'],
     ['L', 'l'],
-    ['l', 'W'],
-    ['W', 'w'],
     ['OUT1', 'OUT2'],
   ]);
-  const state = makeState(topology, {
-    L: 'black',
-    R: 'white',
-    B: 'black',
-    W: 'white',
-    OUT1: far,
+  return Object.freeze({
+    topology,
+    state: makeState(topology, { L: 'black', R: 'white', OUT1: far }),
   });
-  return Object.freeze({ topology, state });
+};
+
+const simpleStableLeftRace = (): Readonly<{ topology: Topology; state: GameState }> => {
+  const topology = new GraphTopology('work7d-simple-stable-left', [
+    ['L', 'R'],
+    ['L', 'l1'],
+    ['L', 'l2'],
+    ['R', 'r'],
+    ['OUT1', 'OUT2'],
+  ]);
+  return Object.freeze({
+    topology,
+    state: makeState(topology, { L: 'black', R: 'white' }),
+  });
 };
 
 const firstPlayerRace = (): Readonly<{ topology: Topology; state: GameState }> => {
@@ -111,29 +118,6 @@ const firstPlayerRace = (): Readonly<{ topology: Topology; state: GameState }> =
     ['L', 'R'],
     ['L', 's'],
     ['R', 's'],
-    ['s', 'B'],
-    ['B', 'b'],
-    ['s', 'W'],
-    ['W', 'w'],
-    ['OUT1', 'OUT2'],
-  ]);
-  const state = makeState(topology, {
-    L: 'black',
-    R: 'white',
-    B: 'black',
-    W: 'white',
-  });
-  return Object.freeze({ topology, state });
-};
-
-const koRace = (): Readonly<{ topology: Topology; state: GameState }> => {
-  const topology = new GraphTopology('work7d-ko', [
-    ['L', 'R'],
-    ['L', 'l1'],
-    ['l1', 'le1'],
-    ['L', 'l2'],
-    ['l2', 'le2'],
-    ['R', 'c'],
     ['OUT1', 'OUT2'],
   ]);
   return Object.freeze({
@@ -158,6 +142,22 @@ const basicSeki = (
   });
 };
 
+const koDependentSekiCandidate = (): Readonly<{ topology: Topology; state: GameState }> => {
+  const topology = new GraphTopology('work7d-ko-dependent-seki-candidate', [
+    ['L', 's1'],
+    ['R', 's1'],
+    ['L', 's2'],
+    ['R', 's2'],
+    ['L', 'A'],
+    ['A', 'k'],
+    ['OUT1', 'OUT2'],
+  ]);
+  return Object.freeze({
+    topology,
+    state: makeState(topology, { L: 'black', R: 'white', A: 'white' }),
+  });
+};
+
 const semeaiExploredNodes = (result: BoundedSemeaiResult): readonly number[] =>
   Object.freeze([
     result.leftFirst.search?.exploredNodes ?? 0,
@@ -175,7 +175,7 @@ const sekiExploredNodes = (result: BasicSekiResult): readonly number[] =>
   );
 
 describe('Work 7D semeai / seki hardening and classifier integration', () => {
-  it('keeps stable semeai proof deterministic and inside the production-size node gate', () => {
+  it('keeps stable bounded semeai proof deterministic and inside the production node gate', () => {
     const { topology, state } = stableLeftRace();
     const left = targetAt(state, topology, 'L');
     const right = targetAt(state, topology, 'R');
@@ -196,7 +196,7 @@ describe('Work 7D semeai / seki hardening and classifier integration', () => {
     }
   });
 
-  it('preserves the complete local semeai proof after an irrelevant far-away mutation', () => {
+  it('preserves the complete local bounded-semeai proof after an irrelevant far-away mutation', () => {
     const original = stableLeftRace('empty');
     const mutated = stableLeftRace('black');
 
@@ -218,7 +218,7 @@ describe('Work 7D semeai / seki hardening and classifier integration', () => {
     expect(originalResult).toEqual(mutatedResult);
   });
 
-  it('has an exact deterministic semeai node threshold and fails closed one node below it', () => {
+  it('has an exact deterministic bounded-semeai node threshold and fails closed one node below it', () => {
     const { topology, state } = stableLeftRace();
     const left = targetAt(state, topology, 'L');
     const right = targetAt(state, topology, 'R');
@@ -238,7 +238,7 @@ describe('Work 7D semeai / seki hardening and classifier integration', () => {
     expect([below.leftFirst.outcome, below.rightFirst.outcome]).toContain('unknown-budget');
   });
 
-  it('promotes only the stable semeai loser to dead, never the winner to alive', async () => {
+  it('promotes only the stable bounded-semeai loser to dead, never the winner to alive', async () => {
     const { topology, state } = stableLeftRace();
     const result = await analyzeState(topology, state);
     const left = result.find((proposal) => proposal.points.includes('L'));
@@ -252,18 +252,51 @@ describe('Work 7D semeai / seki hardening and classifier integration', () => {
       evidence: {
         algorithm: BOUNDED_SEMEAI_ALGORITHM,
         proof: 'stable-loser-both-first-player-orders',
-        winnerGroupKey: 'L',
-        loserGroupKey: 'R',
+        winnerCrucialStones: ['L'],
+        loserCrucialStones: ['R'],
         leftFirst: { outcome: 'left-wins' },
         rightFirst: { outcome: 'left-wins' },
       },
     });
   });
 
-  it('does not promote a first-player-dependent semeai through the classifier', async () => {
-    const { topology, state } = firstPlayerRace();
+  it('integrates the cheap Work 7A stable simple-semeai proof without inferring winner life', async () => {
+    const { topology, state } = simpleStableLeftRace();
+    const leftTarget = targetAt(state, topology, 'L');
+    const rightTarget = targetAt(state, topology, 'R');
+    const direct = analyzeSimpleSemeai(leftTarget, rightTarget, state, topology, {
+      maxExclusiveLiberties: 3,
+    });
     const result = await analyzeState(topology, state);
 
+    expect(direct.algorithm).toBe(SIMPLE_SEMEAI_ALGORITHM);
+    expect(direct.outcome).toBe('left-wins');
+    expect(result.find((proposal) => proposal.points.includes('L'))).toEqual({
+      points: ['L'],
+      status: 'unresolved',
+    });
+    expect(result.find((proposal) => proposal.points.includes('R'))).toMatchObject({
+      status: 'dead',
+      source: 'automatic',
+      evidence: {
+        algorithm: SIMPLE_SEMEAI_ALGORITHM,
+        proof: 'stable-simple-loser-both-first-player-orders',
+      },
+    });
+  });
+
+  it('does not promote a first-player-dependent semeai through the classifier', async () => {
+    const { topology, state } = firstPlayerRace();
+    const direct = analyzeBoundedSemeai(
+      targetAt(state, topology, 'L'),
+      targetAt(state, topology, 'R'),
+      state,
+      topology,
+      { maxNodes: 256 },
+    );
+    const result = await analyzeState(topology, state);
+
+    expect(direct.outcome).toBe('first-player-dependent');
     expect(result.find((proposal) => proposal.points.includes('L'))).toEqual({
       points: ['L'],
       status: 'unresolved',
@@ -274,14 +307,13 @@ describe('Work 7D semeai / seki hardening and classifier integration', () => {
     });
   });
 
-  it('does not promote a ko-dependent semeai through the classifier', async () => {
-    const { topology, state } = koRace();
-    const direct = analyzeBoundedSemeai(
+  it('does not promote a ko-dependent basic-seki candidate through the classifier', async () => {
+    const { topology, state } = koDependentSekiCandidate();
+    const direct = analyzeBasicSeki(
       targetAt(state, topology, 'L'),
       targetAt(state, topology, 'R'),
       state,
       topology,
-      { maxNodes: 256 },
     );
     const result = await analyzeState(topology, state);
 
