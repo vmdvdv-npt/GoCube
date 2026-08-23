@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "composite": false
+  },
+  "include": [
+    "src/core/endgame/**/*.ts",
+    "src/core/game/**/*.ts",
+    "src/core/rules/**/*.ts",
+    "src/core/topology/**/*.ts"
+  ]
+}
