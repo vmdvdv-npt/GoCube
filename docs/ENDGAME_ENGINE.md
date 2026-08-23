@@ -2,19 +2,17 @@
 
 ## Статус
 
-Этот файл является единственным рабочим документом для активной разработки Endgame Engine в ветке `engine2`.
+`docs/ENDGAME_ENGINE.md` — единственный рабочий документ активной разработки Endgame Engine в ветке `engine2`.
 
-Ветка `engine2` создана **от `main`**, независимо от ветки `engine`, чтобы позже сравнить два подхода на одинаковом corpus и одинаковых метриках.
+`engine2` создана **от `main`**, независимо от ветки `engine`. Цель — построить второй вариант движка и позднее сравнить оба подхода на одном independent corpus и одинаковых метриках.
 
-Цель `engine2` — проверить альтернативный путь: не адаптировать внешний tsumego solver как основу, а построить небольшой собственный graph-native reader, вдохновлённый архитектурой классических Go engines и литературой.
+Направление `engine2`: небольшой собственный **graph-native GNU-Go-inspired endgame reader**, а не адаптация внешнего tsumego solver как production foundation.
 
-GNU Go используется только как алгоритмический/reference source. GPL-код GNU Go в production не копируется и не переносится.
+GNU Go используется только как источник общедоступных алгоритмических идей и decomposition. GPL-код GNU Go в production не копируется и не переносится.
 
 ---
 
-# 1. Главный принцип
-
-Движок должен доказывать результат, а не угадывать его.
+# 1. Главный invariant: proof, а не guess
 
 ```text
 heuristic != proof
@@ -29,35 +27,31 @@ failure to find escape != proof of death
 UNRESOLVED
 ```
 
-Это нормальный результат.
-
-Для production automatic status важнее precision, чем coverage.
+Для automatic `alive / dead / seki` сначала требуется precision, затем coverage, затем cost.
 
 ---
 
 # 2. Только graph topology
 
-Все correctness-зависимые алгоритмы работают только через:
+Correctness-зависимый Engine работает только через:
 
 ```text
 Topology.points()
 Topology.neighbors(PointId)
 ```
 
-Запрещено строить life/death semantics через rectangular geometry, edge/corner flags или renderer coordinates.
+Life/death logic не использует renderer coordinates, rectangular edge/corner flags или face geometry.
 
-Поэтому:
+Следствия:
 
 - Torus seam — обычное graph adjacency;
 - Cube edge — обычное graph adjacency;
 - string через несколько faces остаётся одной connected component;
-- empty region и eye space могут проходить через seam/edge без special cases.
+- empty/eye region может переходить через seam/edge без special cases.
 
 ---
 
-# 3. Выбранное направление engine2
-
-Рабочая последовательность:
+# 3. Текущий pipeline engine2
 
 ```text
 Position
@@ -68,69 +62,72 @@ strings / liberties / empty regions / relations
   ↓
 Benson / pass-alive
   ↓
-Tactical Reader for 1–4 liberties
+Specialized Tactical Reading
+  1 liberty → strict proof
+  2 liberties → reduction facts, currently conservative
+  3–4 liberties → later
   ↓
 Eye-space min/max + vital points
   ↓
-Connection / counter-capture / ladder / net / snapback
+Connection / ladder / net / snapback / sacrifice
   ↓
 Semeai / shared-liberty reading
   ↓
 Bounded deeper AND/OR search
   ↓
-PROVEN_ALIVE / PROVEN_DEAD / PROVEN_SEKI / CRITICAL / UNRESOLVED
+PROVEN_ALIVE / PROVEN_DEAD / PROVEN_SEKI / CRITICAL / KO_DEPENDENT / UNRESOLVED
 ```
 
-Это намеренно не universal monster solver. Исходная задача GoCube проще обычного full-game AI: анализ начинается на почти законченной позиции и должен отвечать о судьбе конкретных групп.
+Engine intentionally does not attempt to become a full Go AI. Input is an almost-finished position, and the task is local fate/proof of groups.
 
 ---
 
 # 4. GNU-Go-inspired decomposition без GNU Go code
 
-Используем идеи разделения на маленькие слои:
+Используются идеи разделения задачи на небольшие independently written layers:
 
-- connected stone string как базовая tactical unit;
-- functional relations между близкими strings;
-- отдельный tactical reading;
-- отдельный eye-space analysis;
-- отдельный connection reading;
-- отдельный semeai layer;
-- только после этого более глубокий search.
+- connected string как базовая tactical unit;
+- liberties и соседние strings;
+- functional connections;
+- tactical attack/defense reading;
+- eye-space analysis;
+- semeai/shared-liberty analysis;
+- deeper search только для оставшихся cases.
 
-Нельзя копировать implementation GNU Go. Допустимо использовать общедоступные алгоритмические идеи, papers, наблюдаемую decomposition и independently written code.
+Никакой implementation GNU Go не копируется.
 
 ---
 
-# 5. Аналитика группы
+# 5. Требуемая аналитика группы
 
-Для каждого string/group постепенно должны быть доступны следующие факты:
+Постепенно Engine должен уметь выдавать:
 
-| Факт | Назначение |
+| Fact | Зачем |
 |---|---|
-| размер | базовая структура |
-| текущие liberties | непосредственная свобода |
-| потенциальные liberties через короткую линию | возможность убежать |
-| соседние enemy strings | counter-capture / semeai |
+| stones / size | identity и структура |
+| current liberties | непосредственная свобода |
+| short potential liberties | escape potential |
+| adjacent enemy strings | capture / counter-capture / semeai |
 | nearby friendly strings | connection |
 | empty regions | eye-space |
 | min/max eyes | proof acceleration |
-| attack points | move ordering / tactical proof |
-| defense points | move ordering / survival proof |
+| attack points | attacker move ordering |
+| defense points | defender move ordering |
 | forced capture | strict dead evidence |
-| forced defense | strict survival evidence |
+| forced defense/survival | strict survival evidence |
 | shared liberties | semeai/seki |
-| ko dependency | unresolved boundary |
-| explored nodes / depth / budget stop | observability |
+| ko dependency | conservative stop |
+| nodes/depth/PV | observability |
 
-Не все поля обязаны существовать в одном mutable object. Это перечень требуемой аналитики, которую могут выдавать разные слои.
+Не обязательно хранить всё в одном mutable object. Разные readers могут выдавать разные доказанные facts.
 
 ---
 
-# 6. Graph Core
+# 6. E2-1 — Endgame Graph Core
 
-Graph Core сам **не определяет alive/dead**.
+Статус: **IMPLEMENTED / INTEGRATED**.
 
-Он строит topology-neutral facts:
+`EndgameGraphCore` строит без классификации:
 
 ```text
 StoneString
@@ -146,121 +143,252 @@ EmptyRegion
   vitalGroups
 
 SharedLiberties
-  opposing groups
-  points
+  opposing groupKeys
+  liberties
 
 FriendlyConnectionCandidate
+  point
   color
-  empty point
-  adjacent friendly groups
+  adjacent friendly groupKeys
 ```
 
-Дополнительно хранится mapping:
+Mappings:
 
 ```text
 PointId -> StoneString
 PointId -> EmptyRegion
 ```
 
-Acceptance:
+Сделано:
 
 - deterministic ordering;
-- полное покрытие logical board;
-- connected components определяются только `Topology.neighbors()`;
-- arbitrary graph edge ведёт себя как обычное соседство;
-- никакой renderer dependency.
+- complete-board guard;
+- strings/liberties;
+- empty regions;
+- boundary/vital relations;
+- shared liberties;
+- direct friendly connection candidates;
+- arbitrary graph-edge test;
+- Torus/Cube-independent semantics;
+- `AssistedEndgameClassifier` использует общий Graph Core вместо собственного parallel extraction.
+
+Benson, current dead proof и current seki proof получают structural facts из этого core.
 
 ---
 
 # 7. Proven Alive
 
-Существующий Benson/pass-alive слой сохраняется как ранний conservative proof.
-
-Он использует общий Graph Core, а не собственный параллельный extraction groups/regions.
-
-Результат:
+Существующий Benson/pass-alive остаётся первым conservative automatic proof:
 
 ```text
 PROVEN_ALIVE
-proof = BENSON_PASS_ALIVE
+algorithm = benson-pass-alive-v1
 ```
 
-Cheap eye heuristics не являются competing source of truth.
+Cheap eye count не является competing source of truth.
 
 ---
 
-# 8. Tactical Reader
+# 8. E2-2 — Strict one-liberty reader
 
-Основная ставка `engine2` — специализированный short reader для групп с малым числом liberties.
+Статус: **IMPLEMENTED / TESTED / CLASSIFIER-INTEGRATED**.
 
-Порядок развития:
-
-```text
-1 liberty
-2 liberties
-3 liberties
-4 liberties
-```
-
-Для каждого класса разрешено иметь отдельное move ordering и specialised pruning, если proof boundary остаётся строгой.
-
-Kill semantics:
+Algorithm:
 
 ```text
-attacker node = OR
-  достаточно одного winning move
-
-defender node = AND
-  все допустимые relevant defenses должны проигрывать
+one-liberty-tactical-reader-v1
 ```
 
-Если хотя бы одна legal defense не исследована и её irrelevance не доказана, `PROVEN_DEAD` запрещён.
+Для target string с ровно одной liberty полный набор **немедленных** defender-first спасений имеет строгую границу:
 
-Crucial stones исходной target structure фиксируются в начале задачи и не теряют identity после defensive extensions.
+1. defender играет в sole liberty — extension и/или connection;
+2. defender одним ходом захватывает соседний attacker string, если этот enemy string сам в atari.
 
-Для **ровно одной liberty** полный набор немедленных defensive moves фиксируется строго:
+Любой другой ход не меняет target и оставляет его немедленно capturable на sole liberty.
 
-1. defender играет в sole liberty — extension/connection;
-2. defender одним ходом захватывает соседний attacker string, если тот сам находится в atari.
+### Attacker-first
 
-Любой другой ход оставляет target с той же единственной liberty и не предотвращает немедленный capture. Это даёт конечный complete defensive set для короткого proof.
+Attacker пробует sole liberty через authoritative `GameEngine`.
 
-Reader прекращает доказательство, если legal defense получает две или больше liberties: это `escape from short proof`, а не `PROVEN_ALIVE`.
+### Defender-first
+
+Каждая legal direct defense проверяется. После неё:
+
+- если target получает 2+ liberties → short proof прекращается как escape;
+- если остаётся 1 liberty → attacker reply проверяется через `GameEngine`;
+- если все direct defenses illegal/immediately killed → defender-first forced kill доказан.
+
+### Automatic DEAD boundary
+
+`PROVEN_DEAD` разрешён только если одновременно:
+
+```text
+attacker-first = definite immediate kill
+AND
+defender-first = every complete immediate defense loses
+```
+
+Если attacker выигрывает первым, но defender первым спасается:
+
+```text
+CRITICAL
+```
+
+Это **не** seki и **не** dead.
+
+### Connection и counter-capture
+
+E2-2 уже учитывает:
+
+- connection через sole liberty;
+- one-move counter-capture соседнего attacker string в atari.
+
+Более глубокие connection/counter-capture sequences относятся к следующим stages.
 
 ---
 
-# 9. Оба порядка первого хода
+# 9. Ko/history boundary
 
-Каждая спорная local position должна уметь проверяться минимум в двух постановках:
+Ko нельзя превращать в guess.
+
+Для второго ply short line предыдущая board известна, поэтому `GameEngine` получает точный simple-ko context:
 
 ```text
-attacker first
-defender first
+previousBoard = board before defender move
 ```
 
-Интерпретация raw facts:
+Для **root first ply** endgame analysis context пока не содержит фактическую preceding board. Поэтому введён conservative guard.
 
-| attacker first | defender first | raw result |
-|---|---|---|
-| kill | kill | strongly dead |
-| survives | survives | strongly survives |
-| kill | survives | CRITICAL / unsettled |
-| ko-dependent | any | KO_DEPENDENT |
-| unknown | any | UNRESOLVED |
+Если first-ply capture имеет structural simple-ko recapture shape:
 
-`CRITICAL` нельзя автоматически превращать в seki.
+```text
+capture exactly one stone
+new played string has one stone
+its only liberty = captured point
+```
 
-Для E2-2 `PROVEN_DEAD` выдаётся только если attacker немедленно захватывает target и **каждая** defender-first немедленная защита либо illegal, либо захватывается следующим attacker move.
+то без known previousBoard результат:
+
+```text
+KO_DEPENDENT
+```
+
+а не automatic kill/survival.
+
+Nested reader может передать известный `previousBoard`. Тогда structural guess не нужен, и legality проверяется точно через `GameEngine`.
+
+UI-facing conservative interpretation ko-dependent остаётся `unresolved`.
 
 ---
 
-# 10. Eye-space
+# 10. One-liberty observability
 
-После short tactical facts добавляется graph-native eye-space analysis.
+Reader уже возвращает:
 
-Для небольших closed regions предпочтительно exact enumeration/lookup по local graph shape.
+```text
+algorithm
+targetGroupKey
+crucialStones
+attackPoints
+defensePoints
+attackerFirst
+defenderFirst.lines
+outcome
+exploredNodes
+maxDepth
+principalVariation
+```
 
-Нужные результаты:
+Raw outcomes:
+
+```text
+proven-dead
+critical
+ko-dependent
+unresolved
+```
+
+Classifier использует только `proven-dead`; остальные raw facts не превращаются в automatic status.
+
+---
+
+# 11. E2-3 — Two-liberty reading
+
+Статус: **STARTED / DIAGNOSTIC ONLY**.
+
+Первый безопасный слой реализован как:
+
+```text
+two-liberty-reduction-reader-v1
+```
+
+Он пока доказывает только attacker-first raw fact.
+
+Для каждой из двух текущих liberties attacker:
+
+1. делает legal move через `GameEngine`;
+2. root ko-shaped capture без previousBoard → `ko-dependent`;
+3. rebuild Graph Core;
+4. если target свёлся ровно к одной liberty — вызывает strict one-liberty reader;
+5. nested one-liberty reader получает known `previousBoard = original board`, поэтому simple-ko legality там точная.
+
+Если хотя бы один attack move сводит position к полностью доказанному one-liberty forced kill:
+
+```text
+attackerFirst = forced-kill
+```
+
+Но это **не даёт automatic DEAD**.
+
+Текущая обязательная граница:
+
+```text
+defenderFirst = unresolved
+reason = complete-defender-move-set-not-proven
+
+overall outcome = unresolved
+```
+
+Two-liberty reader пока не подключён к classifier.
+
+Причина: для исходной 2-liberty позиции нельзя без proof completeness считать, что defender обязан играть только в одну из двух liberties. Возможны counter-captures, connections и preparation moves, которые меняют tactical result.
+
+---
+
+# 12. Следующий E2-3 checkpoint — defender-first completeness
+
+До любого automatic dead promotion для 2 liberties нужно формально определить и протестировать полный relevance/candidate boundary defender-first.
+
+Нужно отдельно исследовать минимум:
+
+- play either target liberty;
+- connection moves, которые меняют target connectivity/liberties;
+- immediate captures of adjacent attacker strings;
+- moves creating a counter-capture threat that actually prevents forced kill;
+- snapback/sacrifice interactions;
+- ko-sensitive moves;
+- whether any move outside a provable local interaction set can change the short tactical result.
+
+Правило:
+
+```text
+не исследован relevant defender move
+→ kill proof запрещён
+```
+
+Если complete local defender set нельзя доказать дешёво, 2-lib reader остаётся diagnostic and falls through to later bounded AND/OR search.
+
+Только после этого имеет смысл переносить ту же схему на 3 и 4 liberties.
+
+---
+
+# 13. Eye-space stage
+
+После short tactical layers нужен graph-native eye-space analysis.
+
+Для small closed regions предпочтителен exact enumeration/lookup по local graph shape.
+
+Нужные facts:
 
 ```text
 minEyes
@@ -269,60 +397,76 @@ attackVitalPoints
 defenseVitalPoints
 ```
 
-Рабочая логика:
+Working usage:
 
 ```text
 minEyes >= 2 -> candidate for strict alive proof
-maxEyes < 2  -> high-priority kill reading
+maxEyes < 2  -> prioritize kill reading
 minEyes = 1, maxEyes = 2 -> read vital points first
 ```
 
-Само число глаз должно использоваться как proof только там, где алгоритм действительно гарантирует semantics; иначе это move ordering/evidence.
+Eye count становится proof только там, где exact algorithm гарантирует semantics. Иначе это ordering/evidence.
 
 ---
 
-# 11. Connection и counter-capture
+# 14. Connection / tactical extensions
 
-Tactical reader не должен считать sole liberty единственным смыслом позиции.
+Следующие specialised layers должны покрыть:
 
-Перед объявлением dead нужно учитывать:
-
-- захват соседней enemy group;
-- соединение с friendly string;
-- forced connection to a proven-safe group;
+- forced connection to proven-safe group;
 - cut/disconnection;
+- ladder;
+- net;
 - snapback;
-- sacrifice;
-- ladder/net escape.
+- short sacrifice;
+- deeper counter-capture.
 
-Forced connection к `PROVEN_ALIVE` structure может быть самостоятельным short survival proof.
-
-E2-2 уже учитывает connection через sole liberty и one-move counter-capture соседнего attacker string в atari. Более глубокие connection/counter-capture sequences остаются для E2-3/E2-5.
+Forced connection к `PROVEN_ALIVE` structure может стать strict survival proof.
 
 ---
 
-# 12. Semeai и seki
+# 15. Semeai / seki
 
-Если две слабые стороны взаимодействуют через shared liberties, запускается отдельный multi-group reader.
+Если слабые opposing groups взаимодействуют через shared liberties, нужен multi-group reader.
 
 Relevant facts:
 
 - exclusive liberties;
 - shared liberties;
 - approach moves;
-- captures changing liberty count;
-- eyes;
+- captures changing liberties;
+- eye state;
 - connection options;
 - side to move;
 - ko dependency.
 
 Простое сравнение liberty counts не является общим proof.
 
-Seki рассматривается только после ordinary alive/dead/tactical passes.
+Seki рассматривается после ordinary alive/dead/tactical passes.
 
-Failure to prove a kill обеими сторонами не означает seki.
+```text
+failure to prove kill for both sides != seki
+```
 
-Сомнительный seki:
+Сомнительный seki → `UNRESOLVED`.
+
+---
+
+# 16. Bounded deeper search
+
+После specialised readers остающиеся local conflicts могут перейти в generic bounded AND/OR search.
+
+Working progression:
+
+```text
+v1 deterministic AND/OR DFS
+v2 memo/transposition + stronger move ordering/relevance
+v3 df-pn only if benchmarks justify
+```
+
+Node budget должен быть deterministic для correctness tests. Wall-clock — только дополнительный production safety limit.
+
+Budget exhaustion:
 
 ```text
 UNRESOLVED
@@ -330,158 +474,55 @@ UNRESOLVED
 
 ---
 
-# 13. Ko, history и budget
+# 17. Validation state
 
-Ko/repetition нельзя угадывать.
+На текущем checkpoint `engine2`:
 
-Если local result зависит от внешнего ko или недоступной history semantics:
+- `EndgameGraphCore` integrated;
+- one-liberty strict reader integrated;
+- ko-dependent root guard added;
+- two-liberty attacker-first reduction added but NOT classifier-integrated;
+- hardening suite recognizes new automatic proof algorithm;
+- Torus/Cube topology integration coverage present.
 
-```text
-KO_DEPENDENT -> UI unresolved
-```
-
-E2-2 использует authoritative `GameEngine` для simulated moves. Для второго хода короткой линии передаётся исходная board occupancy как simple-ko `previousBoard`, поэтому немедленный forbidden recapture не может ошибочно стать proof of kill.
-
-Search должен иметь deterministic node budget. Для correctness tests node budget предпочтительнее wall-clock.
-
-Budget exhausted:
+Последний Engine-capable CI pass, где coverage был специально запущен перед известным base typecheck blocker:
 
 ```text
-UNKNOWN_BUDGET / UNRESOLVED
+67 test files passed
+516 / 516 tests passed
 ```
+
+`core/endgame` coverage на этом checkpoint была примерно:
+
+```text
+statements 92.85%
+lines      94.10%
+```
+
+После coverage стандартный repository typecheck останавливается на **pre-existing `main` UI error**, не связанном с Engine:
+
+```text
+src/app/Cube2DVisualEffects.tsx
+EndgameVisualStatus "unknown" is not assignable to GroupStatus
+```
+
+Этот base defect в `engine2` не исправляется, чтобы не загрязнять альтернативную Engine-ветку посторонней UI-правкой.
+
+Временная перестановка CI steps, использованная только чтобы получить Engine coverage до base blocker, после проверки возвращена к исходному `main` workflow.
 
 ---
 
-# 14. Proof observability
+# 18. Сравнение `engine` vs `engine2`
 
-Reader должен постепенно перейти к единой диагностике вида:
+Выбор победителя делается только после сопоставимого practical coverage на одном corpus.
 
-```text
-ProofResult {
-  outcome
-  algorithm
-  target/crucial stones
-  exploredNodes
-  maxDepth
-  principalVariation
-  attackPoints
-  defensePoints
-  proofReason
-}
-```
-
-E2-2 уже возвращает:
-
-- crucial stones;
-- attack points;
-- defense points;
-- attacker-first result;
-- все defender-first lines;
-- explored nodes;
-- max depth;
-- principal variation для short proven kill;
-- `proven-dead / critical / ko-dependent / unresolved` raw outcome.
-
-Это внутренний working contract, не public API.
-
----
-
-# 15. Порядок работ engine2
-
-## E2-1 — Graph Core
-
-Статус: **IMPLEMENTED / INTEGRATED**.
-
-Сделано:
-
-- topology-neutral stone strings;
-- liberties;
-- empty regions;
-- boundary/vital relations;
-- shared liberties;
-- direct friendly connection candidates;
-- deterministic point/group ordering;
-- partial-board guard;
-- graph-edge topology test;
-- `AssistedEndgameClassifier` переведён на общий Graph Core для Benson/dead/seki proofs.
-
-## E2-2 — Tactical facts + 1-liberty reader
-
-Статус: **IMPLEMENTED / CI PENDING**.
-
-Сделано:
-
-- attacker-first immediate capture через authoritative `GameEngine`;
-- complete immediate defender move set для one-liberty target;
-- extension;
-- connection at sole liberty;
-- one-move counter-capture соседнего attacker string в atari;
-- attacker reply после legal defense;
-- simple-ko guard на втором ply;
-- crucial-stone identity;
-- `proven-dead / critical / ko-dependent / unresolved`;
-- proof diagnostics: nodes/depth/lines/points;
-- classifier integration только для `proven-dead`;
-- старый sealed/pass-alive proof сохранён как более дешёвый fast-path;
-- abstract graph tests;
-- Torus/Cube topology integration test.
-
-## E2-3 — Specialized 2/3/4-liberty readers
-
-Статус: **NEXT AFTER CI**.
-
-- deterministic attack move ordering;
-- all relevant defenses;
-- short forced capture/survival;
-- both first-player orders.
-
-## E2-4 — Eye-space
-
-- small closed graph regions;
-- min/max eye values;
-- attack/defense vital points;
-- known two-eye / false-eye / nakade fixtures.
-
-## E2-5 — Tactical extensions
-
-- forced connection;
-- cut;
-- ladder;
-- net;
-- snapback;
-- short sacrifice.
-
-## E2-6 — Semeai / seki
-
-- shared-liberty races;
-- simple approach moves;
-- basic strict seki;
-- ko remains unresolved.
-
-## E2-7 — Deeper bounded search
-
-- generic AND/OR DFS;
-- memo/transposition;
-- relevance expansion if needed;
-- df-pn only if benchmark data justifies it.
-
-## E2-8 — Comparison against `engine`
-
-Обе ветки сравниваются на одном independent corpus.
-
-Нельзя выбирать победителя по одному screenshot или одному class of positions.
-
----
-
-# 16. Метрики сравнения engine vs engine2
-
-Минимум:
+Минимальные метрики:
 
 - false automatic statuses;
-- alive/dead/seki precision;
-- coverage по known-answer corpus;
-- nodes median/p95/max;
-- runtime median/p95;
+- precision alive/dead/seki;
+- known-answer coverage;
+- median/p95/max nodes;
+- median/p95 runtime;
 - unresolved by budget;
 - unresolved by ko/boundary;
 - implementation complexity;
@@ -492,47 +533,48 @@ E2-2 уже возвращает:
 Главный gate:
 
 ```text
-precision first, then coverage, then cost
+precision first
+coverage second
+cost third
 ```
 
 ---
 
-# 17. External references policy
+# 19. External references policy
 
-### GNU Go
+## GNU Go
 
-Можно использовать:
+Разрешено использовать:
 
-- architecture ideas;
-- tactical-reading decomposition;
+- architecture/decomposition ideas;
+- tactical-reading concepts;
 - optics/eye-space concepts;
 - connection/semeai concepts;
-- regression/oracle behavior where useful.
+- external regression/oracle behavior where useful.
 
 Нельзя копировать GPL production code.
 
-### Other solvers
+## tsumego.js / Darkforest / research solvers
 
-`tsumego.js`, Darkforest, research solvers и другие implementations могут использоваться как benchmark/reference/oracle, но `engine2` не строится вокруг их board/search implementation.
+Могут использоваться как benchmark/reference/oracle. `engine2` не строится вокруг их board/search implementation.
 
-### KataGo / AI
+## KataGo / AI
 
 Только differential oracle/diagnostics. Не production proof authority.
 
 ---
 
-# 18. Текущий прогресс
+# 20. Текущий следующий шаг
 
-На текущем состоянии `engine2`:
+**E2-3 defender-first completeness for 2 liberties.**
 
-- branch создана от актуального `main`;
-- старый `engine` не является источником изменений `engine2`;
-- выбран независимый GNU-Go-inspired graph-native path;
-- standalone Graph Core реализован и интегрирован;
-- существующие Benson/dead/seki proofs используют новый Graph Core;
-- strict one-liberty tactical reader реализован и подключён только как proof-based dead expansion;
-- attacker-first / defender-first различаются, `critical` не превращается в dead или seki;
-- следующий implementation target после зелёного CI — specialised 2/3/4-liberty reading;
-- сравнение с `engine` выполняется только после появления сопоставимого practical coverage.
+Цель следующего work chunk:
 
-Этот документ должен обновляться при каждом изменении направления, search semantics, benchmark conclusion или существенном Engine-specific решении.
+1. определить conservative candidate/relevance set defender moves;
+2. добавить explicit counterexamples против naïve `only play liberties` assumption;
+3. доказать, какие classes moves можно безопасно исключить;
+4. если complete set получается — читать каждый defender branch;
+5. только после этого разрешать 2-liberty `PROVEN_DEAD`;
+6. если complete set не получается — оставить 2-lib diagnostic и перейти к generic local AND/OR framework раньше.
+
+Этот документ обновляется при каждом изменении Engine direction, proof boundary, search semantics, benchmark conclusion или implementation checkpoint.
