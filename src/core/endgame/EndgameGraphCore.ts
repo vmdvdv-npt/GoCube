@@ -1,4 +1,8 @@
-import { canonicalizeEndgameGroup, compareEndgamePointIds, endgameGroupId } from './EndgameGroupIdentity';
+import {
+  canonicalizeEndgameGroup,
+  compareEndgamePointIds,
+  endgameGroupId,
+} from './EndgameGroupIdentity';
 import type { BoardOccupancy, StoneColor } from '../game/types';
 import type { PointId, Topology } from '../topology/Topology';
 
@@ -62,11 +66,6 @@ type PairAccumulator = {
   readonly points: Set<PointId>;
 };
 
-type ConnectionAccumulator = {
-  readonly groups: readonly [string, string];
-  readonly regions: Set<string>;
-};
-
 const compareStrings = (left: string, right: string): number =>
   left < right ? -1 : left > right ? 1 : 0;
 
@@ -110,11 +109,16 @@ export const buildEndgameGraph = (
     stringsByKey,
     stringByPoint,
   );
-  const sharedLiberties = collectSharedLiberties(regions, stringsByKey, topology, stringByPoint);
-  const possibleConnections = collectFriendlyConnectionCandidates(
+  const sharedLiberties = collectSharedLiberties(
     regions,
     stringsByKey,
+    topology,
+    stringByPoint,
+  );
+  const possibleConnections = collectFriendlyConnectionCandidates(
+    stringsByKey,
     sharedLiberties,
+    regionByPoint,
   );
   const conflictComponents = collectConflictComponents(
     strings,
@@ -350,42 +354,30 @@ const collectSharedLiberties = (
 };
 
 const collectFriendlyConnectionCandidates = (
-  regions: readonly EndgameEmptyRegion[],
   stringsByKey: ReadonlyMap<string, EndgameStoneString>,
   sharedLiberties: readonly EndgameSharedLiberty[],
-): readonly EndgameFriendlyConnectionCandidate[] => {
-  const candidates = new Map<string, ConnectionAccumulator>();
-
-  for (const region of regions) {
-    for (const color of COLORS) {
-      const groups = region.boundaryGroups
-        .filter((groupKey) => stringsByKey.get(groupKey)?.color === color)
-        .sort(compareStrings);
-      for (let leftIndex = 0; leftIndex < groups.length; leftIndex += 1) {
-        for (let rightIndex = leftIndex + 1; rightIndex < groups.length; rightIndex += 1) {
-          const pair = canonicalPair(groups[leftIndex]!, groups[rightIndex]!);
-          const key = pairKey(pair);
-          const existing = candidates.get(key);
-          if (existing) existing.regions.add(region.key);
-          else candidates.set(key, { groups: pair, regions: new Set([region.key]) });
+  regionByPoint: ReadonlyMap<PointId, string>,
+): readonly EndgameFriendlyConnectionCandidate[] =>
+  Object.freeze(
+    sharedLiberties
+      .filter((entry) => {
+        const left = stringsByKey.get(entry.groups[0]);
+        const right = stringsByKey.get(entry.groups[1]);
+        return left !== undefined && right !== undefined && left.color === right.color;
+      })
+      .map((entry) => {
+        const viaRegions = new Set<string>();
+        for (const liberty of entry.liberties) {
+          const regionKey = regionByPoint.get(liberty);
+          if (regionKey) viaRegions.add(regionKey);
         }
-      }
-    }
-  }
-
-  const sharedByPair = new Map(sharedLiberties.map((entry) => [pairKey(entry.groups), entry] as const));
-  return Object.freeze(
-    [...candidates.entries()]
-      .sort(([left], [right]) => compareStrings(left, right))
-      .map(([key, accumulator]) =>
-        Object.freeze({
-          groups: accumulator.groups,
-          viaRegions: Object.freeze([...accumulator.regions].sort(compareStrings)),
-          sharedLiberties: sharedByPair.get(key)?.liberties ?? Object.freeze([]),
-        }),
-      ),
+        return Object.freeze({
+          groups: entry.groups,
+          viaRegions: Object.freeze([...viaRegions].sort(compareStrings)),
+          sharedLiberties: entry.liberties,
+        });
+      }),
   );
-};
 
 const collectConflictComponents = (
   strings: readonly EndgameStoneString[],
