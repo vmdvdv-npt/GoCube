@@ -207,7 +207,9 @@ const makePosition = (
   koContext: KoContext,
 ): LocalSearchState => Object.freeze({ kind: 'position' as const, state, mover, koContext });
 
-const moveResultContext = (state: LocalSearchState): Readonly<{ previousBoard?: BoardOccupancy | null }> => {
+const moveResultContext = (
+  state: LocalSearchState,
+): Readonly<{ readonly previousBoard: BoardOccupancy | null }> => {
   if (state.kind !== 'position' || state.koContext.kind !== 'exact') {
     return Object.freeze({ previousBoard: null });
   }
@@ -272,7 +274,7 @@ const buildAdapter = (runtime: LocalRuntime): AndOrSearchAdapter<LocalSearchStat
           Object.freeze({
             move: point,
             state: makeUncertain('ko', opponentOf(state.mover)),
-            metric: Object.freeze([1, 0]),
+            metric: Object.freeze([1, 0] as const),
           }),
         );
         continue;
@@ -285,7 +287,7 @@ const buildAdapter = (runtime: LocalRuntime): AndOrSearchAdapter<LocalSearchStat
           Object.freeze({
             move: point,
             state: makeUncertain('boundary', opponentOf(state.mover)),
-            metric: Object.freeze([1, 0]),
+            metric: Object.freeze([1, 0] as const),
           }),
         );
         continue;
@@ -311,9 +313,10 @@ const buildAdapter = (runtime: LocalRuntime): AndOrSearchAdapter<LocalSearchStat
         compareEndgamePointIds(left.move, right.move),
     );
 
-    const children = generated.map((child) =>
-      Object.freeze({ move: `play:${child.move}`, state: child.state }),
-    );
+    const children: Array<Readonly<{ readonly move: string; readonly state: LocalSearchState }>> =
+      generated.map((child) =>
+        Object.freeze({ move: `play:${child.move}`, state: child.state }),
+      );
 
     // One explicit local no-op represents Pass or any move outside the certified
     // zone. Outside occupancy is excluded by the Work 5A certificate. It also
