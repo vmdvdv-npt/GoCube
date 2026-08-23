@@ -18,7 +18,11 @@ import {
   proveBensonPassAlive,
   type BensonColorRegion,
 } from './BensonPassAlive';
-import { buildEndgameGraph } from './EndgameGraphCore';
+import {
+  buildEndgameGraph,
+  type EndgameGraph,
+  type EndgameStoneString,
+} from './EndgameGraphCore';
 import { endgameGroupId } from './EndgameGroupIdentity';
 import {
   LOCAL_LIFE_DEATH_ALGORITHM,
@@ -29,21 +33,53 @@ import {
 import { ManualEndgameClassifier } from './ManualEndgameClassifier';
 import { proveSafeConnectionToBenson, type SafeConnectionProof } from './SafeConnection';
 import {
+  BASIC_SEKI_ALGORITHM,
+  analyzeBasicSeki,
+  type BasicSekiInitiationResult,
+} from './SekiSearch';
+import {
+  SIMPLE_SEMEAI_ALGORITHM,
+  analyzeSimpleSemeai,
+  type SimpleSemeaiResult,
+} from './SemeaiCore';
+import {
+  BOUNDED_SEMEAI_ALGORITHM,
+  analyzeBoundedSemeai,
+  type BoundedSemeaiOrderResult,
+  type BoundedSemeaiResult,
+} from './SemeaiSearch';
+import {
   TACTICAL_READER_ALGORITHM,
   readTacticalCapture,
   type TacticalDeadProof,
 } from './TacticalReader';
 import type { StoneColor } from '../game/types';
+import type { PointId } from '../topology/Topology';
 
 const COLORS: readonly StoneColor[] = Object.freeze(['black', 'white']);
 const TACTICAL_CLASSIFIER_MAX_NODES = 16;
 const LOCAL_LIFE_DEATH_CLASSIFIER_MAX_NODES = 256;
 const LOCAL_LIFE_DEATH_CLASSIFIER_MAX_ZONE_POINTS = 24;
+const SEMEAI_CLASSIFIER_MAX_NODES = 64;
+const SEMEAI_CLASSIFIER_MAX_ZONE_POINTS = 24;
+const SEMEAI_CLASSIFIER_MAX_TARGET_LIBERTIES = 2;
 
 type LocalLifeDeathClassifierStatus = 'alive' | 'dead';
 
 interface LocalLifeDeathClassifierProof {
   readonly status: LocalLifeDeathClassifierStatus;
+  readonly evidence: Readonly<Record<string, unknown>>;
+}
+
+interface SemeaiCandidatePair {
+  readonly key: string;
+  readonly left: EndgameStoneString;
+  readonly right: EndgameStoneString;
+  readonly sharedLiberties: readonly PointId[];
+}
+
+interface SemeaiDeadClaim {
+  readonly targetGroupKey: string;
   readonly evidence: Readonly<Record<string, unknown>>;
 }
 
@@ -58,14 +94,12 @@ const toLocalLifeDeathClassifierProof = (
   result: LocalLifeDeathResult,
 ): LocalLifeDeathClassifierProof | null => {
   if (result.outcome === 'unknown') return null;
-
   const status: LocalLifeDeathClassifierStatus =
     result.outcome === 'proved-dead' ? 'dead' : 'alive';
   const proof =
     result.outcome === 'proved-dead'
       ? 'proved-dead-both-first-player-orders'
       : 'proved-alive-both-first-player-orders';
-
   return Object.freeze({
     status,
     evidence: Object.freeze({
@@ -79,17 +113,202 @@ const toLocalLifeDeathClassifierProof = (
   });
 };
 
+const canonicalPair = (left: string, right: string): readonly [string, string] =>
+  left < right
+    ? (Object.freeze([left, right]) as readonly [string, string])
+    : (Object.freeze([right, left]) as readonly [string, string]);
+
+const collectSemeaiCandidatePairs = (
+  graph: EndgameGraph,
+  excludedGroupKeys: ReadonlySet<string>,
+): readonly SemeaiCandidatePair[] => {
+  const groupsByPair = new Map<string, readonly [string, string]>();
+  const sharedByPair = new Map<string, Set<PointId>>();
+
+  const addPair = (
+    suppliedGroups: readonly [string, string],
+    sharedLiberties: readonly PointId[] = Object.freeze([]),
+  ): void => {
+    const groups = canonicalPair(suppliedGroups[0], suppliedGroups[1]);
+    const key = JSON.stringify(groups);
+    groupsByPair.set(key, groups);
+    let shared = sharedByPair.get(key);
+    if (!shared) {
+      shared = new Set<PointId>();
+      sharedByPair.set(key, shared);
+    }
+    for (const liberty of sharedLiberties) shared.add(liberty);
+  };
+
+  for (const adjacency of graph.opponentAdjacencies) addPair(adjacency.groups);
+  for (const shared of graph.sharedLiberties) addPair(shared.groups, shared.liberties);
+
+  const candidates: SemeaiCandidatePair[] = [];
+  for (const key of [...groupsByPair.keys()].sort()) {
+    const groups = groupsByPair.get(key)!;
+    if (excludedGroupKeys.has(groups[0]) || excludedGroupKeys.has(groups[1])) continue;
+    const left = graph.stringsByKey.get(groups[0]);
+    const right = graph.stringsByKey.get(groups[1]);
+    if (!left || !right || left.color === right.color) continue;
+    if (
+      left.liberties.length === 0 ||
+      right.liberties.length === 0 ||
+      left.liberties.length > SEMEAI_CLASSIFIER_MAX_TARGET_LIBERTIES ||
+      right.liberties.length > SEMEAI_CLASSIFIER_MAX_TARGET_LIBERTIES
+    ) {
+      continue;
+    }
+    candidates.push(
+      Object.freeze({
+        key,
+        left,
+        right,
+        sharedLiberties: Object.freeze(
+          [...(sharedByPair.get(key) ?? new Set<PointId>())].sort(),
+        ),
+      }),
+    );
+  }
+  return Object.freeze(candidates);
+};
+
+const summarizeSimpleOrder = (order: SimpleSemeaiResult['leftFirst']) =>
+  order
+    ? Object.freeze({
+        firstPlayer: order.firstPlayer,
+        outcome: order.outcome,
+        winner: order.winner,
+        leftCapturePly: order.leftCapturePly,
+        rightCapturePly: order.rightCapturePly,
+      })
+    : null;
+
+const simpleSemeaiDeadClaim = (result: SimpleSemeaiResult): SemeaiDeadClaim | null => {
+  if (result.outcome !== 'left-wins' && result.outcome !== 'right-wins') return null;
+  if (
+    !result.leftFirst ||
+    !result.rightFirst ||
+    result.leftFirst.outcome !== result.outcome ||
+    result.rightFirst.outcome !== result.outcome
+  ) {
+    return null;
+  }
+  const targetGroupKey =
+    result.outcome === 'left-wins' ? result.rightGroupKey : result.leftGroupKey;
+  const opponentGroupKey =
+    result.outcome === 'left-wins' ? result.leftGroupKey : result.rightGroupKey;
+  return Object.freeze({
+    targetGroupKey,
+    evidence: Object.freeze({
+      algorithm: SIMPLE_SEMEAI_ALGORITHM,
+      proof: 'stable-winner-both-first-player-orders',
+      targetGroupKey,
+      opponentGroupKey,
+      leftGroupKey: result.leftGroupKey,
+      rightGroupKey: result.rightGroupKey,
+      leftColor: result.leftColor,
+      rightColor: result.rightColor,
+      liberties: result.liberties,
+      leftFirst: summarizeSimpleOrder(result.leftFirst),
+      rightFirst: summarizeSimpleOrder(result.rightFirst),
+      exploredNodes: 0,
+      transpositionHits: 0,
+    }),
+  });
+};
+
+const summarizeBoundedOrder = (order: BoundedSemeaiOrderResult) =>
+  Object.freeze({
+    firstPlayer: order.firstPlayer,
+    outcome: order.outcome,
+    exploredNodes: order.search?.exploredNodes ?? 0,
+    transpositionHits: order.search?.transpositionHits ?? 0,
+  });
+
+const boundedSemeaiDeadClaim = (
+  result: BoundedSemeaiResult,
+  sharedLiberties: readonly PointId[],
+): SemeaiDeadClaim | null => {
+  if (result.outcome !== 'left-wins' && result.outcome !== 'right-wins') return null;
+  if (
+    result.leftFirst.outcome !== result.outcome ||
+    result.rightFirst.outcome !== result.outcome
+  ) {
+    return null;
+  }
+  const targetGroupKey =
+    result.outcome === 'left-wins' ? result.rightGroupKey : result.leftGroupKey;
+  const opponentGroupKey =
+    result.outcome === 'left-wins' ? result.leftGroupKey : result.rightGroupKey;
+  const leftFirst = summarizeBoundedOrder(result.leftFirst);
+  const rightFirst = summarizeBoundedOrder(result.rightFirst);
+  return Object.freeze({
+    targetGroupKey,
+    evidence: Object.freeze({
+      algorithm: BOUNDED_SEMEAI_ALGORITHM,
+      proof: 'stable-winner-both-first-player-orders',
+      targetGroupKey,
+      opponentGroupKey,
+      leftGroupKey: result.leftGroupKey,
+      rightGroupKey: result.rightGroupKey,
+      leftColor: result.leftColor,
+      rightColor: result.rightColor,
+      sharedLiberties,
+      zonePoints: result.zonePoints,
+      leftFirst,
+      rightFirst,
+      exploredNodes: leftFirst.exploredNodes + rightFirst.exploredNodes,
+      transpositionHits: leftFirst.transpositionHits + rightFirst.transpositionHits,
+      proofReason: result.proofReason,
+    }),
+  });
+};
+
+const shouldRunBoundedSemeai = (
+  result: SimpleSemeaiResult,
+  pair: SemeaiCandidatePair,
+): boolean =>
+  result.outcome === 'unresolved' &&
+  result.reason === 'shared-liberties-deferred' &&
+  pair.sharedLiberties.length > 0;
+
+const isBasicSekiCostCandidate = (pair: SemeaiCandidatePair): boolean => {
+  if (pair.sharedLiberties.length !== 2) return false;
+  if (pair.left.liberties.length !== 2 || pair.right.liberties.length !== 2) return false;
+  const shared = new Set(pair.sharedLiberties);
+  return (
+    pair.left.liberties.every((liberty) => shared.has(liberty)) &&
+    pair.right.liberties.every((liberty) => shared.has(liberty))
+  );
+};
+
+const summarizeBasicSekiInitiation = (initiation: BasicSekiInitiationResult) =>
+  Object.freeze({
+    initiator: initiation.initiator,
+    outcome: initiation.outcome,
+    moves: Object.freeze(
+      initiation.moves.map((move) =>
+        Object.freeze({
+          point: move.point,
+          outcome: move.outcome,
+          continuation:
+            move.continuation === null
+              ? null
+              : Object.freeze({
+                  outcome: move.continuation.outcome,
+                  leftFirst: summarizeBoundedOrder(move.continuation.leftFirst),
+                  rightFirst: summarizeBoundedOrder(move.continuation.rightFirst),
+                }),
+        }),
+      ),
+    ),
+  });
+
 /**
- * Conservative assisted classifier.
- *
- * It proves unconditional/pass-alive groups using Benson's fixed-point
- * criterion, adds the narrow Work 5B two-liberty miai connection to a Benson
- * safe group, preserves the sealed single-liberty proof, keeps the Work 4
- * ultra-short two-liberty tactical forced-capture proof, and then runs the
- * Work 6 bounded local life/death proof only for a small enclosed candidate
- * class that is still unresolved. Seki remains a separate final proof layer.
- * Any result that is budget-, boundary-, cycle-, incomplete-, or ko-dependent
- * stays unresolved.
+ * Conservative assisted classifier. Cheap/static proofs remain first. Reader
+ * integration is candidate-gated and accepts only existing authoritative proof
+ * contracts. Semeai proves only a stable loser dead, never its winner alive.
+ * Ko, budget, boundary, cycle and incomplete outcomes remain unresolved.
  */
 export class AssistedEndgameClassifier implements EndgameClassifier {
   private readonly manual = new ManualEndgameClassifier();
@@ -97,10 +316,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
   async analyze(context: EndgameAnalysisContext): Promise<EndgameProposal> {
     const baseline = await this.manual.analyze(context);
     const graph = buildEndgameGraph(context.state.board, context.topology);
-
-    // Automatic proof is only sound when the requested analysis context
-    // describes every logical stone string on the board. A partial context
-    // remains safely unresolved, exactly as before the shared graph core.
     const complete =
       baseline.length === graph.strings.length &&
       baseline.every((proposal) => graph.stringsByKey.has(endgameGroupId(proposal.points)));
@@ -122,25 +337,18 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     const safeConnectionProofs = new Map<string, SafeConnectionProof>();
     for (const group of graph.strings) {
       if (passAliveGroupKeys.has(group.key)) continue;
-
-      // RelevanceZone is intentionally more expensive than the shared graph
-      // snapshot, so only invoke the Work 5B verifier for structural candidates
-      // that already touch a same-color Benson group through shared liberties.
       const hasBensonConnectionCandidate = graph.possibleConnections.some((candidate) => {
         if (!candidate.groups.includes(group.key)) return false;
         const otherKey = candidate.groups.find((groupKey) => groupKey !== group.key);
         return otherKey !== undefined && passAliveGroupKeys.has(otherKey);
       });
       if (!hasBensonConnectionCandidate) continue;
-
       const connection = proveSafeConnectionToBenson(
         group,
         context.state.board,
         context.topology,
       );
-      if (connection.outcome === 'proven') {
-        safeConnectionProofs.set(group.key, connection.evidence);
-      }
+      if (connection.outcome === 'proven') safeConnectionProofs.set(group.key, connection.evidence);
     }
 
     const deadProofs = new Map<string, AutomaticDeadProof>();
@@ -163,18 +371,17 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     );
     const tacticalDeadProofs = new Map<string, TacticalDeadProof>();
     for (const group of graph.strings) {
-      // Keep the existing one-liberty evidence contract authoritative. Work 4
-      // only promotes a new class of very short two-liberty proofs; broader
-      // tactical localization remains conservative even after Work 5B.
+      const tacticalShape =
+        group.liberties.length === 2 ||
+        (group.liberties.length === 1 && group.points.length === 1);
       if (
         passAliveGroupKeys.has(group.key) ||
         safeConnectionProofs.has(group.key) ||
         deadProofs.has(group.key) ||
-        group.liberties.length !== 2
+        !tacticalShape
       ) {
         continue;
       }
-
       const opponent: StoneColor = group.color === 'black' ? 'white' : 'black';
       const tacticalFrontier = [...group.points, ...group.liberties];
       const contested = tacticalFrontier.some((point) =>
@@ -183,7 +390,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
           .some((neighbor) => context.state.board[neighbor] === opponent),
       );
       if (!contested) continue;
-
       const sharedOptions = Object.freeze({
         safeGroupPoints,
         maxNodes: TACTICAL_CLASSIFIER_MAX_NODES,
@@ -193,13 +399,11 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
         firstPlayer: 'attacker',
       });
       if (attackerFirst.outcome !== 'proved-kill') continue;
-
       const defenderFirst = readTacticalCapture(group, context.state, context.topology, {
         ...sharedOptions,
         firstPlayer: 'defender',
       });
       if (defenderFirst.outcome !== 'proved-kill') continue;
-
       tacticalDeadProofs.set(
         group.key,
         Object.freeze({
@@ -222,14 +426,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
       ) {
         continue;
       }
-
-      // Work 6C deliberately keeps the first production search class narrow.
-      // One-liberty groups already have a sealed proof and two-liberty groups
-      // already belong to the Work 4 tactical layer. The local L&D reader is
-      // therefore used here only for small 3–4 liberty targets whose every
-      // liberty is immediately bounded by a Benson/pass-alive opponent string.
-      // This is only a candidate/performance gate: the reader must still prove
-      // both first-player orders before any automatic status is emitted.
       if (group.liberties.length < 3 || group.liberties.length > 4) continue;
       const opponent: StoneColor = group.color === 'black' ? 'white' : 'black';
       const enclosedBySafeOpponent = group.liberties.every((liberty) =>
@@ -240,7 +436,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
         }),
       );
       if (!enclosedBySafeOpponent) continue;
-
       const localResult = readLocalLifeDeath(group, context.state, context.topology, {
         maxNodes: LOCAL_LIFE_DEATH_CLASSIFIER_MAX_NODES,
         maxZonePoints: LOCAL_LIFE_DEATH_CLASSIFIER_MAX_ZONE_POINTS,
@@ -249,17 +444,44 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
       if (classifierProof) localLifeDeathProofs.set(group.key, classifierProof);
     }
 
-    const alreadyResolvedGroupKeys = new Set<string>([
+    const resolvedBeforeSemeai = new Set<string>([
       ...passAliveGroupKeys,
       ...safeConnectionProofs.keys(),
       ...deadProofs.keys(),
-      ...tacticalDeadProofs.keys(),
       ...localLifeDeathProofs.keys(),
+    ]);
+    const semeaiPairs = collectSemeaiCandidatePairs(graph, resolvedBeforeSemeai);
+    const semeaiDeadProofs = new Map<string, Readonly<Record<string, unknown>>>();
+    for (const pair of semeaiPairs) {
+      const simple = analyzeSimpleSemeai(pair.left, pair.right, context.state, context.topology);
+      let claim = simpleSemeaiDeadClaim(simple);
+      if (!claim && shouldRunBoundedSemeai(simple, pair)) {
+        const bounded = analyzeBoundedSemeai(
+          pair.left,
+          pair.right,
+          context.state,
+          context.topology,
+          {
+            maxNodes: SEMEAI_CLASSIFIER_MAX_NODES,
+            maxZonePoints: SEMEAI_CLASSIFIER_MAX_ZONE_POINTS,
+          },
+        );
+        claim = boundedSemeaiDeadClaim(bounded, pair.sharedLiberties);
+      }
+      if (claim && !semeaiDeadProofs.has(claim.targetGroupKey)) {
+        semeaiDeadProofs.set(claim.targetGroupKey, claim.evidence);
+      }
+    }
+
+    const resolvedBeforeLegacySeki = new Set<string>([
+      ...resolvedBeforeSemeai,
+      ...tacticalDeadProofs.keys(),
+      ...semeaiDeadProofs.keys(),
     ]);
     const sekiProofs = new Map<string, AutomaticSekiProof>();
     for (const candidate of generateSekiCandidates(
       graph.stringsByKey,
-      alreadyResolvedGroupKeys,
+      resolvedBeforeLegacySeki,
     )) {
       const verification = verifySekiCandidate(candidate, {
         state: context.state,
@@ -270,6 +492,50 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
       if (!verification.proven) continue;
       for (const groupKey of candidate.groupKeys) {
         sekiProofs.set(groupKey, verification.evidence);
+      }
+    }
+
+    const resolvedBeforeBasicSeki = new Set<string>([
+      ...resolvedBeforeLegacySeki,
+      ...sekiProofs.keys(),
+    ]);
+    const basicSekiProofs = new Map<string, Readonly<Record<string, unknown>>>();
+    for (const pair of collectSemeaiCandidatePairs(graph, resolvedBeforeBasicSeki)) {
+      if (!isBasicSekiCostCandidate(pair)) continue;
+      const result = analyzeBasicSeki(
+        pair.left,
+        pair.right,
+        context.state,
+        context.topology,
+        {
+          maxNodes: SEMEAI_CLASSIFIER_MAX_NODES,
+          maxZonePoints: SEMEAI_CLASSIFIER_MAX_ZONE_POINTS,
+        },
+      );
+      if (
+        result.outcome !== 'seki' ||
+        result.proof !== 'every-legal-local-initiation-is-losing'
+      ) {
+        continue;
+      }
+      const evidence = Object.freeze({
+        algorithm: BASIC_SEKI_ALGORITHM,
+        proof: result.proof,
+        leftGroupKey: result.leftGroupKey,
+        rightGroupKey: result.rightGroupKey,
+        leftColor: result.leftColor,
+        rightColor: result.rightColor,
+        sharedLiberties: result.sharedLiberties,
+        zonePoints: result.zonePoints,
+        leftInitiation: summarizeBasicSekiInitiation(result.leftInitiation),
+        rightInitiation: summarizeBasicSekiInitiation(result.rightInitiation),
+        proofReason: result.proofReason,
+      });
+      if (!basicSekiProofs.has(result.leftGroupKey)) {
+        basicSekiProofs.set(result.leftGroupKey, evidence);
+      }
+      if (!basicSekiProofs.has(result.rightGroupKey)) {
+        basicSekiProofs.set(result.rightGroupKey, evidence);
       }
     }
 
@@ -289,7 +555,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
             }),
           });
         }
-
         const safeConnectionProof = safeConnectionProofs.get(groupKey);
         if (safeConnectionProof) {
           return Object.freeze({
@@ -299,7 +564,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
             evidence: Object.freeze({ ...safeConnectionProof }),
           });
         }
-
         const deadProof = deadProofs.get(groupKey);
         if (deadProof) {
           return Object.freeze({
@@ -309,17 +573,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
             evidence: Object.freeze({ ...deadProof }),
           });
         }
-
-        const tacticalDeadProof = tacticalDeadProofs.get(groupKey);
-        if (tacticalDeadProof) {
-          return Object.freeze({
-            points: proposal.points,
-            status: 'dead' as const,
-            source: 'automatic' as const,
-            evidence: Object.freeze({ ...tacticalDeadProof }),
-          });
-        }
-
         const localLifeDeathProof = localLifeDeathProofs.get(groupKey);
         if (localLifeDeathProof) {
           return Object.freeze({
@@ -329,7 +582,24 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
             evidence: localLifeDeathProof.evidence,
           });
         }
-
+        const semeaiDeadProof = semeaiDeadProofs.get(groupKey);
+        if (semeaiDeadProof) {
+          return Object.freeze({
+            points: proposal.points,
+            status: 'dead' as const,
+            source: 'automatic' as const,
+            evidence: semeaiDeadProof,
+          });
+        }
+        const tacticalDeadProof = tacticalDeadProofs.get(groupKey);
+        if (tacticalDeadProof) {
+          return Object.freeze({
+            points: proposal.points,
+            status: 'dead' as const,
+            source: 'automatic' as const,
+            evidence: Object.freeze({ ...tacticalDeadProof }),
+          });
+        }
         const sekiProof = sekiProofs.get(groupKey);
         if (sekiProof) {
           return Object.freeze({
@@ -339,7 +609,15 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
             evidence: Object.freeze({ ...sekiProof }),
           });
         }
-
+        const basicSekiProof = basicSekiProofs.get(groupKey);
+        if (basicSekiProof) {
+          return Object.freeze({
+            points: proposal.points,
+            status: 'seki' as const,
+            source: 'automatic' as const,
+            evidence: basicSekiProof,
+          });
+        }
         return proposal;
       }),
     );

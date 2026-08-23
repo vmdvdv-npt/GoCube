@@ -25,6 +25,11 @@ const AUTOMATIC_ALGORITHMS = new Set([
   'sealed-single-liberty-dead-v1',
   'closed-mutual-two-liberties-seki-v1',
   'safe-connection-v1',
+  'tactical-forced-capture-v1',
+  'local-life-death-v1',
+  'simple-semeai-v1',
+  'bounded-semeai-v1',
+  'basic-seki-v1',
 ]);
 const FALLBACK_STATUSES: readonly GroupStatus[] = Object.freeze(['alive', 'dead', 'seki']);
 

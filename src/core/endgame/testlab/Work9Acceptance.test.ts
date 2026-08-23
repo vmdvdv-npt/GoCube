@@ -699,7 +699,7 @@ const proposalSignature = (proposal: EndgameProposal) =>
   );
 
 describe('Work 9 Massive Acceptance / Shadow Comparison', () => {
-  it('measures a frozen independent known-answer corpus and treats every false automatic status as critical', async () => {
+  it('closes the frozen known-answer corpus at 11/11 resolvable with zero false automatic statuses', async () => {
     const cases = buildFrozenKnownAnswerCases();
     const records = [];
 
@@ -716,6 +716,10 @@ describe('Work 9 Massive Acceptance / Shadow Comparison', () => {
     const summary = summarizeWork9Acceptance(records);
     expect(summary.total).toBe(17);
     expect(summary.criticalFalseAutomaticStatuses).toBe(0);
+    expect(summary.automatic.alive).toEqual({ correct: 3, falsePositive: 0 });
+    expect(summary.automatic.dead).toEqual({ correct: 5, falsePositive: 0 });
+    expect(summary.automatic.seki).toEqual({ correct: 3, falsePositive: 0 });
+    expect(summary.unresolved).toEqual({ expectedUnresolved: 6, missedResolvableCase: 0 });
     expect(summary.byClass.benson.total).toBe(4);
     expect(summary.byClass.tactical.total).toBe(4);
     expect(summary.byClass['local-life-death'].total).toBe(1);
@@ -725,7 +729,17 @@ describe('Work 9 Massive Acceptance / Shadow Comparison', () => {
     expect(summary.byTopology.torus.total).toBe(3);
     expect(summary.byTopology.cube.total).toBe(3);
     expect(summary.byTopology.arbitrary.total).toBe(11);
-    expect(summary.unresolved.missedResolvableCase).toBeGreaterThanOrEqual(1);
+
+    const byId = new Map(records.map((record) => [record.id, record] as const));
+    expect(byId.get('tactical-immediate-capture')?.evidenceAlgorithm).toBe(
+      TACTICAL_READER_ALGORITHM,
+    );
+    expect(byId.get('simple-semeai-stable-loser')?.evidenceAlgorithm).toBe(
+      SIMPLE_SEMEAI_ALGORITHM,
+    );
+    expect(byId.get('shared-liberty-semeai-stable-loser')?.evidenceAlgorithm).toBe(
+      BOUNDED_SEMEAI_ALGORITHM,
+    );
 
     console.info('WORK9_ACCEPTANCE_SUMMARY', JSON.stringify(summary));
     console.info('WORK9_SHADOW_RECORDS', JSON.stringify(records));
@@ -841,7 +855,7 @@ describe('Work 9 Massive Acceptance / Shadow Comparison', () => {
     if (cutResult.outcome === 'proven') expect(cutResult.evidence.algorithm).toBe(SIMPLE_CUT_ALGORITHM);
   });
 
-  it('measures simple semeai, shared-liberty semeai, basic seki and ko without integrating Work 7D', () => {
+  it('keeps lower semeai/seki/ko reader contracts stable after Work 7D classifier integration', () => {
     const simple = simpleSemeaiFixture(2, 1);
     const simpleResult = analyzeSimpleSemeai(
       targetAt(simple.state, simple.topology, 'L'),
