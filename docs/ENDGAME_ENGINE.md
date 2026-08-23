@@ -1250,15 +1250,17 @@ Shadow mode не должен создавать вторую user-visible sourc
 
 Итог Work 1 зафиксирован в разделе 39: **готовой production solver foundation среди четырёх нет; production search shell должен быть graph-native, а permissive upstream code/ideas используются только выборочно**.
 
-## Work 2 — Endgame Graph Core
+## Work 2 — Endgame Graph Core — CLOSED 2026-08-23
 
-Создать/стабилизировать topology-neutral groups/regions/conflict components.
+Topology-neutral structural core реализован поверх `BoardOccupancy + Topology.neighbors()` и стал общим источником strings/liberties/empty regions/relations для существующего assisted classifier.
 
-Acceptance:
+Acceptance закрыт:
 
-- Cube/Torus adjacency correctness;
-- graph-isomorphism fixtures;
-- no renderer geometry dependency.
+- Cube/Torus adjacency correctness — strings и empty regions проверяются через Torus seam и Cube face edge;
+- graph-isomorphism fixtures — exact normalized graph сохраняется при чистом переименовании `PointId`;
+- no renderer geometry dependency — production core импортирует только logical game/topology/endgame contracts.
+
+Итог Work 2 и принятые structural/complexity decisions зафиксированы в разделе 40.
 
 ## Work 3 — Benson hardening
 
@@ -1682,3 +1684,103 @@ Work 1 закрыт со следующими fulfilled outputs:
 8. полный clean-head CI: lint/typecheck/unit+coverage/build/Playwright E2E — pass.
 
 **Work 2 может начинаться.** Он не должен зависеть от внешней solver library как production foundation.
+
+---
+
+# 40. Work 2 — Endgame Graph Core: финальный результат
+
+Срез на **2026-08-23**. **Work 2 закрыт.** Production structural layer теперь один и topology-neutral: он строится из logical `BoardOccupancy` и `Topology.neighbors(PointId)` и не зависит от renderer geometry.
+
+## 40.1. Accepted structural snapshot
+
+`EndgameGraphCore` детерминированно строит и индексирует:
+
+- connected stone strings;
+- liberties каждой string;
+- connected empty regions;
+- boundary groups и boundary colors каждого empty region;
+- `vitalGroups` — groups, смежные с каждой точкой region, как structural input для Benson;
+- `stringByPoint` и `regionByPoint`;
+- direct opponent adjacency;
+- shared liberties между strings;
+- candidate friendly connections;
+- connected conflict components с обеими сторонами, их regions/shared-liberty/connection relations.
+
+Весь correctness path использует только logical point identity/occupancy и `Topology.neighbors()`.
+
+## 40.2. Connection и complexity decision
+
+В Work 2 был отдельно отклонён опасный вариант «считать possible connection для каждой пары дружественных groups, которые просто граничат с одним большим empty region».
+
+Такой вариант одновременно:
+
+- создаёт false connection candidate для strings, находящихся на разных концах большой пустой области;
+- создаёт потенциальный `O(k²)` all-pairs pass по числу boundary groups region.
+
+Принятая Work 2 semantics:
+
+```text
+friendly connection candidate
+=
+same-color strings with an actual shared liberty
+```
+
+`viaRegions` выводится из `regionByPoint` для этих shared liberties.
+
+Pair enumeration при построении shared liberties выполняется локально вокруг одной empty point. Для production Cube/Torus topology степень logical point ограничена четырьмя соседями, поэтому этот локальный pair work имеет постоянную верхнюю границу; базовые graph traversals остаются линейными относительно размера logical graph с детерминированной canonical sorting на выходе.
+
+## 40.3. Integration with existing classifier
+
+`AssistedEndgameClassifier` больше не строит собственные параллельные maps strings/liberties/empty regions.
+
+Один `buildEndgameGraph(...)` snapshot теперь используется для:
+
+- Benson/pass-alive fixed point;
+- automatic dead candidate/verifier context;
+- automatic seki candidate/verifier context.
+
+Старый partial-analysis fail-safe сохранён: если analysis context не описывает все logical strings текущей позиции, automatic proof не запускается и baseline остаётся unresolved/manual-compatible.
+
+Proof semantics пользовательского classifier в Work 2 намеренно не расширялись: этап стабилизирует structural foundation, а не добавляет новые `alive/dead/seki` правила.
+
+## 40.4. Acceptance tests
+
+Зафиксированы отдельные deterministic tests:
+
+1. stone string через Torus seam;
+2. empty region через Torus seam;
+3. stone string через Cube face edge;
+4. empty region через Cube face edge;
+5. direct opposing-string adjacency без duplicate relation;
+6. shared liberties, same-color connection candidate и multi-color conflict component на маленьком arbitrary graph fixture;
+7. negative case: две friendly strings на разных концах одного connected empty region не считаются connection candidate без shared liberty;
+8. exact graph-isomorphism test: после произвольного чистого переименования `PointId` нормализованный полный graph snapshot совпадает, включая mappings/regions/relations/conflict components;
+9. invalid board без occupancy для topology point fail-closed.
+
+Renderer/presentation geometry не импортируется production graph core и не используется тестами как источник semantic adjacency.
+
+## 40.5. Validation boundary
+
+Work 2 validation выполняется на PR #146 в ветке `engine-work2-graph-core`.
+
+До documentation closure code-head прошёл:
+
+- lint — pass;
+- typecheck — pass;
+- unit/coverage — pass;
+- build — pass.
+
+Full Playwright остаётся обязательной проверкой final exact PR head перед merge. Если повторится ранее изолированный WebKit race `torus-pan-animation.spec.ts`, он должен рассматриваться отдельно и не должен исправляться изменением Torus production code ради Engine Work 2.
+
+## 40.6. Closure
+
+Work 2 закрывает Stage A foundation:
+
+- одна topology-neutral representation вместо дублирующих private indexes;
+- Cube/Torus boundary adjacency покрыта для stones и empty regions;
+- graph-isomorphism является explicit acceptance invariant;
+- conflict/shared-liberty/connection relations доступны дальнейшим proof layers;
+- renderer geometry отсутствует в correctness dependency chain;
+- внешний solver/Board не введён в production foundation.
+
+**Следующий этап — Work 3: Benson hardening.** Он должен использовать `EndgameGraphCore` как structural source, а не снова строить отдельные groups/regions.
