@@ -1375,19 +1375,22 @@ Acceptance закрыт:
 
 Итог Work 6B зафиксирован в разделе 47.
 
-## Work 6C — Hardening + classifier integration
+## Work 6C — Hardening + classifier integration — CLOSED 2026-08-23
 
-Только после устойчивого Work 6B расширить corpus и подключить доказанные результаты к classifier.
+Work 6B reader расширен отдельным deterministic hardening corpus и подключён к `AssistedEndgameClassifier` только через полностью доказанные outcomes.
 
-Acceptance:
+Acceptance закрыт:
 
-- standard tsumego corpus subset;
-- negative/adversarial cases;
-- far-away / Relevance Zone invariance;
-- budget regressions;
-- proof-trace determinism;
-- performance regression gate;
-- conservative classifier integration только для полностью доказанных outcomes.
+- frozen elementary tsumego-equivalent known-answer subset покрывает enclosed 2-, 3- и 4-liberty local deaths плюс Benson/pass-alive survival reference;
+- adversarial mixed-order case доказывает, что defender-first connection к Benson-safe group запрещает false overall `dead`;
+- far-away mutation за неизменившейся Relevance Zone boundary сохраняет exact zone и оба search traces;
+- exact node-budget threshold и one-node-below regression fail closed как `unknown-budget`;
+- repeated reads дают deterministic proof traces;
+- performance regression gate основан на deterministic explored-node count, а production classifier дополнительно имеет узкий candidate gate;
+- classifier повышает только `proved-dead` / `proved-alive`, когда оба first-player orders совпадают; `unknown`, budget, boundary, cycle, incomplete и ko-dependent результаты остаются `unresolved`;
+- production Local Life/Death search запускается только для unresolved target с 3–4 liberties, каждая из которых непосредственно ограничена opponent Benson/pass-alive string; 1-liberty и 2-liberty classes остаются у ранее принятых cheap proof layers.
+
+Итог Work 6C зафиксирован в разделе 48. Следующий этап — **Work 7: Semeai / Seki**.
 
 ## Work 7 — Semeai / Seki
 
@@ -2394,7 +2397,7 @@ simple-cut-v1 != PROVEN_DEAD
 - Safe Connection не создаёт transitive Benson anchors;
 - cut fact не подменяет full life/death proof.
 
-**Work 6A закрыт в разделе 46; Work 6B закрыт в разделе 47; следующий этап — Work 6C: Hardening + classifier integration.**
+**Work 6A, Work 6B и Work 6C закрыты в разделах 46–48; следующий этап — Work 7: Semeai / Seki.**
 
 ---
 
@@ -2531,7 +2534,7 @@ Work 6A намеренно не решает ни одного реальног�
 - deterministic proof trace;
 - fail-closed cycles/incomplete branches.
 
-**Work 6B закрыт в разделе 47; следующий этап — Work 6C: Hardening + classifier integration.**
+**Work 6B закрыт в разделе 47; Work 6C закрыт в разделе 48; следующий этап — Work 7: Semeai / Seki.**
 
 ---
 
@@ -2641,4 +2644,118 @@ Work 6B закрывает первый настоящий bounded local life/de
 - ko, boundary, budget, cycle и incomplete uncertainty fail closed;
 - ни один Work 6B result пока не подключён к automatic classifier.
 
-**Следующий этап — Work 6C: Hardening + classifier integration.**
+**Work 6C закрыт в разделе 48; следующий этап — Work 7: Semeai / Seki.**
+
+---
+
+# 48. Work 6C — Hardening + classifier integration: финальный результат
+
+Срез на **2026-08-23**. **Work 6C закрыт.** Work 6B `LocalLifeDeathReader` получил отдельный deterministic hardening layer и теперь консервативно используется `AssistedEndgameClassifier` после существующих cheap proofs и до seki analysis.
+
+## 48.1. Hardening corpus и correctness boundary
+
+Новый `LocalLifeDeathReader.hardening.test.ts` содержит семь targeted tests. Первый frozen known-answer subset намеренно topology-neutral и представляет elementary tsumego-equivalent local graphs, а не новый rectangular rules engine.
+
+Покрыто:
+
+1. enclosed local death с 2, 3 и 4 liberties: attacker-first и defender-first независимо доказывают `proved-dead`;
+2. Benson/pass-alive boundary group как стабильный `proved-alive` reference terminal;
+3. adversarial case, где attacker-first доказывает death, но defender-first legal connection к Benson-safe friendly group доказывает survival; overall остаётся `unknown`;
+4. far-away occupancy mutation за неизменившейся safe boundary сохраняет exact `RelevanceZoneResult`, attacker-first search result и defender-first search result;
+5. повторные reads одной позиции возвращают exact одинаковые proof traces;
+6. exact deterministic node threshold сохраняет proof, а budget на один node меньше даёт `unknown-budget` и overall `unknown`;
+7. classifier positive/negative integration: fully proved local death становится automatic `dead`, mixed first-player result остаётся exact `unresolved`.
+
+Этот subset является первым frozen elementary L&D acceptance corpus для production reader. Более широкий внешний SGF corpus, oracle differential и массовая coverage evaluation остаются Work 9 и не подменяются hand-authored fixtures.
+
+## 48.2. Classifier integration contract
+
+Production order теперь:
+
+```text
+Benson alive
+-> Safe Connection alive
+-> sealed single-liberty dead proof
+-> Work 4 two-liberty TacticalReader dead proof
+-> Work 6 LocalLifeDeathReader
+-> existing seki proof
+-> unresolved
+```
+
+Local Life/Death result повышается до automatic status только если overall reader outcome уже полностью доказан:
+
+```text
+proved-dead  -> dead
+proved-alive -> alive
+unknown      -> unresolved
+```
+
+Так как Work 6B overall outcome требует совпадающего proof в обоих first-player orders, classifier не интерпретирует mixed/critical result самостоятельно. `unknown-budget`, `unknown-boundary`, `unknown-cycle`, incomplete search и `ko-dependent` могут появиться только внутри overall `unknown` и не повышаются до automatic status.
+
+Classifier evidence сохраняет proof identity `local-life-death-v1`, `crucialStones`, общий `proofReason` и компактные summaries обоих first-player runs (`outcome`, `exploredNodes`, `transpositionHits`). Полные recursive traces остаются reader/test diagnostics и не копируются в каждый user-facing proposal.
+
+## 48.3. Production candidate/performance gate
+
+Первоначальная интеграция запускала `LocalLifeDeathReader` для каждого ещё unresolved group. Первый CI run #783 показал, что такой coverage слишком широк для текущего browser-oriented classifier:
+
+- deterministic Full endgame sweep вышел за существующий 30-second test budget;
+- controlled generator больше не мог гарантировать старые intentional two-liberty `unresolved` controls, потому что новый reader начал решать класс, который уже принадлежит Work 4 Tactical Reader.
+
+Timeout не увеличивался, Test Lab expectations не ослаблялись. Вместо этого production search получил узкий candidate gate, который влияет только на cost/coverage, но не является proof:
+
+- target должен оставаться unresolved после Benson / Safe Connection / existing dead / TacticalReader layers;
+- target имеет 3 или 4 liberties;
+- каждая target liberty непосредственно соседствует с opponent Benson/pass-alive string;
+- classifier `maxNodes = 256` отдельно на first-player search;
+- classifier `maxZonePoints = 24`.
+
+Reader по-прежнему обязан доказать оба first-player orders внутри bounded Relevance Zone. Candidate gate никогда сам не выдаёт `alive` или `dead`.
+
+1-liberty groups остаются у sealed dead verifier, 2-liberty groups — у Work 4 TacticalReader. Это убирает дублирование expensive search и сохраняет предыдущие deliberate unresolved controls.
+
+## 48.4. Performance regression gate
+
+Correctness/performance test не использует wall-clock как proof boundary. Для frozen 2/3/4-liberty subset проверяется deterministic `exploredNodes < 512` в каждом first-player run.
+
+Отдельный exact-threshold regression вычисляет фактическое число необходимых nodes на frozen 3-liberty case:
+
+```text
+maxNodes = requiredNodes     -> proved-dead
+maxNodes = requiredNodes - 1 -> unknown-budget / overall unknown
+```
+
+Это одновременно фиксирует resource determinism и запрещает будущей оптимизации превращать budget exhaustion в guessed result.
+
+После production gating code-head `374343daedde6caed3d83a50625d300eef6daf06` прошёл standard CI run #785:
+
+- lint — pass, только два существующих non-blocking warnings вне Work 6C scope;
+- typecheck — pass;
+- unit/coverage — **581/581 tests pass** в 78 test files;
+- `LocalLifeDeathReader.hardening.test.ts` — **7/7 pass**;
+- `EndgameHardening.test.ts` — pass; основной deterministic Full sweep — **19.741 s**, весь файл — **24.900 s**, то есть снова внутри существующего 30-second budget;
+- build — pass;
+- Chromium Playwright — **72/72 pass**.
+
+PR переведён в `[full]` перед documentation closure, поэтому exact final documentation head должен пройти полный multi-browser CI перед merge.
+
+## 48.5. Closure
+
+Work 6 теперь закрыт как последовательность:
+
+```text
+6A — generic deterministic AND/OR proof-search core
+6B — authoritative bounded Go local life/death adapter
+6C — hardening, deterministic performance guard и conservative classifier integration
+```
+
+Главные invariants после closure:
+
+- candidate logic управляет только приоритетом/cost, не proof semantics;
+- legal Go transitions остаются authoritative через `GameEngine`;
+- localisation остаётся authoritative через bounded `RelevanceZone`;
+- automatic local `dead` / `alive` возможен только после совпадающего proof в обоих first-player orders;
+- far-away changes за неизменившейся certified boundary не меняют proof;
+- budget, boundary, ko, cycle, incomplete и mixed-order uncertainty остаются `unresolved`;
+- ранее принятые Benson / Connection / TacticalReader layers сохраняют свои классы и precedence.
+
+**Следующий этап — Work 7: Semeai / Seki.**
