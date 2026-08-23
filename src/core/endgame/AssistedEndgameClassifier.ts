@@ -20,6 +20,12 @@ import {
 } from './BensonPassAlive';
 import { buildEndgameGraph } from './EndgameGraphCore';
 import { endgameGroupId } from './EndgameGroupIdentity';
+import {
+  LOCAL_LIFE_DEATH_ALGORITHM,
+  readLocalLifeDeath,
+  type LocalLifeDeathOrderResult,
+  type LocalLifeDeathResult,
+} from './LocalLifeDeathReader';
 import { ManualEndgameClassifier } from './ManualEndgameClassifier';
 import { proveSafeConnectionToBenson, type SafeConnectionProof } from './SafeConnection';
 import {
@@ -31,6 +37,47 @@ import type { StoneColor } from '../game/types';
 
 const COLORS: readonly StoneColor[] = Object.freeze(['black', 'white']);
 const TACTICAL_CLASSIFIER_MAX_NODES = 16;
+const LOCAL_LIFE_DEATH_CLASSIFIER_MAX_NODES = 256;
+const LOCAL_LIFE_DEATH_CLASSIFIER_MAX_ZONE_POINTS = 24;
+
+type LocalLifeDeathClassifierStatus = 'alive' | 'dead';
+
+interface LocalLifeDeathClassifierProof {
+  readonly status: LocalLifeDeathClassifierStatus;
+  readonly evidence: Readonly<Record<string, unknown>>;
+}
+
+const summarizeLocalLifeDeathOrder = (order: LocalLifeDeathOrderResult) =>
+  Object.freeze({
+    outcome: order.outcome,
+    exploredNodes: order.search?.exploredNodes ?? 0,
+    transpositionHits: order.search?.transpositionHits ?? 0,
+  });
+
+const toLocalLifeDeathClassifierProof = (
+  result: LocalLifeDeathResult,
+): LocalLifeDeathClassifierProof | null => {
+  if (result.outcome === 'unknown') return null;
+
+  const status: LocalLifeDeathClassifierStatus =
+    result.outcome === 'proved-dead' ? 'dead' : 'alive';
+  const proof =
+    result.outcome === 'proved-dead'
+      ? 'proved-dead-both-first-player-orders'
+      : 'proved-alive-both-first-player-orders';
+
+  return Object.freeze({
+    status,
+    evidence: Object.freeze({
+      algorithm: LOCAL_LIFE_DEATH_ALGORITHM,
+      proof,
+      crucialStones: result.crucialStones,
+      attackerFirst: summarizeLocalLifeDeathOrder(result.attackerFirst),
+      defenderFirst: summarizeLocalLifeDeathOrder(result.defenderFirst),
+      proofReason: result.proofReason,
+    }),
+  });
+};
 
 /**
  * Conservative assisted classifier.
@@ -38,9 +85,11 @@ const TACTICAL_CLASSIFIER_MAX_NODES = 16;
  * It proves unconditional/pass-alive groups using Benson's fixed-point
  * criterion, adds the narrow Work 5B two-liberty miai connection to a Benson
  * safe group, preserves the sealed single-liberty proof, keeps the Work 4
- * ultra-short two-liberty tactical forced-capture proof, and resolves seki only
- * for the existing closed mutual two-liberty proof. Any group not proven by
- * one of those boundaries remains unresolved.
+ * ultra-short two-liberty tactical forced-capture proof, and then runs the
+ * Work 6 bounded local life/death proof only for a small enclosed candidate
+ * class that is still unresolved. Seki remains a separate final proof layer.
+ * Any result that is budget-, boundary-, cycle-, incomplete-, or ko-dependent
+ * stays unresolved.
  */
 export class AssistedEndgameClassifier implements EndgameClassifier {
   private readonly manual = new ManualEndgameClassifier();
@@ -163,11 +212,49 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
       );
     }
 
+    const localLifeDeathProofs = new Map<string, LocalLifeDeathClassifierProof>();
+    for (const group of graph.strings) {
+      if (
+        passAliveGroupKeys.has(group.key) ||
+        safeConnectionProofs.has(group.key) ||
+        deadProofs.has(group.key) ||
+        tacticalDeadProofs.has(group.key)
+      ) {
+        continue;
+      }
+
+      // Work 6C deliberately keeps the first production search class narrow.
+      // One-liberty groups already have a sealed proof and two-liberty groups
+      // already belong to the Work 4 tactical layer. The local L&D reader is
+      // therefore used here only for small 3–4 liberty targets whose every
+      // liberty is immediately bounded by a Benson/pass-alive opponent string.
+      // This is only a candidate/performance gate: the reader must still prove
+      // both first-player orders before any automatic status is emitted.
+      if (group.liberties.length < 3 || group.liberties.length > 4) continue;
+      const opponent: StoneColor = group.color === 'black' ? 'white' : 'black';
+      const enclosedBySafeOpponent = group.liberties.every((liberty) =>
+        context.topology.neighbors(liberty).some((neighbor) => {
+          if (context.state.board[neighbor] !== opponent) return false;
+          const owner = graph.stringByPoint.get(neighbor);
+          return owner !== undefined && passAliveGroupKeys.has(owner);
+        }),
+      );
+      if (!enclosedBySafeOpponent) continue;
+
+      const localResult = readLocalLifeDeath(group, context.state, context.topology, {
+        maxNodes: LOCAL_LIFE_DEATH_CLASSIFIER_MAX_NODES,
+        maxZonePoints: LOCAL_LIFE_DEATH_CLASSIFIER_MAX_ZONE_POINTS,
+      });
+      const classifierProof = toLocalLifeDeathClassifierProof(localResult);
+      if (classifierProof) localLifeDeathProofs.set(group.key, classifierProof);
+    }
+
     const alreadyResolvedGroupKeys = new Set<string>([
       ...passAliveGroupKeys,
       ...safeConnectionProofs.keys(),
       ...deadProofs.keys(),
       ...tacticalDeadProofs.keys(),
+      ...localLifeDeathProofs.keys(),
     ]);
     const sekiProofs = new Map<string, AutomaticSekiProof>();
     for (const candidate of generateSekiCandidates(
@@ -230,6 +317,16 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
             status: 'dead' as const,
             source: 'automatic' as const,
             evidence: Object.freeze({ ...tacticalDeadProof }),
+          });
+        }
+
+        const localLifeDeathProof = localLifeDeathProofs.get(groupKey);
+        if (localLifeDeathProof) {
+          return Object.freeze({
+            points: proposal.points,
+            status: localLifeDeathProof.status,
+            source: 'automatic' as const,
+            evidence: localLifeDeathProof.evidence,
           });
         }
 
