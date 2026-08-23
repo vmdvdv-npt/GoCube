@@ -11,6 +11,7 @@ import {
   endgameGroupForPoint,
   type EndgameGroupRenderState,
 } from '../presentation/EndgameGroupPresentation';
+import { finalBoardViewModel } from '../presentation/EndgameTerritoryPresentation';
 import { GameResultDialog } from './GameResultDialog';
 import { GameSidebar } from './GameSidebar';
 import './manual-endgame.css';
@@ -125,6 +126,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     initialViewModel.phase === 'endgame' ? controller.endgameGroups() : [],
   );
   const decisions = controller.endgameDecisions();
+  const endgameTerritory = viewModel.phase === 'endgame' ? controller.endgameTerritory() : new Map();
   const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(() =>
     initialViewModel.phase === 'endgame' ? controller.nextUnresolvedEndgameGroupId() : null,
@@ -194,24 +196,20 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
 
   const manualGroupIds =
     viewModel.phase === 'endgame' ? controller.endgameManualGroupIds() : [];
-  const manualReviewedCount = manualGroupIds.filter((groupId) => Boolean(decisions[groupId])).length;
   const automaticClassifiedCount = Math.max(0, endgameGroups.length - manualGroupIds.length);
+  const resolvedCount = endgameGroups.filter((group) => Boolean(decisions[group.id])).length;
+  const canFinishEndgame =
+    viewModel.phase === 'endgame' && controller.nextUnresolvedEndgameGroupId() === null;
 
   useEffect(() => {
     panOffsetRef.current = dragPan.offset;
   }, [dragPan.offset]);
 
   useEffect(() => {
-    if (viewModel.phase !== 'endgame') {
-      if (selectedGroupId !== null) setSelectedGroupId(null);
-      return;
+    if (viewModel.phase !== 'endgame' && selectedGroupId !== null) {
+      setSelectedGroupId(null);
     }
-
-    const nextUnresolvedGroupId = controller.nextUnresolvedEndgameGroupId();
-    if (selectedGroupId !== nextUnresolvedGroupId) {
-      setSelectedGroupId(nextUnresolvedGroupId);
-    }
-  }, [controller, decisions, endgameGroups, selectedGroupId, viewModel.phase]);
+  }, [selectedGroupId, viewModel.phase]);
 
   useEffect(() => {
     rendererRef.current = null;
@@ -312,6 +310,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
 
     const renderer = rendererRef.current ?? new Torus2DRenderer(svg, controller.size);
     rendererRef.current = renderer;
+    const displayViewModel = finalBoardViewModel(viewModel);
 
     // The legacy renderer expansion is deliberately kept disabled. The opt-in
     // duplicate view is now a separate one-line, non-interactive edge overlay.
@@ -325,10 +324,11 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
           }
         : null,
     );
-    renderer.render(viewModel);
+    renderer.setEndgameTerritory(viewModel.phase === 'endgame' ? endgameTerritory : null);
+    renderer.render(displayViewModel);
     renderTorus2DEdgeDuplicates(
       svg,
-      viewModel,
+      displayViewModel,
       controller.size,
       renderer.viewState(),
       showDuplicateRegions,
@@ -336,6 +336,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     renderTorus2DStoneAnnotations(svg, viewModel, showMoveNumbers);
   }, [
     controller,
+    endgameTerritory,
     hoveredGroupId,
     renderGroups,
     selectedGroupId,
@@ -373,7 +374,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
       if (renderer && svg.getAttribute('data-pan-animating') !== 'true') {
         renderTorus2DEdgeDuplicates(
           svg,
-          viewModel,
+          finalBoardViewModel(viewModel),
           controller.size,
           renderer.viewState(),
           showDuplicateRegions,
@@ -401,9 +402,14 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     }
 
     if (result.viewModel.phase === 'endgame') {
-      setEndgameGroups(controller.endgameGroups());
+      const nextGroups = controller.endgameGroups();
+      setEndgameGroups(nextGroups);
       setHoveredGroupId(null);
-      setSelectedGroupId(controller.nextUnresolvedEndgameGroupId());
+      setSelectedGroupId((current) =>
+        current && nextGroups.some((group) => group.id === current)
+          ? current
+          : controller.nextUnresolvedEndgameGroupId(),
+      );
     } else {
       setEndgameGroups([]);
       setHoveredGroupId(null);
@@ -472,7 +478,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
 
     if (viewModel.phase === 'endgame') {
       const group = groupAtClientPosition(event);
-      if (group?.id === controller.nextUnresolvedEndgameGroupId()) {
+      if (group) {
         setSelectedGroupId(group.id);
         setHoveredGroupId(group.id);
       }
@@ -649,13 +655,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     group: TorusEndgameGroup,
     status: GroupStatus,
   ): Promise<void> => {
-    if (
-      actionInFlight.current ||
-      viewModel.phase !== 'endgame' ||
-      group.id !== controller.nextUnresolvedEndgameGroupId()
-    ) {
-      return;
-    }
+    if (actionInFlight.current || viewModel.phase !== 'endgame') return;
 
     actionInFlight.current = true;
     try {
@@ -665,10 +665,23 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         reason: null,
         viewModel: controller.viewModel(),
       }));
+      setSelectedGroupId(group.id);
     } catch (error) {
       setFeedback(
         error instanceof Error ? error.message : 'Endgame decision could not be saved.',
       );
+    } finally {
+      actionInFlight.current = false;
+    }
+  };
+
+  const finishEndgame = async (): Promise<void> => {
+    if (actionInFlight.current || !canFinishEndgame) return;
+    actionInFlight.current = true;
+    try {
+      applyResult(await controller.finishEndgame());
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : 'Scoring could not be finished.');
     } finally {
       actionInFlight.current = false;
     }
@@ -683,15 +696,15 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         <div>
           <h2 id="endgame-title">Assisted endgame review</h2>
           <p>
-            Proven groups are already marked. Review the selected unresolved group; the next one is selected automatically.
+            Click any stone to select its whole group. You can change Alive, Dead, or Seki even when the status was proposed automatically.
           </p>
         </div>
 
         {endgameGroups.length > 0 ? (
           <>
             <div className="endgame-progress" aria-live="polite">
-              Manual review {manualReviewedCount} of {manualGroupIds.length}
-              {automaticClassifiedCount > 0 ? ` · ${automaticClassifiedCount} automatic` : ''}
+              Resolved {resolvedCount} of {endgameGroups.length}
+              {automaticClassifiedCount > 0 ? ` · ${automaticClassifiedCount} automatic proposals` : ''}
             </div>
 
             {selectedGroup ? (
@@ -702,7 +715,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
                     aria-hidden="true"
                   />
                   <div>
-                    <strong>Group to review</strong>
+                    <strong>Selected group</strong>
                     <span>
                       {selectedGroup.points.length} {selectedGroup.points.length === 1 ? 'stone' : 'stones'}
                     </span>
@@ -727,12 +740,20 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
                 </div>
               </div>
             ) : (
-              <p className="endgame-empty">Automatic analysis resolved every required group.</p>
+              <p className="endgame-empty">Click a stone to review or change its group status.</p>
             )}
           </>
         ) : (
           <p className="endgame-empty">There are no stone groups to review.</p>
         )}
+        <button
+          type="button"
+          className="endgame-finish"
+          disabled={!canFinishEndgame}
+          onClick={() => void finishEndgame()}
+        >
+          Finish scoring
+        </button>
       </section>
     ) : null;
 
