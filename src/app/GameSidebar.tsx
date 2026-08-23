@@ -169,89 +169,6 @@ export function GameSidebar({
       {endgame}
 
       <div className="game-controls">
-        {developerGeneration ? (
-          <section
-            className="live-test-generator-controls"
-            data-testid="live-test-generator-controls"
-            aria-label="Developer test cases"
-          >
-            <strong>Test cases</strong>
-            <div className="live-test-generator-actions live-test-generator-actions--three">
-              <button
-                type="button"
-                onClick={developerGeneration.onGenerateGame}
-                disabled={developerGeneration.busy}
-              >
-                Generate game
-              </button>
-              <button
-                type="button"
-                onClick={developerGeneration.onGenerateEndgame}
-                disabled={developerGeneration.busy}
-              >
-                Generate endgame
-              </button>
-              <button
-                type="button"
-                onClick={developerGeneration.onGenerateCorpus}
-                disabled={developerGeneration.busy}
-              >
-                AI-verified case
-              </button>
-            </div>
-
-            <label className="live-test-id-control">
-              <span>Test ID</span>
-              <input
-                aria-label="Test ID"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                value={developerGeneration.testIdInput}
-                onChange={(event) => developerGeneration.onTestIdInputChange(event.target.value)}
-                placeholder="Test ID"
-                disabled={developerGeneration.busy}
-              />
-              <button
-                type="button"
-                onClick={developerGeneration.onLoadTestId}
-                disabled={developerGeneration.busy || developerGeneration.testIdInput.trim().length === 0}
-              >
-                Load
-              </button>
-            </label>
-
-            <p className="live-test-generator-current" aria-live="polite">
-              Current Test ID: {developerGeneration.current?.testId ?? '—'}
-            </p>
-            {developerGeneration.current ? (
-              <p className="live-test-generator-current">
-                {developerGeneration.current.identity.source === 'game-like'
-                  ? 'Game-like'
-                  : developerGeneration.current.identity.source === 'synthetic-endgame'
-                    ? `Synthetic · ${developerGeneration.current.scenario}`
-                    : `Corpus · ${developerGeneration.current.scenario}`}
-              </p>
-            ) : null}
-
-            {developerGeneration.current?.diagnostics ? (
-              <div className="live-test-diagnostics" aria-label="Differential results">
-                <span>Source: {referenceStatusLabel(developerGeneration.current.diagnostics.sourceStatus)}</span>
-                <span>KataGo: {referenceStatusLabel(developerGeneration.current.diagnostics.kataGoStatus)}</span>
-                <span>Cube Go: {referenceStatusLabel(developerGeneration.current.diagnostics.cubeGoStatus)}</span>
-                {developerGeneration.current.diagnostics.attention ? (
-                  <strong className="live-test-diagnostics__mismatch">MISMATCH / REVIEW</strong>
-                ) : null}
-              </div>
-            ) : null}
-
-            {developerGeneration.feedback ? (
-              <p className="live-test-generator-feedback" role="status">
-                {developerGeneration.feedback}
-              </p>
-            ) : null}
-          </section>
-        ) : null}
-
         <button
           className="pass-control"
           type="button"
@@ -281,6 +198,91 @@ export function GameSidebar({
         >
           New game
         </button>
+
+        {developerGeneration ? (
+          <details
+            className="live-test-generator-controls"
+            data-testid="live-test-generator-controls"
+            aria-label="Developer test cases"
+          >
+            <summary>Test cases</summary>
+            <div className="live-test-generator-body">
+              <div className="live-test-generator-actions live-test-generator-actions--three">
+                <button
+                  type="button"
+                  onClick={developerGeneration.onGenerateGame}
+                  disabled={developerGeneration.busy}
+                >
+                  Generate game
+                </button>
+                <button
+                  type="button"
+                  onClick={developerGeneration.onGenerateEndgame}
+                  disabled={developerGeneration.busy}
+                >
+                  Generate endgame
+                </button>
+                <button
+                  type="button"
+                  onClick={developerGeneration.onGenerateCorpus}
+                  disabled={developerGeneration.busy}
+                >
+                  AI-verified case
+                </button>
+              </div>
+
+              <label className="live-test-id-control">
+                <span>Test ID</span>
+                <input
+                  aria-label="Test ID"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={developerGeneration.testIdInput}
+                  onChange={(event) => developerGeneration.onTestIdInputChange(event.target.value)}
+                  placeholder="Test ID"
+                  disabled={developerGeneration.busy}
+                />
+                <button
+                  type="button"
+                  onClick={developerGeneration.onLoadTestId}
+                  disabled={developerGeneration.busy || developerGeneration.testIdInput.trim().length === 0}
+                >
+                  Load
+                </button>
+              </label>
+
+              <p className="live-test-generator-current" aria-live="polite">
+                Current Test ID: {developerGeneration.current?.testId ?? '—'}
+              </p>
+              {developerGeneration.current ? (
+                <p className="live-test-generator-current">
+                  {developerGeneration.current.identity.source === 'game-like'
+                    ? 'Game-like'
+                    : developerGeneration.current.identity.source === 'synthetic-endgame'
+                      ? `Synthetic · ${developerGeneration.current.scenario}`
+                      : `Corpus · ${developerGeneration.current.scenario}`}
+                </p>
+              ) : null}
+
+              {developerGeneration.current?.diagnostics ? (
+                <div className="live-test-diagnostics" aria-label="Differential results">
+                  <span>Source: {referenceStatusLabel(developerGeneration.current.diagnostics.sourceStatus)}</span>
+                  <span>KataGo: {referenceStatusLabel(developerGeneration.current.diagnostics.kataGoStatus)}</span>
+                  <span>Cube Go: {referenceStatusLabel(developerGeneration.current.diagnostics.cubeGoStatus)}</span>
+                  {developerGeneration.current.diagnostics.attention ? (
+                    <strong className="live-test-diagnostics__mismatch">MISMATCH / REVIEW</strong>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {developerGeneration.feedback ? (
+                <p className="live-test-generator-feedback" role="status">
+                  {developerGeneration.feedback}
+                </p>
+              ) : null}
+            </div>
+          </details>
+        ) : null}
       </div>
 
       {feedback ? <p className="game-feedback">{feedback}</p> : null}
