@@ -97,7 +97,8 @@ test('developer synthetic Endgame Test ID creates a playable Cube position for i
   await closeTestCaseControls(page);
   await finishTwoPasses(page);
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
-  await expect(page.locator('.endgame-progress')).toContainText('Manual review');
+  await expect(page.locator('.endgame-progress')).toContainText('Resolved');
+  await expect(page.getByRole('button', { name: 'Finish scoring' })).toBeVisible();
 });
 
 test('AI-verified case exposes Source / KataGo / Cube Go and is reloadable by Test ID', async ({ page }) => {
