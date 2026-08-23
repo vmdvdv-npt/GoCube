@@ -177,8 +177,13 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
   private renderEndgameOverlay(): void {
     const scene = this.latestScene;
     if (!scene) return;
-    if (this.navigationRoot.getAttribute('data-pan-animating') === 'true') return;
     if (typeof this.navigationRoot.querySelector !== 'function') return;
+    if (
+      typeof this.navigationRoot.getAttribute === 'function' &&
+      this.navigationRoot.getAttribute('data-pan-animating') === 'true'
+    ) {
+      return;
+    }
 
     this.navigationRoot.querySelector('.torus-board__endgame-lines')?.remove();
     this.navigationRoot.querySelector('.torus-board__endgame-overlay')?.remove();
