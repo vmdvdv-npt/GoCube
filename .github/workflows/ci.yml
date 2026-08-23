@@ -60,7 +60,7 @@ jobs:
       - run: npm run typecheck:engine2
         if: steps.mode.outputs.mode != 'none'
 
-      - run: npm run build
+      - run: npm run build:engine2
         if: steps.mode.outputs.mode != 'none'
 
       - name: Install Playwright browsers
