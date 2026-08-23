@@ -1278,11 +1278,11 @@ Acceptance закрыт:
 
 Итог Work 3 и semantic boundary зафиксированы в разделе 41.
 
-## Work 4 — Tactical Reader
+## Work 4 — Tactical Reader — CLOSED 2026-08-23
 
-Сначала добиться сильной практической пользы на очевидных deaths.
+Topology-neutral bounded tactical reader реализован поверх authoritative `GameEngine.placeStone()` semantics. Automatic tactical `dead` допускается только когда capture доказан и при attacker-first, и при defender-first; selective attack search, budget/depth/boundary/cycle uncertainty и ko никогда не повышаются до `dead`.
 
-Acceptance:
+Acceptance закрыт:
 
 - immediate capture;
 - escape from atari;
@@ -1291,7 +1291,11 @@ Acceptance:
 - net;
 - snapback;
 - counter-capture;
-- open escape remains unresolved/not-dead.
+- open escape remains unresolved/not-dead;
+- terminal capture, зависящий от restoring ko recapture, возвращает `KO_DEPENDENT`;
+- `KO_DEPENDENT` остаётся unresolved в classifier и имеет regression против ложного automatic `dead`.
+
+Итог Work 4 и ko hardening зафиксированы в разделе 42.
 
 ## Work 5 — Relevance Zone + Connection
 
@@ -1903,3 +1907,106 @@ Work 3 закрывает Stage B hardening:
 - dead/seki proof layers не расширялись этим Work.
 
 **Следующий этап — Work 4: Tactical Reader.**
+
+---
+
+# 42. Work 4 — Tactical Reader: финальный результат
+
+Срез на **2026-08-23**. **Work 4 закрыт.** Добавлен topology-neutral bounded tactical reader, который использует `GameEngine.placeStone()` как единственный источник legal move / capture / suicide / simple-ko semantics и не вводит отдельную Board/rules implementation.
+
+## 42.1. Production proof boundary
+
+Reader фиксирует исходные `crucialStones` target и решает короткую forced-capture задачу как AND/OR search:
+
+```text
+attacker = OR
+  достаточно одного доказанного kill continuation
+
+defender = AND
+  kill доказан только если каждая допустимая защита проигрывает
+```
+
+Поддерживаются deterministic depth/node budgets и raw outcomes:
+
+```text
+proved-kill
+proved-survival
+ko-dependent
+unknown-budget
+unknown-depth
+unknown-boundary
+unknown-cycle
+```
+
+Failure to find a kill через selective attacker move generation не считается proof survival; такой путь остаётся `unknown-boundary`/другим conservative unknown.
+
+Classifier integration Work 4 намеренно узкая: новый tactical proof рассматривает contested unresolved strings с двумя liberties и повышает их до automatic `dead` только если **оба** запуска — attacker-first и defender-first — возвращают `proved-kill`. Existing Benson, sealed single-liberty verifier и seki evidence contracts остаются самостоятельными и не заменены.
+
+## 42.2. Ko hardening
+
+Найденный риск состоял в том, что terminal capture мог выглядеть как обычный kill, хотя восстановление исходной occupancy зависело от немедленного recapture, запрещённого simple-ko repetition rule.
+
+Принята fail-closed semantics:
+
+1. после terminal target capture reader проверяет legal target-color recaptures через authoritative `GameEngine`;
+2. проверка получает `previousBoard` из позиции непосредственно перед capture;
+3. если существует restoring recapture, который отвергается именно как `repetition`, terminal result становится `ko-dependent`, а не `proved-kill`;
+4. `verifyTacticalDead()` никогда не возвращает `proven: true`, если любой обязательный first-player proof остаётся ko-dependent;
+5. `AssistedEndgameClassifier` не повышает такую target group до automatic `dead`.
+
+Это соответствует общему правилу раздела 22:
+
+```text
+KO_DEPENDENT -> unresolved
+```
+
+Work 4 не пытается решать global ko threats, positional history или multi-ko; такие задачи остаются за пределами current tactical proof boundary.
+
+## 42.3. Regression coverage
+
+TacticalReader deterministic corpus теперь покрывает:
+
+- immediate capture даже при defender-first;
+- legal atari escape;
+- short forced capture;
+- ladder;
+- net move вне текущих target liberties;
+- snapback с defender counter-capture sacrificial stone;
+- counter-capture defense, которая предотвращает ложный `dead`;
+- open escape boundary -> unresolved/not-dead;
+- `KO_DEPENDENT`, где restoring recapture находится не на attacker capture point;
+- classifier regression: ko-dependent target существует, но `status !== dead`;
+- отдельный non-ko two-liberty classifier fixture подтверждает, что conservative ko hardening не уничтожил настоящий automatic tactical `dead`.
+
+Положительный classifier fixture специально построен так, чтобы две target liberties принадлежали одной Benson non-color области через opponent stone. Это не позволяет Benson раньше tactical reader ошибочно забрать case как pass-alive и одновременно исключает simple-ko restoration после multi-stone capture.
+
+## 42.4. Validation history
+
+Во время hardening два красных CI дали полезные semantic regressions, а не были обойдены изменением expectations:
+
+1. прежний 3×3 positive integration fixture после ko hardening стал `unresolved`: анализ показал, что ожидаемый «forced dead» фактически зависел от restoring ko recapture. Fixture был исключён из positive proof и сохранён как отдельный ko regression;
+2. первая replacement topology случайно создала две Benson vital regions и корректно получила `alive`; fixture снова был исправлен, чтобы проверять именно Tactical Reader, а не конфликтовать с Benson semantics.
+
+После второй корректировки code-head `7d4a0e1f7aa305382ff8aaee5433e2409ba98e11` прошёл CI run #711 полностью:
+
+- lint — pass;
+- typecheck — pass;
+- unit/coverage — pass;
+- build — pass;
+- Playwright E2E — pass.
+
+Final documentation head обязан пройти новый зелёный PR CI перед merge.
+
+## 42.5. Closure
+
+Work 4 закрывает первый production tactical layer:
+
+- короткие capture/escape/ladder/net/snapback/counter-capture sequences читаются topology-neutral;
+- legal transitions остаются полностью authoritative через project `GameEngine`;
+- proof требует defender completeness в исследуемом bounded scope;
+- selective search и resource/boundary uncertainty fail closed;
+- ko-dependent capture теперь имеет отдельный raw outcome и не может породить false automatic `dead`;
+- classifier сохраняет положительный non-ko automatic tactical-dead path;
+- Work 5 relevance-zone/connection semantics намеренно не введены преждевременно.
+
+**Следующий этап — Work 5: Relevance Zone + Connection.**
