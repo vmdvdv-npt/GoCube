@@ -1,0 +1,166 @@
+name: Engine Work 5B documentation update
+
+on:
+  push:
+    branches: [engine-work5b-safe-connection]
+
+permissions:
+  contents: write
+
+jobs:
+  update-doc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: engine-work5b-safe-connection
+          fetch-depth: 0
+
+      - name: Close Work 5B in the engine working document
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('docs/ENDGAME_ENGINE.md')
+          text = path.read_text(encoding='utf-8')
+
+          old = '''## Work 5B — Safe Connection
+
+На готовой bounded Relevance Zone доказать простой forced connection к Benson-alive group. Не включать сложные cut/fight варианты.
+
+Acceptance:
+
+- safe connection to Benson-alive group;
+- defender completeness в разрешённом bounded scope;
+- ko/budget/boundary uncertainty не повышается до automatic `alive`.
+'''
+
+          new = '''## Work 5B — Safe Connection — CLOSED 2026-08-23
+
+На bounded Relevance Zone реализован узкий proof `miai-two-shared-liberties-to-benson`: target group автоматически становится `alive` только если имеет две actual shared liberties с same-color Benson/pass-alive group и обе direct cut-order ветви безопасно проходят authoritative `GameEngine`.
+
+Acceptance закрыт:
+
+- safe connection к Benson-alive group доказывается только внутри bounded Relevance Zone;
+- defender completeness для этого узкого miai-theorem покрывает обе прямые блокировки connectors; ход defender вне connectors оставляет оба connector свободными, поэтому immediate connection сохраняется;
+- одна shared liberty не считается forced connection;
+- capture/sacrifice/deeper cut/fight variants остаются `not-proven` и отложены до Work 5C;
+- boundary/budget uncertainty возвращает `unknown-boundary` и не повышается до automatic `alive`;
+- safe-connected group не становится новым Benson separator и не расширяет proof транзитивно.
+
+Итог Work 5B зафиксирован в разделе 44.
+'''
+
+          if '## Work 5B — Safe Connection — CLOSED 2026-08-23' not in text:
+              if old not in text:
+                  raise SystemExit('Work 5B source block not found')
+              text = text.replace(old, new, 1)
+
+          section = '''
+
+---
+
+# 44. Work 5B — Safe Connection: финальный результат
+
+Срез на **2026-08-23**. **Work 5B закрыт.** Реализован intentionally narrow topology-neutral connection proof поверх Work 5A `RelevanceZone`, Work 3 Benson/pass-alive certificate и authoritative legal-move semantics `GameEngine`.
+
+## 44.1. Accepted proof boundary
+
+Production proof имеет evidence id:
+
+```text
+algorithm = safe-connection-v1
+proof = miai-two-shared-liberties-to-benson
+```
+
+Для automatic `alive` одновременно требуются:
+
+1. `RelevanceZone` target group имеет outcome `bounded`;
+2. same-color friendly string на boundary имеет действующий Benson/pass-alive proof;
+3. target и эта Benson-alive string имеют минимум две **actual shared liberties** из `EndgameGraphCore.possibleConnections` внутри zone;
+4. оба connector moves target являются legal quiet non-capturing direct connections по `GameEngine`;
+5. для пары connectors проверены обе прямые defender orders: block first connector -> connect second и block second -> connect first;
+6. legal defender block с capture или response, требующий capture/fight, не принимается этим proof и оставляет result `not-proven`.
+
+Одна shared liberty недостаточна. Capture, sacrifice, multi-step cut, deeper fight и иные более сложные connection shapes намеренно не входят в Work 5B и остаются scope Work 5C или последующего local search.
+
+## 44.2. Defender completeness узкого miai-theorem
+
+Пусть `c1` и `c2` — две distinct shared liberties target и Benson-alive friendly string.
+
+Если defender ходит **не** в `c1` и не в `c2`, обе точки остаются пустыми. Target может сыграть в любую из них и непосредственно соединиться с Benson-alive string; вторая shared liberty остаётся liberty уже объединённой группы. Поэтому такой внешний one-ply defender move не может разрушить theorem.
+
+Единственные one-ply defenses, которые непосредственно удаляют один из двух connector, — ходы в `c1` или `c2`. Verifier симулирует обе orders через authoritative `GameEngine`. Illegal blocker не является допустимой защитой. Если blocker создаёт capture/fight semantics либо ответ перестаёт быть quiet direct connection, proof fail-closed и не выдаётся.
+
+Ko/history не используется как optimistic shortcut. Target response принимается только как non-capturing move в ранее пустой connector, поэтому такой ход не является restoring simple-ko recapture. Для defender synthetic check отсутствие historical ko restriction консервативно: потенциально исторически запрещённый block может быть рассмотрен как legal и только лишить proof, но не создать ложный automatic `alive`.
+
+Любой `maxPoints` overflow, whole-board localisation или другой `RelevanceZone` failure 그대로 распространяется как `unknown-boundary`.
+
+## 44.3. Classifier integration
+
+`AssistedEndgameClassifier` запускает Safe Connection только для unresolved string, которая уже имеет structural candidate shared-liberty connection к Benson/pass-alive group.
+
+Разрешение происходит в порядке:
+
+```text
+Benson alive
+-> Safe Connection alive
+-> existing dead proofs
+-> bounded tactical dead
+-> existing seki proof
+-> unresolved
+```
+
+Safe-connected group **не добавляется** обратно в `passAliveGroupKeys`, не становится новым Benson/RelevanceZone separator и не используется как transitive safe anchor в этом этапе. Это сохраняет proof strength Benson boundary и не превращает простой Work 5B theorem в недоказанную цепочку connections.
+
+## 44.4. Regression / acceptance coverage
+
+Отдельный deterministic arbitrary-graph corpus проверяет:
+
+1. positive quiet two-shared-liberty miai connection к Benson-alive group;
+2. exact equality connection proof после irrelevant far-away occupancy mutation за той же safe boundary;
+3. one-shared-liberty negative case -> `not-proven`;
+4. RelevanceZone `maxPoints` overflow -> `unknown-boundary`;
+5. whole-board/open localisation -> `unknown-boundary`;
+6. assisted classifier действительно повышает только proven target до automatic `alive` с `safe-connection-v1` evidence.
+
+Общий deterministic endgame hardening corpus также знает новый automatic evidence id и продолжает проверять proposal/scoring invariants.
+
+## 44.5. Validation
+
+Code-head `a394ab4305252ec6362926c59f1fc1c215c108c5` на PR #159 прошёл полный CI run #738:
+
+- lint — pass;
+- typecheck — pass;
+- unit/coverage — **553 tests pass**;
+- build — pass;
+- full Playwright E2E — pass.
+
+Documentation closure не меняет executable semantics. Финальный PR head после этой записи должен также пройти full CI перед merge.
+
+## 44.6. Closure
+
+Work 5B закрывает только простой доказанный Safe Connection:
+
+- bounded localisation обязательна;
+- proof anchor остаётся Benson/pass-alive group;
+- две shared liberties дают проверяемый miai theorem;
+- обе direct defender cuts проверяются authoritative rules engine;
+- one-liberty, boundary/budget uncertainty и fight/capture variants не повышаются до `alive`;
+- safe-connected groups не становятся новыми transitive safe boundaries.
+
+**Следующий этап — Work 5C: Cut + hardening.**
+'''
+
+          if '# 44. Work 5B — Safe Connection: финальный результат' not in text:
+              text = text.rstrip() + section + '\n'
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add docs/ENDGAME_ENGINE.md
+          git rm .github/workflows/engine-work5b-doc-update.yml
+          git commit -m "docs(engine): close Work 5B"
+          git push origin HEAD:engine-work5b-safe-connection
