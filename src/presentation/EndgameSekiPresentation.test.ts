@@ -46,6 +46,22 @@ describe('buildEndgameSekiRegions', () => {
     );
   });
 
+  it('fills an internal eye even when that liberty is bordered by only one Seki color', () => {
+    const blackRing = ['1,1', '2,1', '3,1', '1,2', '3,2', '1,3', '2,3', '3,3'];
+    const regions = buildEndgameSekiRegions(
+      [
+        group('black-ring', 'black', blackRing),
+        group('white-touching', 'white', ['4,2']),
+      ],
+      topology,
+    );
+
+    expect(regions).toHaveLength(1);
+    expect(regions[0]?.groupIds).toEqual(['black-ring', 'white-touching']);
+    expect(regions[0]?.points).toContain('2,2');
+    expect(regions[0]?.points).not.toContain('0,0');
+  });
+
   it('merges directly touching opposing Seki stones without creating an internal border', () => {
     const regions = buildEndgameSekiRegions(
       [
