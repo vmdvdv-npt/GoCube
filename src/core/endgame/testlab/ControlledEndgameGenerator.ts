@@ -257,33 +257,67 @@ const buildControlLayout = (
 };
 
 const SEKI_PATTERN = Object.freeze([
-  'BWBBW',
-  'WBEWB',
-  'WBEWB',
-  'BWBBW',
-  'WWWBW',
+  'EBBWWE',
+  'BWWBBW',
+  'BWEBBW',
+  'BWWEWB',
+  'EBWWWB',
+  'EEBBBE',
 ] as const);
+const SEKI_SIZE = SEKI_PATTERN.length;
+const SEKI_BLACK_GROUP_CELLS = Object.freeze([
+  Object.freeze([1, 3] as const),
+  Object.freeze([1, 4] as const),
+  Object.freeze([2, 3] as const),
+  Object.freeze([2, 4] as const),
+]);
+const SEKI_WHITE_GROUP_CELLS = Object.freeze([
+  Object.freeze([1, 1] as const),
+  Object.freeze([1, 2] as const),
+  Object.freeze([2, 1] as const),
+  Object.freeze([3, 1] as const),
+  Object.freeze([3, 2] as const),
+  Object.freeze([3, 4] as const),
+  Object.freeze([4, 2] as const),
+  Object.freeze([4, 3] as const),
+  Object.freeze([4, 4] as const),
+]);
+
+const sekiPlacements = (
+  pointAt: (row: number, column: number) => PointId,
+): readonly Readonly<{ point: PointId; occupancy: PointOccupancy }>[] =>
+  Object.freeze(
+    SEKI_PATTERN.flatMap((line, row) =>
+      [...line].map((cell, column) => Object.freeze({
+        point: pointAt(row, column),
+        occupancy: cell === 'B'
+          ? 'black' as const
+          : cell === 'W'
+            ? 'white' as const
+            : 'empty' as const,
+      })),
+    ),
+  );
+
+const sekiEmbedding = (
+  pointAt: (row: number, column: number) => PointId,
+): SekiEmbedding => Object.freeze({
+  placements: sekiPlacements(pointAt),
+  blackGroup: sorted(SEKI_BLACK_GROUP_CELLS.map(([row, column]) => pointAt(row, column))),
+  whiteGroup: sorted(SEKI_WHITE_GROUP_CELLS.map(([row, column]) => pointAt(row, column))),
+});
 
 const torusSekiEmbeddings = (
   topology: TorusTopology,
   random: DeterministicRandom,
 ): readonly SekiEmbedding[] => {
-  if (topology.size < 5) return Object.freeze([]);
+  if (topology.size < SEKI_SIZE) return Object.freeze([]);
   const embeddings: SekiEmbedding[] = [];
-  for (let anchorY = 0; anchorY <= topology.size - 5; anchorY += 1) {
-    for (let anchorX = 0; anchorX <= topology.size - 5; anchorX += 1) {
-      const pointAt = (row: number, column: number): PointId => `${String(anchorX + column)},${String(anchorY + row)}`;
-      const placements = SEKI_PATTERN.flatMap((line, row) =>
-        [...line].map((cell, column) => Object.freeze({
-          point: pointAt(row, column),
-          occupancy: cell === 'B' ? 'black' as const : cell === 'W' ? 'white' as const : 'empty' as const,
-        })),
-      );
-      embeddings.push(Object.freeze({
-        placements: Object.freeze(placements),
-        blackGroup: sorted([pointAt(1, 1), pointAt(2, 1)]),
-        whiteGroup: sorted([pointAt(1, 3), pointAt(2, 3)]),
-      }));
+  for (let anchorY = 0; anchorY <= topology.size - SEKI_SIZE; anchorY += 1) {
+    for (let anchorX = 0; anchorX <= topology.size - SEKI_SIZE; anchorX += 1) {
+      const pointAt = (row: number, column: number): PointId =>
+        `${String(anchorX + column)},${String(anchorY + row)}`;
+      embeddings.push(sekiEmbedding(pointAt));
     }
   }
   return random.shuffle(embeddings);
@@ -293,30 +327,14 @@ const cubeSekiEmbeddings = (
   topology: CubeTopology,
   random: DeterministicRandom,
 ): readonly SekiEmbedding[] => {
-  if (topology.size < 6) return Object.freeze([]);
+  if (topology.size < SEKI_SIZE) return Object.freeze([]);
   const embeddings: SekiEmbedding[] = [];
   for (const face of random.shuffle(CUBE_FACES)) {
-    for (let anchorRow = 0; anchorRow <= topology.size - 5; anchorRow += 1) {
-      for (let anchorColumn = 0; anchorColumn <= topology.size - 5; anchorColumn += 1) {
-        if (
-          anchorRow === 0 ||
-          anchorColumn === 0 ||
-          anchorRow + 5 === topology.size ||
-          anchorColumn + 5 === topology.size
-        ) continue;
+    for (let anchorRow = 0; anchorRow <= topology.size - SEKI_SIZE; anchorRow += 1) {
+      for (let anchorColumn = 0; anchorColumn <= topology.size - SEKI_SIZE; anchorColumn += 1) {
         const pointAt = (row: number, column: number): PointId =>
           cubePointId(face as CubeFace, anchorRow + row, anchorColumn + column);
-        const placements = SEKI_PATTERN.flatMap((line, row) =>
-          [...line].map((cell, column) => Object.freeze({
-            point: pointAt(row, column),
-            occupancy: cell === 'B' ? 'black' as const : cell === 'W' ? 'white' as const : 'empty' as const,
-          })),
-        );
-        embeddings.push(Object.freeze({
-          placements: Object.freeze(placements),
-          blackGroup: sorted([pointAt(1, 1), pointAt(2, 1)]),
-          whiteGroup: sorted([pointAt(1, 3), pointAt(2, 3)]),
-        }));
+        embeddings.push(sekiEmbedding(pointAt));
       }
     }
   }
@@ -476,8 +494,8 @@ export const generateControlledEndgameTestCase = async (
   const allPoints = topology.points();
   const pointCount = allPoints.length;
   const deadCount = pointCount >= 90 || topology instanceof TorusTopology ? 2 : 1;
-  const radius = deadCount >= 2 ? 5 : 4;
-  const requestSeki = identity.size >= 5 && new DeterministicRandom(
+  const radius = deadCount >= 2 ? 4 : 4;
+  const requestSeki = identity.size >= SEKI_SIZE && new DeterministicRandom(
     `controlled-endgame-seki-v${String(CONTROLLED_ENDGAME_GENERATOR_VERSION)}:${identity.topology}:${identity.size}:${seed}`,
   ).integer(3) === 0;
   const background = generateLiveTestCase({
