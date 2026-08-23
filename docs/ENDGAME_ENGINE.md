@@ -1443,11 +1443,24 @@ Acceptance закрыт:
 - boundary, budget, cycle и incomplete uncertainty fail closed и не повышаются до `seki`;
 - classifier integration не добавлена и остаётся scope Work 7D.
 
-Итог Work 7C и строгая production-scope гипотеза seki зафиксированы в разделе 51. Следующий этап — **Work 7D: Hardening + Classifier Integration**.
+Итог Work 7C и строгая production-scope гипотеза seki зафиксированы в разделе 51.
 
-## Work 7D — Hardening + Classifier Integration
+## Work 7D — Hardening + Classifier Integration — CLOSED 2026-08-23
 
-Adversarial cases, оба порядка первого хода, Relevance Zone invariance, budgets, determinism, performance и только после этого production classifier integration semeai/seki results.
+Semeai/seki proof stack прошёл отдельный adversarial и deterministic hardening и подключён к `AssistedEndgameClassifier` только через полностью принятые proof outcomes и узкий production candidate/performance gate.
+
+Acceptance закрыт:
+
+- `simple-semeai-v1` и `bounded-semeai-v1` могут автоматически пометить только стабильного проигравшего target как `dead`; победитель гонки не считается автоматически `alive`;
+- `basic-seki-v1` помечает обе target groups как `seki` только после полного `every-legal-local-initiation-is-losing` proof;
+- `first-player-dependent`, ko, boundary, budget, cycle и incomplete результаты остаются `unresolved`;
+- fail-closed Work 7C result после реальной production попытки authoritative: legacy structural seki certificate не имеет права переопределить ko/budget/boundary/cycle/incomplete result;
+- far-away mutation за неизменившейся certified boundary сохраняет exact bounded semeai/seki proof;
+- repeated runs deterministic, а exact node threshold / one-node-below regression fail closed;
+- production gate ограничивает expensive shared-liberty search малыми targets/conflict components и deterministic budgets; timeout не повышался;
+- full deterministic Endgame Hardening sweep после ужесточения gate проходит за 21.529 s при существующем 30-second limit.
+
+Итог Work 7D зафиксирован в разделе 52. Следующий этап — **Work 8: TerritoryResolver hardening**.
 
 ## Work 8 — TerritoryResolver hardening
 
@@ -3245,3 +3258,145 @@ Work 7D
 ```
 
 **Следующий этап — Work 7D: Hardening + Classifier Integration.**
+
+---
+
+# 52. Work 7D — Hardening + Classifier Integration: финальный результат
+
+Срез на **2026-08-23**. **Work 7D закрыт.** Work 7A/7B/7C semeai + seki proof stack получил отдельный deterministic/adversarial hardening layer и консервативно подключён к `AssistedEndgameClassifier`. Base этой работы — exact `engine` HEAD после merge PR #175: `bcfb6a5f55b3c714a7aaa2500435b5b5a7d64af5`. Реализация ведётся в PR #177.
+
+## 52.1. Classifier integration contract
+
+Новый production order сохраняет все более сильные/дешёвые существующие proofs раньше semeai/seki layer:
+
+```text
+Benson alive
+-> Safe Connection alive
+-> sealed one-liberty dead
+-> TacticalReader two-liberty dead
+-> LocalLifeDeathReader proved outcomes
+-> Work 7C basic seki
+-> Work 7A / 7B stable semeai loser
+-> legacy seki fallback where new Work 7C was not attempted
+-> unresolved
+```
+
+Для simple/bounded semeai применяется deliberately asymmetric adjudication:
+
+```text
+stable same winner in both first-player orders
+-> losing crucial target = automatic dead
+-> winner remains unresolved unless another independent proof already proved alive
+```
+
+Победа в capturing race не считается proof unconditional life. `first-player-dependent`, `ko-dependent`, boundary/budget/cycle/incomplete uncertainty не создают automatic status.
+
+`basic-seki-v1` повышает обе исходные target groups до automatic `seki` только при exact outcome `seki`, то есть после доказательства `every-legal-local-initiation-is-losing` для обеих сторон.
+
+## 52.2. Legacy seki precedence hardening
+
+Hardening обнаружил реальный precedence defect: pair мог пройти новый Work 7C path, получить честный fail-closed `ko-dependent`, а затем старый structural certificate `closed-mutual-two-liberties-seki-v1` мог снова пометить те же groups как `seki`.
+
+Принято правило:
+
+```text
+if production Work 7C basic-seki proof was attempted for a pair,
+its fail-closed result is authoritative for that pair
+```
+
+Для такой пары legacy seki fallback больше не запускается. Поэтому:
+
+- `ko-dependent` остаётся `unresolved`;
+- `unknown-budget` остаётся `unresolved`;
+- `unknown-boundary` остаётся `unresolved`;
+- cycle/incomplete uncertainty остаётся `unresolved`.
+
+Legacy certificate сохраняется только как fallback для unresolved pairs, которые **не вошли** в новый Work 7C production candidate gate. Это предотвращает optimistic downgrade нового более строгого proof boundary.
+
+## 52.3. Production candidate / performance gate
+
+Первоначальная integration-гипотеза запускала bounded semeai/seki search слишком широко. CI #820 показал, что существующий deterministic full endgame sweep вырос примерно до **75 s** и упёрся в уже существующий **30-second** timeout.
+
+Timeout намеренно не увеличивался. Candidate gate был ужесточён, сохраняя proof semantics неизменными.
+
+Текущие production limits:
+
+```text
+maxNodes per bounded first-player order = 256
+maxZonePoints = 24
+simple-semeai max exclusive liberties = 3
+max target liberties = 4
+max distinct liberties in shared race = 4
+max shared liberties = 2
+max combined target stones = 8
+max strings in conflict component = 4
+max empty regions in conflict component = 4
+max candidate pairs per classifier analysis = 8
+```
+
+Разделение search paths:
+
+- direct opponent adjacency без shared liberties проходит через дешёвый `simple-semeai-v1` Work 7A;
+- expensive `bounded-semeai-v1` и `basic-seki-v1` запускаются только для компактных shared-liberty pairs, прошедших conflict-component gate;
+- candidate gate влияет только на coverage/cost и никогда сам не является proof.
+
+После этого существующий full deterministic `EndgameHardening` sweep вернулся внутрь исходного budget. На final code-head CI #825 его measured time — **21.529 s** при прежнем 30-second limit.
+
+## 52.4. Hardening corpus
+
+Новый `SemeaiSeki.hardening.test.ts` содержит **10 targeted deterministic tests**:
+
+1. stable bounded semeai proof deterministic и укладывается в production node gate;
+2. exact bounded-semeai proof сохраняется после irrelevant far-away mutation;
+3. exact deterministic semeai node threshold сохраняет proof, а one-node-below fail closed как `unknown-budget`;
+4. classifier повышает только stable bounded-semeai loser до `dead`, winner не становится `alive`;
+5. дешёвый Work 7A `simple-semeai-v1` интегрирован и также повышает только loser;
+6. `first-player-dependent` race остаётся unresolved в classifier;
+7. ko-dependent Work 7C candidate остаётся unresolved и не может быть переопределён legacy seki certificate;
+8. basic-seki proof deterministic и сохраняется после irrelevant far-away mutation;
+9. exact seki continuation node threshold сохраняет proof, one-node-below fail closed;
+10. только accepted `basic-seki-v1` повышает обе target groups до automatic `seki`.
+
+Fixtures topology-neutral и используют arbitrary graph `Topology`; renderer geometry отсутствует в correctness path.
+
+## 52.5. Validation history
+
+Work 7D intentionally использовал красные CI как hardening feedback, а не ослаблял tests/timeouts.
+
+- **CI #820** на раннем широком production gate: lint/typecheck прошли, 7/9 тогдашних new hardening tests прошли, но full deterministic sweep вырос примерно до 75 s и показал неприемлемую breadth candidate selection.
+- **CI #823** после strict candidate gate: performance вернулся примерно к 20.4 s; оставшиеся локальные failures выявили fixture isolation issues и реальный legacy-seki precedence defect.
+- После исправления precedence и fixtures exact code-head `8c2bd04fa829240a4d1d6eb670767d8c4d30ea8f` прошёл **full CI #825 полностью**:
+  - lint — pass, только два прежних non-blocking warnings вне Work 7D scope;
+  - typecheck — pass;
+  - unit/coverage — **613/613 tests pass** в **82 test files**;
+  - `SemeaiSeki.hardening.test.ts` — **10/10 pass**;
+  - build — pass;
+  - full deterministic `EndgameHardening` sweep — **21.529 s** внутри прежнего 30-second limit;
+  - full Playwright — **216/216 pass**.
+
+Exact documentation head после этого closure commit обязан пройти новый полный `[full]` CI перед merge PR #177.
+
+## 52.6. Closure
+
+Work 7 теперь закрыт как полный staged proof stack:
+
+```text
+7A — cheap exact simple semeai
+7B — bounded searched shared-liberty / auxiliary-interaction semeai
+7C — strict sufficient basic seki proof
+7D — adversarial hardening, performance gate and production classifier integration
+```
+
+Главные invariants после closure:
+
+- legal Go transitions остаются authoritative через project `GameEngine`;
+- expensive search остаётся внутри certified bounded Relevance Zones;
+- stable semeai loser может стать `dead`, но race winner не становится `alive` без independent life proof;
+- `seki` появляется только из отдельного complete sufficient proof;
+- fail-closed Work 7C result нельзя переопределить более слабым legacy certificate;
+- first-player dependence, ko, budget, boundary, cycle и incomplete uncertainty остаются `unresolved`;
+- far-away changes за неизменившейся certified boundary не меняют accepted proof;
+- deterministic production budgets ограничивают cost без изменения proof semantics;
+- performance acceptance достигнута без увеличения существующего timeout.
+
+**Следующий этап — Work 8: TerritoryResolver hardening.**
