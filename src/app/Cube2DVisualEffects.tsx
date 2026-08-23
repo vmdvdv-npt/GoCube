@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import type { EndgameClassification, GroupStatus } from '../core/endgame/EndgameClassifier';
 import type { FinalScore } from '../core/scoring/Scoring';
 import { CubeTopology } from '../core/topology/CubeTopology';
-import type { PointId } from '../core/topology/Topology';
+import type { PointId, Topology } from '../core/topology/Topology';
 import type {
   EndgameGroupPresentation,
   EndgameGroupRenderState,
@@ -48,22 +48,90 @@ type EffectsStyle = CSSProperties & {
 type BoardPoint = ReturnType<typeof createCube2DRenderModel>['boards'][number]['points'][number];
 type GroupShape = Pick<EndgameGroupPresentation, 'points' | 'edges'>;
 type DisplayPoint = Readonly<{ x: number; y: number }>;
+type ContourStatus = 'dead' | 'seki' | 'unresolved';
+type ContourBundle = Readonly<{
+  status: ContourStatus;
+  groupIds: readonly string[];
+  shape: GroupShape;
+}>;
+
+const CONTOUR_ALPHA_THRESHOLD =
+  '1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -8.5';
 
 const pointMap = <T extends { readonly pointId: PointId }>(points: readonly T[]) =>
   new Map(points.map((point) => [point.pointId, point]));
 
-const contourColor = (status: EndgameVisualStatus | null): string => {
+const contourStatus = (status: EndgameVisualStatus | null): ContourStatus | null => {
+  if (status === 'alive') return null;
+  if (status === 'dead') return 'dead';
+  if (status === 'seki') return 'seki';
+  return 'unresolved';
+};
+
+const contourColor = (status: ContourStatus): string => {
   if (status === 'dead') return '#e52b2b';
   if (status === 'seki') return '#80878f';
-  if (status === 'alive') return 'transparent';
   return '#a8e85e';
 };
 
-const contourPaintPriority = (status: EndgameVisualStatus | null): number => {
-  if (status === 'dead') return 0;
-  if (status === 'alive') return 1;
-  return 2;
+const mergedContourShape = (
+  groups: readonly GroupShape[],
+  topology: Topology,
+): GroupShape => {
+  const points = [...new Set(groups.flatMap((group) => group.points))];
+  const pointSet = new Set(points);
+  const edges = new Map<string, Readonly<{ from: PointId; to: PointId }>>();
+
+  for (const from of points) {
+    for (const to of topology.neighbors(from)) {
+      if (!pointSet.has(to) || from === to) continue;
+      const first = from < to ? from : to;
+      const second = from < to ? to : from;
+      const key = `${first}\u0000${second}`;
+      if (!edges.has(key)) edges.set(key, Object.freeze({ from: first, to: second }));
+    }
+  }
+
+  return Object.freeze({
+    points: Object.freeze(points),
+    edges: Object.freeze([...edges.values()]),
+  });
 };
+
+const contourBundles = (
+  groups: readonly EndgameGroupRenderState[],
+  topology: Topology,
+): readonly ContourBundle[] =>
+  Object.freeze(
+    (['dead', 'unresolved', 'seki'] as const).flatMap((status) => {
+      const matching = groups.filter((group) => contourStatus(group.status) === status);
+      if (matching.length === 0) return [];
+      return [
+        Object.freeze({
+          status,
+          groupIds: Object.freeze(matching.map((group) => group.id)),
+          shape: mergedContourShape(matching, topology),
+        }),
+      ];
+    }),
+  );
+
+const contourSmoothingRadius = (radius: number): number => Math.max(1.5, radius * 0.22);
+
+const contourSmoothingFilter = (filterId: string, radius: number): ReactNode => (
+  <filter
+    id={filterId}
+    filterUnits="userSpaceOnUse"
+    x={-CUBE_2D_SVG_SIZE * 0.12}
+    y={-CUBE_2D_SVG_SIZE * 0.12}
+    width={CUBE_2D_SVG_SIZE * 1.24}
+    height={CUBE_2D_SVG_SIZE * 1.24}
+    colorInterpolationFilters="sRGB"
+  >
+    <feGaussianBlur in="SourceGraphic" stdDeviation={radius} />
+    <feColorMatrix type="matrix" values={CONTOUR_ALPHA_THRESHOLD} />
+  </filter>
+);
 
 const groupShape = (
   group: GroupShape,
@@ -104,11 +172,6 @@ const groupShape = (
           strokeLinecap="round"
         />
       ))}
-      {/*
-        Round-ended edge capsules plus the stone circles form one smooth union.
-        Extra corner patches make the subtraction outline locally thicker and can
-        create the doubled inner bands visible at bends.
-      */}
       {visible.map(([pointId]) => {
         const position = displayedById.get(pointId);
         if (!position) return null;
@@ -134,38 +197,45 @@ const groupOutline = (
   outlineWidth: number,
   color: string,
   maskId: string,
-): ReactNode => (
-  <>
-    <defs>
-      <mask
-        id={maskId}
-        maskUnits="userSpaceOnUse"
-        x={0}
-        y={0}
-        width={CUBE_2D_SVG_SIZE}
-        height={CUBE_2D_SVG_SIZE}
-      >
-        <rect
+): ReactNode => {
+  const filterId = `${maskId}-smooth`;
+  const smoothingRadius = contourSmoothingRadius(innerRadius);
+
+  return (
+    <>
+      <defs>
+        {contourSmoothingFilter(filterId, smoothingRadius)}
+        <mask
+          id={maskId}
+          maskUnits="userSpaceOnUse"
           x={0}
           y={0}
           width={CUBE_2D_SVG_SIZE}
           height={CUBE_2D_SVG_SIZE}
-          fill="#ffffff"
-        />
-        <g style={{ color: '#000000' }}>
-          {groupShape(group, pointsById, contentScale, innerRadius)}
-        </g>
-      </mask>
-    </defs>
-    <g
-      className="cube-2d-group-contour__outline-source"
-      style={{ color }}
-      mask={`url(#${maskId})`}
-    >
-      {groupShape(group, pointsById, contentScale, innerRadius + outlineWidth)}
-    </g>
-  </>
-);
+        >
+          <rect
+            x={0}
+            y={0}
+            width={CUBE_2D_SVG_SIZE}
+            height={CUBE_2D_SVG_SIZE}
+            fill="#ffffff"
+          />
+          <g style={{ color: '#000000' }} filter={`url(#${filterId})`}>
+            {groupShape(group, pointsById, contentScale, innerRadius)}
+          </g>
+        </mask>
+      </defs>
+      <g
+        className="cube-2d-group-contour__outline-source"
+        style={{ color }}
+        filter={`url(#${filterId})`}
+        mask={`url(#${maskId})`}
+      >
+        {groupShape(group, pointsById, contentScale, innerRadius + outlineWidth)}
+      </g>
+    </>
+  );
+};
 
 export function Cube2DVisualEffects({
   layout,
@@ -199,16 +269,13 @@ export function Cube2DVisualEffects({
       return Object.freeze({ ...group, status });
     }),
   );
-  const sekiRegions = buildEndgameSekiRegions(groupStates, new CubeTopology(renderModel.size));
+  const topology = new CubeTopology(renderModel.size);
+  const sekiRegions = buildEndgameSekiRegions(groupStates, topology);
   const sekiGroupIds = new Set(sekiRegions.flatMap((region) => region.groupIds));
-  const regularGroups = groupStates
-    .map((group, index) => ({ group, index }))
-    .filter(({ group }) => !sekiGroupIds.has(group.id))
-    .sort(
-      (left, right) =>
-        contourPaintPriority(left.group.status) - contourPaintPriority(right.group.status) ||
-        left.index - right.index,
-    );
+  const regularBundles = contourBundles(
+    groupStates.filter((group) => !sekiGroupIds.has(group.id)),
+    topology,
+  );
   const size = renderModel.size;
   const step = CUBE_2D_SVG_SIZE / size;
   const contentScale = cube2DContentScale(size);
@@ -262,33 +329,24 @@ export function Cube2DVisualEffects({
             </g>
 
             <g className="cube-2d-effects__groups">
-              {/*
-                Dead contours are intentionally painted first. If a red outline
-                coincides with unresolved or seki geometry, the non-red contour is
-                the single visible shared stroke and the red contour continues as a branch.
-              */}
-              {regularGroups.map(({ group, index: groupIndex }) => {
-                if (!group.points.some((pointId) => pointsById.has(pointId))) return null;
-                const status = group.status;
-                const selected = selectedGroupId === group.id;
-                const hovered = hoveredGroupId === group.id;
-                const color = contourColor(status);
-                const maskId = `cube-endgame-outline-mask-${board.face}-${groupIndex}`;
+              {regularBundles.map((bundle, bundleIndex) => {
+                if (!bundle.shape.points.some((pointId) => pointsById.has(pointId))) return null;
+                const maskId = `cube-endgame-outline-mask-${board.face}-${bundleIndex}`;
                 return (
                   <g
-                    key={`group:${group.id}`}
-                    className={`cube-2d-group-contour cube-2d-group-contour--${status ?? 'unresolved'}${selected ? ' is-selected' : ''}${hovered ? ' is-hovered' : ''}`}
-                    data-endgame-group-id={group.id}
-                    data-group-status={status ?? 'unresolved'}
+                    key={`bundle:${bundle.status}`}
+                    className={`cube-2d-group-contour cube-2d-group-contour--${bundle.status}`}
+                    data-endgame-group-ids={bundle.groupIds.join(' ')}
+                    data-group-status={bundle.status}
                     pointerEvents="none"
                   >
                     {groupOutline(
-                      group,
+                      bundle.shape,
                       pointsById,
                       contentScale,
                       contourRadius,
                       contourWidth,
-                      color,
+                      contourColor(bundle.status),
                       maskId,
                     )}
                   </g>
@@ -300,6 +358,7 @@ export function Cube2DVisualEffects({
                 const selected = selectedGroupId !== null && region.groupIds.includes(selectedGroupId);
                 const hovered = hoveredGroupId !== null && region.groupIds.includes(hoveredGroupId);
                 const maskId = `cube-endgame-seki-outline-mask-${board.face}-${regionIndex}`;
+                const filterId = `${maskId}-smooth`;
                 const shape = groupShape(region, pointsById, contentScale, contourRadius);
                 return (
                   <g
@@ -310,7 +369,12 @@ export function Cube2DVisualEffects({
                     data-group-status="seki"
                     pointerEvents="none"
                   >
-                    <g className="cube-2d-seki-mask" style={{ color: '#80878f' }} opacity={0.6}>
+                    <g
+                      className="cube-2d-seki-mask"
+                      style={{ color: '#80878f' }}
+                      opacity={0.6}
+                      filter={`url(#${filterId})`}
+                    >
                       {shape}
                     </g>
                     {groupOutline(
