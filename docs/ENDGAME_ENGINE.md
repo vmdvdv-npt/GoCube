@@ -1756,7 +1756,7 @@ Pinned revision жёстко фиксирует `BOARD_SIZE = 19`, поэтом�
 - RZ требует GPU/CUDA host dependency поверх pinned image;
 - Darkforest pinned `tsumego` source internally inconsistent и не собирается as-is.
 
-Получить четыре сравнимых `elapsed/nodes` числа можно только если изменить хотя бы один из трех факторов: candidate source, candidate runtime environment или общий corpus/problem semantics. Такое сравнение уже не отвечало бы исходному вопросу Work 1 — «что можно реально взять/адаптировать в GoCube без скрытой подмены правил и assumptions».
+Получить четыре сравнимых `elapsed/nodes` числа можно только если изменить хотя бы один из трех факторов: candidate source, candidate runtime environment или общий corpus/problem semantics. Такое сравнение уже не отвечало бы исходному вопросу Work 1 — «что можно реально взять/адатировать в GoCube без скрытой подмены правил и assumptions».
 
 Поэтому executable compatibility itself включается в reuse decision.
 
@@ -3245,3 +3245,134 @@ Work 7D
 ```
 
 **Следующий этап — Work 7D: Hardening + Classifier Integration.**
+
+---
+
+# 52. Work 8 decomposition; Work 8A — TerritoryResolver Core: финальный результат
+
+Срез на **2026-08-24**. Work 8 детализирован на три изолированных этапа. **Work 8A закрыт.** Work 8B и Work 8C остаются отдельным последующим scope.
+
+## 52.1. Detailed decomposition
+
+### Work 8A — TerritoryResolver Core — CLOSED 2026-08-24
+
+- virtual removal только `dead`;
+- flood-fill оставшихся empty regions;
+- `borderingColors` и `borderingGroups`;
+- базовый `BLACK / WHITE / NEUTRAL`;
+- correctness только через `Topology.neighbors()`;
+- без изменения Chinese/Japanese scoring.
+
+### Work 8B — Seki / Dame + Scoring Handoff
+
+- корректная нейтральность seki;
+- `touchesSeki`;
+- dame;
+- передача результата Resolver существующим Chinese/Japanese scorers;
+- никаких новых life/death proofs.
+
+### Work 8C — Hardening + Differential
+
+- planar comparison с `goscorer`, где semantics действительно совпадают;
+- Torus seam и Cube edge/corner fixtures;
+- graph-isomorphism/metamorphic tests;
+- determinism;
+- regression cases;
+- полный pipeline `classification -> TerritoryResolver -> scoring`;
+- performance/acceptance gate.
+
+## 52.2. Accepted Work 8A contract
+
+Добавлен independent topology-neutral `resolveTerritory(state, classification, topology) -> TerritoryResolution`.
+
+`ResolvedRegion` содержит:
+
+```text
+key
+points
+borderingColors
+borderingGroups
+owner: BLACK | WHITE | NEUTRAL
+```
+
+`TerritoryResolution` дополнительно содержит `regionByPoint`.
+
+Work 8A semantics:
+
+1. classification points проверяются против topology и authoritative board occupancy;
+2. создаётся отдельный virtual board; исходный `GameState` не мутируется;
+3. только stone points со статусом `dead` виртуально становятся `empty`;
+4. `alive`, `seki` и unclassified stones остаются на virtual board;
+5. topology-neutral `EndgameGraphCore` строится заново на virtual board;
+6. его `emptyRegions` являются deterministic flood-fill результатом через `Topology.neighbors()`;
+7. `borderingGroups` берутся из surviving virtual-board strings;
+8. `borderingColors` берутся из цветов этих surviving groups;
+9. ровно один black bordering color -> `BLACK`, ровно один white -> `WHITE`, обе стороны или отсутствие bordering color -> `NEUTRAL`.
+
+`touchesSeki` намеренно отсутствует в Work 8A. Seki/dame-specific neutrality и scoring interpretation принадлежат Work 8B.
+
+## 52.3. Reuse / topology decision
+
+Work 8A намеренно не создаёт второй собственный flood-fill/group index. После dead-only virtual removal Resolver переиспользует `EndgameGraphCore`.
+
+Это сохраняет один topology-neutral structural implementation:
+
+```text
+virtual board
+  -> buildEndgameGraph(...)
+  -> deterministic empty regions / boundary groups / boundary colors
+```
+
+Correctness не зависит от coordinates, edge/corner helpers, face index или renderer geometry. Opaque arbitrary-graph fixtures дополнительно проверяют, что connectivity определяется только `Topology.neighbors()`.
+
+## 52.4. Regression coverage
+
+`TerritoryResolver.test.ts` содержит восемь targeted tests:
+
+1. dead stone виртуально удаляется, соединяет ранее разделённые empty points в один region и не мутирует исходный `GameState`;
+2. удаляется только `dead`; `alive`, `seki` и unclassified stones сохраняются;
+3. single-white-boundary region получает `WHITE` и stable bordering group ids;
+4. mixed black/white boundary получает `NEUTRAL`;
+5. opaque unrelated point names соединяются исключительно через supplied `Topology.neighbors()`;
+6. classification point вне topology rejected;
+7. classification empty point rejected;
+8. conflicting statuses одного stone point rejected.
+
+Positive `BLACK` ownership также покрывается первым dead-removal fixture.
+
+## 52.5. Scoring boundary
+
+Work 8A не меняет существующие `ChineseScoring` / `JapaneseScoring` и не переключает их на новый Resolver. Existing scoring implementation продолжает работать как до этого PR.
+
+Это сознательная граница этапа: 8A создаёт только reusable territory facts. Seki/dame semantics и scorer handoff должны быть сделаны вместе в Work 8B, чтобы не получить промежуточную несовместимую scoring semantics.
+
+Новых life/death/seki proofs Work 8A также не добавляет.
+
+## 52.6. Validation
+
+PR #180 создан от exact `engine` HEAD `bcfb6a5f55b3c714a7aaa2500435b5b5a7d64af5`.
+
+Code-head `67af5cba630804350f7eeaf86112e2b06cb87381` прошёл full CI run #843 полностью:
+
+- lint — pass;
+- typecheck — pass;
+- unit/coverage — pass, включая все **8/8** Work 8A regressions;
+- build — pass;
+- full Playwright E2E — pass.
+
+Exact final documentation head обязан пройти новый full `[full]` CI перед merge.
+
+## 52.7. Closure
+
+Work 8A закрывает только TerritoryResolver foundation:
+
+- dead-only virtual removal;
+- deterministic topology-neutral empty-region resolution;
+- stable boundary colors/groups;
+- базовая `BLACK / WHITE / NEUTRAL` ownership;
+- no authoritative position mutation;
+- no scoring behavior change;
+- no seki/dame-specific Resolver semantics;
+- no new life/death proofs.
+
+Следующий этап именно TerritoryResolver track — **Work 8B: Seki / Dame + Scoring Handoff**. Work 7D остаётся отдельным ранее запланированным classifier hardening/integration scope и этим этапом не считается закрытым.
