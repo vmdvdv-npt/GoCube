@@ -57,6 +57,43 @@ jobs:
       - run: npm run test:coverage
         if: steps.mode.outputs.mode != 'none'
 
+      - name: Run npm test explicitly for Engine2 cleanup validation
+        if: steps.mode.outputs.mode != 'none'
+        run: npm test
+
+      - name: Audit removed Test Case runtime and preserved Engine2 infrastructure
+        if: steps.mode.outputs.mode != 'none'
+        shell: bash
+        run: |
+          set -euo pipefail
+          pattern='LiveTest|LiveTestGenerator|generateLiveTestCase|replayLiveTestCase|GameLikeGenerator|EndgameGenerator|Generate Game|Generate Endgame|Generate Corpus|Test ID|TestCase|TestCaseReplayService|ReplayableTestCase|TestCaseIdentity|encodeTestCaseId|decodeTestCaseId|ControlledEndgame|controlled-mixed-endgame|game-like-background|ExternalCorpus|xuanxuan|LIVE_ENDGAME_TEST_CASE_VARIANT|CONTROLLED_ENDGAME_TEST_CASE_VARIANT|VITE_ENABLE_LIVE_TEST_GENERATORS|LocalAnalysisClient|lab:local-ai'
+          echo 'Checking runtime/source/config paths for obsolete Test Case concepts...'
+          if rg -n --hidden "$pattern" src e2e tools package.json vite.config.ts playwright.config.ts .github; then
+            echo 'Obsolete Test Case runtime/config reference remains.' >&2
+            exit 1
+          fi
+          echo 'Runtime/source/config dead-code audit: zero matches.'
+          echo 'Repository documentation matches (informational only):'
+          rg -n "$pattern" docs || true
+          test -f src/core/endgame/testlab/Engine2AdversarialCorpus.ts
+          test -f src/core/endgame/testlab/Engine2AdversarialCorpus.test.ts
+          test -f src/core/endgame/testlab/Engine2FinalEvaluation.benchmark.test.ts
+          test -f src/core/endgame/testlab/Engine2ConfidenceCorpus.ts
+          test -f src/core/endgame/testlab/Engine2ConfidenceAutoSelectionCorpus.ts
+          test -f src/core/endgame/testlab/EndgameTestLab.ts
+          test -f src/core/endgame/testlab/EndgameTestLab.test.ts
+          test -f src/core/endgame/testlab/DifferentialOracle.ts
+          test -f src/core/endgame/testlab/DifferentialOracle.test.ts
+          echo 'Required Engine2 correctness infrastructure is present.'
+
+      - name: Run Engine2 final-evaluation benchmark
+        if: steps.mode.outputs.mode != 'none'
+        run: npm run benchmark:engine2:final-evaluation
+
+      - name: Run Engine2 confidence benchmark
+        if: steps.mode.outputs.mode != 'none'
+        run: npm run benchmark:engine2:confidence
+
       - run: npm run typecheck:engine2
         if: steps.mode.outputs.mode != 'none'
 
