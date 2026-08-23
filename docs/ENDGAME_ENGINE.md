@@ -2043,3 +2043,54 @@ E2-12d не добавляет и не меняет:
 Player override является final application/scoring authority и не переписывает mathematical truth claim proof engine-а.
 
 **E2-12d — DONE / APPLICATION-INTEGRATED / CI PASS.**
+
+---
+
+# 26. Engine2 interactive Test Case / Test ID lab cleanup
+
+Статус: **DONE / REMOVAL-ONLY / PROOF SEMANTICS UNCHANGED**.
+
+Starting `engine2` exact SHA:
+
+```text
+598c4ccafd5fd5fc9bf83db49a51e2f9021805b6
+```
+
+Удалена legacy interactive Test Case / Test ID lab infrastructure:
+
+- Generate Game / Generate Endgame / Generate Corpus и Test ID/load/current-ID/feedback/diagnostics UI;
+- `LiveTestGeneratorContext` / `LiveTestGenerators` и Test ID identity/replay/compatibility paths;
+- controlled generated endgame и legacy variants 62/63;
+- external-corpus Test Case UI/runtime;
+- concrete LocalAnalysis/KataGo Test Case bridge и `lab:local-ai`;
+- generated/Test Case APIs из `GameApplication`;
+- dedicated feature tests/E2E.
+
+`GameApplication` сохраняет только normal new/restore/persistence gameplay lifecycle. Torus/Cube gameplay и E2-12d Endgame Review/scoring integration не менялись.
+
+Сохранены как independent Engine2 correctness infrastructure:
+
+- `Engine2AdversarialCorpus`;
+- `Engine2FinalEvaluation`;
+- `Engine2ConfidenceCorpus`;
+- `Engine2ConfidenceAutoSelectionCorpus`;
+- generic deterministic `EndgameTestLab` / `EndgameFixture` / `DifferentialOracle` infrastructure;
+- proof-reader contract tests и Engine2 benchmark scripts.
+
+Repository-wide tracked source/config audit дал zero obsolete Test Case/runtime matches. Единственное оставшееся совпадение по неоднозначному термину `EndgameGenerator` — `EndgameGeneratorMetadata` в generic deterministic correctness-lab fixture metadata; это не live/Test Case generator. Historical/planning documentation mentions являются non-runtime.
+
+Validation CI #898:
+
+```text
+npm test: PASS — 80 test files passed, 10 skipped; 620 tests passed, 83 skipped
+lint: PASS — 0 warnings, 0 errors
+typecheck:engine2: PASS
+build:engine2: PASS
+full Chromium/Firefox/WebKit E2E: PASS
+benchmark:engine2:final-evaluation: PASS — 17/17 cases, 0 false authoritative conclusions
+benchmark:engine2:confidence: PASS — all four workloads, deep proof search invocations = 0
+```
+
+Отдельный clean cleanup SHA `83a5cad28f720a5a91287ae9a591579f22d32a0f` также прошёл normal `[full]` CI #892, включая Chromium/Firefox/WebKit. Temporary validation workflow steps после measurement удалены; постоянный CI workflow не изменён.
+
+Ни proof algorithms, ни confidence thresholds/policy, ни Go legality/ko/history/captures, ни scoring/persistence semantics этой cleanup-задачей не менялись.
