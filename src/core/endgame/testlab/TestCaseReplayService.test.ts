@@ -3,8 +3,8 @@ import { GameEngine } from '../../game/GameEngine';
 import { LinearHistory } from '../../history/LinearHistory';
 import { LocalAnalysisClient } from './LocalAnalysisClient';
 import {
-  allowedSyntheticVariants,
   createTestCaseTopology,
+  LIVE_ENDGAME_TEST_CASE_VARIANT,
   TestCaseReplayService,
 } from './TestCaseReplayService';
 import {
@@ -19,6 +19,9 @@ const boardSignature = (board: Readonly<Record<string, string>>): string =>
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([point, occupancy]) => `${point}=${occupancy}`)
     .join(';');
+
+const occupiedCount = (board: Readonly<Record<string, string>>): number =>
+  Object.values(board).filter((occupancy) => occupancy !== 'empty').length;
 
 const replayCommands = async (
   service: TestCaseReplayService,
@@ -163,7 +166,7 @@ describe('TestCaseReplayService', () => {
     { topology: 'torus' as const, size: 9, payload: 271828 },
     { topology: 'cube' as const, size: 5, payload: 161803 },
     { topology: 'cube' as const, size: 2, payload: 42 },
-  ])('creates synthetic-only endgame Test IDs that can immediately Pass → Pass', async (shape) => {
+  ])('creates manual endgame Test IDs as full legal late-game positions', async (shape) => {
     const service = new TestCaseReplayService();
     const identity = service.identityForGenerated(
       'synthetic-endgame',
@@ -171,16 +174,24 @@ describe('TestCaseReplayService', () => {
       shape.size,
       shape.payload,
     );
-    expect(allowedSyntheticVariants(shape.topology, shape.size)).toContain(identity.variant);
+    expect(identity.variant).toBe(LIVE_ENDGAME_TEST_CASE_VARIANT);
+
     const generated = await service.createFromIdentity(identity, false);
-    expect(generated.loadStrategy).toBe('snapshot');
-    expect(generated.commands).toHaveLength(0);
+    const topology = createTestCaseTopology(identity);
+    const replayed = await replayCommands(service, generated.testId);
+    const minimumOccupied = Math.max(6, Math.floor(topology.points().length * 0.25));
+
+    expect(generated.loadStrategy).toBe('replay-commands');
+    expect(generated.commands.length).toBeGreaterThan(0);
     expect(generated.state.phase).toBe('playing');
-    expect(generated.tags).toContain('synthetic-endgame');
+    expect(generated.scenario).toBe('full-endgame');
+    expect(generated.tags).toContain('full-position');
+    expect(occupiedCount(generated.state.board)).toBeGreaterThanOrEqual(minimumOccupied);
+    expect(replayed.replayed).toEqual(generated.state);
     expect((await finishTwoPasses(generated.testId)).phase).toBe('endgame');
   });
 
-  it('keeps topology-specific synthetic variants explicitly encoded', async () => {
+  it('keeps topology-specific historical synthetic variants explicitly encoded and replayable', async () => {
     const service = new TestCaseReplayService();
     const cube = makeTestCaseIdentity({
       source: 'synthetic-endgame', topology: 'cube', size: 5, variant: 13, transform: 0, payload: 7,
@@ -188,8 +199,12 @@ describe('TestCaseReplayService', () => {
     const torus = makeTestCaseIdentity({
       source: 'synthetic-endgame', topology: 'torus', size: 9, variant: 9, transform: 0, payload: 7,
     });
-    expect((await service.createFromIdentity(cube, false)).scenario).toBe('cube-corner-shared-liberties');
-    expect((await service.createFromIdentity(torus, false)).scenario).toBe('torus-seam-shared-liberties');
+    const cubeCase = await service.createFromIdentity(cube, false);
+    const torusCase = await service.createFromIdentity(torus, false);
+    expect(cubeCase.scenario).toBe('cube-corner-shared-liberties');
+    expect(torusCase.scenario).toBe('torus-seam-shared-liberties');
+    expect(cubeCase.loadStrategy).toBe('snapshot');
+    expect(torusCase.loadStrategy).toBe('snapshot');
   });
 
   it('imports the public-domain corpus case only into a seam-safe Torus interior', async () => {

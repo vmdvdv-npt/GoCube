@@ -83,7 +83,7 @@ describe('GameApplication Test Case / Replay integration', () => {
   it.each([
     { gameMode: 'torus-2d' as const, size: 9 as const, payload: 271828 },
     { gameMode: 'cube-2d' as const, size: 5 as const, payload: 161803 },
-  ])('loads synthetic endgame into a playable session and reaches scoring', async (shape) => {
+  ])('loads a full legal endgame into a playable session and reaches scoring', async (shape) => {
     const settings: NewGameSettings = {
       gameMode: shape.gameMode,
       size: shape.size,
@@ -96,7 +96,9 @@ describe('GameApplication Test Case / Replay integration', () => {
       'synthetic-endgame',
       shape.payload,
     );
-    expect(generated.testCase.loadStrategy).toBe('snapshot');
+    expect(generated.testCase.loadStrategy).toBe('replay-commands');
+    expect(generated.testCase.scenario).toBe('full-endgame');
+    expect(generated.testCase.tags).toContain('full-position');
     expect(generated.activeGame.controller.viewModel().phase).toBe('playing');
     await finishAssistedReview(generated.activeGame);
   });
