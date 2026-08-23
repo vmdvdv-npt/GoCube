@@ -258,7 +258,11 @@ describe('E2-12c EndgameConfidenceAutoSelector', () => {
       groupKey: `prepared-group-${String(index).padStart(2, '0')}`,
       reasons: Object.freeze([`prepared-group:${index}`]),
     }) as EndgameConfidenceResult));
-    const result = selectAutomaticPositionStatuses(positionFrom([...results].reverse()));
+    const reversedResults = Array.from(
+      results,
+      (_, index) => results[results.length - 1 - index]!,
+    );
+    const result = selectAutomaticPositionStatuses(positionFrom(reversedResults));
     expect(result.decisions).toHaveLength(36);
     expect(result.decisions.every((item) => item.outcome === 'selected')).toBe(true);
     expect(result.diagnostics).toMatchObject({
@@ -269,7 +273,7 @@ describe('E2-12c EndgameConfidenceAutoSelector', () => {
       deepProofSearchInvocations: 0,
     });
     expect(result.decisions.map((item) => item.groupKey)).toEqual(
-      [...result.decisions.map((item) => item.groupKey)].sort(),
+      result.decisions.map((item) => item.groupKey).sort(),
     );
   });
 });
