@@ -6,11 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:engine2": "vite build",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "lint": "oxlint src e2e playwright.config.ts vite.config.ts",
     "typecheck": "tsc -b --pretty false",
+    "typecheck:engine2": "tsc -p tsconfig.engine2.json --pretty false",
     "test:coverage": "vitest run --coverage",
     "lab:local-ai": "node tools/local-ai/bridge.mjs"
   },
