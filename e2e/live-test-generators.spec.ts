@@ -22,7 +22,25 @@ const finishTwoPasses = async (page: Page): Promise<void> => {
 };
 
 const testCaseControls = (page: Page): Locator =>
-  page.getByRole('region', { name: 'Developer test cases' });
+  page.getByTestId('live-test-generator-controls');
+
+const openTestCaseControls = async (page: Page): Promise<Locator> => {
+  const controls = testCaseControls(page);
+  await expect(controls).toBeVisible();
+  if ((await controls.getAttribute('open')) === null) {
+    await controls.locator('summary').click();
+  }
+  await expect(controls).toHaveAttribute('open', '');
+  return controls;
+};
+
+const closeTestCaseControls = async (page: Page): Promise<void> => {
+  const controls = testCaseControls(page);
+  if ((await controls.getAttribute('open')) !== null) {
+    await controls.locator('summary').click();
+  }
+  await expect(controls).not.toHaveAttribute('open', '');
+};
 
 const currentTestId = async (controls: Locator): Promise<string> => {
   const text = await controls.getByText(/Current Test ID: \d+/).textContent();
@@ -37,23 +55,26 @@ test('developer Game-like generator restores the exact Torus position from numer
   await page.getByLabel('Rules').selectOption('japanese');
   await page.getByRole('button', { name: 'Start game' }).click();
 
-  const controls = testCaseControls(page);
+  let controls = await openTestCaseControls(page);
   await expect(controls.getByRole('button', { name: 'Generate game' })).toBeVisible();
   await expect(controls.getByRole('button', { name: 'Generate endgame' })).toBeVisible();
   await expect(controls.getByRole('button', { name: 'AI-verified case' })).toBeVisible();
 
   await controls.getByRole('button', { name: 'Generate game' }).click();
+  controls = await openTestCaseControls(page);
   const firstId = await currentTestId(controls);
   expect(firstId).toMatch(/^\d+$/);
   const first = await primaryTorusStones(page);
   expect(first.length).toBeGreaterThan(6);
 
   await controls.getByRole('button', { name: 'Generate game' }).click();
+  controls = await openTestCaseControls(page);
   const secondId = await currentTestId(controls);
   expect(secondId).not.toBe(firstId);
 
   await controls.getByLabel('Test ID').fill(firstId);
   await controls.getByRole('button', { name: 'Load' }).click();
+  controls = await openTestCaseControls(page);
   await expect(controls.getByText(`Current Test ID: ${firstId}`)).toBeVisible();
   expect(await primaryTorusStones(page)).toEqual(first);
 });
@@ -65,13 +86,15 @@ test('developer synthetic Endgame Test ID creates a playable Cube position for i
   await page.getByLabel('Rules').selectOption('japanese');
   await page.getByRole('button', { name: 'Start game' }).click();
 
-  const controls = testCaseControls(page);
+  let controls = await openTestCaseControls(page);
   await controls.getByRole('button', { name: 'Generate endgame' }).click();
+  controls = await openTestCaseControls(page);
   const testId = await currentTestId(controls);
   await expect(controls.getByText(`Current Test ID: ${testId}`)).toBeVisible();
   await expect(controls.getByText(/Synthetic ·/)).toBeVisible();
   await expect(page.locator('.cube-2d-stone')).not.toHaveCount(0);
 
+  await closeTestCaseControls(page);
   await finishTwoPasses(page);
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
   await expect(page.locator('.endgame-progress')).toContainText('Manual review');
@@ -83,8 +106,9 @@ test('AI-verified case exposes Source / KataGo / Cube Go and is reloadable by Te
   await page.getByLabel('Rules').selectOption('japanese');
   await page.getByRole('button', { name: 'Start game' }).click();
 
-  const controls = testCaseControls(page);
+  let controls = await openTestCaseControls(page);
   await controls.getByRole('button', { name: 'AI-verified case' }).click();
+  controls = await openTestCaseControls(page);
   const corpusId = await currentTestId(controls);
   await expect(controls.getByText('Source: Unknown')).toBeVisible();
   await expect(controls.getByText(/KataGo: (Alive|Dead|Unstable|Unavailable)/)).toBeVisible();
@@ -93,8 +117,10 @@ test('AI-verified case exposes Source / KataGo / Cube Go and is reloadable by Te
   expect(corpusStones.length).toBeGreaterThan(0);
 
   await controls.getByRole('button', { name: 'Generate game' }).click();
+  controls = await openTestCaseControls(page);
   await controls.getByLabel('Test ID').fill(corpusId);
   await controls.getByRole('button', { name: 'Load' }).click();
+  controls = await openTestCaseControls(page);
   await expect(controls.getByText(`Current Test ID: ${corpusId}`)).toBeVisible();
   await expect(controls.getByText('Source: Unknown')).toBeVisible();
   expect(await primaryTorusStones(page)).toEqual(corpusStones);
