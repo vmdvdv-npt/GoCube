@@ -251,7 +251,7 @@ const collectEmptyRegions = (
         const owner = stringByPoint.get(neighbor);
         if (owner) adjacentGroups.add(owner);
       }
-      for (const groupKey of [...vitalGroups]) {
+      for (const groupKey of vitalGroups) {
         if (!adjacentGroups.has(groupKey)) vitalGroups.delete(groupKey);
       }
     }
