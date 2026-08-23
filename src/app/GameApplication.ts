@@ -203,8 +203,46 @@ export class GameApplication {
       size: settings.size,
       seed: String(seed),
     });
-    const activeGame = await this.createNewGame(settings);
 
+    if (generation.loadStrategy === 'snapshot') {
+      const persistence = this.persistenceConfig(settings.gameMode);
+      const snapshot: GameSessionSnapshot = Object.freeze({
+        version: GAME_SESSION_SNAPSHOT_VERSION,
+        boardSize: settings.size,
+        sessionRevision: 0,
+        ruleSet: settings.ruleSet,
+        komi: settings.komi,
+        history: Object.freeze([generation.state]),
+        redo: Object.freeze([]),
+        endgameReview: null,
+        endgameClassification: null,
+        finalScore: null,
+      });
+      const activeGame: ActiveGame = settings.gameMode === 'cube-2d'
+        ? Object.freeze({
+            gameMode: 'cube-2d',
+            controller: new Cube2DGameController({
+              persistence,
+              snapshot,
+            }),
+          })
+        : Object.freeze({
+            gameMode: 'torus-2d',
+            controller: new TorusGameController({
+              persistence,
+              snapshot,
+            }),
+          });
+
+      await persistence.repository.save({
+        id: CURRENT_GAME_ID,
+        savedAt: this.now(),
+        state: activeGame.controller.snapshot(),
+      });
+      return Object.freeze({ activeGame, generation });
+    }
+
+    const activeGame = await this.createNewGame(settings);
     for (const command of generation.commands) {
       const result = command.type === 'pass'
         ? await activeGame.controller.pass()
