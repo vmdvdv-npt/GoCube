@@ -29,7 +29,7 @@ import {
 import type { StoneColor } from '../game/types';
 
 const COLORS: readonly StoneColor[] = Object.freeze(['black', 'white']);
-const TACTICAL_CLASSIFIER_MAX_NODES = 8;
+const TACTICAL_CLASSIFIER_MAX_NODES = 16;
 
 /**
  * Conservative assisted classifier.
