@@ -268,13 +268,15 @@ alive / dead / seki / unresolved
 
 Для каждого цвета:
 
-1. построить friendly strings;
-2. построить non-color regions;
-3. определить regions, vital для strings;
+1. использовать friendly strings из общего `EndgameGraphCore` snapshot;
+2. построить **color-specific non-color regions**: connected components всех logical points, не занятых анализируемым цветом, то есть empty points **и** opponent stones;
+3. opponent stones участвуют в связности такого region, но `vitalGroups` вычисляются пересечением adjacent friendly groups только по **empty points** region;
 4. начать со всех candidate strings;
 5. итеративно удалить strings, которые не имеют необходимого числа vital regions;
 6. удалить regions, граница которых больше не состоит из surviving strings;
 7. повторять до fixed point.
+
+Обычный `EndgameGraphCore.emptyRegion` и Benson non-color region — не один и тот же объект. General empty regions остаются общим structural graph для conflicts/connections; Benson строит только свой color-specific derived projection поверх общих `stringsByKey/stringByPoint` и `Topology.neighbors()`, не создавая второй stone-string/liberty index.
 
 Surviving strings получают:
 
@@ -1262,15 +1264,19 @@ Acceptance закрыт:
 
 Итог Work 2 и принятые structural/complexity decisions зафиксированы в разделе 40.
 
-## Work 3 — Benson hardening
+## Work 3 — Benson hardening — CLOSED 2026-08-23
 
-Адаптировать/сверить Moka Benson semantics.
+Moka/Benson semantics сверены и вынесены в отдельный topology-neutral proof module поверх Work 2 graph snapshot. General `emptyRegions` больше не используются как скрытая подмена Benson color-regions.
 
-Acceptance:
+Acceptance закрыт:
 
-- known two-eye/pass-alive corpus;
-- negative one-eye/false-eye cases;
-- topology metamorphic cases.
+- существующий deterministic two-eye/pass-alive corpus остаётся proven alive;
+- one-eye, false-eye и seki-like negative cases остаются unresolved;
+- отдельный opponent-in-region case проверяет Moka non-color semantics;
+- Torus seam и Cube face edge дают тот же Benson proof signature, что и interior placement;
+- fixed-point elimination и partial-analysis fail-closed behavior сохранены.
+
+Итог Work 3 и semantic boundary зафиксированы в разделе 41.
 
 ## Work 4 — Tactical Reader
 
@@ -1699,7 +1705,7 @@ Work 1 закрыт со следующими fulfilled outputs:
 - liberties каждой string;
 - connected empty regions;
 - boundary groups и boundary colors каждого empty region;
-- `vitalGroups` — groups, смежные с каждой точкой region, как structural input для Benson;
+- `vitalGroups` ordinary empty region — groups, смежные с каждой empty point этого region; это general structural relation, но **не** замена Benson color-region semantics;
 - `stringByPoint` и `regionByPoint`;
 - direct opponent adjacency;
 - shared liberties между strings;
@@ -1735,7 +1741,7 @@ Pair enumeration при построении shared liberties выполняет
 
 Один `buildEndgameGraph(...)` snapshot теперь используется для:
 
-- Benson/pass-alive fixed point;
+- Benson/pass-alive как authoritative source strings/liberties/point ownership; Benson-specific non-color regions являются derived projection, а не вторым stone index;
 - automatic dead candidate/verifier context;
 - automatic seki candidate/verifier context.
 
@@ -1783,4 +1789,117 @@ Work 2 закрывает Stage A foundation:
 - renderer geometry отсутствует в correctness dependency chain;
 - внешний solver/Board не введён в production foundation.
 
-**Следующий этап — Work 3: Benson hardening.** Он должен использовать `EndgameGraphCore` как structural source, а не снова строить отдельные groups/regions.
+Work 3 использует этот snapshot как единственный source stone-string/liberty/point ownership; отдельная Benson non-color projection допустима только потому, что она имеет другую semantics, чем general empty-region graph.
+
+---
+
+# 41. Work 3 — Benson hardening: финальный результат
+
+Срез на **2026-08-23**. **Work 3 закрыт.** Старый локальный Benson helper удалён из `AssistedEndgameClassifier`; pass-alive proof вынесен в отдельный topology-neutral `BensonPassAlive` module и сверён с Moka semantics.
+
+## 41.1. Moka/Benson semantic decision
+
+Главное исправление Work 3 — не считать ordinary empty component эквивалентом Benson region.
+
+Для анализируемого цвета `C` production semantics теперь такие:
+
+```text
+Benson non-color region(C)
+=
+connected component of points with occupancy != C
+```
+
+То есть в один region входят:
+
+- empty points;
+- opponent stones;
+- связи между ними через `Topology.neighbors()`.
+
+Opponent stones участвуют в connectivity, но vital relation строится только по empty points: group является vital для region, только если она adjacent к каждой empty point этого region. Region без empty points не даёт vital proof.
+
+Это соответствует проверенной структуре Moka `getNonColorRegions()` / `getPassAliveAnalysis()` и устраняет прежнее скрытое предположение «Benson region = empty region, окружённый одним цветом».
+
+## 41.2. Structural boundary
+
+Work 3 не создаёт второй stone-group/liberty engine.
+
+`EndgameGraphCore` остаётся единственным source для:
+
+- stone strings;
+- string colors;
+- liberties;
+- `stringByPoint` / `stringsByKey` identity.
+
+`BensonPassAlive` строит только algorithm-specific color-region projection из `BoardOccupancy + Topology.neighbors()` и проверяет boundary group identity через общий graph snapshot.
+
+Это намеренное разделение:
+
+```text
+EndgameGraphCore.emptyRegions
+!=
+Benson color-specific non-color regions
+```
+
+Пытаться хранить их как одну структуру было бы semantic bug: opponent stone должен разрывать ordinary empty region, но должен оставаться частью non-color connectivity для противоположного Benson color.
+
+## 41.3. Fixed-point proof
+
+Для каждого цвета:
+
+1. берутся все strings этого цвета из `EndgameGraphCore`;
+2. строятся color-specific non-color regions;
+3. для каждого region фиксируются boundary groups и vital groups;
+4. group удаляется, если у неё меньше двух surviving vital regions;
+5. region удаляется, если он граничит с group, удалённой на этой итерации;
+6. цикл продолжается до fixed point;
+7. только surviving groups получают automatic `alive`.
+
+Diagnostic evidence id намеренно остаётся `benson-pass-alive-v1`: Work 3 исправляет implementation semantics, но не создаёт новый внешний evidence contract.
+
+Dead/seki verifier’ы не менялись: они получают обновлённый `passAliveGroupKeys` от hardened Benson.
+
+## 41.4. Acceptance
+
+Добавлены отдельные deterministic Work 3 tests:
+
+1. Moka-parity case, где каждый Benson region содержит opponent stone: black group получает два distinct vital non-color regions и pass-alive proof;
+2. one-eye case не получает proof;
+3. false-eye-like case: две empty pockets, соединённые через opponent stone, становятся **одним** non-color region и не дают ложной two-region life;
+4. Torus seam placement проверяет тот же proof signature, что interior placement;
+5. Cube face-edge placement проверяет тот же proof signature, что interior placement.
+
+Существующий classifier regression corpus дополнительно подтверждает:
+
+- deterministic two-eye fixture proven alive на Torus и Cube;
+- one-eye / false-eye / seki-like fixtures остаются unresolved;
+- Benson fixed point удаляет зависимые regions/groups до стабильности;
+- partial analysis context остаётся fail-closed;
+- automatic dead boundary продолжает требовать opponent pass-alive proof.
+
+## 41.5. Validation
+
+Code-head `56ba426b39a572b78167abddffc1069c37c78f41` на PR #147 прошёл CI run #676:
+
+- lint — pass;
+- typecheck — pass;
+- unit/coverage — **531 tests pass**;
+- build — pass;
+- Playwright E2E — pass.
+
+Первый Work 3 CI run #673 был красным только из-за двух stale test expectations на временный diagnostic id `benson-pass-alive-v2`; сами новые Benson tests, typecheck и classifier tests уже проходили. Evidence id после этого сохранён как стабильный `benson-pass-alive-v1`, новый lint-warning удалён, run #676 полностью зелёный.
+
+Final documentation head должен пройти тот же PR CI перед merge.
+
+## 41.6. Closure
+
+Work 3 закрывает Stage B hardening:
+
+- Moka/Benson non-color semantics адаптирована без rectangular geometry;
+- ordinary empty regions больше не используются как Benson-equivalent abstraction;
+- proof остаётся topology-neutral через `Topology.neighbors()`;
+- Work 2 graph остаётся единственным source stone-string/liberty identity;
+- negative false-eye/one-eye boundaries сохранены conservative;
+- diagnostic contract `benson-pass-alive-v1` сохранён;
+- dead/seki proof layers не расширялись этим Work.
+
+**Следующий этап — Work 4: Tactical Reader.**

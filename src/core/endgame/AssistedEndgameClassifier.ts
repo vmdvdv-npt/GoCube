@@ -14,16 +14,16 @@ import {
   type AutomaticSekiProof,
 } from './AutomaticSekiProof';
 import {
-  buildEndgameGraph,
-  type EndgameEmptyRegion,
-  type EndgameStoneString,
-} from './EndgameGraphCore';
+  BENSON_PASS_ALIVE_ALGORITHM,
+  proveBensonPassAlive,
+  type BensonColorRegion,
+} from './BensonPassAlive';
+import { buildEndgameGraph } from './EndgameGraphCore';
 import { endgameGroupId } from './EndgameGroupIdentity';
 import { ManualEndgameClassifier } from './ManualEndgameClassifier';
 import type { StoneColor } from '../game/types';
 
 const COLORS: readonly StoneColor[] = Object.freeze(['black', 'white']);
-const ALIVE_ALGORITHM = 'benson-pass-alive-v1';
 
 /**
  * Conservative assisted classifier.
@@ -49,12 +49,13 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
       baseline.every((proposal) => graph.stringsByKey.has(endgameGroupId(proposal.points)));
     if (!complete) return baseline;
 
-    const aliveProofs = new Map<string, readonly EndgameEmptyRegion[]>();
+    const aliveProofs = new Map<string, readonly BensonColorRegion[]>();
     for (const color of COLORS) {
-      for (const [groupKey, vitalRegions] of provePassAlive(
+      for (const [groupKey, vitalRegions] of proveBensonPassAlive(
+        context.state.board,
+        context.topology,
+        graph,
         color,
-        graph.stringsByKey,
-        graph.emptyRegions,
       )) {
         aliveProofs.set(groupKey, vitalRegions);
       }
@@ -104,7 +105,7 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
             status: 'alive' as const,
             source: 'automatic' as const,
             evidence: Object.freeze({
-              algorithm: ALIVE_ALGORITHM,
+              algorithm: BENSON_PASS_ALIVE_ALGORITHM,
               proof: 'two-vital-regions',
               vitalRegions: Object.freeze(vitalRegions.map((region) => region.points)),
             }),
@@ -136,56 +137,3 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     );
   }
 }
-
-const provePassAlive = (
-  color: StoneColor,
-  groups: ReadonlyMap<string, EndgameStoneString>,
-  regions: readonly EndgameEmptyRegion[],
-): ReadonlyMap<string, readonly EndgameEmptyRegion[]> => {
-  const remainingGroups = new Set(
-    [...groups.values()].filter((group) => group.color === color).map((group) => group.key),
-  );
-  const candidateRegions = new Map(
-    regions
-      .filter(
-        (region) =>
-          region.boundaryGroups.length > 0 &&
-          region.boundaryGroups.every((groupKey) => groups.get(groupKey)?.color === color),
-      )
-      .map((region) => [region.key, region] as const),
-  );
-  const remainingRegions = new Set(candidateRegions.keys());
-
-  while (true) {
-    const groupsToRemove = [...remainingGroups].filter((groupKey) => {
-      let vitalRegionCount = 0;
-      for (const regionKey of remainingRegions) {
-        if (candidateRegions.get(regionKey)!.vitalGroups.includes(groupKey)) vitalRegionCount += 1;
-      }
-      return vitalRegionCount < 2;
-    });
-
-    for (const groupKey of groupsToRemove) remainingGroups.delete(groupKey);
-
-    const regionsToRemove = [...remainingRegions].filter((regionKey) =>
-      candidateRegions
-        .get(regionKey)!
-        .boundaryGroups.some((groupKey) => !remainingGroups.has(groupKey)),
-    );
-    for (const regionKey of regionsToRemove) remainingRegions.delete(regionKey);
-
-    if (groupsToRemove.length === 0 && regionsToRemove.length === 0) break;
-  }
-
-  const proofs = new Map<string, readonly EndgameEmptyRegion[]>();
-  for (const groupKey of [...remainingGroups].sort()) {
-    const vitalRegions = [...remainingRegions]
-      .map((regionKey) => candidateRegions.get(regionKey)!)
-      .filter((region) => region.vitalGroups.includes(groupKey))
-      .sort((left, right) => (left.key < right.key ? -1 : left.key > right.key ? 1 : 0));
-
-    if (vitalRegions.length >= 2) proofs.set(groupKey, Object.freeze(vitalRegions));
-  }
-
-  return proofs;
-};
