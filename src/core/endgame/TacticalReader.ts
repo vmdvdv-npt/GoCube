@@ -209,6 +209,24 @@ const allLegalDefenderMoves = (
   return Object.freeze(results);
 };
 
+const terminalCaptureDependsOnKo = (
+  runtime: SearchRuntime,
+  beforeCapture: GameState,
+  afterCapture: GameState,
+): boolean => {
+  for (const point of runtime.sortedPoints) {
+    if (afterCapture.board[point] !== 'empty') continue;
+    const recapture = runtime.engine.placeStone(
+      freezeSearchState(afterCapture, runtime.targetColor),
+      point,
+      runtime.targetColor,
+      { previousBoard: beforeCapture.board },
+    );
+    if (!recapture.ok && recapture.reason === 'repetition') return true;
+  }
+  return false;
+};
+
 const search = (
   runtime: SearchRuntime,
   node: SearchNode,
@@ -260,13 +278,7 @@ const search = (
       const { move } = childMove;
       const targetCaptured = targetGroupAt(runtime, childMove.state) === null;
       if (targetCaptured) {
-        const recapture = runtime.engine.placeStone(
-          freezeSearchState(childMove.state, runtime.targetColor),
-          move,
-          runtime.targetColor,
-          { previousBoard: node.state.board },
-        );
-        if (!recapture.ok && recapture.reason === 'repetition') {
+        if (terminalCaptureDependsOnKo(runtime, node.state, childMove.state)) {
           unknowns.push(prependMove(move, ko()));
           continue;
         }
