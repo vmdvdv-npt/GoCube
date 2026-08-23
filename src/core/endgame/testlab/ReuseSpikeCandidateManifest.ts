@@ -6,6 +6,27 @@ export type ReuseSpikeExecutionMode =
   | 'black-box-only'
   | 'native-permissive';
 
+export type ReuseSpikeExecutionArtifact =
+  | Readonly<{
+      kind: 'npm-package';
+      packageName: string;
+      version: string;
+      integrity: string;
+      shasum: string;
+    }>
+  | Readonly<{
+      kind: 'source-build';
+      dependencyLock?: Readonly<{
+        path: string;
+        blobSha: string;
+      }>;
+    }>
+  | Readonly<{
+      kind: 'container-source-build';
+      image: string;
+      digest: string;
+    }>;
+
 export interface ReuseSpikeCandidateManifestEntry {
   readonly id: ReuseSpikeCandidateId;
   readonly repository: string;
@@ -13,11 +34,23 @@ export interface ReuseSpikeCandidateManifestEntry {
   readonly upstreamBranch: string;
   readonly licenseStatus: ReuseSpikeLicenseStatus;
   readonly executionMode: ReuseSpikeExecutionMode;
+  readonly executionArtifact: ReuseSpikeExecutionArtifact;
 }
+
+const sourceBuild = (
+  dependencyLock?: Readonly<{ path: string; blobSha: string }>,
+): ReuseSpikeExecutionArtifact =>
+  Object.freeze({
+    kind: 'source-build' as const,
+    ...(dependencyLock === undefined
+      ? {}
+      : { dependencyLock: Object.freeze({ ...dependencyLock }) }),
+  });
 
 /**
  * Immutable Work 1 upstream snapshot. Benchmark numbers are meaningful only
- * when they can be traced back to exact solver revisions.
+ * when they can be traced to both an exact source revision and the executable
+ * artifact/build boundary used for that candidate.
  */
 export const REUSE_SPIKE_CANDIDATE_MANIFEST: readonly ReuseSpikeCandidateManifestEntry[] =
   Object.freeze([
@@ -28,6 +61,14 @@ export const REUSE_SPIKE_CANDIDATE_MANIFEST: readonly ReuseSpikeCandidateManifes
       upstreamBranch: 'master',
       licenseStatus: 'apache-2.0',
       executionMode: 'in-process-permissive',
+      executionArtifact: Object.freeze({
+        kind: 'npm-package' as const,
+        packageName: 'tsumego.js',
+        version: '1.1.0',
+        integrity:
+          'sha512-W/MQDhaMKiM15wd8YRjonXgZm+T1YxZRhavvv0sDPDywEidgDzN8s5Jum/aU0GIruGz5L/GDygn2/TQ34+btcg==',
+        shasum: 'bf82348af36f919d4942a5746eb49506a789b8e3',
+      }),
     }),
     Object.freeze({
       id: 'cameron-martin',
@@ -36,6 +77,10 @@ export const REUSE_SPIKE_CANDIDATE_MANIFEST: readonly ReuseSpikeCandidateManifes
       upstreamBranch: 'master',
       licenseStatus: 'undeclared',
       executionMode: 'black-box-only',
+      executionArtifact: sourceBuild({
+        path: 'Cargo.lock',
+        blobSha: 'bc18b817de7811efa91be5d16ebd95d703948faf',
+      }),
     }),
     Object.freeze({
       id: 'relevance-zone',
@@ -44,6 +89,11 @@ export const REUSE_SPIKE_CANDIDATE_MANIFEST: readonly ReuseSpikeCandidateManifes
       upstreamBranch: 'main',
       licenseStatus: 'undeclared',
       executionMode: 'black-box-only',
+      executionArtifact: Object.freeze({
+        kind: 'container-source-build' as const,
+        image: 'rockmanray/gorzone',
+        digest: 'sha256:1d1b6babbd6c5978c14394aad16aeffcff3106eb78574ee8a577bbeec596849f',
+      }),
     }),
     Object.freeze({
       id: 'darkforest',
@@ -52,6 +102,7 @@ export const REUSE_SPIKE_CANDIDATE_MANIFEST: readonly ReuseSpikeCandidateManifes
       upstreamBranch: 'master',
       licenseStatus: 'bsd-style',
       executionMode: 'native-permissive',
+      executionArtifact: sourceBuild(),
     }),
   ]);
 
