@@ -4,6 +4,15 @@ import {
   type LiveTestGeneratedCase,
   type LiveTestGeneratorType,
 } from '../core/endgame/testlab/LiveTestGenerators';
+import { LocalAnalysisClient } from '../core/endgame/testlab/LocalAnalysisClient';
+import {
+  TestCaseReplayService,
+} from '../core/endgame/testlab/TestCaseReplayService';
+import type {
+  ReplayableTestCase,
+  TestCaseSource,
+  TestCaseTopology,
+} from '../core/endgame/testlab/TestCase';
 import type { GameRepository, SavedGame } from '../core/persistence/GameRepository';
 import {
   GAME_SESSION_SNAPSHOT_VERSION,
@@ -45,6 +54,11 @@ export type ActiveGame =
 export interface GeneratedActiveGame {
   readonly activeGame: ActiveGame;
   readonly generation: LiveTestGeneratedCase;
+}
+
+export interface TestCaseActiveGame {
+  readonly activeGame: ActiveGame;
+  readonly testCase: ReplayableTestCase;
 }
 
 export interface ApplicationSavedState {
@@ -94,6 +108,9 @@ const hasValidRedo = (redo: unknown): boolean =>
         ),
     ));
 
+const modeForTopology = (topology: TestCaseTopology): GameMode =>
+  topology === 'cube' ? 'cube-2d' : 'torus-2d';
+
 /**
  * Bridges the shared GameSession persistence contract to the application save envelope.
  * GameSession continues to persist only GameSessionSnapshot; the application adds gameMode.
@@ -137,6 +154,9 @@ export class GameApplication {
     private readonly repository: GameRepository<ApplicationSavedState> =
       new LocalStorageGameRepository<ApplicationSavedState>(),
     private readonly now: () => string = () => new Date().toISOString(),
+    private readonly testCases: TestCaseReplayService = new TestCaseReplayService({
+      localAnalysisClient: new LocalAnalysisClient(),
+    }),
   ) {}
 
   async findSavedGame(): Promise<SavedGameSummary | null> {
@@ -191,6 +211,11 @@ export class GameApplication {
     return active;
   }
 
+  /**
+   * Legacy stage-1 compatibility path retained for existing fixed-seed tests.
+   * New UI/Deep/differential consumers use the TestCaseReplayService methods
+   * below so Test ID is the canonical user-facing replay key.
+   */
   async createGeneratedGame(
     settings: NewGameSettings,
     generator: LiveTestGeneratorType,
@@ -205,58 +230,55 @@ export class GameApplication {
     });
 
     if (generation.loadStrategy === 'snapshot') {
-      const persistence = this.persistenceConfig(settings.gameMode);
-      const snapshot: GameSessionSnapshot = Object.freeze({
-        version: GAME_SESSION_SNAPSHOT_VERSION,
-        boardSize: settings.size,
-        sessionRevision: 0,
-        ruleSet: settings.ruleSet,
-        komi: settings.komi,
-        history: Object.freeze([generation.state]),
-        redo: Object.freeze([]),
-        endgameReview: null,
-        endgameClassification: null,
-        finalScore: null,
-      });
-      const activeGame: ActiveGame = settings.gameMode === 'cube-2d'
-        ? Object.freeze({
-            gameMode: 'cube-2d',
-            controller: new Cube2DGameController({
-              persistence,
-              snapshot,
-            }),
-          })
-        : Object.freeze({
-            gameMode: 'torus-2d',
-            controller: new TorusGameController({
-              persistence,
-              snapshot,
-            }),
-          });
-
-      await persistence.repository.save({
-        id: CURRENT_GAME_ID,
-        savedAt: this.now(),
-        state: activeGame.controller.snapshot(),
-      });
+      const activeGame = await this.createSnapshotGame(settings, generation.state);
       return Object.freeze({ activeGame, generation });
     }
 
     const activeGame = await this.createNewGame(settings);
-    for (const command of generation.commands) {
-      const result = command.type === 'pass'
-        ? await activeGame.controller.pass()
-        : await activeGame.controller.placeStone(command.point);
-      if (!result.accepted) {
-        throw new Error(
-          `Generated ${generator} replay was rejected at move ${String(
-            result.viewModel.moveNumber + 1,
-          )}: ${String(result.reason)}`,
-        );
-      }
-    }
-
+    await this.replayCommands(activeGame, generation.commands, generator);
     return Object.freeze({ activeGame, generation });
+  }
+
+  async createGeneratedTestCase(
+    settings: NewGameSettings,
+    source: Exclude<TestCaseSource, 'corpus'>,
+    payload: number,
+  ): Promise<TestCaseActiveGame> {
+    this.assertSettings(settings);
+    const topology: TestCaseTopology = settings.gameMode === 'cube-2d' ? 'cube' : 'torus';
+    const identity = this.testCases.identityForGenerated(source, topology, settings.size, payload);
+    const testCase = await this.testCases.createFromIdentity(identity, false);
+    return this.loadReplayableTestCase(settings, testCase);
+  }
+
+  async createCorpusTestCase(
+    settings: NewGameSettings,
+    catalogIndex: number,
+    transform: number,
+  ): Promise<TestCaseActiveGame> {
+    this.assertSettings(settings);
+    const topology: TestCaseTopology = settings.gameMode === 'cube-2d' ? 'cube' : 'torus';
+    const identity = this.testCases.identityForCorpus(topology, settings.size, catalogIndex, transform);
+    const testCase = await this.testCases.createFromIdentity(identity, true);
+    return this.loadReplayableTestCase(settings, testCase);
+  }
+
+  async loadTestCaseById(
+    testId: string,
+    session: Readonly<{ ruleSet: RuleSet; komi: number }>,
+  ): Promise<TestCaseActiveGame> {
+    if (!isRuleSet(session.ruleSet) || !Number.isFinite(session.komi)) {
+      throw new Error('Invalid Test ID session settings');
+    }
+    const testCase = await this.testCases.createFromId(testId, true);
+    const settings: NewGameSettings = Object.freeze({
+      gameMode: modeForTopology(testCase.identity.topology),
+      size: testCase.identity.size as GameSize,
+      ruleSet: session.ruleSet,
+      komi: session.komi,
+    });
+    this.assertSettings(settings);
+    return this.loadReplayableTestCase(settings, testCase);
   }
 
   async restoreSavedGame(): Promise<ActiveGame | null> {
@@ -298,6 +320,81 @@ export class GameApplication {
 
   async discardSavedGame(): Promise<void> {
     await this.repository.remove(CURRENT_GAME_ID);
+  }
+
+  private async loadReplayableTestCase(
+    settings: NewGameSettings,
+    testCase: ReplayableTestCase,
+  ): Promise<TestCaseActiveGame> {
+    if (
+      modeForTopology(testCase.identity.topology) !== settings.gameMode ||
+      testCase.identity.size !== settings.size
+    ) {
+      throw new Error('Test case identity does not match requested session topology/size');
+    }
+
+    const activeGame = testCase.loadStrategy === 'snapshot'
+      ? await this.createSnapshotGame(settings, testCase.state)
+      : await this.createNewGame(settings);
+
+    if (testCase.loadStrategy === 'replay-commands') {
+      await this.replayCommands(activeGame, testCase.commands, testCase.identity.source);
+    }
+    return Object.freeze({ activeGame, testCase });
+  }
+
+  private async createSnapshotGame(
+    settings: NewGameSettings,
+    state: GameSessionSnapshot['history'][number],
+  ): Promise<ActiveGame> {
+    const persistence = this.persistenceConfig(settings.gameMode);
+    const snapshot: GameSessionSnapshot = Object.freeze({
+      version: GAME_SESSION_SNAPSHOT_VERSION,
+      boardSize: settings.size,
+      sessionRevision: 0,
+      ruleSet: settings.ruleSet,
+      komi: settings.komi,
+      history: Object.freeze([state]),
+      redo: Object.freeze([]),
+      endgameReview: null,
+      endgameClassification: null,
+      finalScore: null,
+    });
+    const activeGame: ActiveGame = settings.gameMode === 'cube-2d'
+      ? Object.freeze({
+          gameMode: 'cube-2d',
+          controller: new Cube2DGameController({ persistence, snapshot }),
+        })
+      : Object.freeze({
+          gameMode: 'torus-2d',
+          controller: new TorusGameController({ persistence, snapshot }),
+        });
+
+    await persistence.repository.save({
+      id: CURRENT_GAME_ID,
+      savedAt: this.now(),
+      state: activeGame.controller.snapshot(),
+    });
+    return activeGame;
+  }
+
+  private async replayCommands(
+    activeGame: ActiveGame,
+    commands: ReplayableTestCase['commands'],
+    sourceLabel: string,
+  ): Promise<void> {
+    for (const command of commands) {
+      const result = command.type === 'pass'
+        ? await activeGame.controller.pass()
+        : await activeGame.controller.placeStone(command.point);
+      if (!result.accepted) {
+        throw new Error(
+          `Generated ${sourceLabel} replay was rejected at move ${String(
+            result.viewModel.moveNumber + 1,
+          )}: ${String(result.reason)}`,
+        );
+      }
+    }
   }
 
   private persistenceConfig(gameMode: GameMode) {
