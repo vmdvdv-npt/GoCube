@@ -43,6 +43,11 @@ const stoneSelector = (mode: SurfaceMode): string =>
     ? '.cube-2d-stone[data-logical-point-id][data-occupancy]'
     : '.torus-board__stone[data-logical-point-id][data-occupancy][data-copy-role="primary"]';
 
+const hitTargetSelector = (mode: SurfaceMode): string =>
+  mode === 'cube'
+    ? '.cube-2d-hit-area[data-point-id]'
+    : '.torus-board__hit-target[data-logical-point-id][data-copy-role="primary"]';
+
 const occupancyForMode = (mode: SurfaceMode): ReadonlyMap<PointId, StoneColor> => {
   const occupancy = new Map<PointId, StoneColor>();
   for (const element of document.querySelectorAll<Element>(stoneSelector(mode))) {
@@ -201,6 +206,26 @@ const visibleStoneBounds = (mode: SurfaceMode, available: Bounds): readonly Boun
     }),
   );
 
+const interactionObstacleBounds = (
+  selection: GroupSelection,
+  available: Bounds,
+): readonly Bounds[] => {
+  const occupancy = occupancyForMode(selection.mode);
+  const selectedPoints = new Set(selection.pointIds);
+  const hitAreas = [...document.querySelectorAll<Element>(hitTargetSelector(selection.mode))].flatMap(
+    (element) => {
+      const pointId =
+        element.getAttribute('data-logical-point-id') ?? element.getAttribute('data-point-id');
+      if (!pointId || selectedPoints.has(pointId) || !occupancy.has(pointId)) return [];
+      const rect = element.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return [];
+      const visible = intersectBounds(rectToBounds(rect), available);
+      return visible ? [visible] : [];
+    },
+  );
+  return Object.freeze([...visibleStoneBounds(selection.mode, available), ...hitAreas]);
+};
+
 const groupBounds = (selection: GroupSelection, available: Bounds): Bounds | null => {
   const pointIds = new Set(selection.pointIds);
   const rawRects: Bounds[] = [];
@@ -272,7 +297,7 @@ const positionControl = (
 ): PositionedControl => {
   const centerX = (group.left + group.right) / 2;
   const centerY = (group.top + group.bottom) / 2;
-  const candidates: readonly PositionedControl[] = Object.freeze([
+  const centered: readonly PositionedControl[] = Object.freeze([
     Object.freeze({
       placement: 'top',
       left: centerX - width / 2,
@@ -294,6 +319,33 @@ const positionControl = (
       top: centerY - height / 2,
     }),
   ]);
+  const nudgeFactors = [-0.75, 0.75, -1.5, 1.5] as const;
+  const nudged: PositionedControl[] = [];
+  for (const factor of nudgeFactors) {
+    nudged.push(
+      Object.freeze({
+        placement: 'top',
+        left: centered[0].left + width * factor,
+        top: centered[0].top,
+      }),
+      Object.freeze({
+        placement: 'bottom',
+        left: centered[1].left + width * factor,
+        top: centered[1].top,
+      }),
+      Object.freeze({
+        placement: 'left',
+        left: centered[2].left,
+        top: centered[2].top + height * factor,
+      }),
+      Object.freeze({
+        placement: 'right',
+        left: centered[3].left,
+        top: centered[3].top + height * factor,
+      }),
+    );
+  }
+  const candidates = Object.freeze([...centered, ...nudged]);
 
   const fitting = candidates.find(
     (candidate) =>
@@ -375,7 +427,7 @@ const syncFloatingControl = (selection: GroupSelection): boolean => {
     available,
     controlRect.width,
     controlRect.height,
-    visibleStoneBounds(selection.mode, available),
+    interactionObstacleBounds(selection, available),
   );
   control.style.left = `${position.left.toFixed(1)}px`;
   control.style.top = `${position.top.toFixed(1)}px`;
