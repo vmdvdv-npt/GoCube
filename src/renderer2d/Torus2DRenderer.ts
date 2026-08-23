@@ -258,7 +258,7 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
       const defs = document.createElementNS(SVG_NS, 'defs');
       const groupsLayer = document.createElementNS(SVG_NS, 'g');
       groupsLayer.setAttribute('class', 'torus-board__endgame-contours');
-      const shapeRadius = scene.stoneRadius * 1.12;
+      const shapeRadius = scene.stoneRadius;
       const sekiRegions = buildEndgameSekiRegions(overlay.groups, new TorusTopology(scene.size));
       const sekiGroupIds = new Set(sekiRegions.flatMap((region) => region.groupIds));
 
