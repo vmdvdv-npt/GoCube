@@ -41,7 +41,7 @@ const setAttributes = (
 const contourColor = (status: string | null): string => {
   if (status === 'dead') return '#e52b2b';
   if (status === 'seki') return '#80878f';
-  if (status === 'alive') return '#ffffff';
+  if (status === 'alive') return 'transparent';
   return '#a8e85e';
 };
 
