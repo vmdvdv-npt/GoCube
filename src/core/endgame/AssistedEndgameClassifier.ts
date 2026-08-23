@@ -60,18 +60,9 @@ const COLORS: readonly StoneColor[] = Object.freeze(['black', 'white']);
 const TACTICAL_CLASSIFIER_MAX_NODES = 16;
 const LOCAL_LIFE_DEATH_CLASSIFIER_MAX_NODES = 256;
 const LOCAL_LIFE_DEATH_CLASSIFIER_MAX_ZONE_POINTS = 24;
-const SEMEAI_CLASSIFIER_MAX_NODES = 1_024;
+const SEMEAI_CLASSIFIER_MAX_NODES = 256;
 const SEMEAI_CLASSIFIER_MAX_ZONE_POINTS = 24;
 const SEMEAI_CLASSIFIER_MAX_TARGET_LIBERTIES = 5;
-
-const BOUNDED_SEMEAI_FALLBACK_REASONS: ReadonlySet<
-  NonNullable<SimpleSemeaiResult['reason']>
-> = new Set([
-  'shared-liberties-deferred',
-  'multi-group-interaction',
-  'too-many-liberties',
-  'capture-not-simple',
-]);
 
 type LocalLifeDeathClassifierStatus = 'alive' | 'dead';
 
@@ -282,10 +273,13 @@ const boundedSemeaiDeadClaim = (
   });
 };
 
-const shouldRunBoundedSemeai = (result: SimpleSemeaiResult): boolean =>
+const shouldRunBoundedSemeai = (
+  result: SimpleSemeaiResult,
+  pair: SemeaiCandidatePair,
+): boolean =>
   result.outcome === 'unresolved' &&
-  result.reason !== null &&
-  BOUNDED_SEMEAI_FALLBACK_REASONS.has(result.reason);
+  result.reason === 'shared-liberties-deferred' &&
+  pair.sharedLiberties.length > 0;
 
 const summarizeBasicSekiInitiation = (initiation: BasicSekiInitiationResult) =>
   Object.freeze({
@@ -310,13 +304,10 @@ const summarizeBasicSekiInitiation = (initiation: BasicSekiInitiationResult) =>
   });
 
 /**
- * Conservative assisted classifier.
- *
- * Cheap/static proofs stay first. Bounded tactical, local life/death, semeai and
- * basic-seki readers are candidate-gated and may promote a status only when the
- * reader's existing authoritative proof contract is complete. A semeai win only
- * proves the losing target dead; it never promotes the winner to alive. Ko,
- * budget, boundary, cycle and incomplete outcomes always remain unresolved.
+ * Conservative assisted classifier. Cheap/static proofs remain first. Reader
+ * integration is candidate-gated and accepts only the existing authoritative
+ * proof contracts. Semeai proves only a stable loser dead, never its winner
+ * alive. Ko, budget, boundary, cycle and incomplete outcomes remain unresolved.
  */
 export class AssistedEndgameClassifier implements EndgameClassifier {
   private readonly manual = new ManualEndgameClassifier();
@@ -325,9 +316,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     const baseline = await this.manual.analyze(context);
     const graph = buildEndgameGraph(context.state.board, context.topology);
 
-    // Automatic proof is only sound when the requested analysis context
-    // describes every logical stone string on the board. A partial context
-    // remains safely unresolved, exactly as before the shared graph core.
     const complete =
       baseline.length === graph.strings.length &&
       baseline.every((proposal) => graph.stringsByKey.has(endgameGroupId(proposal.points)));
@@ -349,10 +337,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     const safeConnectionProofs = new Map<string, SafeConnectionProof>();
     for (const group of graph.strings) {
       if (passAliveGroupKeys.has(group.key)) continue;
-
-      // RelevanceZone is intentionally more expensive than the shared graph
-      // snapshot, so only invoke the Work 5B verifier for structural candidates
-      // that already touch a same-color Benson group through shared liberties.
       const hasBensonConnectionCandidate = graph.possibleConnections.some((candidate) => {
         if (!candidate.groups.includes(group.key)) return false;
         const otherKey = candidate.groups.find((groupKey) => groupKey !== group.key);
@@ -390,16 +374,14 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     );
     const tacticalDeadProofs = new Map<string, TacticalDeadProof>();
     for (const group of graph.strings) {
-      // Keep the existing sealed one-liberty proof authoritative. The tactical
-      // reader is a later fallback for unresolved contested 1-2 liberty targets,
-      // which closes the Work 9 immediate-capture routing gap without widening
-      // TacticalReader's theorem or running it indiscriminately on every group.
+      const tacticalShape =
+        group.liberties.length === 2 ||
+        (group.liberties.length === 1 && group.points.length === 1);
       if (
         passAliveGroupKeys.has(group.key) ||
         safeConnectionProofs.has(group.key) ||
         deadProofs.has(group.key) ||
-        group.liberties.length < 1 ||
-        group.liberties.length > 2
+        !tacticalShape
       ) {
         continue;
       }
@@ -422,7 +404,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
         firstPlayer: 'attacker',
       });
       if (attackerFirst.outcome !== 'proved-kill') continue;
-
       const defenderFirst = readTacticalCapture(group, context.state, context.topology, {
         ...sharedOptions,
         firstPlayer: 'defender',
@@ -451,11 +432,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
       ) {
         continue;
       }
-
-      // Work 6C deliberately keeps the first production search class narrow.
-      // One/two-liberty targets belong to the cheaper dead/tactical layers. The
-      // local L&D reader is used only for small 3-4 liberty targets whose every
-      // liberty is immediately bounded by a Benson/pass-alive opponent string.
       if (group.liberties.length < 3 || group.liberties.length > 4) continue;
       const opponent: StoneColor = group.color === 'black' ? 'white' : 'black';
       const enclosedBySafeOpponent = group.liberties.every((liberty) =>
@@ -475,19 +451,18 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
       if (classifierProof) localLifeDeathProofs.set(group.key, classifierProof);
     }
 
+    // Tactical dead is intentionally not excluded here. A stable semeai proof
+    // may independently prove the same target dead; race-specific evidence is
+    // then preferred for provenance without changing the accepted status.
     const resolvedBeforeSemeai = new Set<string>([
       ...passAliveGroupKeys,
       ...safeConnectionProofs.keys(),
       ...deadProofs.keys(),
-      ...tacticalDeadProofs.keys(),
       ...localLifeDeathProofs.keys(),
     ]);
     const semeaiPairs = collectSemeaiCandidatePairs(graph, resolvedBeforeSemeai);
     const semeaiDeadProofs = new Map<string, Readonly<Record<string, unknown>>>();
 
-    // Pair iteration is canonical and every pair is evaluated against the same
-    // pre-semeai snapshot. A positive proof therefore cannot be erased by a
-    // later unresolved pair, and multi-pair results do not depend on Map order.
     for (const pair of semeaiPairs) {
       const simple = analyzeSimpleSemeai(
         pair.left,
@@ -497,7 +472,7 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
       );
       let claim = simpleSemeaiDeadClaim(simple);
 
-      if (!claim && shouldRunBoundedSemeai(simple)) {
+      if (!claim && shouldRunBoundedSemeai(simple, pair)) {
         const bounded = analyzeBoundedSemeai(
           pair.left,
           pair.right,
@@ -511,8 +486,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
         claim = boundedSemeaiDeadClaim(bounded, pair.sharedLiberties);
       }
 
-      // Multiple independent proofs of the same status are harmless. Keep the
-      // first canonical pair as primary provenance; uncertainty never cancels it.
       if (claim && !semeaiDeadProofs.has(claim.targetGroupKey)) {
         semeaiDeadProofs.set(claim.targetGroupKey, claim.evidence);
       }
@@ -520,6 +493,7 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
 
     const resolvedBeforeLegacySeki = new Set<string>([
       ...resolvedBeforeSemeai,
+      ...tacticalDeadProofs.keys(),
       ...semeaiDeadProofs.keys(),
     ]);
     const sekiProofs = new Map<string, AutomaticSekiProof>();
@@ -545,7 +519,15 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     ]);
     const basicSekiProofs = new Map<string, Readonly<Record<string, unknown>>>();
     for (const pair of collectSemeaiCandidatePairs(graph, resolvedBeforeBasicSeki)) {
-      if (pair.sharedLiberties.length === 0) continue;
+      // Work 7D keeps the expensive fallback deliberately narrow. The existing
+      // 7C proof still decides the result; candidate gating only controls cost.
+      if (
+        pair.sharedLiberties.length !== 2 ||
+        pair.left.liberties.length > 3 ||
+        pair.right.liberties.length > 3
+      ) {
+        continue;
+      }
 
       const result = analyzeBasicSeki(
         pair.left,
@@ -578,8 +560,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
         proofReason: result.proofReason,
       });
 
-      // Same-status multi-pair support is deterministic. A group that was
-      // already alive/dead/seki at a stronger/cheaper layer is excluded above.
       if (!basicSekiProofs.has(result.leftGroupKey)) {
         basicSekiProofs.set(result.leftGroupKey, evidence);
       }
@@ -625,16 +605,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
           });
         }
 
-        const tacticalDeadProof = tacticalDeadProofs.get(groupKey);
-        if (tacticalDeadProof) {
-          return Object.freeze({
-            points: proposal.points,
-            status: 'dead' as const,
-            source: 'automatic' as const,
-            evidence: Object.freeze({ ...tacticalDeadProof }),
-          });
-        }
-
         const localLifeDeathProof = localLifeDeathProofs.get(groupKey);
         if (localLifeDeathProof) {
           return Object.freeze({
@@ -652,6 +622,16 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
             status: 'dead' as const,
             source: 'automatic' as const,
             evidence: semeaiDeadProof,
+          });
+        }
+
+        const tacticalDeadProof = tacticalDeadProofs.get(groupKey);
+        if (tacticalDeadProof) {
+          return Object.freeze({
+            points: proposal.points,
+            status: 'dead' as const,
+            source: 'automatic' as const,
+            evidence: Object.freeze({ ...tacticalDeadProof }),
           });
         }
 
