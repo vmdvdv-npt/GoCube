@@ -1,0 +1,124 @@
+.engine2-playtest-diagnostic {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 80;
+  width: min(380px, calc(100vw - 36px));
+  max-height: min(70vh, 620px);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 14px;
+  border: 1px solid rgba(126, 211, 255, 0.4);
+  border-radius: 12px;
+  background: rgba(4, 9, 15, 0.96);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.42);
+  color: #eef7ff;
+  font-size: 12px;
+}
+
+.engine2-playtest-diagnostic__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.engine2-playtest-diagnostic__heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.engine2-playtest-diagnostic__heading strong {
+  font-size: 14px;
+}
+
+.engine2-playtest-diagnostic__heading span,
+.engine2-playtest-diagnostic__hint,
+.engine2-playtest-diagnostic__result > span,
+.engine2-playtest-diagnostic__details {
+  color: #a8bac8;
+}
+
+.engine2-playtest-diagnostic__budget {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.engine2-playtest-diagnostic__run {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(126, 211, 255, 0.55);
+  border-radius: 8px;
+  background: rgba(126, 211, 255, 0.1);
+  color: #eef7ff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.engine2-playtest-diagnostic__run:hover:not(:disabled) {
+  background: rgba(126, 211, 255, 0.18);
+}
+
+.engine2-playtest-diagnostic__run:disabled {
+  cursor: progress;
+  opacity: 0.65;
+}
+
+.engine2-playtest-diagnostic__error {
+  margin: 10px 0 0;
+  color: #ff9c9c;
+}
+
+.engine2-playtest-diagnostic__hint {
+  margin: 10px 0 0;
+}
+
+.engine2-playtest-diagnostic__result {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.engine2-playtest-diagnostic__verdict {
+  font-size: 15px;
+  letter-spacing: 0.03em;
+}
+
+.engine2-playtest-diagnostic dl {
+  display: grid;
+  gap: 5px;
+  margin: 6px 0 0;
+}
+
+.engine2-playtest-diagnostic dl > div {
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  gap: 8px;
+}
+
+.engine2-playtest-diagnostic dt {
+  color: #7ed3ff;
+}
+
+.engine2-playtest-diagnostic dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.engine2-playtest-diagnostic details {
+  margin-top: 4px;
+}
+
+.engine2-playtest-diagnostic summary {
+  cursor: pointer;
+  color: #dcecff;
+}
+
+.engine2-playtest-diagnostic__details {
+  display: grid;
+  gap: 5px;
+  margin-top: 7px;
+  overflow-wrap: anywhere;
+}
