@@ -748,11 +748,121 @@ Temporary E2-6 CI benchmark step после #786 удалён; `benchmark:engine
 
 ---
 
-# 14. Future stages
+# 14. E2-7 — exact small eye-space
 
-## E2-7 — exact small eye-space
+Статус: **DONE / CONTRACT-TESTED / BENCHMARKED / CI PASS / NOT CLASSIFIER-INTEGRATED**.
 
-Graph-native `minEyes/maxEyes/attackVitalPoints/defenseVitalPoints`, включая false eyes, shared space, Torus seam, Cube edges. Non-strict analysis может только order/reduce search, но не label fate.
+```text
+src/core/endgame/SmallEyeSpaceAnalyzer.ts
+algorithm = small-eye-space-exact-v1
+default max region points = 6
+default node budget = 4096
+```
+
+E2-7 анализирует connected empty regions graph-native через `Topology.points()` / `Topology.neighbors()` и существующий `EndgameGraphCore`. Renderer geometry, face coordinates и rectangular edge/corner assumptions не используются.
+
+### Strict exact boundary
+
+Exact search допускается только для small region, который bounded **только target string**. Для такого region обе move-order задачи перечисляют:
+
+```text
+every legal empty point inside the region
++
+Pass
+```
+
+Каждый placement проходит authoritative `GameEngine` legality. Search завершается после двух Pass или capture target; deterministic state key включает board, player, pass count и previous-board signature.
+
+Semantics:
+
+- attacker-first минимизирует surviving target-only empty components → `minEyes`;
+- defender-first максимизирует их → `maxEyes`;
+- при `complete=true` эти bounds exact для установленной local boundary;
+- `attackVitalPoints` / `defenseVitalPoints` выдаются только для complete root search и только для optimal placements, которые строго улучшают результат относительно Pass;
+- false eye определяется legal tactical consequence, а не shape heuristic.
+
+### Fail-closed / non-strict boundary
+
+Следующие случаи не получают exact authority:
+
+```text
+mixed-color shared space
+same-color friendly-shared boundary
+region > maxRegionPoints
+unknown-root simple ko
+non-local capture outside searched region
+search cycle
+node-budget exhaustion
+```
+
+Для shared/friendly-shared/oversized region возвращаются только conservative bounds `0..region.points.length`, `complete=false`, без vital points. Ko/cycle/budget/non-local uncertainty также понижает result до incomplete. Такие результаты могут позднее использоваться для ordering/reduction, но **не имеют права сами ставить alive/dead/seki**.
+
+Torus seam и Cube face edge проходят тем же graph-native путём без special-case geometry.
+
+Contract tests покрывают 9 случаев:
+
+- два sealed one-point eyes;
+- capturable one-point false eye;
+- three-point eye-space с exact attack/defense vital point;
+- mixed-color shared space;
+- same-color friendly-shared boundary;
+- Torus seam;
+- Cube face edge;
+- deliberate node-budget exhaustion;
+- deterministic repeated analysis.
+
+Первый code-head CI #793:
+
+```text
+new E2-7 contract tests: 9/9 PASS
+full unit/coverage: 582 passed, 56 opt-in benchmark cases skipped
+typecheck:engine2 PASS
+build:engine2 PASS
+Chromium E2E: 72/72 PASS
+```
+
+### E2-7 performance gate
+
+```text
+src/core/endgame/SmallEyeSpaceAnalyzer.benchmark.test.ts
+npm run benchmark:engine2:eye-space
+```
+
+Benchmark использует реальные Torus/Cube topologies, strict connected two-point eye-space fixture, 2 warmups + 20 samples и deterministic result/node/depth assertions. Gross-regression ceilings: `p95 <= 250 ms`, `max <= 1000 ms`.
+
+CI #795 benchmark results:
+
+| Case | Points | Nodes | Depth | p95 ms | max ms |
+|---|---:|---:|---:|---:|---:|
+| Torus 9×9 | 81 | 24 | 4 | 11.352 | 14.782 |
+| Torus 13×13 | 169 | 24 | 4 | 13.566 | 13.586 |
+| Torus 19×19 | 361 | 24 | 4 | 34.516 | 37.665 |
+| Cube 2×2 | 24 | 24 | 4 | 5.587 | 6.307 |
+| Cube 4×4 | 96 | 24 | 4 | 11.418 | 11.616 |
+| Cube 5×5 | 150 | 24 | 4 | 17.228 | 17.414 |
+| Cube 7×7 | 294 | 24 | 4 | 35.622 | 36.778 |
+
+Worst observed p95 = `35.622 ms`; worst max = `37.665 ms`.
+
+Validation — CI #795:
+
+```text
+eye-space benchmark cases: 7/7 PASS
+full unit/coverage: 582 passed, 63 opt-in benchmark cases skipped
+typecheck:engine2 PASS
+build:engine2 PASS
+Chromium E2E: 72/72 PASS
+```
+
+Temporary E2-7 benchmark CI step после измерения удалён; `benchmark:engine2:eye-space` остаётся opt-in и воспроизводимым.
+
+E2-7 не интегрирован в `AssistedEndgameClassifier` и не производит fate labels. Existing generic move generation вне exact 3/4-lib boundary также не расширялась.
+
+**E2-7 acceptance boundary закрыт. Следующий этап: E2-8 — connections / tactical extensions.**
+
+---
+
+# 15. Future stages
 
 ## E2-8 — connections / tactical extensions
 
@@ -781,7 +891,7 @@ Adversarial corpus + final evaluation.
 
 ---
 
-# 15. CI / validation policy
+# 16. CI / validation policy
 
 Current foundation:
 
@@ -796,8 +906,10 @@ Current foundation:
 - generic-path correctness/differential/performance gate passed;
 - exact 3-lib attacker generation + complete defender enumeration validated;
 - exact 4-lib attacker generation + complete defender enumeration validated;
+- exact small eye-space bounds/vital-point analysis validated on strict regions;
+- shared/friendly-shared/oversized/ko/budget eye-space boundaries remain explicit incomplete;
 - generic move generation outside exact 3/4 liberties remains explicitly incomplete;
-- no generic classifier integration.
+- no generic or E2-7 classifier integration.
 
 Scoped typecheck:
 
@@ -819,7 +931,7 @@ Benchmarks are opt-in; temporary CI benchmark steps must be removed before merge
 
 ---
 
-# 16. Metrics
+# 17. Metrics
 
 Track false automatic statuses, precision/coverage, median/p95/max nodes/runtime, budget/ko/boundary unresolved counts, root/deep move counts, causal cone size, PV/max depth, implementation complexity, dependency/license surface, maintainability, Cube/Torus graph consistency.
 
@@ -831,13 +943,13 @@ cost third
 
 ---
 
-# 17. External references
+# 18. External references
 
 GNU Go / tsumego.js / Darkforest / research solvers / KataGo may be used for architecture ideas, regression, benchmark, differential oracle or diagnostics subject to licenses. Они не являются production proof authority; GPL implementation code не копируется.
 
 ---
 
-# 18. Roadmap
+# 19. Roadmap
 
 ```text
 E2-1   DONE — Graph Core
@@ -852,14 +964,14 @@ E2-4b  DONE — Go adapter + one/two-lib proof-preserving terminal bridge
 E2-4c  DONE — generic differential/performance gate
 E2-5   DONE — exact 3-lib move generation + defender completeness + benchmark
 E2-6   DONE — exact 4-lib move generation + defender completeness + benchmark
-E2-7   NEXT — exact small eye-space
-E2-8   connections / snapback / ladder / net / sacrifice
+E2-7   DONE — exact small eye-space + bounds/vital points + benchmark
+E2-8   NEXT — connections / snapback / ladder / net / sacrifice
 E2-9   semeai / seki proof
 E2-10  transpositions + performance optimization
 E2-11  adversarial corpus + final evaluation
 ```
 
-E2-4/E2-6 overall acceptance boundary:
+E2-4/E2-7 overall acceptance boundary:
 
 1. attacker OR / defender AND explicit;
 2. every proof node deterministic and budgeted;
@@ -871,6 +983,9 @@ E2-4/E2-6 overall acceptance boundary:
 8. exact 3-lib defender set is universal only when whole-board legality is complete and ko history is known/safe;
 9. exact 4-lib attacker set remains explicit incomplete, so liberty reduction cannot become false survival proof;
 10. exact 4-lib defender set is universal only when whole-board legality is complete and ko history is known/safe;
-11. no generic classifier integration before later generic coverage and acceptance gates.
+11. exact small eye-space authority is limited to strict target-only connected regions inside the explicit size/budget boundary;
+12. shared/friendly-shared/oversized regions and ko/cycle/budget/non-local uncertainty remain incomplete conservative bounds;
+13. eye-space bounds/vital points do not themselves produce `alive`, `dead` or `seki` and are not classifier-integrated;
+14. no generic classifier integration before later generic coverage and acceptance gates.
 
 > Engine 2 автоматически ставит `alive`, `dead` или `seki` только там, где может предъявить законченное доказательство. Во всех остальных случаях правильный результат — `UNRESOLVED`.
