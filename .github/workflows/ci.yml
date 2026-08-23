@@ -63,9 +63,6 @@ jobs:
       - run: npm run build:engine2
         if: steps.mode.outputs.mode != 'none'
 
-      - run: npm run benchmark:engine2:eye-space
-        if: steps.mode.outputs.mode != 'none'
-
       - name: Install Playwright browsers
         if: steps.mode.outputs.mode != 'none'
         env:
