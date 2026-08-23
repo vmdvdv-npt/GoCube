@@ -27,7 +27,7 @@
 
 Версия **0.2 Cube 2D завершена и принята** по границе `0.2 integration / regression acceptance`.
 
-Активная разрабатываемая версия — **0.3 Automatic/Assisted alive-dead-seki**. Checkpoints **0.3.01 Library/Reuse Review и contract alignment**, **0.3.02 Deterministic Endgame Test Lab**, **0.3.03 Differential Oracles и Local AI Lab**, **0.3.04 Automatic Alive core** и **0.3.05 Automatic Dead core** завершены. Следующий активный checkpoint — **0.3.06 Obvious/Proven Seki**.
+Активная разрабатываемая версия — **0.3 Automatic/Assisted alive-dead-seki**. Checkpoints **0.3.01 Library/Reuse Review и contract alignment**, **0.3.02 Deterministic Endgame Test Lab**, **0.3.03 Differential Oracles и Local AI Lab**, **0.3.04 Automatic Alive core**, **0.3.05 Automatic Dead core** и **0.3.06 Obvious/Proven Seki** завершены. Следующий активный checkpoint — **0.3.07 Assisted Review Integration**.
 
 ---
 
@@ -217,7 +217,7 @@ Cube 3D в 0.3 не входит. Cube-партии по-прежнему ста
 - feature parity основных игровых и endgame-визуализаций Cube 2D/Cube 3D;
 - 3D-specific automated/visual regression coverage.
 
-Точное 3D-поведение и пользовательская семантика default topology определяются `docs/GAME_CUBE_GO.md`; техническую границу Renderer3D и spatial mapping определяет `docs/ARCHITECTURE.md`.
+Точное 3D-поведение и пользовательская семантика default topology определяются `docs/GAME_CUBE_GO.md`; техническую границу Renderer3D и spatial mapping определяет только `docs/ARCHITECTURE.md`.
 
 ## Внутренний порядок 0.5
 
