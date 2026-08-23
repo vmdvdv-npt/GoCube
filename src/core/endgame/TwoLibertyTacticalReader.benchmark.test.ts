@@ -5,6 +5,10 @@ import type { PointId, Topology } from '../topology/Topology';
 import { TorusTopology } from '../topology/TorusTopology';
 import { buildEndgameGraph } from './EndgameGraphCore';
 import {
+  readTwoLibertyTacticsPruned,
+  type TwoLibertyPrunedTacticalResult,
+} from './TwoLibertyPrunedTacticalReader';
+import {
   readTwoLibertyTactics,
   type TwoLibertyTacticalResult,
 } from './TwoLibertyTacticalReader';
@@ -21,6 +25,7 @@ const WARMUP_RUNS = 2;
 const SAMPLE_RUNS = 20;
 
 type Workload = 'dense-local' | 'sparse-max-empty';
+type ReaderMode = 'exhaustive' | 'proof-pruned';
 
 interface BenchmarkCase {
   readonly label: string;
@@ -33,9 +38,9 @@ interface Fixture {
   readonly emptyPoints: number;
 }
 
-interface Sample {
+interface Sample<T> {
   readonly runtimeMs: number;
-  readonly result: TwoLibertyTacticalResult;
+  readonly result: T;
 }
 
 const cases: readonly BenchmarkCase[] = Object.freeze([
@@ -106,7 +111,17 @@ const makeFixture = (topology: Topology, workload: Workload): Fixture => {
   });
 };
 
-const readFixture = (topology: Topology, fixture: Fixture): TwoLibertyTacticalResult => {
+const targetGroupKeyFor = (topology: Topology, fixture: Fixture): string => {
+  const graph = buildEndgameGraph(fixture.state, topology);
+  const targetGroupKey = graph.pointOwner.get(fixture.target);
+  if (!targetGroupKey) throw new Error(`Missing target group at ${fixture.target}`);
+  return targetGroupKey;
+};
+
+const readExhaustive = (
+  topology: Topology,
+  fixture: Fixture,
+): TwoLibertyTacticalResult => {
   const graph = buildEndgameGraph(fixture.state, topology);
   const targetGroupKey = graph.pointOwner.get(fixture.target);
   if (!targetGroupKey) throw new Error(`Missing target group at ${fixture.target}`);
@@ -117,7 +132,25 @@ const readFixture = (topology: Topology, fixture: Fixture): TwoLibertyTacticalRe
     graph,
     targetGroupKey,
   );
-  if (!result) throw new Error(`Two-liberty reader rejected benchmark target ${fixture.target}`);
+  if (!result) throw new Error(`Exhaustive reader rejected benchmark target ${fixture.target}`);
+  return result;
+};
+
+const readPruned = (
+  topology: Topology,
+  fixture: Fixture,
+): TwoLibertyPrunedTacticalResult => {
+  const graph = buildEndgameGraph(fixture.state, topology);
+  const targetGroupKey = graph.pointOwner.get(fixture.target);
+  if (!targetGroupKey) throw new Error(`Missing target group at ${fixture.target}`);
+
+  const result = readTwoLibertyTacticsPruned(
+    fixture.state,
+    topology,
+    graph,
+    targetGroupKey,
+  );
+  if (!result) throw new Error(`Pruned reader rejected benchmark target ${fixture.target}`);
   return result;
 };
 
@@ -128,21 +161,26 @@ const percentile = (sorted: readonly number[], fraction: number): number => {
 
 const round = (value: number): number => Math.round(value * 1000) / 1000;
 
-const runCase = (benchmarkCase: BenchmarkCase, workload: Workload) => {
-  const fixture = makeFixture(benchmarkCase.topology, workload);
+const measure = <T>(read: () => T): Sample<T> => {
+  const started = performance.now();
+  const result = read();
+  return Object.freeze({ runtimeMs: performance.now() - started, result });
+};
 
-  for (let index = 0; index < WARMUP_RUNS; index += 1) {
-    readFixture(benchmarkCase.topology, fixture);
-  }
+const runtimeSummary = (samples: readonly Sample<unknown>[]) => {
+  const runtimes = samples
+    .map((sample) => sample.runtimeMs)
+    .sort((left, right) => left - right);
+  return Object.freeze({
+    medianRuntimeMs: round(percentile(runtimes, 0.5)),
+    p95RuntimeMs: round(percentile(runtimes, 0.95)),
+    maxRuntimeMs: round(runtimes[runtimes.length - 1] ?? 0),
+  });
+};
 
-  const samples: Sample[] = [];
-  for (let index = 0; index < SAMPLE_RUNS; index += 1) {
-    const started = performance.now();
-    const result = readFixture(benchmarkCase.topology, fixture);
-    const runtimeMs = performance.now() - started;
-    samples.push(Object.freeze({ runtimeMs, result }));
-  }
-
+const assertExhaustiveDeterminism = (
+  samples: readonly Sample<TwoLibertyTacticalResult>[],
+): TwoLibertyTacticalResult => {
   const baseline = samples[0]!.result;
   for (const sample of samples) {
     expect(sample.result.outcome).toBe(baseline.outcome);
@@ -155,15 +193,45 @@ const runCase = (benchmarkCase: BenchmarkCase, workload: Workload) => {
       baseline.defenderFirst.legalPlacements,
     );
   }
+  return baseline;
+};
 
-  const runtimes = samples.map((sample) => sample.runtimeMs).sort((left, right) => left - right);
-  const budgetExhaustionCount = samples.filter(
-    (sample) => sample.result.defenderFirst.result === 'budget-exhausted',
-  ).length;
+const assertPrunedDeterminism = (
+  samples: readonly Sample<TwoLibertyPrunedTacticalResult>[],
+): TwoLibertyPrunedTacticalResult => {
+  const baseline = samples[0]!.result;
+  for (const sample of samples) {
+    expect(sample.result.outcome).toBe(baseline.outcome);
+    expect(sample.result.exploredNodes).toBe(baseline.exploredNodes);
+    expect(sample.result.maxDepth).toBe(baseline.maxDepth);
+    expect(sample.result.defenderFirst.examinedPlacements).toBe(
+      baseline.defenderFirst.examinedPlacements,
+    );
+    expect(sample.result.defenderFirst.legalPlacements).toBe(
+      baseline.defenderFirst.legalPlacements,
+    );
+    expect(sample.result.defenderFirst.deepEvaluatedPlacements).toBe(
+      baseline.defenderFirst.deepEvaluatedPlacements,
+    );
+    expect(sample.result.defenderFirst.certifiedIrrelevantPlacements).toBe(
+      baseline.defenderFirst.certifiedIrrelevantPlacements,
+    );
+  }
+  return baseline;
+};
 
-  const record = Object.freeze({
+const logRecord = (
+  benchmarkCase: BenchmarkCase,
+  fixture: Fixture,
+  workload: Workload,
+  mode: ReaderMode,
+  baseline: TwoLibertyTacticalResult | TwoLibertyPrunedTacticalResult,
+  samples: readonly Sample<unknown>[],
+) => {
+  const common = {
     case: benchmarkCase.label,
     workload,
+    mode,
     logicalPoints: benchmarkCase.topology.points().length,
     emptyPoints: fixture.emptyPoints,
     examinedDefenderMoves: baseline.defenderFirst.examinedPlacements,
@@ -172,27 +240,80 @@ const runCase = (benchmarkCase: BenchmarkCase, workload: Workload) => {
     maxDepth: baseline.maxDepth,
     outcome: baseline.outcome,
     defenderResult: baseline.defenderFirst.result,
-    medianRuntimeMs: round(percentile(runtimes, 0.5)),
-    p95RuntimeMs: round(percentile(runtimes, 0.95)),
-    maxRuntimeMs: round(runtimes[runtimes.length - 1] ?? 0),
-    budgetExhaustionCount,
+    ...runtimeSummary(samples),
     samples: SAMPLE_RUNS,
-  });
+  };
+
+  const record =
+    mode === 'proof-pruned'
+      ? Object.freeze({
+          ...common,
+          deepEvaluatedDefenderMoves: (baseline as TwoLibertyPrunedTacticalResult)
+            .defenderFirst.deepEvaluatedPlacements,
+          certifiedIrrelevantDefenderMoves: (baseline as TwoLibertyPrunedTacticalResult)
+            .defenderFirst.certifiedIrrelevantPlacements,
+          causalConePoints: (baseline as TwoLibertyPrunedTacticalResult).pruning.relevance
+            .causalConePoints.length,
+        })
+      : Object.freeze(common);
 
   console.log(`ENGINE2_BENCHMARK_RESULT ${JSON.stringify(record)}`);
+};
 
-  expect(budgetExhaustionCount).toBe(0);
-  expect(baseline.outcome).not.toBe('proven-dead');
+const runCase = (benchmarkCase: BenchmarkCase, workload: Workload) => {
+  const fixture = makeFixture(benchmarkCase.topology, workload);
+  targetGroupKeyFor(benchmarkCase.topology, fixture);
+
+  for (let index = 0; index < WARMUP_RUNS; index += 1) {
+    readExhaustive(benchmarkCase.topology, fixture);
+    readPruned(benchmarkCase.topology, fixture);
+  }
+
+  const exhaustiveSamples: Sample<TwoLibertyTacticalResult>[] = [];
+  const prunedSamples: Sample<TwoLibertyPrunedTacticalResult>[] = [];
+  for (let index = 0; index < SAMPLE_RUNS; index += 1) {
+    exhaustiveSamples.push(
+      measure(() => readExhaustive(benchmarkCase.topology, fixture)),
+    );
+    prunedSamples.push(
+      measure(() => readPruned(benchmarkCase.topology, fixture)),
+    );
+  }
+
+  const exhaustive = assertExhaustiveDeterminism(exhaustiveSamples);
+  const pruned = assertPrunedDeterminism(prunedSamples);
+
+  expect(exhaustive.defenderFirst.result).not.toBe('budget-exhausted');
+  expect(pruned.defenderFirst.result).not.toBe('budget-exhausted');
+  expect(exhaustive.outcome).not.toBe('proven-dead');
+  if (pruned.outcome === 'proven-dead') expect(exhaustive.outcome).toBe('proven-dead');
+
+  logRecord(
+    benchmarkCase,
+    fixture,
+    workload,
+    'exhaustive',
+    exhaustive,
+    exhaustiveSamples,
+  );
+  logRecord(
+    benchmarkCase,
+    fixture,
+    workload,
+    'proof-pruned',
+    pruned,
+    prunedSamples,
+  );
 };
 
 const benchmarkDescribe = BENCHMARK_ENABLED ? describe : describe.skip;
 
-benchmarkDescribe('TwoLibertyTacticalReader E2-3c performance gate', () => {
+benchmarkDescribe('TwoLibertyTacticalReader E2-3c/E2-3d performance comparison', () => {
   for (const benchmarkCase of cases) {
     for (const workload of ['dense-local', 'sparse-max-empty'] as const) {
       it(
         `${benchmarkCase.label} / ${workload}`,
-        { timeout: 120_000 },
+        { timeout: 180_000 },
         () => runCase(benchmarkCase, workload),
       );
     }
