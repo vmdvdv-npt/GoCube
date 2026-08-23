@@ -16,7 +16,10 @@ const finishTwoPassSequence = async (page: Page): Promise<void> => {
   await page.getByRole('button', { name: 'Pass (1)' }).click();
 };
 
-test('0.3 acceptance: Torus assisted fallback survives reload and completes scoring', async ({ page }) => {
+const differentStatusLabel = (label: string | null): 'Alive' | 'Dead' =>
+  label?.trim() === 'Dead' ? 'Alive' : 'Dead';
+
+test('0.3 acceptance: Torus confidence auto review survives reload and completes scoring', async ({ page }) => {
   await page.goto('/');
   await page.getByLabel('Board size').selectOption('9');
   await page.getByLabel('Rules').selectOption('japanese');
@@ -27,32 +30,41 @@ test('0.3 acceptance: Torus assisted fallback survives reload and completes scor
   await finishTwoPassSequence(page);
 
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
-  await expect(page.locator('.endgame-progress')).toHaveText('Resolved 0 of 2');
+  await expect(page.locator('.endgame-progress')).toHaveText('Resolved 2 of 2 · 2 automatic proposals');
+  await expect(page.getByRole('button', { name: 'Finish scoring' })).toBeEnabled();
 
+  await torusPoint(page, '0,0').click();
+  await expect(page.locator('.endgame-selection .stone-chip--black')).toHaveCount(1);
   const statuses = page.getByRole('group', { name: 'Selected group status' });
-  await statuses.getByRole('button', { name: 'Alive', exact: true }).click();
-  await expect(page.locator('.endgame-progress')).toHaveText('Resolved 1 of 2');
+  const selectedAutomatic = statuses.locator('button[aria-pressed="true"]');
+  await expect(selectedAutomatic).toHaveCount(1);
+  const overrideLabel = differentStatusLabel(await selectedAutomatic.textContent());
+  await statuses.getByRole('button', { name: overrideLabel, exact: true }).click();
+  await expect(statuses.getByRole('button', { name: overrideLabel, exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(page.locator('.endgame-progress')).toContainText('Resolved 2 of 2');
 
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Continue saved game?' })).toBeVisible();
   await page.getByRole('button', { name: 'Continue' }).click();
 
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
-  await expect(page.locator('.endgame-progress')).toHaveText('Resolved 1 of 2');
-  await expect(page.locator('.endgame-selection .stone-chip--white')).toHaveCount(1);
+  await expect(page.locator('.endgame-progress')).toContainText('Resolved 2 of 2');
+  await torusPoint(page, '0,0').click();
+  await expect(
+    page.getByRole('group', { name: 'Selected group status' })
+      .getByRole('button', { name: overrideLabel, exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
 
-  await page.getByRole('group', { name: 'Selected group status' })
-    .getByRole('button', { name: 'Seki', exact: true })
-    .click();
-
-  await expect(page.locator('.endgame-progress')).toHaveText('Resolved 2 of 2');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button', { name: 'Finish scoring' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByText('Japanese scoring')).toBeVisible();
 });
 
-test('0.3 acceptance: Cube assisted fallback completes scoring and Undo reopens play', async ({ page }) => {
+test('0.3 acceptance: Cube confidence auto review completes scoring and Undo reopens play', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Cube', exact: true }).click();
   await page.getByRole('button', { name: '3×3', exact: true }).click();
@@ -72,13 +84,24 @@ test('0.3 acceptance: Cube assisted fallback completes scoring and Undo reopens 
   await finishTwoPassSequence(page);
 
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
-  await expect(page.locator('.endgame-progress')).toContainText('Resolved 0 of');
+  const progress = page.locator('.endgame-progress');
+  const progressText = (await progress.textContent()) ?? '';
+  const match = progressText.match(/Resolved (\d+) of (\d+)/);
+  expect(match).not.toBeNull();
+  expect(Number(match![1])).toBe(Number(match![2]));
+  expect(progressText).toContain(`${match![2]} automatic proposals`);
+  await expect(page.getByRole('button', { name: 'Finish scoring' })).toBeEnabled();
 
+  await cubePoint(page, reviewPoints[0]).click();
   const statuses = page.getByRole('group', { name: 'Selected group status' });
-  for (const pointId of reviewPoints) {
-    await cubePoint(page, pointId).click();
-    await statuses.getByRole('button', { name: 'Alive', exact: true }).click();
-  }
+  const selectedAutomatic = statuses.locator('button[aria-pressed="true"]');
+  await expect(selectedAutomatic).toHaveCount(1);
+  const overrideLabel = differentStatusLabel(await selectedAutomatic.textContent());
+  await statuses.getByRole('button', { name: overrideLabel, exact: true }).click();
+  await expect(statuses.getByRole('button', { name: overrideLabel, exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
 
   await expect(page.getByRole('button', { name: 'Finish scoring' })).toBeEnabled();
   await expect(page.getByRole('dialog')).toHaveCount(0);
