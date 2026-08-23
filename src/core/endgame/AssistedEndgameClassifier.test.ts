@@ -256,12 +256,13 @@ describe('AssistedEndgameClassifier automatic alive/dead core', () => {
   });
 
   it('runs the Benson fixed point until dependent eye regions and groups are eliminated', async () => {
-    const points = ['a', 'b', 'r1', 'r2'] as const;
+    const points = ['a', 'b', 'r1', 'r2', 'x'] as const;
     const adjacency: Readonly<Record<string, readonly PointId[]>> = {
       a: ['r1', 'r2'],
-      b: ['r2'],
+      b: ['r2', 'x'],
       r1: ['a'],
-      r2: ['a', 'b'],
+      r2: ['a', 'b', 'x'],
+      x: ['b', 'r2'],
     };
     const topology: Topology = {
       id: 'benson-fixed-point-test',
