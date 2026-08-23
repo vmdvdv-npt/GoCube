@@ -1,4 +1,3 @@
-import { performance } from 'node:perf_hooks';
 import { describe, expect, it } from 'vitest';
 import type { GameState, PointOccupancy } from '../game/types';
 import { CubeTopology } from '../topology/CubeTopology';
@@ -10,7 +9,14 @@ import {
   type TwoLibertyTacticalResult,
 } from './TwoLibertyTacticalReader';
 
-const BENCHMARK_ENABLED = process.env.ENGINE2_BENCHMARK === '1';
+type BenchmarkGlobal = typeof globalThis & {
+  readonly process?: Readonly<{
+    readonly env?: Readonly<Record<string, string | undefined>>;
+  }>;
+};
+
+const BENCHMARK_ENABLED =
+  (globalThis as BenchmarkGlobal).process?.env?.ENGINE2_BENCHMARK === '1';
 const WARMUP_RUNS = 2;
 const SAMPLE_RUNS = 20;
 
