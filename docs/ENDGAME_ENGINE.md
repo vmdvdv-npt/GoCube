@@ -1380,3 +1380,270 @@ E2-4/E2-11 overall acceptance boundary:
 26. fixed E2-11 corpus must remain deterministic and retain zero false authoritative conclusions on its marked fail-closed boundaries.
 
 > Engine 2 автоматически ставит `alive`, `dead` или `seki` только там, где может предъявить законченное доказательство. Во всех остальных случаях правильный результат — `UNRESOLVED`.
+
+---
+
+# 23. E2-12b — Confidence Classifier Core
+
+Статус: **DONE / CORE-ONLY / CORPUS-VALIDATED / BENCHMARKED / CI PASS / NOT PRODUCTION-INTEGRATED**.
+
+```text
+algorithm = engine2-confidence-classifier-v1
+corpus = engine2-confidence-corpus-v1
+default threshold = 0.90
+npm run benchmark:engine2:confidence
+```
+
+## 23.1. Изменение направления верхнего слоя
+
+Секции E2-1…E2-11 выше сохраняют историю и proof semantics без изменений. E2-12b добавляет **отдельный practical confidence layer** поверх существующих graph facts и proof/readers:
+
+```text
+Group
+  ↓
+shared EndgameGraphCore context
+  ↓
+structural / open-space / pressure / escape / enclosure features
+  ↓
+eyes / connections / cheap strict proof evidence
+  ↓
+deterministic independent confidence scores
+  ↓
+alive / dead / seki / unresolved
+```
+
+Ключевая смена product policy:
+
+```text
+failure to prove != negative confidence evidence
+```
+
+Proof stack E2-1…E2-11 остаётся strong evidence layer, но отсутствие proof больше не обязано блокировать heuristic high-confidence classification в новом core API.
+
+`confidence` здесь — **детерминированный интерпретируемый score, а не статистически откалиброванная вероятность**. Значение `0.94` не означает доказанные 94% вероятности успеха/ошибки. Настоящая probability calibration отложена до появления корпуса реальных позиций.
+
+E2-12b **не подключён** к `AssistedEndgameClassifier`, Endgame Review UI, rendering, scoring flow или automatic group statuses. Поэтому историческая proof-only production authority из секций выше остаётся действующей для пользовательской игры до отдельного E2-12c.
+
+## 23.2. API и deterministic selection policy
+
+Core API:
+
+```text
+classifyGroupConfidence(...)
+classifyPositionConfidence(...)
+```
+
+Результат содержит:
+
+```text
+groupKey
+label = alive | dead | seki | unresolved
+scores = { alive, dead, seki }
+threshold
+features
+reasons
+proofEvidence
+search diagnostics
+```
+
+Все scores ограничены `[0, 1]`, независимы и не обязаны суммироваться в `1`. Все weights, thresholds и caps собраны в одном versioned `DEFAULT_ENDGAME_CONFIDENCE_POLICY`; randomization и wall-clock-dependent scoring отсутствуют.
+
+Default selection:
+
+```text
+unique score >= 0.90
+and winner - runnerUp >= 0.05
+    => winner
+otherwise
+    => unresolved
+```
+
+Если более одной категории одновременно достигают threshold, classifier возвращает `unresolved` с `confidence-conflict`; порядок iteration никогда не разрешает такой конфликт молча.
+
+## 23.3. Feature extraction
+
+`EndgameGroupFeatureExtractor` строит whole-position analysis context один раз и переиспользует существующий `EndgameGraphCore`. Используются только `Topology.points()` / `Topology.neighbors()` и graph BFS; renderer coordinates, rectangular edge/corner heuristics и Cube face layout в semantics отсутствуют.
+
+Основные deterministic features:
+
+- stone count, distinct liberties, immediate atari, large/very-large liberty signals;
+- adjacent empty regions, total/largest open-space size и largest-region board fraction;
+- largest-region frontier width, expansion liberties, broad escape liberties;
+- contested liberties и contested-liberty ratio;
+- direct enemy edges / outward edges и direct-enemy ratio;
+- multi-source graph distance до ближайшего enemy;
+- enemy stones/groups в fixed local graph radius и local enemy density;
+- friendly connection count и shared-liberty count из существующего graph analysis;
+- strict/friendly eye-region counts и bounded small-eye eligibility.
+
+Escape breadth v1 — дешёвая approximation: несколько uncontested liberties должны вести дальше минимум в два empty neighbors; frontier width отдельно измеряет число target liberties, входящих в крупнейший open region. Large open region с frontier width `<=1` и без broad escapes получает explicit narrow-bottleneck evidence/cap.
+
+Enclosure v1 использует direct enemy contact, contested liberties, local enemy density и отсутствие broad escape. Большое визуальное пустое пространство за enemy ring само по себе не повышает `alive`.
+
+## 23.4. Proof / eye evidence
+
+Cheap existing strict evidence имеет максимальный authority внутри confidence scorer:
+
+```text
+Benson/pass-alive                        -> alive = 1.0
+strict automatic / one-lib proven dead -> dead = 1.0
+strict closed mutual-capture seki      -> seki = 1.0
+```
+
+Дополнительно API принимает уже полученное strict `providedProofEvidence` от других Engine 2 readers без обязанности запускать их внутри confidence layer.
+
+Отсутствие proof не уменьшает score автоматически. Generic/global AND/OR adapter **не импортируется и не запускается** classifier-ом.
+
+`SmallEyeSpaceAnalyzer` вызывается только для structurally eligible strict small eye-space (`<=6` points) с bounded budget `512`; large sparse open-space cases до него не доходят.
+
+Search diagnostics прямо фиксируют:
+
+```text
+deepProofSearchInvoked = false
+localizedEyeSearchInvoked
+localizedEyeExploredNodes
+```
+
+Whole-position result агрегирует `deepProofSearchInvocations = 0` и строит общий graph ровно один раз.
+
+## 23.5. Scoring policy v1
+
+Weights/caps являются hand-authored structural policy, **не обученными и не calibrated** coefficients.
+
+Positive alive evidence включает large/very-large liberty set, large/very-large adjacent open region, broad escape count, wide frontier, distant/remote enemy, low local pressure, friendly connections и complete two-eye local analysis.
+
+Dead pressure evidence включает atari, two-liberty danger, contested liberties, direct enemy contact, local enemy density, narrow bottleneck, отсутствие broad escape и small adjacent space.
+
+Safety caps не позволяют одному положительному open-space signal пересилить явную опасность:
+
+```text
+atari alive cap             = 0.35
+two-liberty alive cap       = 0.68
+narrow-bottleneck alive cap = 0.82
+local-enclosure alive cap   = 0.72
+```
+
+Обратные caps удерживают heuristic dead ниже threshold, если atari/two-lib group имеет реальное expansion пространство или broad open escape. High-confidence death без strict proof не выводится из одного liberty count.
+
+## 23.6. Deterministic confidence corpus
+
+Corpus содержит **16** carefully designed cases и прошёл **16/16**:
+
+```text
+alive       8
+dead        1
+seki        2
+unresolved  5
+```
+
+Покрыты:
+
+- sparse Torus 19×19 two-stone open-space;
+- isolated sparse Torus 19×19 stone;
+- Torus 13×13 / 9×9 open-space;
+- Torus seam open group;
+- Cube face-edge и representative open group;
+- huge open space + immediate atari negative control;
+- large region через narrow contested exit;
+- Benson two-vital-region alive;
+- existing strict one-lib death;
+- strict seki certificate для обеих competing groups;
+- ambiguous contact fight;
+- one-eye/shared-space ambiguous case;
+- contradictory provided high-confidence proofs.
+
+Expectations используют meaningful ranges (`>=0.90`, `>=0.95`, exact `1.0` только для strict authority), а не brittle score equality до тысячных.
+
+Targeted `EndgameConfidenceClassifier.test.ts`: **16/16 PASS**. Дополнительно проверены byte-for-byte determinism, high-confidence conflict fail-closed, Torus seam, Cube face adjacency и agreement whole-position/per-group при shared analysis context.
+
+## 23.7. Главный sparse Torus 19×19 regression
+
+Acceptance fixture: connected white two-stone group в огромном open region, remote black group, без atari/enclosure, с несколькими broad expansion directions.
+
+Observed result:
+
+```text
+label = alive
+scores = { alive: 1.000, dead: 0.060, seki: 0.020 }
+threshold = 0.90
+deepProofSearchInvoked = false
+localizedEyeSearchInvoked = false
+localizedEyeExploredNodes = 0
+```
+
+Таким образом очевидная sparse group классифицируется structural path-ом и не перечисляет gigantic tactical game tree.
+
+Negative controls подтверждают противоположное:
+
+- huge open space + immediate atari -> `unresolved`, alive ниже threshold;
+- large region через narrow contested frontier -> `unresolved`, alive cap `0.82`;
+- local enemy enclosure не получает high-confidence alive;
+- ambiguous fight остаётся ниже threshold.
+
+## 23.8. Performance gate
+
+Opt-in benchmark:
+
+```text
+src/core/endgame/EndgameConfidenceClassifier.benchmark.test.ts
+npm run benchmark:engine2:confidence
+```
+
+GitHub Actions Ubuntu 24.04 / Node 22.23.2, 2 warmups + 20 samples. Временный benchmark step был добавлен только для measurement CI #846 и после измерения удалён из CI workflow.
+
+| Workload | Groups | Per-group median | Per-group p95 | Per-group max | Whole median | Whole p95 | Whole max |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| sparse Torus 19×19 | 2 | 1.596 ms | 4.002 ms | 4.180 ms | 1.632 ms | 3.742 ms | 4.330 ms |
+| medium-density Torus 19×19 | 25 | 1.624 ms | 1.873 ms | 1.926 ms | 2.033 ms | 2.284 ms | 2.376 ms |
+| representative Cube 5×5 | 6 | 1.258 ms | 2.412 ms | 2.423 ms | 1.369 ms | 2.404 ms | 2.501 ms |
+| multi-group Torus 19×19 | 36 | 1.784 ms | 2.882 ms | 2.973 ms | 2.539 ms | 3.865 ms | 3.968 ms |
+
+Все четыре workload имеют `deepProofSearchInvocations = 0`.
+
+Gross-regression ceilings зафиксированы консервативно:
+
+```text
+per-group p95 < 50 ms
+per-group max < 200 ms
+whole-position p95 < 100 ms
+whole-position max < 400 ms
+```
+
+Observed worst p95/max: `4.002/4.180 ms` per-group и `3.865/4.330 ms` whole-position. Это core benchmark, не обещание UI latency на любом устройстве.
+
+## 23.9. CI / validation
+
+Clean code-head CI #845 на `c1cc4d538af1589cfec3f021521e7c2b69bfc157`:
+
+```text
+E2-12b targeted tests: 16/16 PASS
+full unit/coverage: 629 passed, 83 opt-in tests skipped
+test files: 81 passed, 10 skipped
+typecheck:engine2 PASS
+build:engine2 PASS
+Chromium E2E: 72/72 PASS
+lint: 0 errors, 2 pre-existing TestCaseReplayService warnings
+```
+
+Measurement CI #846 на temporary benchmark head `9e0ff1d1bd2942aa09ae0816b9f4e478f0647fe8`:
+
+```text
+confidence benchmark: 4/4 PASS
+full unit/coverage: 629 passed, 83 opt-in tests skipped
+typecheck:engine2 PASS
+build:engine2 PASS
+Chromium E2E: 72/72 PASS
+```
+
+Temporary benchmark workflow step удалён после measurement; opt-in benchmark script сохранён. Final PR head обязан повторно пройти normal exact-head CI после documentation/cleanup commit; его exact SHA/run фиксируется в PR/final implementation report без изменения source semantics.
+
+## 23.10. Remaining limitations / next
+
+- scores v1 hand-authored и не statistically calibrated;
+- local pressure radius и frontier bottleneck — deliberately cheap approximations, не graph-theorem enclosure solver;
+- confidence layer не dispatch-ит global ladder/net/semeai/AND-OR reading автоматически; strict external evidence можно передать отдельно;
+- only bounded eligible SmallEye analysis запускается внутри classifier;
+- corpus intentionally small (16 designed cases), не представляет empirical real-game accuracy percentage;
+- никакой UI/scoring/automatic-status authority в E2-12b не добавлена.
+
+**E2-12b core acceptance boundary закрыт после final exact-head CI PASS. Следующий этап: E2-12c — validation/integration верхнего confidence layer в пользовательский endgame flow без изменения scoring authority до отдельного explicit решения.**
