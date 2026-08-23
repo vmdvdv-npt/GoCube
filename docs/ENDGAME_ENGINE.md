@@ -1425,11 +1425,25 @@ Acceptance закрыт:
 - Work 7B остаётся two-primary-target solver: остальные strings внутри region являются auxiliary interaction state; general N-primary-target public API не заявляется;
 - seki не маркируется, classifier integration не добавлена — это scope 7C/7D.
 
-Итог Work 7B зафиксирован в разделе 50. Следующий этап — **Work 7C: Basic Seki Proof**.
+Итог Work 7B зафиксирован в разделе 50.
 
-## Work 7C — Basic Seki Proof
+## Work 7C — Basic Seki Proof — CLOSED 2026-08-23
 
-Отдельный strict proof настоящего seki: обе стороны живут именно потому, что начало захвата проигрывает или разрушает собственную безопасность. Только доказанные случаи получают `seki`; сомнительные остаются `unresolved`.
+Добавлен отдельный `basic-seki-v1`, который **не** выводит seki из неспособности Work 7B доказать победителя. Proof intentionally narrow: две opposing non-Benson target groups должны иметь actual shared liberties внутри одной certified bounded union, а каждый legal local первый ход каждой стороны должен быть доказанно проигрывающим против немедленно отвечающего соперника. Local tenuki/pass остаётся безопасной альтернативой, сохраняющей исходную позицию.
+
+Acceptance закрыт:
+
+- проверяются обе стороны как возможный initiator;
+- every legal empty point certified union проходит authoritative `GameEngine.placeStone()`;
+- immediate capture opponent target считается winning initiation и запрещает seki;
+- nonterminal initiation делегируется `bounded-semeai-v1` с фактическим responder-to-move order;
+- seki выдаётся только если **все** legal local initiations обеих сторон имеют outcome `initiator-loses`;
+- Benson/pass-alive target исключается как independent life, а direct interaction без shared liberty не подходит под basic theorem;
+- initiation-created restoring simple ko сохраняет exact previous-board context и даёт `ko-dependent`;
+- boundary, budget, cycle и incomplete uncertainty fail closed и не повышаются до `seki`;
+- classifier integration не добавлена и остаётся scope Work 7D.
+
+Итог Work 7C и строгая production-scope гипотеза seki зафиксированы в разделе 51. Следующий этап — **Work 7D: Hardening + Classifier Integration**.
 
 ## Work 7D — Hardening + Classifier Integration
 
@@ -1533,10 +1547,11 @@ search did not find kill -> alive
 5. Какие raw outcomes хранить: `critical`, `ko-dependent`, multiple proof strengths?
 6. Какой node budget приемлем для browser runtime на 19x19 Torus?
 7. Какие small eye-shapes стоит precompute exhaustively?
-8. Как строго доказывать seki в первом production scope?
-9. Какой minimum coverage required перед acceptance 0.3?
+8. Какой minimum coverage required перед acceptance 0.3?
 
 Вопрос о direct external solver foundation закрыт Work 1: **ни один из четырёх сравниваемых solver’ов не должен становиться production foundation целиком**. Search shell строится graph-native поверх project topology/rule semantics; отдельные permissive идеи или code fragments могут переноситься только после локальной проверки пользы.
+
+Вопрос о strict seki proof первого production scope закрыт Work 7C: `basic-seki-v1` является отдельным sufficient proof взаимного сдерживания и никогда не выводится из одного лишь unresolved semeai search. Расширение coverage этой теоремы остаётся benchmark/corpus-driven, а не новым ad-hoc status rule.
 
 Каждый оставшийся ответ должен появляться сначала как tested engineering decision, затем при необходимости переноситься в canonical architecture/roadmap/product document.
 
@@ -3089,4 +3104,144 @@ Work 7D
 - classifier integration отсутствует;
 - seki status не выводится из невозможности доказать capture.
 
-**Следующий этап — Work 7C: Basic Seki Proof.**
+**Work 7C закрыт в разделе 51; следующий этап — Work 7D: Hardening + Classifier Integration.**
+
+---
+
+# 51. Work 7C — Basic Seki Proof: финальный результат
+
+Срез на **2026-08-23**. **Work 7C закрыт.** Добавлен отдельный topology-neutral `SekiSearch` / `basic-seki-v1`. Reader использует Work 7B как continuation verifier, но принципиально не интерпретирует `bounded-semeai-v1` outcome `unresolved` как доказательство seki. Production classifier этим этапом намеренно не менялся.
+
+## 51.1. Accepted proof boundary
+
+Raw result имеет identity:
+
+```text
+algorithm = basic-seki-v1
+proof = every-legal-local-initiation-is-losing
+```
+
+Вход остаётся pair-oriented: две текущие opposing target strings. Перед proof обе supplied identities сверяются с новым `EndgameGraphCore` snapshot.
+
+Для positive theorem одновременно требуется:
+
+1. targets разных цветов;
+2. между targets есть actual shared liberty; одной direct stone adjacency без shared liberty недостаточно;
+3. ни одна target не имеет independent Benson/pass-alive proof;
+4. обе Work 5A `RelevanceZone` имеют outcome `bounded`;
+5. deterministic union этих зон укладывается в `maxZonePoints`, current default `96`;
+6. для **каждой** стороны отдельно рассматривается каждый legal первый ход на каждом empty point certified union;
+7. каждый такой ход либо сразу доказывает, что initiator выигрывает и тем самым запрещает seki, либо continuation должен доказать, что responder force-captures initiator target;
+8. только если все legal local initiations обеих сторон доказанно проигрывают initiator, outcome становится `seki`.
+
+Отдельный local `tenuki`/pass в positive interpretation сохраняет исходную occupancy и тем самым показывает безопасную альтернативу началу проигрышного захвата. Это и есть текущий intentionally strong sufficient proof взаимного сдерживания.
+
+## 51.2. Delegation to Work 7B
+
+Первый local move Work 7C всегда выполняется authoritative `GameEngine.placeStone()`.
+
+Если move не захватывает opponent target сразу, текущие target structures восстанавливаются по исходным crucial stones. Friendly merge/extension разрешены. Затем Work 7C вызывает `analyzeBoundedSemeai(...)` на post-initiation snapshot и использует **только фактический responder-to-move order**:
+
+```text
+left initiated  -> read continuation.rightFirst
+right initiated -> read continuation.leftFirst
+```
+
+Interpretation continuation:
+
+```text
+responder wins  -> initiator-loses
+initiator wins  -> initiator-wins
+ko / budget / boundary / cycle / incomplete -> same fail-closed uncertainty
+```
+
+Continuation дополнительно обязана оставаться внутри исходной Work 7C certified union. Если Work 7B post-move conflict region выходит наружу, 7C возвращает `unknown-boundary`, даже если более широкий search потенциально мог бы решить позицию.
+
+Когда initiation соединяет исходную target с friendly stones, передача расширенной current group в Work 7B является консервативной: capture исходных crucial stones всё равно требует capture всей connected current group. Это может уменьшить coverage, но не создаёт ложный `seki`.
+
+## 51.3. Ko и fail-closed semantics
+
+Есть отдельная важная boundary между first initiation и delegated Work 7B root. Work 7B намеренно начинает новый root с lifted initial ko context, поэтому Work 7C до delegation самостоятельно проверяет **initiation-created immediate restoring simple ko** с exact board до initiation как `previousBoard`.
+
+Если responder recapture восстанавливает предыдущую occupancy и запрещён `GameEngine` как repetition:
+
+```text
+ko-dependent
+```
+
+а не `seki`.
+
+Также не становятся seki:
+
+- stale supplied target identity;
+- same-color pair;
+- pair без нужной interaction/shared-liberty semantics;
+- target с independent Benson/pass-alive life;
+- unbounded/oversized conflict union;
+- любой legal winning initiation;
+- `unknown-budget`;
+- `unknown-boundary`;
+- `unknown-cycle`;
+- `unknown-incomplete`.
+
+Таким образом Work 7C сохраняет главный Engine invariant:
+
+```text
+failure to prove capture != seki
+failure to prove non-seki != seki
+```
+
+Positive `seki` требует конструктивного proof каждой local initiation branch.
+
+## 51.4. Regression coverage
+
+`SekiSearch.test.ts` содержит семь targeted deterministic tests:
+
+1. basic mutual-restraint shape с двумя shared liberties: каждый legal local first move обеих сторон проигрывает и result = `seki`;
+2. one-shared-liberty first-move capture race имеет winning initiation и не становится seki;
+3. direct opposing contact без shared liberty не подходит под basic theorem;
+4. `maxNodes = 0` даёт `unknown-budget` continuation и общий `unresolved`;
+5. whole-conflict region без certified outside boundary возвращает `unknown-boundary`;
+6. initiation-created restoring simple ko возвращает `ko-dependent`;
+7. stale supplied target identity отвергается до proof.
+
+Fixtures используют arbitrary graph `Topology`; rectangular geometry отсутствует в Work 7C correctness path.
+
+## 51.5. Validation boundary
+
+Первый code-head CI #810 остановился на одном TypeScript contract defect в mapper `BoundedSemeaiOrderOutcome -> BasicSekiMoveOutcome`; lint уже проходил, production search tests до этого шага ещё не запускались. Mapper был исправлен exhaustive `switch`, одновременно удалён новый unused-import warning; proof semantics не менялись.
+
+Исправленный code-head `93cf6d34d69a8eeb39f5c5bef40c56fc7f028baf` в full CI #811 прошёл:
+
+- lint — pass, только прежние warnings вне Work 7C scope;
+- typecheck — pass;
+- unit/coverage — pass, включая все **7/7** Work 7C regressions;
+- build — pass.
+
+На момент documentation closure full Playwright step того же code-head run ещё выполнялся. Exact final documentation head обязан пройти полный `[full]` PR CI перед merge; merge при красном final head запрещён.
+
+## 51.6. Integration boundary и closure
+
+Work 7C намеренно **не** меняет `AssistedEndgameClassifier`, user-facing automatic statuses или existing legacy seki precedence. Новый result существует как отдельный proof layer до Work 7D hardening.
+
+После Work 7C separation становится:
+
+```text
+Work 7A
+  cheap exact simple semeai
+
+Work 7B
+  bounded searched semeai with shared liberties / auxiliary interactions
+
+Work 7C
+  strict sufficient basic-seki proof
+  never inferred from unresolved 7B search
+
+Work 7D
+  adversarial hardening
+  topology / far-away invariance
+  deterministic budgets and performance
+  classifier integration only for accepted proofs
+```
+
+**Следующий этап — Work 7D: Hardening + Classifier Integration.**
