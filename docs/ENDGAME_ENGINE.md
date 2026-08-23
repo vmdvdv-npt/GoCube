@@ -1390,18 +1390,36 @@ Acceptance закрыт:
 - classifier повышает только `proved-dead` / `proved-alive`, когда оба first-player orders совпадают; `unknown`, budget, boundary, cycle, incomplete и ko-dependent результаты остаются `unresolved`;
 - production Local Life/Death search запускается только для unresolved target с 3–4 liberties, каждая из которых непосредственно ограничена opponent Benson/pass-alive string; 1-liberty и 2-liberty classes остаются у ранее принятых cheap proof layers.
 
-Итог Work 6C зафиксирован в разделе 48. Следующий этап — **Work 7: Semeai / Seki**.
+Итог Work 6C зафиксирован в разделе 48.
 
-## Work 7 — Semeai / Seki
+## Work 7A — Semeai Core — CLOSED 2026-08-23
 
-Multi-group analysis for remaining conflict regions.
+Реализован консервативный `simple-semeai-v1` для простых гонок захвата ровно двух opposing groups без shared-liberty play, third-group interaction и сложной life/death семантики.
 
-Acceptance:
+Acceptance закрыт:
 
-- simple capturing races;
-- shared-liberty cases;
-- basic seki;
-- ko-dependent cases remain unresolved.
+- отдельно считаются exclusive liberties обеих сторон и shared liberties;
+- shared liberties явно возвращаются в result, но любая реальная shared-liberty гонка остаётся `unresolved` и передаётся Work 7B;
+- каждый simple capture countdown подтверждается authoritative `GameEngine.placeStone()` для **всех** порядков заполнения exclusive liberties внутри explicit small-race budget;
+- intermediate capture, suicide/illegal move, connection/merge, изменение target liberties вне чистого countdown или захват посторонних stones запрещают static proof;
+- direct third-group interaction и пересекающиеся exclusive-liberty frontiers остаются `unresolved` для Work 7B;
+- immediate restoring simple ko даёт `ko-dependent`, а не winner;
+- оба first-player orders вычисляются отдельно; stable winner выдаётся только когда победитель один и тот же в обоих orders, иначе результат `first-player-dependent`;
+- classifier integration не добавлена и остаётся scope Work 7D.
+
+Итог Work 7A зафиксирован в разделе 49. Следующий этап — **Work 7B: Shared Liberties + Multi-group Semeai**.
+
+## Work 7B — Shared Liberties + Multi-group Semeai
+
+Общие дыхания, несколько взаимодействующих групп, соединения/захваты соседней группы и случаи, где static countdown недостаточен. Основной путь — bounded AND/OR search на conflict region поверх существующего search core.
+
+## Work 7C — Basic Seki Proof
+
+Отдельный strict proof настоящего seki: обе стороны живут именно потому, что начало захвата проигрывает или разрушает собственную безопасность. Только доказанные случаи получают `seki`; сомнительные остаются `unresolved`.
+
+## Work 7D — Hardening + Classifier Integration
+
+Adversarial cases, оба порядка первого хода, Relevance Zone invariance, budgets, determinism, performance и только после этого production classifier integration semeai/seki results.
 
 ## Work 8 — TerritoryResolver hardening
 
@@ -2758,4 +2776,141 @@ Work 6 теперь закрыт как последовательность:
 - budget, boundary, ko, cycle, incomplete и mixed-order uncertainty остаются `unresolved`;
 - ранее принятые Benson / Connection / TacticalReader layers сохраняют свои классы и precedence.
 
-**Следующий этап — Work 7: Semeai / Seki.**
+**Следующий этап — Work 7A: Semeai Core.**
+
+---
+
+# 49. Work 7A — Semeai Core: финальный результат
+
+Срез на **2026-08-23**. **Work 7A закрыт.** Добавлен topology-neutral `SemeaiCore` для намеренно узкого класса простых two-group capturing races. Он не решает shared-liberty fight, multi-group semeai или seki и не подключён к production classifier.
+
+## 49.1. Accepted proof boundary
+
+Raw result имеет identity:
+
+```text
+algorithm = simple-semeai-v1
+proof = all-exclusive-liberty-orders-capture-cleanly
+```
+
+Вход — две текущие opposing `EndgameStoneString` из одного board snapshot. Перед любым proof reader заново строит `EndgameGraphCore` и проверяет identity обеих supplied groups; stale group остаётся `unresolved`.
+
+Для пары детерминированно считаются:
+
+```text
+leftExclusive
+rightExclusive
+shared
+```
+
+Shared liberties не игнорируются. Они присутствуют в result, но если `shared.length > 0`, Work 7A возвращает:
+
+```text
+unresolved
+reason = shared-liberties-deferred
+```
+
+Именно их решение является scope Work 7B.
+
+Work 7A также fail-closed, если:
+
+- groups одного цвета;
+- groups не взаимодействуют ни direct adjacency, ни shared liberty;
+- третья stone group касается любой из двух groups или их liberty frontier;
+- exclusive-liberty frontiers двух сторон непосредственно взаимодействуют друг с другом;
+- один из чистых capture countdowns не проходит authoritative legality/capture checks;
+- число exclusive liberties превышает explicit small-race budget, current default `5`.
+
+## 49.2. Clean exclusive-liberty countdown certificate
+
+Для каждой стороны отдельно проверяется утверждение «attacker может последовательно заполнить все текущие exclusive liberties opponent group и получить чистый capture».
+
+Это **не** простой arithmetic liberty count. При числе target liberties до budget reader перебирает все их permutations. Каждый move выполняется только через `GameEngine.placeStone()`.
+
+Для каждой intermediate позиции одновременно требуется:
+
+1. attack move legal;
+2. никаких intermediate captures;
+3. исходные target stones всё ещё составляют ту же target string;
+4. target liberties в точности равны ещё не сыгранным исходным liberties;
+5. исходная attacker string не слилась с новой structure и не изменила свой stone set.
+
+На final move требуется:
+
+1. target полностью исчез;
+2. именно исходные target stones составляют полный capture set;
+3. никаких посторонних stones не захвачено.
+
+Если хотя бы один порядок заполнения не удовлетворяет этому контракту, static countdown не считается доказанным и result остаётся `unresolved`. Capture/sacrifice/connection/approach-move variants тем самым не маскируются под простую гонку и передаются последующим Work stages.
+
+## 49.3. Ko и first-player order
+
+После terminal capture используется та же conservative immediate restoring-ko проверка через authoritative repetition semantics, что и в Tactical Reader. Если target-color recapture восстанавливает предыдущую occupancy и запрещён simple ko, semeai result становится:
+
+```text
+ko-dependent
+```
+
+а не winner.
+
+Если обе стороны получили clean countdown certificates, Work 7A вычисляет exact capture ply отдельно для двух постановок:
+
+```text
+left moves first
+right moves first
+```
+
+Для стороны, начинающей гонку, capture ply равен `2 * turns - 1`; для второй стороны — `2 * turns`.
+
+Interpretation:
+
+```text
+same winner in both orders -> left-wins / right-wins
+winner changes with first move -> first-player-dependent
+```
+
+`first-player-dependent` является raw semeai fact, а не automatic `dead`, `alive` или `seki`.
+
+## 49.4. Regression coverage
+
+`SemeaiCore.test.ts` содержит восемь targeted deterministic tests:
+
+1. left side с более коротким capture countdown побеждает при обоих first-player orders;
+2. symmetric right-side win;
+3. equal one-liberty race -> `first-player-dependent`;
+4. shared liberty корректно считается, но case остаётся `shared-liberties-deferred`;
+5. third-group contact -> `multi-group-interaction` / unresolved;
+6. intermediate suicide attack запрещает ложный countdown proof;
+7. immediate restoring simple ko -> `ko-dependent`;
+8. explicit reduced liberty budget -> `too-many-liberties` / unresolved.
+
+Fixtures topology-neutral и используют arbitrary graph `Topology`; rectangular geometry в semeai correctness path отсутствует.
+
+## 49.5. Validation
+
+Первый code-head `cd4e4ebd30d8f594ff3cfa427b793aaf36aa592d` на PR #170 прошёл standard CI run #792 полностью:
+
+- typecheck — pass;
+- unit/coverage — **589/589 tests pass** в 79 test files;
+- `SemeaiCore.test.ts` — **8/8 pass**;
+- `SemeaiCore.ts` — 90.71% statements / 80.58% branches / 96.77% functions / 96.61% lines;
+- build — pass;
+- Chromium Playwright — **72/72 pass**.
+
+Run #792 показал один новый non-blocking lint warning на неиспользуемый локальный helper `compareStrings`; helper удалён отдельным cleanup commit без изменения semantics. Exact final documentation head должен пройти новый standard PR CI перед merge.
+
+## 49.6. Integration boundary и closure
+
+Work 7A намеренно **не** меняет `AssistedEndgameClassifier`, automatic group statuses или существующий seki proof.
+
+Закрыт только первый Semeai layer:
+
+- explicit exclusive/shared liberty accounting;
+- authoritative clean-capture verification, а не голая формула;
+- оба first-player orders;
+- stable winner и `first-player-dependent` различаются;
+- ko fail closed;
+- shared liberties, third groups, changing-liberty fights и oversized races остаются unresolved;
+- classifier integration отложена до Work 7D.
+
+**Следующий этап — Work 7B: Shared Liberties + Multi-group Semeai.**
