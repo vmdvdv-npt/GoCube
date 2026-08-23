@@ -57,12 +57,3 @@
 .live-test-generator-replay button {
   grid-column: 1 / -1;
 }
-
-.game-controls > .pass-control {
-  border-color: rgb(219 146 48 / 45%);
-  background: linear-gradient(180deg, #9b5c18, #6e3d0d);
-  color: #fff5e7;
-  box-shadow:
-    inset 0 1px 0 rgb(255 219 154 / 18%),
-    0 0 18px rgb(211 132 35 / 10%);
-}
