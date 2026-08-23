@@ -66,10 +66,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pattern='LiveTest|LiveTestGenerator|generateLiveTestCase|replayLiveTestCase|GameLikeGenerator|EndgameGenerator|Generate Game|Generate Endgame|Generate Corpus|Test ID|TestCase|TestCaseReplayService|ReplayableTestCase|TestCaseIdentity|encodeTestCaseId|decodeTestCaseId|ControlledEndgame|controlled-mixed-endgame|game-like-background|ExternalCorpus|xuanxuan|LIVE_ENDGAME_TEST_CASE_VARIANT|CONTROLLED_ENDGAME_TEST_CASE_VARIANT|VITE_ENABLE_LIVE_TEST_GENERATORS|LocalAnalysisClient|lab:local-ai'
+          obsolete_pattern='LiveTest|LiveTestGenerator|generateLiveTestCase|replayLiveTestCase|GameLikeGenerator|Generate Game|Generate Endgame|Generate Corpus|Test ID|TestCase|TestCaseReplayService|ReplayableTestCase|TestCaseIdentity|encodeTestCaseId|decodeTestCaseId|ControlledEndgame|controlled-mixed-endgame|game-like-background|ExternalCorpus|xuanxuan|LIVE_ENDGAME_TEST_CASE_VARIANT|CONTROLLED_ENDGAME_TEST_CASE_VARIANT|VITE_ENABLE_LIVE_TEST_GENERATORS|LocalAnalysisClient|lab:local-ai'
           echo 'Checking tracked runtime/source/config paths for obsolete Test Case concepts...'
           set +e
-          git grep -nE "$pattern" -- . ':!docs/**' ':!.github/workflows/ci.yml'
+          git grep -nE "$obsolete_pattern" -- . ':!docs/**' ':!.github/workflows/ci.yml'
           audit_status=$?
           set -e
           if [[ $audit_status -eq 0 ]]; then
@@ -80,9 +80,34 @@ jobs:
             echo "git grep audit failed with status $audit_status." >&2
             exit "$audit_status"
           fi
-          echo 'Tracked runtime/source/config dead-code audit: zero matches.'
+          echo 'Tracked runtime/source/config dead-code audit: zero obsolete matches.'
+
+          echo 'Auditing the ambiguous EndgameGenerator term separately...'
+          set +e
+          generator_matches="$(git grep -n 'EndgameGenerator' -- . ':!docs/**' ':!.github/workflows/ci.yml')"
+          generator_status=$?
+          set -e
+          if [[ $generator_status -gt 1 ]]; then
+            echo "EndgameGenerator git grep failed with status $generator_status." >&2
+            exit "$generator_status"
+          fi
+          if [[ $generator_status -eq 0 ]]; then
+            printf '%s\n' "$generator_matches"
+            while IFS= read -r line; do
+              case "$line" in
+                src/core/endgame/testlab/EndgameFixture.ts:*EndgameGeneratorMetadata*|src/core/endgame/testlab/EndgameTestLab.ts:*EndgameGeneratorMetadata*)
+                  ;;
+                *)
+                  echo "Unexpected EndgameGenerator match: $line" >&2
+                  exit 1
+                  ;;
+              esac
+            done <<< "$generator_matches"
+          fi
+          echo 'EndgameGenerator matches are limited to generic deterministic correctness-lab metadata.'
+
           echo 'Repository documentation matches (informational only):'
-          git grep -nE "$pattern" -- docs || true
+          git grep -nE "$obsolete_pattern|EndgameGenerator" -- docs || true
           test -f src/core/endgame/testlab/Engine2AdversarialCorpus.ts
           test -f src/core/endgame/testlab/Engine2AdversarialCorpus.test.ts
           test -f src/core/endgame/testlab/Engine2FinalEvaluation.benchmark.test.ts
