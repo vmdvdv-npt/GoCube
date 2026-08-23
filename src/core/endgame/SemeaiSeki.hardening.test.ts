@@ -91,6 +91,7 @@ const stableLeftRace = (
     ['L', 's'],
     ['R', 's'],
     ['L', 'l'],
+    ['s', 'l'],
     ['OUT1', 'OUT2'],
   ]);
   return Object.freeze({
@@ -104,7 +105,11 @@ const simpleStableLeftRace = (): Readonly<{ topology: Topology; state: GameState
     ['L', 'R'],
     ['L', 'l1'],
     ['L', 'l2'],
-    ['R', 'r'],
+    ['l1', 'l2'],
+    ['l1', 'le1'],
+    ['l2', 'le2'],
+    ['R', 'r1'],
+    ['r1', 're1'],
     ['OUT1', 'OUT2'],
   ]);
   return Object.freeze({
@@ -307,7 +312,7 @@ describe('Work 7D semeai / seki hardening and classifier integration', () => {
     });
   });
 
-  it('does not promote a ko-dependent basic-seki candidate through the classifier', async () => {
+  it('does not let legacy seki override a ko-dependent Work 7C result', async () => {
     const { topology, state } = koDependentSekiCandidate();
     const direct = analyzeBasicSeki(
       targetAt(state, topology, 'L'),
