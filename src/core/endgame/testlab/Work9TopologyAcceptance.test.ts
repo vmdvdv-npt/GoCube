@@ -131,7 +131,7 @@ const occupiedCount = (state: GameState): number =>
   Object.values(state.board).filter((occupancy) => occupancy !== 'empty').length;
 
 describe('Work 9 topology metamorphic and generated stress acceptance', () => {
-  it('preserves two-eye proof/evidence and local scoring contribution across arbitrary relabel, Torus interior/seam, Cube interior/edge/corner', async () => {
+  it('preserves proof/evidence/scoring on isomorphic embeddings and keeps non-isomorphic Cube corner stress conservative', async () => {
     const lab = new EndgameTestLab();
 
     const torus = new TorusTopology(9);
@@ -173,6 +173,13 @@ describe('Work 9 topology metamorphic and generated stress acceptance', () => {
       mode: 'cube-corner',
       pattern: 'two-eyes',
     });
+    const cubeCornerShared = lab.generate({
+      kind: 'topology-stress',
+      topology: cube,
+      seed: 'work9-topology-cube-corner-shared',
+      mode: 'cube-corner',
+      pattern: 'shared-liberties',
+    });
 
     const results = await Promise.all([
       assertTwoEyePipeline(arbitraryState, relabeledTorus),
@@ -180,7 +187,6 @@ describe('Work 9 topology metamorphic and generated stress acceptance', () => {
       assertTwoEyePipeline(torusSeam.state, torus),
       assertTwoEyePipeline(cubeInterior.state, cube),
       assertTwoEyePipeline(cubeEdge.state, cube),
-      assertTwoEyePipeline(cubeCorner.state, cube),
     ]);
 
     for (const result of results) {
@@ -193,6 +199,17 @@ describe('Work 9 topology metamorphic and generated stress acceptance', () => {
       ]);
       expect(result.localEyeTerritory).toBe(2);
     }
+
+    // A 5x3 rectangular two-eye pattern projected through a physical Cube corner
+    // spans three faces and is not graph-isomorphic to its planar/interior form.
+    // It is therefore a conservative stress case, not a positive metamorphic oracle.
+    const cornerProposal = await analyze(cubeCorner.state, cube);
+    expect(cornerProposal).toHaveLength(1);
+    expect(cornerProposal[0]?.status).toBe('unresolved');
+
+    const cornerSharedProposal = await analyze(cubeCornerShared.state, cube);
+    expect(cornerSharedProposal.length).toBeGreaterThan(0);
+    expect(cornerSharedProposal.every((group) => group.status === 'unresolved')).toBe(true);
   });
 
   it('stress-runs deterministic legal near-endgame positions across multiple Torus/Cube sizes without using generator output as truth', async () => {
@@ -242,6 +259,7 @@ describe('Work 9 topology metamorphic and generated stress acceptance', () => {
           seed: request.seed,
           occupied: occupiedCount(first.state),
           strings: graph.strings.length,
+          opponentAdjacencies: graph.opponentAdjacencies.length,
           conflicts: graph.conflictComponents.length,
           regions: firstResolution.regions.length,
           statuses: Object.freeze({ ...statusCounts }),
