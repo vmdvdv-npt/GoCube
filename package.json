@@ -22,6 +22,7 @@
     "benchmark:engine2:tactical": "ENGINE2_TACTICAL_BENCHMARK=1 vitest run src/core/endgame/TacticalExtensionProofSearchGoAdapter.benchmark.test.ts --coverage.enabled=false --reporter=verbose",
     "benchmark:engine2:semeai-seki": "ENGINE2_SEMEAI_SEKI_BENCHMARK=1 vitest run src/core/endgame/SemeaiSekiProof.benchmark.test.ts --coverage.enabled=false --reporter=verbose",
     "benchmark:engine2:transpositions": "ENGINE2_TRANSPOSITION_BENCHMARK=1 vitest run src/core/endgame/DeterministicAndOrProofSearch.benchmark.test.ts --coverage.enabled=false --reporter=verbose",
+    "benchmark:engine2:final-evaluation": "ENGINE2_FINAL_EVALUATION_BENCHMARK=1 vitest run src/core/endgame/testlab/Engine2FinalEvaluation.benchmark.test.ts --coverage.enabled=false --reporter=verbose",
     "lab:local-ai": "node tools/local-ai/bridge.mjs"
   },
   "dependencies": {

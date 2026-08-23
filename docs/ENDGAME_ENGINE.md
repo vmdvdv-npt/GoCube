@@ -1177,11 +1177,88 @@ Classifier integration и existing proof completeness/ko boundaries в E2-10 н�
 
 ---
 
-# 18. Future stages
+# 18. E2-11 — adversarial corpus + final evaluation
 
-## E2-11
+Статус: **DONE / ADVERSARIALLY VALIDATED / FINAL-EVALUATED / CI PASS / NOT CLASSIFIER-INTEGRATED**.
 
-Adversarial corpus + final evaluation.
+```text
+src/core/endgame/testlab/Engine2AdversarialCorpus.ts
+src/core/endgame/testlab/Engine2AdversarialCorpus.test.ts
+src/core/endgame/testlab/Engine2FinalEvaluation.benchmark.test.ts
+corpus = engine2-adversarial-corpus-v1
+npm run benchmark:engine2:final-evaluation
+```
+
+E2-11 не добавляет новые fate semantics и не расширяет proof authority. Это фиксированный deterministic final-evaluation corpus поверх уже реализованных E2-1…E2-10 boundaries.
+
+### Corpus boundary
+
+Corpus содержит **17 независимых positive/adversarial cases** и покрывает:
+
+- strict one-lib positive death и unknown-root-ko fail-closed;
+- two-lib exhaustive/pruned positive agreement и remote-root-ko fail-closed;
+- exact three-lib positive kill и explicit incomplete attacker boundary;
+- exact four-lib positive kill;
+- exact two-eye small eye-space и deliberate eye-space budget exhaustion;
+- tactical connection с survival authority только через actual Benson/pass-alive;
+- side-to-move semeai kill;
+- positive closed mutual-capture seki certificate и third-group seki rejection;
+- Torus seam и Cube face-edge graph-native behavior;
+- transposition-cache semantic parity с no-cache baseline;
+- incomplete defender universal-proof rejection;
+- AND/OR node-budget exhaustion propagation.
+
+Отдельный marker `mustNotProve` применяется к adversarial boundary cases. Final evaluation считает false authoritative conclusion, если такой case неожиданно превращается в `proven-dead`, `proven-kill`, `proven-survival`, `proven-seki` или соответствующий positive paired result.
+
+Final corpus result в CI #829:
+
+```text
+total cases: 17
+passed cases: 17
+authoritative positive cases: 7
+fail-closed adversarial cases: 7
+false authoritative conclusions: 0
+total explored nodes: 69
+transposition hits: 1
+```
+
+Repeated corpus execution обязан совпадать byte-for-byte. Все 9 evaluation categories присутствуют в каждом accepted corpus version.
+
+### Final performance evaluation
+
+Opt-in benchmark выполняет 2 warmups + 20 measured full-corpus runs и одновременно проверяет deterministic snapshot equality.
+
+CI #829 result:
+
+| Metric | Result | Ceiling |
+|---|---:|---:|
+| median runtime | 20.378 ms | — |
+| p95 runtime | 25.483 ms | 500 ms |
+| max runtime | 26.740 ms | 2000 ms |
+
+Это final corpus-level regression gate, а не оценка full-board classifier coverage. E2-7/E2-8/E2-9 и generic proof stack по-прежнему не интегрированы в classifier, поэтому E2-11 не делает утверждений о проценте автоматически классифицированных production groups.
+
+Validation — benchmark/normal CI #829:
+
+```text
+E2-11 corpus tests: 4/4 PASS
+corpus cases: 17/17 PASS
+final evaluation benchmark: 1/1 PASS
+full unit/coverage: 613 passed, 79 opt-in benchmark cases skipped
+test files: 80 passed, 9 skipped
+typecheck:engine2 PASS
+build:engine2 PASS
+Chromium E2E: 72/72 PASS
+lint: 0 errors, 2 pre-existing TestCaseReplayService warnings
+```
+
+Первый E2-11 CI #826 уже подтвердил corpus/benchmark, но остановился только на implicit-any типизации test harness; исправлены explicit callback parameter types, production proof semantics не менялись.
+
+Temporary E2-11 benchmark CI step после измерения #829 удалён; `benchmark:engine2:final-evaluation` остаётся opt-in и воспроизводимым.
+
+Classifier integration, move-set completeness authority, ko/history semantics, seki certificate и transposition authority в E2-11 не расширялись.
+
+**E2-11 acceptance boundary закрыт. Запланированная экспериментальная последовательность Engine 2 E2-1…E2-11 final-evaluated; следующий этап этим документом не определён.**
 
 ---
 
@@ -1210,7 +1287,8 @@ Current foundation:
 - failure of both kill searches never implies seki;
 - deterministic per-search transposition reuse validated against no-cache baseline;
 - incomplete/budget-exhausted work cannot gain proof authority through cache reuse;
-- no generic, E2-7, E2-8, E2-9 or E2-10 classifier integration.
+- fixed E2-11 adversarial/final corpus passed with zero false authoritative conclusions;
+- no generic, E2-7, E2-8, E2-9, E2-10 or E2-11 classifier integration.
 
 Scoped typecheck:
 
@@ -1269,10 +1347,10 @@ E2-7   DONE — exact small eye-space + bounds/vital points + benchmark
 E2-8   DONE — connections / cuts / ladder-net pressure / snapback / sacrifice / preparation + benchmark
 E2-9   DONE — semeai shared/exclusive/approach analysis + positive seki certificate + benchmark
 E2-10  DONE — deterministic transposition cache + differential/performance gate
-E2-11  NEXT — adversarial corpus + final evaluation
+E2-11  DONE — adversarial corpus + final evaluation
 ```
 
-E2-4/E2-10 overall acceptance boundary:
+E2-4/E2-11 overall acceptance boundary:
 
 1. attacker OR / defender AND explicit;
 2. every proof node deterministic and budgeted;
@@ -1298,6 +1376,7 @@ E2-4/E2-10 overall acceptance boundary:
 22. ko, open boundary, exclusive liberty, third-group interaction or failed mutual-capture refutation keeps seki unresolved;
 23. transposition equality is trusted only through canonical adapter `nodeKey` including all proof-relevant target/role/history state;
 24. only completed non-budget frames may be memoized; cache hits do not spend node budget and cannot upgrade incomplete proof semantics;
-25. no generic classifier integration before later generic coverage and acceptance gates.
+25. generic/E2-7/E2-8/E2-9/E2-10/E2-11 classifier integration remains outside this experiment's accepted scope; final evaluation does not itself authorize it;
+26. fixed E2-11 corpus must remain deterministic and retain zero false authoritative conclusions on its marked fail-closed boundaries.
 
 > Engine 2 автоматически ставит `alive`, `dead` или `seki` только там, где может предъявить законченное доказательство. Во всех остальных случаях правильный результат — `UNRESOLVED`.
