@@ -30,7 +30,7 @@ describe('ReuseSpikeBenchmark', () => {
       async solve(input) {
         calls.push(input.id);
         if (input.id === 'broken') throw new Error('solver crashed');
-        return { status: 'dead', nodes: 17, move: 'B[aa]' };
+        return { outcome: 'target-captured', nodes: 17, move: 'B[aa]' };
       },
     };
     const ticks = [0, 5, 5, 12];
@@ -59,6 +59,7 @@ describe('ReuseSpikeBenchmark', () => {
     expect(result.cases).toEqual([
       expect.objectContaining({
         id: 'known',
+        solverOutcome: 'target-captured',
         correctness: 'match',
         elapsedMs: 5,
         nodes: 17,
@@ -66,7 +67,7 @@ describe('ReuseSpikeBenchmark', () => {
       }),
       expect.objectContaining({
         id: 'broken',
-        solverStatus: 'error',
+        solverOutcome: 'error',
         correctness: 'not-scored',
         elapsedMs: 7,
         detail: 'solver crashed',
@@ -79,7 +80,7 @@ describe('ReuseSpikeBenchmark', () => {
       id: 'darkforest',
       revision: 'fixture-revision',
       async solve() {
-        return { status: 'unsupported' };
+        return { outcome: 'unsupported' };
       },
     };
 
@@ -103,12 +104,36 @@ describe('ReuseSpikeBenchmark', () => {
     ]);
   });
 
+  it('does not treat unresolved source classification as a known answer', async () => {
+    const adapter: ReuseSpikeSolverAdapter = {
+      id: 'relevance-zone',
+      revision: 'fixture-revision',
+      async solve() {
+        return { outcome: 'target-survives' };
+      },
+    };
+
+    const result = await runReuseSpikeBenchmark(
+      adapter,
+      [problem('not-proof', 'unresolved')],
+      () => 0,
+    );
+
+    expect(result).toMatchObject({
+      totalCases: 1,
+      scoredCases: 0,
+      matches: 0,
+      mismatches: 0,
+    });
+    expect(result.cases[0]?.correctness).toBe('not-scored');
+  });
+
   it('returns stable zero cost for an empty corpus', async () => {
     const adapter: ReuseSpikeSolverAdapter = {
       id: 'cameron-martin',
       revision: 'fixture-revision',
       async solve() {
-        return { status: 'unresolved' };
+        return { outcome: 'unknown' };
       },
     };
 
