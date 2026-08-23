@@ -24,6 +24,10 @@ import {
   type EndgameGroupPresentation,
 } from '../presentation/EndgameGroupPresentation';
 import {
+  provisionalEndgameTerritory,
+  type EndgameTerritoryOwner,
+} from '../presentation/EndgameTerritoryPresentation';
+import {
   createGameResultModel,
   type GameResultViewModel,
 } from '../presentation/GameResultModel';
@@ -68,8 +72,8 @@ const scoringFor = (ruleSet: RuleSet, topology: CubeTopology): ScoringStrategy =
 /**
  * Thin presentation-friendly adapter for Cube 2D.
  * GameSession owns proposal, partial review, final classification and scoring;
- * the controller activates assisted classification and exposes the ordered
- * unresolved fallback that the UI must review.
+ * the controller activates assisted classification while keeping every proposed
+ * status editable by the user until the review is explicitly finished.
  */
 export class Cube2DGameController {
   readonly size: CubeSize;
@@ -171,6 +175,17 @@ export class Cube2DGameController {
     );
   }
 
+  endgameTerritory(): ReadonlyMap<PointId, EndgameTerritoryOwner> {
+    const viewModel = this.viewModel();
+    if (viewModel.phase !== 'endgame') return new Map();
+    return provisionalEndgameTerritory({
+      viewModel,
+      topology: this.topology,
+      groups: this.endgameGroups(),
+      decisions: this.endgameDecisions(),
+    });
+  }
+
   endgameManualGroupIds(): readonly string[] {
     const review = this.session.endgameReview();
     if (!review) return Object.freeze([]);
@@ -197,15 +212,9 @@ export class Cube2DGameController {
     const reviewGroup = review?.groups.find(
       (candidate) => endgameGroupId(candidate.points) === groupId,
     );
-    if (!reviewGroup) throw new Error(`Unknown manual endgame group: ${groupId}`);
-    if (reviewGroup.proposal.status !== 'unresolved') {
-      throw new Error('Automatically resolved groups do not require manual review');
-    }
+    if (!reviewGroup) throw new Error(`Unknown endgame group: ${groupId}`);
 
     await this.session.setEndgameReviewDecision(reviewGroup.points, status);
-    if (this.nextUnresolvedEndgameGroupId() === null) {
-      await this.session.finishEndgameReview();
-    }
   }
 
   moveAvailability(point: PointId): Cube2DMoveAvailability {
@@ -227,13 +236,6 @@ export class Cube2DGameController {
 
   async pass(): Promise<Cube2DGameActionResult> {
     const result = await this.session.execute({ type: 'pass' });
-    if (
-      result.ok &&
-      result.state.phase === 'endgame' &&
-      this.nextUnresolvedEndgameGroupId() === null
-    ) {
-      await this.session.finishEndgameReview();
-    }
     return this.present(result.ok, result.ok ? null : result.reason);
   }
 
