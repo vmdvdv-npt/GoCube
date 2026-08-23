@@ -1467,3 +1467,72 @@ version order/scope/checkpoints -> docs/ROADMAP.md
 канонический владелец обновляется вместе с реализацией.
 
 Git history является историей эволюции этого плана; сам файл должен показывать **только актуальное направление**.
+
+---
+
+# 38. Полный shortlist внешних движков и библиотек
+
+Срез на **2026-08-23**. Эта матрица — рабочий shortlist для technical spike, adaptation research и differential/oracle testing. Она не означает автоматического выбора production dependency. Перед фактическим reuse лицензия, API и конкретная revision кандидата проверяются повторно.
+
+Под «приоритетными» здесь понимаются кандидаты, которые дают наибольшую практическую ценность именно текущей задаче GoCube: topology-neutral `alive / dead / seki / unresolved`, proof-oriented production core и независимая проверка результатов. Дополнительный кандидат всё равно может быть обязательным участником отдельного technical comparison, если он хорошо закрывает узкий класс задач.
+
+## 38.1. Приоритетные кандидаты
+
+| Движок / библиотека | Что брать / исследовать | Почему приоритет | Ограничение / граница использования |
+|---|---|---|---|
+| **Moka (`millionco/moka`)** | Benson/pass-alive, deterministic structural analysis, идеи dead-candidate generation | Главный кандидат на реальную адаптацию production-кода: TypeScript, permissive MIT, conservative pass-alive analysis и близкая к нашей задаче decomposition | Rectangular adjacency заменяется на `Topology.neighbors(PointId)`; capture-aftermath остаётся candidate/heuristic до project verifier; neural/model часть не нужна |
+| **KataGo (`lightvector/KataGo`)** | Ownership, score, search/PV, policy и life/death diagnostics; local planar oracle | Самый сильный независимый oracle для массового differential testing и поиска расхождений | Не production dependency и не proof; применять authoritative comparison только к planar/local neighbourhood, для которого доказана standard-grid эквивалентность |
+| **`@sabaki/deadstones`** | Monte-Carlo dead-stone candidate generator, discrepancy discovery | Очень прямо соответствует задаче dead detection и даёт независимый от нашего deterministic core сигнал | Вероятностный результат никогда не становится automatic `dead`; для воспроизводимости фиксировать seed/iterations там, где применимо |
+| **`goscorer` (`lightvector/goscorer`)** | Seki/territory oracle, Japanese-style scoring facts после корректной dead marking | Особенно ценен для проверки seki/territory, где ошибки классификации трудно заметить только по локальной форме | Не определяет dead за GoCube и не заменяет topology-neutral `ScoringStrategy` |
+| **`online-go/score-estimator` / OGS autoscore line** | Dead/score candidate generation, practical planar differential source | Даёт ещё один независимо разработанный practical estimator и полезен для поиска disagreement cases | Rectangular/heuristic/ownership-based assumptions; suggestion не является proof для Cube/Torus automatic status |
+| **`goplayerjuggler/goVariants` / Go-Variants-Engine** | Toroidal Go mechanics/scoring/regions reference | Редкий внешний источник именно для Torus; уникальная ценность там, где standard-Go engines не покрывают topology | Не решает главную задачу automatic dead и не заменяет classifier; использовать как Torus-specific differential/reference source |
+
+Рабочая карта ролей:
+
+```text
+Moka                         -> production deterministic ideas
+@Sabaki/deadstones + OGS    -> dead candidates / discrepancy discovery
+goscorer                     -> seki / territory verification
+KataGo                       -> strong AI oracle / diagnostics
+Go-Variants-Engine           -> Torus-specific oracle/reference
+```
+
+## 38.2. Дополнительные кандидаты
+
+| Кандидат | Что в нём полезно | Почему не попал в приоритетные |
+|---|---|---|
+| **`govariantsteam/govariants`** | Generic graph/custom-board concepts и Cube/variant ideas; полезный независимый reference для non-planar Go | **AGPL-3.0** создаёт нежелательные лицензионные последствия для code reuse/runtime dependency. Изучать architecture/tests/behavior можно, но production adaptation требует отдельного явного license decision |
+| **Tenuki** | Полный JavaScript Go engine, planar rules/scoring и простые seki heuristics | Seki heuristics недостаточно сильны как proof, rectangular assumptions, а основную механику GoCube уже имеет topology-neutral |
+| **`@sabaki/go-board`** | Groups/liberties и standard rectangular board reference | Дублирует уже существующий topology-neutral graph/rules core и почти не решает главную задачу automatic alive/dead/seki |
+| **Sente** | Быстрый standard-Go C++/Python reference, SGF/GTP/rules behavior | Automatic dead-stone removal не является его сильной стороной; для 0.3 даёт меньше новой ценности, чем специализированные candidates/oracles |
+| **`d180cf/tsumego.js`** | Bounded life-and-death search, target semantics, transposition, local pass, ko/repetition ideas | Очень полезен для technical spike, но standard-grid/open-boundary limitations не позволяют считать его общей topology-neutral authority или очевидной production foundation |
+| **GNU Go** | Tactical reading, connection, optics, OWL, semeai/seki architecture; старый независимый oracle | GPL/copyleft и rectangular assumptions делают его плохой production dependency; допустим как offline/reference source |
+| **Pachi** | MCTS и большой набор классических Go heuristics | GPLv2; основная сила — игра/MCTS, а не доказательная endgame classification. Для внешнего сильного oracle KataGo полезнее |
+| **Fuego** | Mature C++ Go/search framework, tactical/search architecture, permissive BSD-3-Clause | Framework слишком большой и общий; стоимость адаптации высока, а уникальная ценность для alive/dead/seki ниже специализированных solvers |
+| **DarkforestGo tsumego solver** | Exhaustive/local tsumego search, move ranking, region-bound search и solver structure | Старый research/engine stack и planar assumptions; полезнее изучать конкретный solver code/ideas, чем адаптировать весь проект |
+| **`cameron-martin/tsumego-solver`** | Rust life-and-death solver/generator, search decomposition, representations и test methodology | Узкий bounded-tsumego focus, небольшой project footprint; license/API конкретной revision надо проверить перед code reuse. Пока research/reference candidate |
+| **Relevance-Zone life-and-death research implementations, включая `rlglab/study-LD-RZ` line** | Современные идеи relevance-zone search, localisation и сокращения proof search; потенциально полезны для strict dead verifier | Research implementations, а не готовая browser-oriented library; интеграция сложнее. Сначала нужно доказать benchmark advantage над более простым DFS + relevance/move ordering design |
+
+## 38.3. Почему дополнительные кандидаты всё равно сохраняются
+
+Дополнительный статус не означает «не использовать». Эти проекты нужны для разных видов независимости:
+
+- **algorithmic independence** — другой search/heuristic approach способен поймать дефект, который не видят Moka/KataGo;
+- **topology independence** — Torus/Cube references важны даже при слабой auto-dead логике;
+- **historical/mature architecture** — GNU Go, Fuego и старые solvers содержат десятилетиями отработанную decomposition tactical/connection/eye/semeai problems;
+- **research frontier** — Relevance-Zone и специализированные tsumego solvers могут дать следующий уровень после conservative 0.3;
+- **test corpus / fixtures** — даже неподходящий production engine может быть ценным источником known-answer positions и regression ideas.
+
+Основная production граница остаётся прежней:
+
+```text
+external engine / heuristic / AI
+        ↓
+candidate / diagnostic / oracle evidence
+        ↓
+GoCube project-defined verifier / proof boundary
+        ↓
+PROVEN_* or UNRESOLVED
+```
+
+Ни один пункт этой таблицы сам по себе не получает право превращать probabilistic, heuristic или rectangular-only result в authoritative `alive / dead / seki` для Cube/Torus.
