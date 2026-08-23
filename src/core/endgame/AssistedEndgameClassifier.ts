@@ -3,16 +3,18 @@ import type {
   EndgameClassifier,
   EndgameProposal,
 } from './EndgameClassifier';
+import {
+  generateDeadCandidates,
+  verifyDeadCandidate,
+  type AutomaticDeadProof,
+  type DeadAnalysisGroup,
+} from './AutomaticDeadProof';
 import { endgameGroupId } from './EndgameGroupIdentity';
 import { ManualEndgameClassifier } from './ManualEndgameClassifier';
 import type { StoneColor } from '../game/types';
 import type { PointId } from '../topology/Topology';
 
-interface GroupInfo {
-  readonly key: string;
-  readonly points: readonly PointId[];
-  readonly color: StoneColor;
-}
+interface GroupInfo extends DeadAnalysisGroup {}
 
 interface EmptyRegion {
   readonly key: string;
@@ -28,14 +30,15 @@ interface GroupIndex {
 }
 
 const COLORS: readonly StoneColor[] = Object.freeze(['black', 'white']);
-const ALGORITHM = 'benson-pass-alive-v1';
+const ALIVE_ALGORITHM = 'benson-pass-alive-v1';
 
 /**
  * Conservative assisted classifier.
  *
- * At the 0.3.04 boundary it proves only unconditional/pass-alive groups using
- * Benson's fixed-point criterion. Anything not proven alive stays unresolved;
- * dead and seki classification are intentionally left to later checkpoints.
+ * It proves unconditional/pass-alive groups using Benson's fixed-point
+ * criterion, then sends only narrow single-liberty dead candidates through a
+ * separate strict verifier. Any group not proven by either boundary remains
+ * unresolved; automatic seki is intentionally left to a later checkpoint.
  */
 export class AssistedEndgameClassifier implements EndgameClassifier {
   private readonly manual = new ManualEndgameClassifier();
@@ -49,7 +52,7 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     if (!groupIndex.complete) return baseline;
 
     const regions = collectEmptyRegions(context, groupIndex.pointOwner);
-    const proofs = new Map<string, readonly EmptyRegion[]>();
+    const aliveProofs = new Map<string, readonly EmptyRegion[]>();
 
     for (const color of COLORS) {
       for (const [groupKey, vitalRegions] of provePassAlive(
@@ -57,25 +60,51 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
         groupIndex.byKey,
         regions,
       )) {
-        proofs.set(groupKey, vitalRegions);
+        aliveProofs.set(groupKey, vitalRegions);
       }
+    }
+
+    const passAliveGroupKeys = new Set(aliveProofs.keys());
+    const deadProofs = new Map<string, AutomaticDeadProof>();
+    for (const candidate of generateDeadCandidates(groupIndex.byKey, passAliveGroupKeys)) {
+      const verification = verifyDeadCandidate(candidate, {
+        state: context.state,
+        topology: context.topology,
+        groups: groupIndex.byKey,
+        pointOwner: groupIndex.pointOwner,
+        passAliveGroupKeys,
+      });
+      if (verification.proven) deadProofs.set(candidate.groupKey, verification.evidence);
     }
 
     return Object.freeze(
       baseline.map((proposal) => {
-        const vitalRegions = proofs.get(endgameGroupId(proposal.points));
-        if (!vitalRegions) return proposal;
+        const groupKey = endgameGroupId(proposal.points);
+        const vitalRegions = aliveProofs.get(groupKey);
+        if (vitalRegions) {
+          return Object.freeze({
+            points: proposal.points,
+            status: 'alive' as const,
+            source: 'automatic' as const,
+            evidence: Object.freeze({
+              algorithm: ALIVE_ALGORITHM,
+              proof: 'two-vital-regions',
+              vitalRegions: Object.freeze(vitalRegions.map((region) => region.points)),
+            }),
+          });
+        }
 
-        return Object.freeze({
-          points: proposal.points,
-          status: 'alive' as const,
-          source: 'automatic' as const,
-          evidence: Object.freeze({
-            algorithm: ALGORITHM,
-            proof: 'two-vital-regions',
-            vitalRegions: Object.freeze(vitalRegions.map((region) => region.points)),
-          }),
-        });
+        const deadProof = deadProofs.get(groupKey);
+        if (deadProof) {
+          return Object.freeze({
+            points: proposal.points,
+            status: 'dead' as const,
+            source: 'automatic' as const,
+            evidence: Object.freeze({ ...deadProof }),
+          });
+        }
+
+        return proposal;
       }),
     );
   }
@@ -95,7 +124,19 @@ const indexGroups = (
       throw new Error(`Validated endgame group lost stone occupancy: ${proposal.points[0]}`);
     }
 
-    const info: GroupInfo = Object.freeze({ key, points: proposal.points, color });
+    const liberties = new Set<PointId>();
+    for (const point of proposal.points) {
+      for (const neighbor of context.topology.neighbors(point)) {
+        if (context.state.board[neighbor] === 'empty') liberties.add(neighbor);
+      }
+    }
+
+    const info: GroupInfo = Object.freeze({
+      key,
+      points: proposal.points,
+      color,
+      liberties: Object.freeze([...liberties].sort()),
+    });
     byKey.set(key, info);
     for (const point of proposal.points) pointOwner.set(point, key);
   }
@@ -170,7 +211,9 @@ const collectEmptyRegions = (
     );
   }
 
-  return Object.freeze(regions.sort((left, right) => (left.key < right.key ? -1 : left.key > right.key ? 1 : 0)));
+  return Object.freeze(
+    regions.sort((left, right) => (left.key < right.key ? -1 : left.key > right.key ? 1 : 0)),
+  );
 };
 
 const provePassAlive = (
