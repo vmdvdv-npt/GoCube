@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import type { GameState } from '../game/types';
+import type { Topology } from '../topology/Topology';
 import type { EndgameAnalysisContext } from './EndgameClassifier';
 import {
   ConfidenceAutoEndgameClassifier,
   CONFIDENCE_AUTO_ENDGAME_CLASSIFIER_ALGORITHM,
   type ConfidenceAutoEndgameClassifierDependencies,
 } from './ConfidenceAutoEndgameClassifier';
-import { classifyPositionConfidence } from './EndgameConfidenceClassifier';
+import {
+  classifyPositionConfidence,
+  type EndgamePositionConfidenceResult,
+} from './EndgameConfidenceClassifier';
 import {
   selectAutomaticPositionStatuses,
   type EndgameConfidenceAutoPositionSelectionResult,
@@ -58,9 +63,8 @@ describe('E2-12d ConfidenceAutoEndgameClassifier', () => {
     expect(proposal).toHaveLength(context.groups.length);
     expect(new Set(proposal.map((group) => endgameGroupId(group.points))).size).toBe(context.groups.length);
     expect(proposal.every((group) => group.status !== 'unresolved')).toBe(true);
-    expect(proposal.map((group) => endgameGroupId(group.points))).toEqual(
-      [...proposal.map((group) => endgameGroupId(group.points))].sort(),
-    );
+    const groupIds = proposal.map((group) => endgameGroupId(group.points));
+    expect(groupIds).toEqual(groupIds.slice().sort());
     expect(proposal.every((group) => group.evidence?.algorithm === 'engine2-confidence-auto-select-v1')).toBe(true);
     expect(proposal.every((group) => group.evidence?.adapterAlgorithm === CONFIDENCE_AUTO_ENDGAME_CLASSIFIER_ALGORITHM)).toBe(true);
   });
@@ -109,11 +113,11 @@ describe('E2-12d ConfidenceAutoEndgameClassifier', () => {
     let selectorCalls = 0;
 
     const dependencies: ConfidenceAutoEndgameClassifierDependencies = Object.freeze({
-      classifyPosition: (state, topology) => {
+      classifyPosition: (state: GameState, topology: Topology) => {
         analysisCalls += 1;
         return classifyPositionConfidence(state, topology);
       },
-      selectPosition: (position) => {
+      selectPosition: (position: EndgamePositionConfidenceResult) => {
         selectorCalls += 1;
         const selected = selectAutomaticPositionStatuses(position);
         const first = selected.decisions[0];
@@ -174,7 +178,7 @@ describe('E2-12d ConfidenceAutoEndgameClassifier', () => {
     const prepared = fixtureContext('torus9-isolated-open-space');
     const dependencies: ConfidenceAutoEndgameClassifierDependencies = Object.freeze({
       classifyPosition: classifyPositionConfidence,
-      selectPosition: (position) => {
+      selectPosition: (position: EndgamePositionConfidenceResult) => {
         const selected = selectAutomaticPositionStatuses(position);
         return Object.freeze({ ...selected, decisions: Object.freeze(selected.decisions.slice(1)) });
       },
