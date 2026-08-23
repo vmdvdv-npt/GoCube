@@ -1,5 +1,5 @@
 import { GameEngine } from '../game/GameEngine';
-import type { GameState, StoneColor } from '../game/types';
+import type { BoardOccupancy, GameState, StoneColor } from '../game/types';
 import type { PointId, Topology } from '../topology/Topology';
 import type { EndgameGraph, EndgameStoneString } from './EndgameGraphCore';
 
@@ -48,6 +48,10 @@ export interface OneLibertyTacticalResult {
   readonly principalVariation: readonly PointId[];
 }
 
+export interface OneLibertyHistoryContext {
+  readonly previousBoard: BoardOccupancy;
+}
+
 interface DefenseCandidate {
   readonly point: PointId;
   readonly reasons: ReadonlySet<DefenseReason>;
@@ -81,14 +85,13 @@ const survivingTargetGroup = (
 };
 
 /**
- * The analysis context does not currently carry the board position preceding
- * the endgame position, so first-ply simple-ko legality cannot always be known.
- * A single-stone capture that leaves the newly placed stone as a one-stone
- * group with exactly the captured point as its sole liberty is the structural
- * shape that can be an immediate ko recapture. Treat it conservatively as a ko
- * dependency instead of assuming the first move is legal.
+ * The root endgame context does not currently carry the preceding board, so a
+ * first-ply capture can sometimes have unknown simple-ko legality. A
+ * single-stone capture that leaves the newly placed stone as a one-stone group
+ * with exactly the captured point as its sole liberty is the structural shape
+ * that can be an immediate ko recapture.
  */
-const isPotentialSimpleKoCapture = (
+export const isPotentialSimpleKoCapture = (
   engine: GameEngine,
   stateAfterMove: GameState,
   move: PointId,
@@ -165,14 +168,16 @@ const collectDefenseCandidates = (
  *
  * The reader intentionally stops as soon as a legal defense reaches two or
  * more liberties. That is an escape from this short proof, not a proof of life.
- * First-ply captures with a simple-ko recapture shape are also stopped as
- * `ko-dependent` because the preceding board position is not in this context.
+ * If `history` is absent, first-ply captures with a simple-ko recapture shape
+ * are conservatively `ko-dependent`; nested readers may pass a known previous
+ * board and get exact simple-ko legality from GameEngine instead.
  */
 export const readOneLibertyTactics = (
   state: GameState,
   topology: Topology,
   graph: EndgameGraph,
   targetGroupKey: string,
+  history?: OneLibertyHistoryContext,
 ): OneLibertyTacticalResult | null => {
   const target = graph.groups.get(targetGroupKey);
   if (!target || target.liberties.length !== 1) return null;
@@ -182,21 +187,30 @@ export const readOneLibertyTactics = (
   const defender = target.color;
   const attackPoint = target.liberties[0]!;
   const crucialStones = target.points;
+  const firstPlyKoContext = history
+    ? Object.freeze({ previousBoard: history.previousBoard })
+    : undefined;
   let exploredNodes = 0;
   let maxDepth = 1;
 
   const attackerState = asPlayingState(state, attacker);
   exploredNodes += 1;
-  const attackerMove = engine.placeStone(attackerState, attackPoint, attacker);
+  const attackerMove = engine.placeStone(
+    attackerState,
+    attackPoint,
+    attacker,
+    firstPlyKoContext,
+  );
   let attackerFirst: OneLibertyAttackLine;
   if (attackerMove.ok && crucialStonesCaptured(attackerMove.state, target.color, crucialStones)) {
-    attackerFirst = isPotentialSimpleKoCapture(
-      engine,
-      attackerMove.state,
-      attackPoint,
-      attacker,
-      attackerMove.captured,
-    )
+    attackerFirst = !history &&
+      isPotentialSimpleKoCapture(
+        engine,
+        attackerMove.state,
+        attackPoint,
+        attacker,
+        attackerMove.captured,
+      )
       ? Object.freeze({ move: attackPoint, result: 'ko-dependent' as const })
       : Object.freeze({ move: attackPoint, result: 'kill' as const });
   } else {
@@ -216,7 +230,12 @@ export const readOneLibertyTactics = (
   for (const candidate of defenseCandidates) {
     const defenderState = asPlayingState(state, defender);
     exploredNodes += 1;
-    const defenseMove = engine.placeStone(defenderState, candidate.point, defender);
+    const defenseMove = engine.placeStone(
+      defenderState,
+      candidate.point,
+      defender,
+      firstPlyKoContext,
+    );
     const reasons = Object.freeze([...candidate.reasons].sort()) as readonly DefenseReason[];
 
     if (!defenseMove.ok) {
@@ -232,6 +251,7 @@ export const readOneLibertyTactics = (
     }
 
     if (
+      !history &&
       isPotentialSimpleKoCapture(
         engine,
         defenseMove.state,
