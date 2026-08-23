@@ -49,9 +49,9 @@
 26. Частичный ручной/assisted endgame review хранится как отдельный session-level `EndgameReviewState`; он не маскируется под уже завершённую `EndgameClassification`.
 27. Межпартийные пользовательские preferences отделены от сохранения текущей партии и от `ViewState` конкретной сессии.
 28. Autosave имеет монотонную revision и упорядоченную запись: более старый async save не может перезаписать более новое состояние.
-29. Production-classifier и final scoring не зависят от KataGo, локального AI bridge, внешнего oracle, сети или конкретного компьютера разработчика; такие компоненты являются необязательной verification/developer infrastructure.
-30. Внешний AI/oracle никогда не превращает вероятностную или эвристическую оценку в authoritative automatic status без внутренней project-defined proof/verification boundary.
-31. Test-position generator не обходит доменные правила ради создания «случайной партии»: последовательности legal game positions строятся через `GameEngine`/эквивалентную domain boundary; synthetic pattern fixtures остаются отдельной test-only инфраструктурой.
+29. Production-classifier, final scoring и runtime UI не зависят от внешнего oracle, сети или developer-only verification tooling; differential/oracle adapters являются только test infrastructure.
+30. Внешний oracle никогда не превращает вероятностную или эвристическую оценку в authoritative automatic status без внутренней project-defined proof/verification boundary.
+31. Test-position generators существуют только как test infrastructure: legal sequences строятся через `GameEngine`/эквивалентную domain boundary, synthetic pattern fixtures изолированы от runtime, а пользовательского Test Case/Test ID/replay API нет.
 
 Стрелка `A → B` в этом документе означает: `A` использует контракт `B` или передаёт ему данные/команду. Она не означает наследование.
 
@@ -77,9 +77,9 @@
 
 `GameSession → EndgameClassifier → EndgameReviewState → EndgameClassification → ScoringStrategy → FinalScore`
 
-Для optional developer verification 0.3 используется отдельный внешний путь, не входящий в production correctness chain:
+Отдельный test-only verification path не входит в runtime/application graph:
 
-`Developer Test Lab → Oracle Adapter / LocalAnalysisClient → external oracle or CubeGoLocalAnalysisBridge → diagnostic result`
+`Deterministic fixture → classifier → DifferentialOracleAdapter/reference result → test assertion/diagnostic`
 
 После получения полного результата `GameSession` запрашивает у доменной границы переход текущего `GameState` из `ENDGAME_REVIEW` в `FINISHED`; он не меняет phase напрямую.
 
@@ -617,7 +617,7 @@ Scoring получает уже полностью разрешённую `Endga
 
 Правила pipeline:
 
-- deterministic structural proof имеет приоритет над эвристикой/AI;
+- deterministic structural proof имеет приоритет над эвристикой/внешним oracle;
 - pass-alive/Benson-like analysis используется как основной фундамент автоматического `alive` там, где доказательство выполнено на project `Topology`;
 - dead/seki heuristic, rollout, Monte-Carlo, score-estimator или neural result является **candidate**, пока project-defined verifier не подтвердит статус;
 - candidate, не прошедший verification, становится `unresolved`;
@@ -1057,7 +1057,7 @@ Seed любого найденного дефекта сохраняется; п
 
 ### 19.8.1. Endgame test-position generators
 
-Для 0.3 существует единая deterministic generator infrastructure с несколькими генераторами, а не один «random fill»:
+Для 0.3 существует единая deterministic **test-only** generator infrastructure с несколькими генераторами, а не один «random fill»:
 
 - **LegalGameGenerator** — генерирует последовательность допустимых ходов через настоящую domain boundary; может предпочитать ходы рядом с существующими stones, но не пишет occupancy напрямую;
 - **EndgamePositionGenerator** — продолжает legal simulation до плотных/финальных состояний и создаёт позиции, пригодные для массового classifier testing;
@@ -1067,7 +1067,7 @@ Seed любого найденного дефекта сохраняется; п
 
 Legal simulation и synthetic fixture construction — разные test boundaries. Synthetic builder может создавать позицию напрямую только внутри test infrastructure и обязан валидировать point ids/occupancy/group assumptions; такой API не доступен production gameplay и не заменяет `GameEngine`.
 
-Все генераторы обязаны поддерживать stable seed. Дефектный случай воспроизводится как минимум по `generator kind + topology + size + seed + generator version/options`.
+Все генераторы обязаны поддерживать stable seed. Дефектный случай воспроизводится внутри автоматических tests по `generator kind + topology + size + seed + generator version/options`; runtime Test ID/replay API для этого не существует.
 
 ## 19.9. Fixture format
 
@@ -1086,7 +1086,7 @@ Fixture может содержать:
 - komi;
 - expected groups/liberties/legal moves/captures;
 - expected endgame proposal/review/classification/scoring data при необходимости;
-- generator metadata/seed и oracle diagnostics при необходимости для воспроизведения 0.3 failures.
+- generator metadata/seed и oracle diagnostics при необходимости для воспроизведения test failures.
 
 Один формат используется для Torus и Cube; topology-specific fixtures расширяют библиотеку, а не создают параллельные несовместимые test systems.
 
@@ -1106,25 +1106,7 @@ Fixture может содержать:
 - Cube presentation slot/view-intent mapping;
 - Torus passive-copy → source `PointId` mapping.
 
-Debug renderer не является пользовательской функцией и не определяет correctness.
-
-### 19.10.1. Endgame Test Lab
-
-0.3 developer mode расширяет diagnostic tooling до `Endgame Test Lab` или эквивалента с тем же смыслом. Это не часть обычного пользовательского gameplay UI.
-
-Lab должен позволять без ручной расстановки каждого stone:
-
-- сгенерировать позицию выбранным generator kind;
-- задать/увидеть seed и в точности воспроизвести case;
-- прогнать project classifier;
-- при доступности прогнать один или несколько oracle adapters;
-- при доступности локального bridge запросить KataGo/local AI analysis;
-- показать automatic/resolved/unresolved statuses и расхождения;
-- открыть конкретный failed seed повторно для ручного исследования.
-
-Предусматриваются как минимум логические presets `Quick`, `Full`, `Deep` или эквивалентные уровни объёма. Конкретные counts/time budgets являются test configuration, а не архитектурным инвариантом. Deep local run может использовать значительно больше desktop CPU/GPU, чем обязательный CI gate.
-
-Lab не является источником истины: он оркестрирует generators, classifier и independent diagnostics.
+Debug renderer не является пользовательской функцией и не определяет correctness. Он не предоставляет Test Case generation, Test ID, corpus loading или replay API.
 
 # 20. Library / Reuse Policy
 
@@ -1196,18 +1178,13 @@ Moka содержит TypeScript implementation conservative pass-alive analysis
 - capture-aftermath/greedy capture result рассматривается только как candidate/heuristic, пока project verifier не докажет `dead`;
 - neural/model часть Moka не требуется для authoritative 0.3 core.
 
-### 20.4.2. KataGo — **oracle/reference + optional local AI**, не production dependency
+### 20.4.2. KataGo — **offline oracle/reference only**, не runtime dependency
 
-KataGo используется как сильный независимый standard-Go oracle и источник analysis diagnostics:
+KataGo может использоваться вне runtime как сильный независимый standard-Go oracle для test-only differential/reference work на позициях, где adapter доказал применимость обычной square-grid модели.
 
-- planar fixture differential tests;
-- ownership/search/life-death diagnostics;
-- optional local desktop analysis через JSON analysis engine;
-- генерация/извлечение standard-Go positions/patterns для test corpus при необходимости.
+KataGo не считается понимающим Torus/Cube глобально. Его результат может применяться только к позиции/локальному neighbourhood, для которого adapter доказал эквивалентность обычной square grid, и никогда не становится authoritative status без project verifier.
 
-KataGo не считается понимающим Torus/Cube глобально. Его результат может применяться только к позиции/локальному neighbourhood, для которого adapter доказал эквивалентность обычной square grid, либо как неавторитетная diagnostic подсказка.
-
-KataGo не входит в browser production bundle и не требуется для final scoring или обычной игры.
+В репозитории/runtime нет browser-to-KataGo bridge, `LocalAnalysisClient`, live corpus diagnostics или пользовательского/developer Test Case UI. KataGo не входит в browser production bundle и не требуется для final scoring или обычной игры.
 
 ### 20.4.3. `goscorer` — **oracle/reference**
 
@@ -1270,7 +1247,7 @@ MIT JavaScript engine с Toroidal Go особенно полезен как не
 - собственную neural network;
 - собственный SGF ecosystem;
 - отдельный Torus/Cube scoring implementation;
-- огромный вручную составленный fixture corpus вместо генераторов + внешних references.
+- огромный вручную составленный fixture corpus вместо test-only generators + external references.
 
 ## 20.5. Testing / schema candidates
 
@@ -1350,7 +1327,7 @@ Camera, controls, picking, instancing, line rendering и animation по возм
 
 ## 20.10. Differential/test-oracle principle
 
-На позициях, где модель проекта совпадает со стандартным плоским Go, зрелые внешние движки можно использовать для differential/regression сравнения стандартной логики.
+На позициях, где модель проекта совпадает со стандартным плоским Go, зрелые внешние движки можно использовать для test-only differential/regression сравнения стандартной логики.
 
 Совпадение с внешним движком не доказывает корректность TorusTopology/CubeTopology; необычные topology доказываются собственными contracts, fixtures и property/fuzz tests.
 
@@ -1364,9 +1341,9 @@ Oracle disagreement не означает автоматически bug GoCube.
 - insufficient local context;
 - истинно unresolved position.
 
-### 20.10.1. Planar Local Analyzer для KataGo/standard-Go oracle
+### 20.10.1. Planar Local Analyzer для standard-Go oracle
 
-Для Torus/Cube допускается локальный adapter, который использует standard-Go AI только там, где рассматриваемый induced neighbourhood может быть без конфликтов вложен в обычную square grid.
+Для Torus/Cube допускается test-only локальный adapter, который использует standard-Go oracle только там, где рассматриваемый induced neighbourhood может быть без конфликтов вложен в обычную square grid.
 
 Процедура:
 
@@ -1374,48 +1351,12 @@ Oracle disagreement не означает автоматически bug GoCube.
 2. расширить neighbourhood через `Topology.neighbors()` на настраиваемый graph radius;
 3. попытаться назначить точкам integer 2D coordinates так, чтобы каждое logical neighbour edge соответствовало одному ортогональному grid step;
 4. обнаружить coordinate conflicts, duplicate logical embeddings, short cycles/adjacency, несовместимые с square grid, или wrap/self-meeting;
-5. только при успешной embedding перенести локальную позицию в центр достаточно большой стандартной доски (обычно 19×19 с margin) и отправить oracle;
+5. только при успешной embedding подготовить standard-Go representation для test oracle;
 6. при неуспешной embedding вернуть `not-applicable`, а не искусственно ломать topology.
 
 Для Torus небольшие neighbourhoods обычно planar-grid compatible, пока область не обходит torus и не встречает сама себя. Для Cube многие области внутри face и через одно обычное edge также совместимы, но neighbourhood около physical cube corner может содержать трёхциклы и должен отклоняться как non-planar-standard-Go case.
 
-Для diagnostics можно прогонять несколько radii (например small/medium/large) и сравнивать устойчивость результата. Смена ответа при увеличении context означает недостаточную локальность; одинаковые high-confidence AI results на нескольких radii повышают диагностическую полезность, но всё равно не заменяют project proof boundary.
-
-Если oracle поддерживает ограничение рассматриваемых ходов (`allowMoves`/`avoidMoves` или эквивалент), adapter может ограничить search локальной областью, но обязан сохранять семантику исходной embedded позиции.
-
-### 20.10.2. CubeGoLocalAnalysisBridge
-
-Браузерная страница не получает право запускать произвольный `.exe` напрямую. Для локального AI используется отдельный optional desktop helper/service `CubeGoLocalAnalysisBridge` или эквивалент с тем же responsibility.
-
-Путь:
-
-`Developer browser → LocalAnalysisClient → loopback HTTP/WebSocket → CubeGoLocalAnalysisBridge → configured KataGo executable → JSON analysis → browser diagnostics`
-
-Bridge:
-
-- устанавливается/настраивается один раз на developer machine;
-- может запускаться автоматически вместе с OS либо стартовать KataGo process on-demand при первом запросе;
-- может держать KataGo/model warm между запросами для низкой latency;
-- принимает только фиксированный безопасный analysis protocol, а не произвольную shell command от сайта;
-- bind-ится только на loopback (`127.0.0.1`/`::1`) и не открывает AI service в LAN/Internet;
-- проверяет разрешённый browser origin и при необходимости локальный auth token/nonce;
-- имеет request size/time/concurrency limits и health/version endpoint;
-- путь к KataGo/model/config задаётся локальной конфигурацией bridge, а не произвольными аргументами из web page;
-- при отсутствии/ошибке bridge developer lab деградирует в `local AI unavailable`, не ломая classifier или production gameplay.
-
-Local bridge является test/developer infrastructure. Публичный production game не должен автоматически требовать установку helper-а у обычного пользователя.
-
-### 20.10.3. Local AI trust level
-
-KataGo/local AI может возвращать ownership, policy/search, score estimates и другие diagnostics. Эти данные допускаются для:
-
-- поиска расхождений;
-- ранжирования cases для ручного просмотра;
-- candidate generation;
-- оценки того, где deterministic classifier слишком консервативен;
-- создания regression fixtures после человеческой/алгоритмической верификации.
-
-AI result не записывается в authoritative `EndgameReviewState` как automatic status только на основании confidence threshold.
+Этот adapter не является runtime feature и не предоставляет browser/local-AI transport. Конкретный внешний oracle подключается только внутри test tooling через узкий `DifferentialOracleAdapter` или эквивалент.
 
 ## 20.11. Фиксация reuse decision
 
@@ -1436,10 +1377,10 @@ AI result не записывается в authoritative `EndgameReviewState` к
 - запускать scoring на partial/incomplete endgame review;
 - выдавать unresolved classifier result за окончательный `EndgameClassification`;
 - считать probabilistic AI/oracle confidence доказательством alive/dead/seki без project verifier;
-- делать KataGo/local bridge/external oracle обязательной production dependency;
-- позволять browser page передавать local bridge произвольную shell command или executable path;
+- делать внешний oracle обязательной production dependency;
 - считать любой Cube/Torus neighbourhood эквивалентным центру обычной Go board без проверки square-grid embedding;
 - генерировать «legal game» путём прямой случайной записи occupancy в обход `GameEngine`;
+- публиковать test-only generator/fixture machinery как пользовательский runtime Test Case/Test ID/replay API;
 - читать browser storage из `GameEngine`;
 - давать `GameEngine` объект `History` вместо минимального `SimpleKoContext`;
 - держать `SuperkoPolicy`, selectable repetition policy или скрытый superko branch «на будущее»;
@@ -1483,8 +1424,8 @@ AI result не записывается в authoritative `EndgameReviewState` к
 16. Не дублируется ли нормативное правило между архитектурой, roadmap и product requirements?
 17. Если используется oracle/AI, доказано ли, что он только diagnostic/candidate либо его результат проходит явную project verification boundary?
 18. Если standard-Go oracle применяется к Cube/Torus, доказана ли применимость конкретного planar neighbourhood вместо предположения по degree=4?
-19. Можно ли полностью запустить production gameplay/scoring при выключенных local bridge и внешних oracle?
-20. Любой generated legal-game case действительно прошёл domain rules, а synthetic fixture остаётся изолированным test-only path?
+19. Можно ли полностью запустить production gameplay/scoring без внешних oracle и test-only tooling?
+20. Любой generated legal-game fixture действительно прошёл domain rules, а synthetic fixture остаётся изолированным test-only path?
 
 Если ответ показывает нарушение границы, сначала исправляется architecture/adapter contract, затем реализуется функция.
 
@@ -1501,12 +1442,11 @@ AI result не записывается в authoritative `EndgameReviewState` к
 - единственный `SimpleKoPolicy` проверяет immediate repetition по минимальному `SimpleKoContext`;
 - `History` владеет past/current/redo snapshots;
 - `EndgameClassifier` создаёт proposal, который может содержать unresolved groups;
-- deterministic structural proof решает только доказуемые statuses, а heuristic/AI/oracle остаётся candidate/diagnostic без verifier;
+- deterministic structural proof решает только доказуемые statuses, а heuristic/oracle остаётся candidate/diagnostic без verifier;
 - `EndgameReviewState` хранит partial/ручные решения до полного resolution;
 - только полный `EndgameClassification` передаётся в `ScoringStrategy`;
 - `ScoringStrategy` создаёт `FinalScore`;
-- seeded generators и independent oracles помогают тестировать core, но не становятся частью authoritative gameplay;
-- optional `CubeGoLocalAnalysisBridge` даёт developer browser доступ к локальному KataGo через безопасный loopback protocol, а не через прямой запуск exe из browser;
+- seeded generators и independent oracle adapters помогают тестировать core только внутри test infrastructure и не становятся частью authoritative gameplay/runtime UI;
 - ordered autosave с `sessionRevision` сохраняет session envelope через `GameStorage`;
 - `PreferencesStorage` отдельно хранит только product-approved cross-game preferences;
 - `PresentationModel` строит данные для показа;
