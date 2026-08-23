@@ -1341,18 +1341,50 @@ Acceptance закрыт:
 
 Итог Work 5C и closure исходного Work 5 зафиксированы в разделе 45.
 
-## Work 6 — Full Local Life/Death Search
+## Work 6A — AND/OR Search Core — CLOSED 2026-08-23
 
-AND/OR DFS + transposition first; df-pn later if justified.
+Только универсальный deterministic search mechanism, без Go-specific move generation и без classifier integration.
+
+Acceptance закрыт:
+
+- OR/AND DFS semantics реализованы отдельно от Go rules;
+- resolved-only transposition table не кеширует budget/cycle/incomplete uncertainty как доказательство;
+- deterministic node budget возвращает `unknown/budget` при exhaustion;
+- deterministic proof trace сохраняет caller-defined move ordering;
+- incomplete AND expansion не может вернуть `proved`, а incomplete OR expansion не может вернуть `refuted`;
+- one-sided proof/refutation разрешены только когда omitted branches уже не могут изменить результат;
+- unresolved cycle возвращает `unknown/cycle`;
+- classifier, Go move generation, first-player-order interpretation и tsumego solving этим этапом не расширялись.
+
+Итог Work 6A зафиксирован в разделе 46.
+
+## Work 6B — Local Life/Death Proofs
+
+Поверх готового search core подключить Go-specific local proof semantics внутри bounded Relevance Zone.
+
+Acceptance:
+
+- реальные complete-enough attack/defense move sets внутри certified zone;
+- оба порядка первого хода;
+- terminal capture/death и доказанное survival/alive;
+- первые small enclosed life/death / nakade-like cases;
+- любой непросмотренный релевантный defense запрещает false `dead`;
+- timeout/budget exhaustion запрещает false `alive`;
+- boundary/ko/uncertain semantics fail closed.
+
+## Work 6C — Hardening + classifier integration
+
+Только после устойчивого Work 6B расширить corpus и подключить доказанные результаты к classifier.
 
 Acceptance:
 
 - standard tsumego corpus subset;
-- both first-player orders;
-- proof traces;
-- deterministic node budgets;
-- no false `alive` from search timeout;
-- no false `dead` from pruned defense.
+- negative/adversarial cases;
+- far-away / Relevance Zone invariance;
+- budget regressions;
+- proof-trace determinism;
+- performance regression gate;
+- conservative classifier integration только для полностью доказанных outcomes.
 
 ## Work 7 — Semeai / Seki
 
@@ -2359,4 +2391,141 @@ simple-cut-v1 != PROVEN_DEAD
 - Safe Connection не создаёт transitive Benson anchors;
 - cut fact не подменяет full life/death proof.
 
-**Следующий этап — Work 6: Full Local Life/Death Search.**
+**Work 6A закрыт в разделе 46; следующий этап — Work 6B: Local Life/Death Proofs.**
+
+---
+
+# 46. Work 6A — AND/OR Search Core: финальный результат
+
+Срез на **2026-08-23**. **Work 6A закрыт.** Реализован generic deterministic proof-search core без Go-specific state transitions, life/death terminals и classifier integration.
+
+## 46.1. Search contract
+
+`AndOrSearchCore` решает одно абстрактное утверждение с тремя raw outcomes:
+
+```text
+proved
+refuted
+unknown
+```
+
+Node semantics:
+
+```text
+OR
+  proved, если найден хотя бы один proved child
+  refuted, только если expansion complete и все children refuted
+
+AND
+  refuted, если найден хотя бы один refuted child
+  proved, только если expansion complete и все children proved
+```
+
+Именно `complete` является safety boundary для будущего Go move generation. Если consumer знает только часть legal/relevant continuations, core не делает вид, что остальные отсутствуют.
+
+## 46.2. Fail-closed incomplete semantics
+
+Приняты две критические асимметрии:
+
+- incomplete AND node **не может** стать `proved`, потому что непросмотренная defense branch потенциально может refute proof;
+- incomplete OR node **не может** стать `refuted`, потому что непросмотренная attack branch потенциально может prove objective.
+
+При этом безопасные one-sided результаты остаются допустимы:
+
+- OR может стать `proved` сразу после одного proved child даже при `complete: false`;
+- AND может стать `refuted` сразу после одного refuted child даже при `complete: false`.
+
+Это structural basis для Work 6B acceptance invariant «непросмотренная defense не может создать ложный `dead`».
+
+## 46.3. Transposition, cycles и budgets
+
+Transposition key полностью принадлежит caller adapter и должен включать весь game-theoretic context, который влияет на future legality/outcome. Core дополнительно разделяет cache entries по AND/OR node type.
+
+В transposition table кешируются только resolved outcomes:
+
+```text
+proved
+refuted
+```
+
+Не кешируются:
+
+```text
+unknown/budget
+unknown/incomplete
+unknown/cycle
+```
+
+Поэтому результат, оборванный resource limit или path-cycle, не может позже маскироваться под proof.
+
+Node budget deterministic и считает только новые non-transposition nodes, допущенные к evaluation. При exhaustion result только:
+
+```text
+unknown
+reason = budget
+```
+
+Unresolved active-path repetition не получает guessed fixed point:
+
+```text
+unknown
+reason = cycle
+```
+
+## 46.4. Deterministic proof trace
+
+Core сохраняет caller-defined child order и возвращает immutable trace для реально исследованной части DFS.
+
+Trace различает source:
+
+```text
+expanded
+terminal
+transposition
+budget
+cycle
+```
+
+Для каждого explored edge фиксируются move label, child outcome, unknown reason и nested trace. Short-circuit OR/AND поэтому остаётся observable и deterministic при одинаковых adapter/key/move-order inputs.
+
+## 46.5. Regression coverage
+
+`AndOrSearchCore.test.ts` содержит семь targeted tests:
+
+1. deterministic OR DFS order и stable proof trace;
+2. AND требует все continuations и reuse resolved transposition;
+3. incomplete AND/OR fail closed;
+4. one-sided proof/refutation остаются допустимы при incomplete expansion;
+5. exact node-budget exhaustion даёт deterministic `unknown/budget`;
+6. unresolved cycle даёт `unknown/cycle`;
+7. invalid/non-integer node budgets отвергаются.
+
+Эти tests intentionally используют маленький abstract graph adapter и не проверяют Go rules — это scope Work 6B.
+
+## 46.6. Validation boundary
+
+Code-head `b2f105feefdb492f3fc58e410effb561944a77f8` на PR #163 прошёл CI run #754:
+
+- lint — pass, только два существующих non-blocking warnings вне Work 6A scope;
+- typecheck — pass;
+- unit/coverage — **568/568 tests pass**;
+- `AndOrSearchCore.ts` coverage — 98.64% statements / 97.61% branches / 100% functions / 98.59% lines;
+- build — pass;
+- Chromium Playwright — **72/72 pass**.
+
+Final documentation head должен пройти новый `[full]` PR CI перед merge.
+
+## 46.7. Closure
+
+Work 6A намеренно не решает ни одного реального tsumego и не меняет automatic classifier.
+
+Закрыты только механические correctness properties search shell:
+
+- deterministic AND/OR DFS;
+- resolved-only TT;
+- deterministic resource exhaustion;
+- explicit expansion completeness;
+- deterministic proof trace;
+- fail-closed cycles/incomplete branches.
+
+**Следующий этап — Work 6B: Local Life/Death Proofs.**
