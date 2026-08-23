@@ -68,7 +68,10 @@ describe('TwoLibertyTacticalReader', () => {
     expect(result?.defenderFirst.result).toBe('forced-kill');
     expect(result?.defenderFirst.includesPass).toBe(true);
     expect(result?.defenderFirst.examinedPlacements).toBe(4);
-    expect(result?.defenderFirst.lines).toHaveLength(5);
+    expect(result?.defenderFirst.legalPlacements).toBe(2);
+    // a/b are correctly rejected by GameEngine as suicide; q1/q2 are the only
+    // legal placements, and Pass is the third complete defender branch.
+    expect(result?.defenderFirst.lines).toHaveLength(3);
     expect(result?.defenderFirst.lines.every((line) => line.result === 'forced-kill')).toBe(true);
     expect(result?.outcome).toBe('proven-dead');
   });
@@ -93,7 +96,7 @@ describe('TwoLibertyTacticalReader', () => {
     expect(result?.defenderFirst.lines.some((line) => line.result === 'not-proven')).toBe(true);
   });
 
-  it('finds a non-liberty preparation move that defeats the naive liberties-only defender model', () => {
+  it('finds a legal non-liberty preparation move that defeats the naive liberties-only defender model', () => {
     const topology = makeTopology({
       w: Object.freeze(['a', 'b', 'q']),
       a: Object.freeze(['w', 'anchor']),
@@ -102,7 +105,8 @@ describe('TwoLibertyTacticalReader', () => {
       e1: Object.freeze(['anchor']),
       e2: Object.freeze(['anchor']),
       q: Object.freeze(['w', 'c', 'd']),
-      c: Object.freeze(['q']),
+      c: Object.freeze(['q', 'c1']),
+      c1: Object.freeze(['c']),
       d: Object.freeze(['q']),
     });
     const state = makeState(
@@ -116,9 +120,10 @@ describe('TwoLibertyTacticalReader', () => {
     // strict one-liberty forced kill.
     expect(result?.attackerFirst.result).toBe('forced-kill');
 
-    // But defender-first can play c (or d), putting q in atari. After the
-    // attacker reduces the target, defender can capture q and create a new
-    // target liberty. This move is not one of the target's original liberties.
+    // Defender-first can legally play c because c1 remains a liberty. That
+    // puts q in atari. After the attacker reduces the target, defender can
+    // capture q and create a new target liberty. c is not one of the target's
+    // original liberties, so a liberties-only defender model would miss it.
     const preparation = result?.defenderFirst.lines.find(
       (line) => line.move.kind === 'place' && line.move.point === 'c',
     );
