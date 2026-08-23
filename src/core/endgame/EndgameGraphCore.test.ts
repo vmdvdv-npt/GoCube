@@ -146,6 +146,24 @@ describe('EndgameGraphCore', () => {
     );
   });
 
+  it('records direct opposing-string adjacency once', () => {
+    const topology = new TorusTopology(9);
+    const graph = buildEndgameGraph(
+      makeBoard(topology, {
+        '0,0': 'black',
+        '1,0': 'white',
+      }),
+      topology,
+    );
+
+    expect(graph.strings).toHaveLength(2);
+    expect(graph.opponentAdjacencies).toHaveLength(1);
+    const colors = graph.opponentAdjacencies[0]!.groups
+      .map((key) => graph.stringsByKey.get(key)!.color)
+      .sort();
+    expect(colors).toEqual(['black', 'white']);
+  });
+
   it('builds regions, shared liberties, friendly connection candidates and one conflict component', () => {
     const topology = fixtureTopology('fixture-a', {
       a: 'a',
@@ -182,6 +200,28 @@ describe('EndgameGraphCore', () => {
     });
     expect(graph.conflictComponents[0]!.emptyRegions).toHaveLength(3);
     expect(graph.regionByPoint.size).toBe(3);
+  });
+
+  it('does not create a friendly connection merely because two strings border one large region', () => {
+    const topology = new FixtureTopology(
+      'long-region',
+      Object.freeze(['left', 'e1', 'e2', 'right']),
+      Object.freeze({
+        left: Object.freeze(['e1']),
+        e1: Object.freeze(['left', 'e2']),
+        e2: Object.freeze(['e1', 'right']),
+        right: Object.freeze(['e2']),
+      }),
+    );
+    const graph = buildEndgameGraph(
+      makeBoard(topology, { left: 'black', right: 'black' }),
+      topology,
+    );
+
+    expect(graph.emptyRegions).toHaveLength(1);
+    expect(graph.emptyRegions[0]!.boundaryGroups).toHaveLength(2);
+    expect(graph.sharedLiberties).toHaveLength(0);
+    expect(graph.possibleConnections).toHaveLength(0);
   });
 
   it('preserves the graph result under a pure PointId relabeling', () => {
