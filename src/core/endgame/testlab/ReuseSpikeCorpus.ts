@@ -5,6 +5,7 @@ import {
 import {
   makeTestCaseIdentity,
   type ReferenceStatus,
+  type TestCasePlanarStone,
   type TestCaseSourcePosition,
 } from './TestCase';
 
@@ -59,19 +60,89 @@ export const serializeReuseSpikePositionAsSgf = (
   ].join('');
 };
 
+const freezePosition = (
+  currentPlayer: TestCaseSourcePosition['currentPlayer'],
+  stones: readonly TestCasePlanarStone[],
+  targetCoordinates: readonly Readonly<{ row: number; column: number }>[],
+): TestCaseSourcePosition =>
+  Object.freeze({
+    boardSize: 9,
+    currentPlayer,
+    stones: Object.freeze(stones.map((stone) => Object.freeze({ ...stone }))),
+    targetCoordinates: Object.freeze(
+      targetCoordinates.map((target) => Object.freeze({ ...target })),
+    ),
+  });
+
+const forcedCapturePosition = (): TestCaseSourcePosition =>
+  freezePosition(
+    'white',
+    [
+      { row: 4, column: 4, color: 'black' },
+      { row: 3, column: 4, color: 'white' },
+      { row: 4, column: 3, color: 'white' },
+      { row: 4, column: 5, color: 'white' },
+    ],
+    [{ row: 4, column: 4 }],
+  );
+
+const twoEyeAlivePosition = (): TestCaseSourcePosition => {
+  const stones: TestCasePlanarStone[] = [];
+
+  // Connected 3x5 black block with two one-point internal eyes.
+  for (let row = 2; row <= 4; row += 1) {
+    for (let column = 2; column <= 6; column += 1) {
+      const isEye = row === 3 && (column === 3 || column === 5);
+      if (!isEye) stones.push({ row, column, color: 'black' });
+    }
+  }
+
+  // White surround removes every exterior liberty while leaving the two eyes.
+  for (let column = 2; column <= 6; column += 1) {
+    stones.push({ row: 1, column, color: 'white' });
+    stones.push({ row: 5, column, color: 'white' });
+  }
+  for (let row = 2; row <= 4; row += 1) {
+    stones.push({ row, column: 1, color: 'white' });
+    stones.push({ row, column: 7, color: 'white' });
+  }
+
+  return freezePosition('white', stones, [{ row: 2, column: 2 }]);
+};
+
+const knownCase = (
+  id: string,
+  sourceStatus: Extract<ReferenceStatus, 'alive' | 'dead'>,
+  position: TestCaseSourcePosition,
+): ReuseSpikeCorpusCase =>
+  Object.freeze({
+    id,
+    sourceStatus,
+    position,
+    sgf: serializeReuseSpikePositionAsSgf(position),
+  });
+
+const WORK1_KNOWN_CASES: readonly ReuseSpikeCorpusCase[] = Object.freeze([
+  knownCase('work1:forced-capture', 'dead', forcedCapturePosition()),
+  knownCase('work1:two-eye-alive', 'alive', twoEyeAlivePosition()),
+]);
+
+export const reuseSpikeKnownCaseCount = (): number => WORK1_KNOWN_CASES.length;
+
 /**
  * Returns a stable planar corpus for Work 1 external-solver comparison.
  *
- * The canonical source positions already live in ExternalCorpusImporter. We
- * intentionally export those original planar positions rather than a Cube or
- * Torus embedding, so every external solver receives exactly the same Go
- * problem. The topology-specific comparison happens later through metamorphic
- * tests of the graph-native GoCube engine, not by pretending that conventional
- * SGF can encode Cube/Torus adjacency.
+ * The external catalog positions are exported in their original planar form,
+ * not embedded into Cube/Torus. Two tiny hand-authored known-answer sanity
+ * fixtures are appended so the same run has at least a minimal accuracy signal
+ * in addition to performance measurements. Topology-specific comparison happens
+ * later through metamorphic tests of the graph-native GoCube engine, not by
+ * pretending that conventional SGF can encode Cube/Torus adjacency.
  */
-export const buildReuseSpikeCorpus = (): readonly ReuseSpikeCorpusCase[] =>
-  Object.freeze(
-    Array.from({ length: externalCorpusCaseCount() }, (_, payload) => {
+export const buildReuseSpikeCorpus = (): readonly ReuseSpikeCorpusCase[] => {
+  const externalCases = Array.from(
+    { length: externalCorpusCaseCount() },
+    (_, payload) => {
       const imported = importExternalCorpusCase(
         makeTestCaseIdentity({
           source: 'corpus',
@@ -91,5 +162,8 @@ export const buildReuseSpikeCorpus = (): readonly ReuseSpikeCorpusCase[] =>
         position,
         sgf: serializeReuseSpikePositionAsSgf(position),
       });
-    }),
+    },
   );
+
+  return Object.freeze([...externalCases, ...WORK1_KNOWN_CASES]);
+};
