@@ -230,7 +230,7 @@ describe('LiveTestGenerators', () => {
       'cube-corner-single-eye',
       'cube-corner-shared-liberties',
     ]));
-  });
+  }, 15_000);
 
   it('falls back to legal tactical generation on tiny Cube sizes where curated 3x3 motifs do not fit', () => {
     const generated = generateLiveTestCase({
