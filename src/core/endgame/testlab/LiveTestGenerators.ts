@@ -12,12 +12,20 @@ import {
   type TorusSize,
 } from '../../topology/TorusTopology';
 import { DeterministicRandom } from './DeterministicRandom';
-import type { GeneratedGameCommand } from './EndgameFixture';
+import type {
+  GeneratedGameCommand,
+  LifeDeathPatternName,
+  SekiPatternName,
+  StressPatternName,
+  TopologyStressMode,
+} from './EndgameFixture';
+import { EndgameTestLab, type EndgameTestTopology } from './EndgameTestLab';
 
 export const LIVE_TEST_GENERATOR_VERSION = 1 as const;
 
 export type LiveTestGeneratorType = 'game-like' | 'endgame';
 export type LiveTestTopologyKind = 'torus' | 'cube';
+export type LiveTestLoadStrategy = 'replay-commands' | 'snapshot';
 
 export interface LiveTestGenerationSpec {
   readonly generator: LiveTestGeneratorType;
@@ -33,6 +41,9 @@ export interface LiveTestGeneratedCase {
   readonly state: GameState;
   readonly commands: readonly GeneratedGameCommand[];
   readonly requestedMoves: number;
+  readonly loadStrategy: LiveTestLoadStrategy;
+  readonly scenario: string;
+  readonly tags: readonly string[];
 }
 
 type GenerationProfile = Readonly<{
@@ -43,6 +54,26 @@ type GenerationProfile = Readonly<{
   contactWeight: number;
   threatenedWeight: number;
 }>;
+
+type SyntheticEndgameScenario =
+  | Readonly<{
+      kind: 'life-death-pattern';
+      name: string;
+      pattern: LifeDeathPatternName;
+    }>
+  | Readonly<{
+      kind: 'seki-pattern';
+      name: string;
+      pattern: SekiPatternName;
+    }>
+  | Readonly<{
+      kind: 'topology-stress';
+      name: string;
+      mode: TopologyStressMode;
+      pattern: StressPatternName;
+    }>;
+
+type EndgameScenario = 'legal-tactical' | SyntheticEndgameScenario;
 
 const PROFILES: Readonly<Record<LiveTestGeneratorType, GenerationProfile>> = Object.freeze({
   'game-like': Object.freeze({
@@ -280,10 +311,221 @@ const generateSequence = (
   });
 };
 
+const syntheticEndgameScenarios = (
+  topology: EndgameTestTopology,
+): readonly SyntheticEndgameScenario[] => {
+  const scenarios: SyntheticEndgameScenario[] = [];
+
+  if (topology.size >= 3) {
+    scenarios.push(
+      Object.freeze({
+        kind: 'life-death-pattern',
+        name: 'single-eye',
+        pattern: 'single-eye',
+      }),
+      Object.freeze({
+        kind: 'life-death-pattern',
+        name: 'false-eye',
+        pattern: 'false-eye',
+      }),
+      Object.freeze({
+        kind: 'life-death-pattern',
+        name: 'atari',
+        pattern: 'atari-group',
+      }),
+      Object.freeze({
+        kind: 'seki-pattern',
+        name: 'shared-liberties-seki',
+        pattern: 'shared-liberties',
+      }),
+      Object.freeze({
+        kind: 'seki-pattern',
+        name: 'ambiguous-contact',
+        pattern: 'ambiguous-contact',
+      }),
+    );
+  }
+
+  if (topology.size >= 5) {
+    scenarios.push(
+      Object.freeze({
+        kind: 'life-death-pattern',
+        name: 'two-eyes-alive',
+        pattern: 'two-eyes',
+      }),
+    );
+  }
+
+  if (topology instanceof TorusTopology && topology.size >= 3) {
+    scenarios.push(
+      Object.freeze({
+        kind: 'topology-stress',
+        name: 'torus-seam-single-eye',
+        mode: 'torus-seam',
+        pattern: 'single-eye',
+      }),
+      Object.freeze({
+        kind: 'topology-stress',
+        name: 'torus-seam-false-eye',
+        mode: 'torus-seam',
+        pattern: 'false-eye',
+      }),
+      Object.freeze({
+        kind: 'topology-stress',
+        name: 'torus-seam-shared-liberties',
+        mode: 'torus-seam',
+        pattern: 'shared-liberties',
+      }),
+    );
+  }
+
+  if (topology instanceof CubeTopology && topology.size >= 3) {
+    scenarios.push(
+      Object.freeze({
+        kind: 'topology-stress',
+        name: 'cube-edge-false-eye',
+        mode: 'cube-edge',
+        pattern: 'false-eye',
+      }),
+      Object.freeze({
+        kind: 'topology-stress',
+        name: 'cube-edge-shared-liberties',
+        mode: 'cube-edge',
+        pattern: 'shared-liberties',
+      }),
+      Object.freeze({
+        kind: 'topology-stress',
+        name: 'cube-corner-single-eye',
+        mode: 'cube-corner',
+        pattern: 'single-eye',
+      }),
+      Object.freeze({
+        kind: 'topology-stress',
+        name: 'cube-corner-shared-liberties',
+        mode: 'cube-corner',
+        pattern: 'shared-liberties',
+      }),
+    );
+  }
+
+  return Object.freeze(scenarios);
+};
+
+const selectEndgameScenario = (
+  topology: EndgameTestTopology,
+  spec: LiveTestGenerationSpec,
+): EndgameScenario => {
+  const scenarios: EndgameScenario[] = [
+    'legal-tactical',
+    ...syntheticEndgameScenarios(topology),
+  ];
+  const random = new DeterministicRandom(
+    `${LIVE_TEST_GENERATOR_VERSION}|endgame-scenario|${spec.topology}|${spec.size}|${spec.seed}`,
+  );
+  return scenarios[random.integer(scenarios.length)] ?? 'legal-tactical';
+};
+
+const generateSyntheticEndgame = (
+  topology: EndgameTestTopology,
+  spec: LiveTestGenerationSpec,
+  scenario: SyntheticEndgameScenario,
+): Readonly<{
+  state: GameState;
+  commands: readonly GeneratedGameCommand[];
+  requestedMoves: number;
+  loadStrategy: LiveTestLoadStrategy;
+  scenario: string;
+  tags: readonly string[];
+}> => {
+  const lab = new EndgameTestLab();
+  const fixture = scenario.kind === 'life-death-pattern'
+    ? lab.generate({
+        kind: scenario.kind,
+        topology,
+        seed: spec.seed,
+        pattern: scenario.pattern,
+      })
+    : scenario.kind === 'seki-pattern'
+      ? lab.generate({
+          kind: scenario.kind,
+          topology,
+          seed: spec.seed,
+          pattern: scenario.pattern,
+        })
+      : lab.generate({
+          kind: scenario.kind,
+          topology,
+          seed: spec.seed,
+          mode: scenario.mode,
+          pattern: scenario.pattern,
+        });
+
+  const state: GameState = Object.freeze({
+    ...fixture.state,
+    currentPlayer: 'black',
+    moveNumber: fixture.placements.length,
+    consecutivePasses: 0,
+    phase: 'playing',
+    captures: Object.freeze({ black: 0, white: 0 }),
+  });
+
+  return Object.freeze({
+    state,
+    commands: Object.freeze([]),
+    requestedMoves: 0,
+    loadStrategy: 'snapshot' as const,
+    scenario: scenario.name,
+    tags: Object.freeze(['endgame', 'synthetic', ...fixture.tags]),
+  });
+};
+
+const generateEndgameCase = (
+  topology: EndgameTestTopology,
+  spec: LiveTestGenerationSpec,
+): Readonly<{
+  state: GameState;
+  commands: readonly GeneratedGameCommand[];
+  requestedMoves: number;
+  loadStrategy: LiveTestLoadStrategy;
+  scenario: string;
+  tags: readonly string[];
+}> => {
+  const scenario = selectEndgameScenario(topology, spec);
+  if (scenario === 'legal-tactical') {
+    const generated = generateSequence(topology, spec);
+    return Object.freeze({
+      ...generated,
+      loadStrategy: 'replay-commands' as const,
+      scenario,
+      tags: Object.freeze(['endgame', 'legal', 'tactical', 'contact-play']),
+    });
+  }
+
+  try {
+    return generateSyntheticEndgame(topology, spec, scenario);
+  } catch {
+    const generated = generateSequence(topology, spec);
+    return Object.freeze({
+      ...generated,
+      loadStrategy: 'replay-commands' as const,
+      scenario: 'legal-tactical-fallback',
+      tags: Object.freeze(['endgame', 'legal', 'tactical', 'fallback']),
+    });
+  }
+};
+
 export const generateLiveTestCase = (input: LiveTestGenerationSpec): LiveTestGeneratedCase => {
   const spec = normalizeSpec(input);
   const topology = createLiveTestTopology(spec);
-  const generated = generateSequence(topology, spec);
+  const generated = spec.generator === 'endgame'
+    ? generateEndgameCase(topology as EndgameTestTopology, spec)
+    : Object.freeze({
+        ...generateSequence(topology, spec),
+        loadStrategy: 'replay-commands' as const,
+        scenario: 'tactical-local-play',
+        tags: Object.freeze(['game-like', 'legal', 'tactical', 'local-play']),
+      });
+
   return Object.freeze({
     id: `${spec.generator}:v${LIVE_TEST_GENERATOR_VERSION}:${spec.topology}:${spec.size}:seed=${spec.seed}`,
     version: LIVE_TEST_GENERATOR_VERSION,
@@ -291,6 +533,9 @@ export const generateLiveTestCase = (input: LiveTestGenerationSpec): LiveTestGen
     state: generated.state,
     commands: generated.commands,
     requestedMoves: generated.requestedMoves,
+    loadStrategy: generated.loadStrategy,
+    scenario: generated.scenario,
+    tags: generated.tags,
   });
 };
 
