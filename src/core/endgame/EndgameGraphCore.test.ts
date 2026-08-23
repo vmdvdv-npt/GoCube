@@ -61,48 +61,108 @@ const fixtureTopology = (
   );
 };
 
-const invariantSignature = (graph: EndgameGraph): Readonly<Record<string, unknown>> => {
-  const strings = graph.strings
-    .map((group) => `${group.color}:${group.points.length}:${group.liberties.length}`)
-    .sort();
-  const regions = graph.emptyRegions
-    .map(
-      (region) =>
-        `${region.points.length}:${region.boundaryColors.join('+')}:${region.boundaryGroups.length}:${region.vitalGroups.length}`,
-    )
-    .sort();
-  const sharedLiberties = graph.sharedLiberties
-    .map((entry) => {
-      const colors = entry.groups
-        .map((key) => graph.stringsByKey.get(key)!.color)
-        .sort()
-        .join('+');
-      return `${colors}:${entry.liberties.length}`;
-    })
-    .sort();
-  const connections = graph.possibleConnections
-    .map(
-      (entry) =>
-        `${entry.viaRegions.length}:${entry.sharedLiberties.length}:${entry.groups
-          .map((key) => graph.stringsByKey.get(key)!.color)
-          .sort()
-          .join('+')}`,
-    )
-    .sort();
-  const conflicts = graph.conflictComponents
-    .map(
-      (component) =>
-        `${component.blackStrings.length}:${component.whiteStrings.length}:${component.emptyRegions.length}:${component.sharedLiberties.length}:${component.possibleConnections.length}`,
-    )
-    .sort();
+const sortJson = <T>(values: readonly T[]): readonly T[] =>
+  [...values].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+
+const normalizedGraph = (
+  graph: EndgameGraph,
+  roleByPoint: Readonly<Record<PointId, string>>,
+): Readonly<Record<string, unknown>> => {
+  const roleOf = (point: PointId): string => {
+    const role = roleByPoint[point];
+    if (!role) throw new Error(`Missing graph-isomorphism role for ${point}`);
+    return role;
+  };
+  const groupName = (key: string): string =>
+    graph.stringsByKey.get(key)!.points.map(roleOf).sort().join('+');
+  const regionName = (key: string): string =>
+    graph.regionsByKey.get(key)!.points.map(roleOf).sort().join('+');
+  const groupPair = (groups: readonly [string, string]): readonly string[] =>
+    Object.freeze(groups.map(groupName).sort());
+
+  const strings = sortJson(
+    graph.strings.map((group) =>
+      Object.freeze({
+        name: groupName(group.key),
+        color: group.color,
+        points: Object.freeze(group.points.map(roleOf).sort()),
+        liberties: Object.freeze(group.liberties.map(roleOf).sort()),
+      }),
+    ),
+  );
+  const regions = sortJson(
+    graph.emptyRegions.map((region) =>
+      Object.freeze({
+        name: regionName(region.key),
+        points: Object.freeze(region.points.map(roleOf).sort()),
+        boundaryGroups: Object.freeze(region.boundaryGroups.map(groupName).sort()),
+        boundaryColors: region.boundaryColors,
+        vitalGroups: Object.freeze(region.vitalGroups.map(groupName).sort()),
+      }),
+    ),
+  );
+  const opponentAdjacencies = sortJson(
+    graph.opponentAdjacencies.map((entry) => groupPair(entry.groups)),
+  );
+  const sharedLiberties = sortJson(
+    graph.sharedLiberties.map((entry) =>
+      Object.freeze({
+        groups: groupPair(entry.groups),
+        liberties: Object.freeze(entry.liberties.map(roleOf).sort()),
+      }),
+    ),
+  );
+  const possibleConnections = sortJson(
+    graph.possibleConnections.map((entry) =>
+      Object.freeze({
+        groups: groupPair(entry.groups),
+        viaRegions: Object.freeze(entry.viaRegions.map(regionName).sort()),
+        sharedLiberties: Object.freeze(entry.sharedLiberties.map(roleOf).sort()),
+      }),
+    ),
+  );
+  const conflictComponents = sortJson(
+    graph.conflictComponents.map((component) =>
+      Object.freeze({
+        blackStrings: Object.freeze(component.blackStrings.map(groupName).sort()),
+        whiteStrings: Object.freeze(component.whiteStrings.map(groupName).sort()),
+        emptyRegions: Object.freeze(component.emptyRegions.map(regionName).sort()),
+        sharedLiberties: sortJson(
+          component.sharedLiberties.map((entry) =>
+            Object.freeze({
+              groups: groupPair(entry.groups),
+              liberties: Object.freeze(entry.liberties.map(roleOf).sort()),
+            }),
+          ),
+        ),
+        possibleConnections: sortJson(
+          component.possibleConnections.map((entry) =>
+            Object.freeze({
+              groups: groupPair(entry.groups),
+              viaRegions: Object.freeze(entry.viaRegions.map(regionName).sort()),
+              sharedLiberties: Object.freeze(entry.sharedLiberties.map(roleOf).sort()),
+            }),
+          ),
+        ),
+      }),
+    ),
+  );
+  const stringByPoint = sortJson(
+    [...graph.stringByPoint].map(([point, key]) => Object.freeze([roleOf(point), groupName(key)])),
+  );
+  const regionByPoint = sortJson(
+    [...graph.regionByPoint].map(([point, key]) => Object.freeze([roleOf(point), regionName(key)])),
+  );
 
   return Object.freeze({
     strings,
     regions,
-    opponentAdjacencies: graph.opponentAdjacencies.length,
+    stringByPoint,
+    regionByPoint,
+    opponentAdjacencies,
     sharedLiberties,
-    connections,
-    conflicts,
+    possibleConnections,
+    conflictComponents,
   });
 };
 
@@ -224,7 +284,7 @@ describe('EndgameGraphCore', () => {
     expect(graph.possibleConnections).toHaveLength(0);
   });
 
-  it('preserves the graph result under a pure PointId relabeling', () => {
+  it('preserves the exact graph under a pure PointId relabeling', () => {
     const first = fixtureTopology('fixture-original', {
       a: 'a',
       b: 'b',
@@ -258,7 +318,27 @@ describe('EndgameGraphCore', () => {
       second,
     );
 
-    expect(invariantSignature(secondGraph)).toEqual(invariantSignature(firstGraph));
+    expect(
+      normalizedGraph(secondGraph, {
+        'node-71': 'a',
+        'node-04': 'b',
+        'node-55': 'c',
+        'node-19': 'd',
+        'node-88': 'x',
+        'node-02': 'y',
+        'node-43': 'z',
+      }),
+    ).toEqual(
+      normalizedGraph(firstGraph, {
+        a: 'a',
+        b: 'b',
+        c: 'c',
+        d: 'd',
+        x: 'x',
+        y: 'y',
+        z: 'z',
+      }),
+    );
   });
 
   it('fails closed when the logical board does not define a topology point', () => {
