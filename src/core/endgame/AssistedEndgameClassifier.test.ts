@@ -1,0 +1,179 @@
+import { describe, expect, it } from 'vitest';
+import { GameEngine } from '../game/GameEngine';
+import type { GameState, PointOccupancy } from '../game/types';
+import { CubeTopology } from '../topology/CubeTopology';
+import type { PointId, Topology } from '../topology/Topology';
+import { TorusTopology } from '../topology/TorusTopology';
+import { AssistedEndgameClassifier } from './AssistedEndgameClassifier';
+import { EndgameTestLab } from './testlab/EndgameTestLab';
+
+const makeState = (
+  topology: Topology,
+  occupancyAt: (point: PointId) => PointOccupancy,
+): GameState => {
+  const board: Record<PointId, PointOccupancy> = {};
+  for (const point of topology.points()) board[point] = occupancyAt(point);
+
+  return Object.freeze({
+    board: Object.freeze(board),
+    currentPlayer: 'black',
+    moveNumber: 0,
+    consecutivePasses: 2,
+    phase: 'endgame',
+    captures: Object.freeze({ black: 0, white: 0 }),
+  });
+};
+
+const collectStoneGroups = (
+  topology: Topology,
+  state: GameState,
+): readonly (readonly PointId[])[] => {
+  const engine = new GameEngine(topology);
+  const visited = new Set<PointId>();
+  const groups: (readonly PointId[])[] = [];
+
+  for (const point of [...topology.points()].sort()) {
+    if (visited.has(point) || state.board[point] === 'empty') continue;
+    const group = engine.groupAt(state, point);
+    if (!group) continue;
+    const points = Object.freeze([...group.points].sort());
+    for (const groupPoint of points) visited.add(groupPoint);
+    groups.push(points);
+  }
+
+  return Object.freeze(groups);
+};
+
+const analyzeState = async (topology: Topology, state: GameState) =>
+  new AssistedEndgameClassifier().analyze({
+    state,
+    topology,
+    groups: collectStoneGroups(topology, state),
+  });
+
+describe('AssistedEndgameClassifier automatic alive core', () => {
+  it('proves the deterministic two-eye fixture alive on Torus and Cube', async () => {
+    const lab = new EndgameTestLab();
+    const classifier = new AssistedEndgameClassifier();
+
+    for (const topology of [new TorusTopology(9), new CubeTopology(5)]) {
+      const fixture = lab.generate({
+        kind: 'life-death-pattern',
+        topology,
+        seed: '0.3.04-two-eyes',
+        pattern: 'two-eyes',
+      });
+      const result = await lab.analyze(fixture, classifier);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        status: 'alive',
+        source: 'automatic',
+        evidence: {
+          algorithm: 'benson-pass-alive-v1',
+          proof: 'two-vital-regions',
+        },
+      });
+      expect(result[0]?.evidence?.vitalRegions).toHaveLength(2);
+    }
+  });
+
+  it('keeps one-eye, false-eye and seki-like fixtures unresolved on both topologies', async () => {
+    const lab = new EndgameTestLab();
+    const classifier = new AssistedEndgameClassifier();
+
+    for (const topology of [new TorusTopology(9), new CubeTopology(5)]) {
+      const fixtures = [
+        lab.generate({
+          kind: 'life-death-pattern',
+          topology,
+          seed: '0.3.04-single-eye',
+          pattern: 'single-eye',
+        }),
+        lab.generate({
+          kind: 'life-death-pattern',
+          topology,
+          seed: '0.3.04-false-eye',
+          pattern: 'false-eye',
+        }),
+        lab.generate({
+          kind: 'seki-pattern',
+          topology,
+          seed: '0.3.04-shared-liberties',
+          pattern: 'shared-liberties',
+        }),
+      ];
+
+      for (const fixture of fixtures) {
+        const result = await lab.analyze(fixture, classifier);
+        expect(result.length).toBeGreaterThan(0);
+        expect(result.every((proposal) => proposal.status === 'unresolved')).toBe(true);
+      }
+    }
+  });
+
+  it('uses the actual Torus seams and Cube face graph in positive alive proofs', async () => {
+    const cases: readonly Readonly<{ topology: Topology; eyes: readonly PointId[] }>[] = [
+      Object.freeze({
+        topology: new TorusTopology(9),
+        eyes: Object.freeze(['0,0', '4,4']),
+      }),
+      Object.freeze({
+        topology: new CubeTopology(5),
+        eyes: Object.freeze(['front:2:2', 'back:2:2']),
+      }),
+    ];
+
+    for (const { topology, eyes } of cases) {
+      const eyeSet = new Set(eyes);
+      const state = makeState(topology, (point) => (eyeSet.has(point) ? 'empty' : 'black'));
+      const groups = collectStoneGroups(topology, state);
+
+      expect(groups).toHaveLength(1);
+      const result = await analyzeState(topology, state);
+      expect(result).toHaveLength(1);
+      expect(result[0]?.status).toBe('alive');
+      expect(result[0]?.source).toBe('automatic');
+      expect(result[0]?.evidence?.vitalRegions).toHaveLength(2);
+    }
+  });
+
+  it('runs the Benson fixed point until dependent eye regions and groups are eliminated', async () => {
+    const points = ['a', 'b', 'r1', 'r2'] as const;
+    const adjacency: Readonly<Record<string, readonly PointId[]>> = {
+      a: ['r1', 'r2'],
+      b: ['r2'],
+      r1: ['a'],
+      r2: ['a', 'b'],
+    };
+    const topology: Topology = {
+      id: 'benson-fixed-point-test',
+      points: () => points,
+      has: (point) => points.includes(point as (typeof points)[number]),
+      neighbors: (point) => adjacency[point] ?? [],
+    };
+    const state = makeState(topology, (point) => (point === 'a' || point === 'b' ? 'black' : 'empty'));
+
+    const result = await analyzeState(topology, state);
+
+    expect(result).toEqual([
+      { points: ['a'], status: 'unresolved' },
+      { points: ['b'], status: 'unresolved' },
+    ]);
+  });
+
+  it('refuses automatic proof for a partial stone-group analysis context', async () => {
+    const topology = new TorusTopology(9);
+    const state = makeState(topology, (point) =>
+      point === '0,0' || point === '4,4' ? 'black' : 'empty',
+    );
+
+    const result = await new AssistedEndgameClassifier().analyze({
+      state,
+      topology,
+      groups: Object.freeze([Object.freeze(['0,0'])]),
+    });
+
+    expect(result).toEqual([{ points: ['0,0'], status: 'unresolved' }]);
+  });
+});
