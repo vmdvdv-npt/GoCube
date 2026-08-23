@@ -3,6 +3,13 @@ name: Temporary Engine Test Case Cleanup
 on:
   push:
     branches: [engine-work10-remove-test-case-lab]
+  pull_request:
+    branches: [engine]
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: engine-testcase-cleanup
+  cancel-in-progress: true
 
 permissions:
   contents: write
