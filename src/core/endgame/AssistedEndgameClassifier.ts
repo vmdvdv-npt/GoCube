@@ -360,8 +360,10 @@ const collectSharedSemeaiPairs = (
  * both targets to seki; a stable semeai winner promotes only the losing target
  * to dead. A race winner is never promoted to alive. First-player dependence,
  * ko, boundary escape, budget exhaustion, cycles and incomplete paths stay
- * unresolved. The older closed-two-liberty seki certificate remains a strict
- * fallback for unresolved groups.
+ * unresolved. Once Work 7C is attempted for a pair, its fail-closed result is
+ * authoritative and the older structural seki certificate cannot override it.
+ * The legacy certificate remains a fallback only for pairs outside the Work 7C
+ * production candidate gate.
  */
 export class AssistedEndgameClassifier implements EndgameClassifier {
   private readonly manual = new ManualEndgameClassifier();
@@ -370,9 +372,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     const baseline = await this.manual.analyze(context);
     const graph = buildEndgameGraph(context.state.board, context.topology);
 
-    // Automatic proof is only sound when the requested analysis context
-    // describes every logical stone string on the board. A partial context
-    // remains safely unresolved, exactly as before the shared graph core.
     const complete =
       baseline.length === graph.strings.length &&
       baseline.every((proposal) => graph.stringsByKey.has(endgameGroupId(proposal.points)));
@@ -519,9 +518,13 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     const sharedPairs = collectSharedSemeaiPairs(graph, resolvedBeforeRaces);
 
     const basicSekiProofs = new Map<string, BasicSekiClassifierProof>();
+    const basicSekiAttemptedGroupKeys = new Set<string>();
     for (const pair of sharedPairs) {
       if (pair.sharedLiberties.length < 2) continue;
       if (basicSekiProofs.has(pair.left.key) || basicSekiProofs.has(pair.right.key)) continue;
+
+      basicSekiAttemptedGroupKeys.add(pair.left.key);
+      basicSekiAttemptedGroupKeys.add(pair.right.key);
       const result = analyzeBasicSeki(
         pair.left,
         pair.right,
@@ -569,15 +572,16 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
       semeaiDeadProofs.set(proof.loserGroupKey, proof.evidence);
     }
 
-    const alreadyResolvedGroupKeys = new Set<string>([
+    const legacySekiExcludedGroupKeys = new Set<string>([
       ...resolvedBeforeRaces,
+      ...basicSekiAttemptedGroupKeys,
       ...basicSekiProofs.keys(),
       ...semeaiDeadProofs.keys(),
     ]);
     const legacySekiProofs = new Map<string, AutomaticSekiProof>();
     for (const candidate of generateSekiCandidates(
       graph.stringsByKey,
-      alreadyResolvedGroupKeys,
+      legacySekiExcludedGroupKeys,
     )) {
       const verification = verifySekiCandidate(candidate, {
         state: context.state,
