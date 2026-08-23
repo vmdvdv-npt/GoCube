@@ -22,7 +22,7 @@ export interface SyntheticPlacement {
 
 export type LifeDeathPatternName = 'single-eye' | 'two-eyes' | 'false-eye' | 'atari-group';
 export type SekiPatternName = 'shared-liberties' | 'ambiguous-contact';
-export type StressPatternName = 'single-eye' | 'false-eye' | 'shared-liberties';
+export type StressPatternName = 'single-eye' | 'two-eyes' | 'false-eye' | 'shared-liberties';
 export type TopologyStressMode = 'torus-seam' | 'cube-edge' | 'cube-corner';
 
 interface BaseGeneratorMetadata {
