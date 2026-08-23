@@ -70,7 +70,7 @@ describe('TwoLibertyTacticalReader adversarial proof boundary', () => {
     expect(result?.outcome).toBe('ko-dependent');
   });
 
-  it('does not let a ko-dependent branch become dead even when every non-ko defense loses', () => {
+  it('remains unresolved, never dead, when a ko branch coexists with another unproven defense', () => {
     const topology = makeTopology({
       w: Object.freeze(['a', 'b']),
       a: Object.freeze(['w', 'q']),
@@ -88,8 +88,12 @@ describe('TwoLibertyTacticalReader adversarial proof boundary', () => {
     const first = readTwoLibertyTactics(state, topology, graph, endgameGroupId(['w']));
     const second = readTwoLibertyTactics(state, topology, graph, endgameGroupId(['w']));
 
-    expect(first?.defenderFirst.result).toBe('ko-dependent');
-    expect(first?.outcome).toBe('ko-dependent');
+    expect(first?.defenderFirst.lines).toContainEqual({
+      move: { kind: 'place', point: 'c' },
+      result: 'ko-dependent',
+    });
+    expect(first?.defenderFirst.result).toBe('unresolved');
+    expect(first?.outcome).toBe('unresolved');
     expect(second).toEqual(first);
   });
 });
