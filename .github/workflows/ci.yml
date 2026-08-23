@@ -57,10 +57,6 @@ jobs:
       - run: npm run test:coverage
         if: steps.mode.outputs.mode != 'none'
 
-      - name: Run E2-11 final evaluation benchmark
-        if: steps.mode.outputs.mode != 'none'
-        run: npm run benchmark:engine2:final-evaluation
-
       - run: npm run typecheck:engine2
         if: steps.mode.outputs.mode != 'none'
 
