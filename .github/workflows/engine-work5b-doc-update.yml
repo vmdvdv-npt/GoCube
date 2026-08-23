@@ -94,7 +94,7 @@ proof = miai-two-shared-liberties-to-benson
 
 Ko/history не используется как optimistic shortcut. Target response принимается только как non-capturing move в ранее пустой connector, поэтому такой ход не является restoring simple-ko recapture. Для defender synthetic check отсутствие historical ko restriction консервативно: потенциально исторически запрещённый block может быть рассмотрен как legal и только лишить proof, но не создать ложный automatic `alive`.
 
-Любой `maxPoints` overflow, whole-board localisation или другой `RelevanceZone` failure 그대로 распространяется как `unknown-boundary`.
+Любой `maxPoints` overflow, whole-board localisation или другой `RelevanceZone` failure как есть распространяется как `unknown-boundary`.
 
 ## 44.3. Classifier integration
 
@@ -164,3 +164,5 @@ Work 5B закрывает только простой доказанный Safe
           git rm .github/workflows/engine-work5b-doc-update.yml
           git commit -m "docs(engine): close Work 5B"
           git push origin HEAD:engine-work5b-safe-connection
+
+# Existing-workflow second push intentionally triggers this one-shot updater.
