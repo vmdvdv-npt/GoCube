@@ -1358,11 +1358,11 @@ Acceptance закрыт:
 
 Итог Work 6A зафиксирован в разделе 46.
 
-## Work 6B — Local Life/Death Proofs
+## Work 6B — Local Life/Death Proofs — CLOSED 2026-08-23
 
-Поверх готового search core подключить Go-specific local proof semantics внутри bounded Relevance Zone.
+Поверх готового search core подключена Go-specific local proof semantics внутри bounded Relevance Zone.
 
-Acceptance:
+Acceptance закрыт:
 
 - реальные complete-enough attack/defense move sets внутри certified zone;
 - оба порядка первого хода;
@@ -1370,7 +1370,10 @@ Acceptance:
 - первые small enclosed life/death / nakade-like cases;
 - любой непросмотренный релевантный defense запрещает false `dead`;
 - timeout/budget exhaustion запрещает false `alive`;
-- boundary/ko/uncertain semantics fail closed.
+- boundary/ko/uncertain semantics fail closed;
+- classifier integration намеренно не добавлена и остаётся scope Work 6C.
+
+Итог Work 6B зафиксирован в разделе 47.
 
 ## Work 6C — Hardening + classifier integration
 
@@ -2391,7 +2394,7 @@ simple-cut-v1 != PROVEN_DEAD
 - Safe Connection не создаёт transitive Benson anchors;
 - cut fact не подменяет full life/death proof.
 
-**Work 6A закрыт в разделе 46; следующий этап — Work 6B: Local Life/Death Proofs.**
+**Work 6A закрыт в разделе 46; Work 6B закрыт в разделе 47; следующий этап — Work 6C: Hardening + classifier integration.**
 
 ---
 
@@ -2528,4 +2531,114 @@ Work 6A намеренно не решает ни одного реальног�
 - deterministic proof trace;
 - fail-closed cycles/incomplete branches.
 
-**Следующий этап — Work 6B: Local Life/Death Proofs.**
+**Work 6B закрыт в разделе 47; следующий этап — Work 6C: Hardening + classifier integration.**
+
+---
+
+# 47. Work 6B — Local Life/Death Proofs: финальный результат
+
+Срез на **2026-08-23**. **Work 6B закрыт.** Добавлен `LocalLifeDeathReader`, который связывает generic Work 6A AND/OR core с authoritative Go transitions внутри Work 5A bounded `RelevanceZone`. Classifier integration этим этапом намеренно не добавлялась.
+
+## 47.1. Local proof contract
+
+Search запускается только если исходная target group имеет certified bounded `RelevanceZone`. Исходные target stones фиксируются как `crucialStones`, поэтому target identity сохраняется через friendly merges и defender extensions.
+
+Для каждой позиции:
+
+```text
+attacker to move = OR
+  достаточно одного proved-dead continuation
+
+defender to move = AND
+  dead доказан только если каждый legal relevant continuation proved-dead
+```
+
+Move generation complete-enough внутри certified scope:
+
+- перебираются все empty points исходной bounded zone;
+- legality, capture, suicide и simple-ko transition выполняются только через `GameEngine.placeStone()`;
+- child ordering deterministic и не влияет на proof semantics;
+- отдельная `tenuki` branch моделирует local pass или ход вне certified zone, который не меняет local occupancy по Work 5A locality certificate;
+- если после local transition актуальная dependency zone перестаёт быть bounded subset исходной certified zone, continuation становится explicit `unknown-boundary`, а не silently omitted move.
+
+Terminal facts:
+
+```text
+all original crucial target stones captured -> proved-dead objective
+current target group Benson/pass-alive       -> proved-alive / refuted kill
+```
+
+Benson здесь является proof terminal, а не новым transitive boundary rule. Failure to reach Benson не считается proof death, а failure to find capture не считается proof life.
+
+## 47.2. First-player orders and fail-closed semantics
+
+Reader всегда решает две постановки отдельно:
+
+```text
+attacker-first
+defender-first
+```
+
+Overall result:
+
+```text
+both proved-dead  -> proved-dead
+both proved-alive -> proved-alive
+anything else     -> unknown
+```
+
+Таким образом defender-first AND branch не может породить `dead`, пока существует хотя бы одна legal defense, которая не доказана проигрывающей. Work 6A incomplete semantics дополнительно гарантирует, что explicit unknown branch не подменяется отсутствующим child.
+
+Ko не используется как optimistic proof. Если legal local move создаёт immediate simple-ko restoration, проверяемую через authoritative repetition semantics, continuation становится `ko-dependent`. Global ko-threat solving в Work 6B не выполняется.
+
+Resource semantics:
+
+- deterministic `maxNodes` применяется отдельно к каждому first-player search; current default `10_000`;
+- exact exhaustion -> `unknown-budget`;
+- Work 5A `maxZonePoints` current default `96`;
+- unbounded/global/stale localisation -> `unknown-boundary` до search;
+- unresolved cycle/incomplete branch остаются соответствующим `unknown`;
+- timeout/budget никогда не преобразуется в `proved-alive`, а boundary/ko uncertainty никогда не преобразуется в `proved-dead`.
+
+Transposition key включает исходный local certificate, mover, local occupancy и ko-context, чтобы resolved-only Work 6A TT не смешивал позиции с различной future legality.
+
+## 47.3. Regression / acceptance coverage
+
+`LocalLifeDeathReader.test.ts` содержит шесть targeted deterministic tests:
+
+1. маленькая enclosed two-point false-eye / nakade-like target доказывается `dead` и при attacker-first, и при defender-first;
+2. уже Benson/pass-alive target является доказанным survival terminal в обоих orders;
+3. defender move, соединяющий target с Benson-alive friendly group, реально присутствует в generated tree и запрещает ложный overall `dead`;
+4. `maxNodes = 0` даёт `unknown-budget`, а не ложный `alive` даже для позиции с доступным alive terminal;
+5. unbounded Relevance Zone fail closed до search как `unknown-boundary`;
+6. immediate capture, создающий simple ko, остаётся `ko-dependent`/overall `unknown`.
+
+Эти tests намеренно являются первым малым 6B corpus. Standard tsumego subset, adversarial breadth, far-away proof invariance, dedicated proof-trace determinism/performance regressions и classifier integration остаются Work 6C.
+
+## 47.4. Validation boundary
+
+Code-head `fea58f917378b4af6099467ed41d0c301558064e` на PR #165 прошёл standard CI run #759:
+
+- lint — pass, только два существующих non-blocking warnings вне Work 6B scope;
+- typecheck — pass;
+- unit/coverage — **574/574 tests pass**;
+- `LocalLifeDeathReader.test.ts` — **6/6 pass**;
+- build — pass;
+- Chromium Playwright — **72/72 pass**.
+
+Work 6B не запрашивал Full CI; multi-browser hardening относится к отдельному acceptance scope, если будет явно выбран для Work 6C/final release gate. Final documentation head должен пройти новый standard PR CI перед merge.
+
+## 47.5. Closure
+
+Work 6B закрывает первый настоящий bounded local life/death proof layer:
+
+- Go transitions authoritative через project `GameEngine`;
+- bounded locality authoritative через Work 5A `RelevanceZone`;
+- generic search semantics остаются Work 6A `AndOrSearchCore`;
+- local legal placements и pass/tenuki представлены явно;
+- оба first-player orders обязательны для final `proved-dead`/`proved-alive`;
+- capture и Benson/pass-alive являются текущими proof terminals;
+- ko, boundary, budget, cycle и incomplete uncertainty fail closed;
+- ни один Work 6B result пока не подключён к automatic classifier.
+
+**Следующий этап — Work 6C: Hardening + classifier integration.**
