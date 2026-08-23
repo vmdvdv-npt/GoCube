@@ -1,18 +1,35 @@
 .live-test-generator-controls {
   grid-column: 1 / -1;
-  display: grid;
-  gap: 8px;
-  padding: 10px;
+  min-width: 0;
   border: 1px solid rgb(214 153 59 / 18%);
   border-radius: 10px;
   background: rgb(6 14 21 / 82%);
+  overflow: hidden;
 }
 
-.live-test-generator-controls > strong {
+.live-test-generator-controls > summary {
+  min-height: 32px;
+  padding: 8px 10px;
   color: #d79a3b;
+  cursor: pointer;
   font-size: 10px;
+  font-weight: 800;
   letter-spacing: 0.08em;
+  line-height: 1.4;
   text-transform: uppercase;
+}
+
+.live-test-generator-controls > summary::marker {
+  color: #9da7b0;
+}
+
+.live-test-generator-body {
+  display: grid;
+  gap: 8px;
+  max-height: 128px;
+  padding: 0 10px 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .live-test-generator-actions {
@@ -83,14 +100,4 @@
   color: #d98b8b;
   font-size: 9px;
   letter-spacing: 0.05em;
-}
-
-/* The developer section precedes Pass in DOM order, so preserve Pass's normal accent explicitly. */
-.game-controls > .pass-control {
-  border-color: rgb(219 146 48 / 45%);
-  background: linear-gradient(180deg, #9b5c18, #6e3d0d);
-  color: #fff5e7;
-  box-shadow:
-    inset 0 1px 0 rgb(255 219 154 / 18%),
-    0 0 18px rgb(211 132 35 / 10%);
 }
