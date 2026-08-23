@@ -361,7 +361,7 @@ describe('TerritoryResolver Work 8C hardening + differential', () => {
       { points: ['seki-node'], status: 'seki' },
       { points: ['captured'], status: 'dead' },
     ]);
-    const reverseRename = new Map(
+    const reverseRename = new Map<string, string>(
       Object.entries(rename).map(([source, target]) => [target, source] as const),
     );
 
