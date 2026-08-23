@@ -73,7 +73,7 @@ Go adapter / 3–4 liberty reading
   ↓
 Exact small eye-space
   ↓
-Connections / ladder / net / snapback / sacrifice
+Connections / cuts / ladder / net / snapback / sacrifice / preparation
   ↓
 Semeai / seki proof
   ↓
@@ -862,11 +862,113 @@ E2-7 не интегрирован в `AssistedEndgameClassifier` и не про
 
 ---
 
-# 15. Future stages
+# 15. E2-8 — connections / tactical extensions
 
-## E2-8 — connections / tactical extensions
+Статус: **DONE / CONTRACT-TESTED / BENCHMARKED / CI PASS / NOT CLASSIFIER-INTEGRATED**.
 
-Forced connection, cut, counter-capture, ladder, net, snapback, sacrifice, preparation moves. `potential connection != proven connection`.
+```text
+src/core/endgame/TacticalExtensionProofSearchGoAdapter.ts
+algorithm = endgame-go-tactical-extension-adapter-v1
+move generation boundary = e2-8-tactical-candidates-are-not-proof-complete
+unknown-root ko boundary = e2-8-tactical-unknown-root-ko-branch
+pass-alive terminal = e2-8-target-pass-alive
+```
+
+E2-8 расширяет существующий E2-6/E2-5 proof adapter graph-native tactical candidates для:
+
+```text
+connection
+cut
+counter-capture
+ladder-step
+net-step
+snapback
+sacrifice
+preparation
+```
+
+Каждый placement, reply и recapture проходит общий authoritative `transitionEndgameProofSearchMove` / `GameEngine`; renderer geometry и rectangular/Cube-face assumptions не используются.
+
+### Proof boundary
+
+Главный invariant сохраняется: **tactical candidate != fate proof**.
+
+- `connection` распознаётся только когда legal placement действительно объединяет две или более pre-move friendly strings в post-state;
+- само наличие или выполнение connection не доказывает survival;
+- `proven-survival` добавлен только для surviving target, который после authoritative transition реально удовлетворяет Benson/pass-alive fixed point;
+- `cut` — legal play на opponent friendly-connection point, но не самостоятельный kill proof;
+- `counter-capture` фиксируется только по фактически удалённым opponent stones в authoritative board transition;
+- `ladder-step` означает только exact liberty pressure `2 -> 1`; это candidate/ordering evidence, а не полный ladder theorem;
+- `net-step` означает только exact liberty pressure `>=3 -> 2`; это candidate/ordering evidence, а не полный net theorem;
+- `snapback` требует exact legal local sequence `sacrifice -> opponent capture -> legal recapture capturing >=2`, но сама последовательность остаётся candidate evidence, пока AND/OR search не докажет fate;
+- `sacrifice` помечается только для legal tactical placement, чья played string остаётся с одной liberty;
+- `preparation` включает direct target-liberty reduction выше 4 liberties и one-wave graph-native tactical preparation around target liberties, connection points и low-lib strings.
+
+Для nodes, где E2-5/E2-6 defender expansion уже `complete`, E2-8 возвращает его **без изменения**. Для остальных nodes tactical candidates добавляются к базовому набору, но resulting move set остаётся explicit `incomplete(...)`; поэтому расширение может дать existential attacker kill или defender survival, но не создаёт ложное universal conclusion.
+
+Unknown-history root simple-ko-shaped tactical placement не создаёт child, записывается как ko-dependent boundary и не усиливает proof authority.
+
+### Contract coverage
+
+13 E2-8 tests фиксируют:
+
+- authoritative immediate friendly connection;
+- cut candidate;
+- actual counter-capture;
+- exact ladder pressure `2 -> 1`;
+- exact net pressure `3+ -> 2`;
+- legal three-ply snapback + sacrifice sequence;
+- preparation `5 liberties -> 4 liberties` с передачей в существующий E2-6 layer;
+- connection -> `proven-survival` только после actual Benson/pass-alive target;
+- byte-for-byte preservation complete exact-4-lib defender expansion;
+- unknown-root simple-ko fail-closed;
+- Torus seam connection;
+- Cube face-edge connection;
+- deterministic repeated analysis.
+
+Classifier integration в E2-8 отсутствует.
+
+### E2-8 performance gate
+
+```text
+src/core/endgame/TacticalExtensionProofSearchGoAdapter.benchmark.test.ts
+npm run benchmark:engine2:tactical
+```
+
+Benchmark использует реальные Torus/Cube topologies, 8 legal empty tactical/preparation points, 2 warmups + 20 samples, deterministic candidate/ko/reason assertions. Gross-regression ceilings: `p95 <= 250 ms`, `max <= 1000 ms`.
+
+CI #805 benchmark results:
+
+| Case | Points | Examined empty | Candidates | p95 ms | max ms |
+|---|---:|---:|---:|---:|---:|
+| Torus 9×9 | 81 | 8 | 8 | 7.479 | 7.676 |
+| Torus 13×13 | 169 | 8 | 8 | 6.567 | 6.624 |
+| Torus 19×19 | 361 | 8 | 8 | 14.960 | 15.148 |
+| Cube 2×2 | 24 | 8 | 8 | 3.422 | 3.598 |
+| Cube 4×4 | 96 | 8 | 8 | 5.675 | 5.906 |
+| Cube 5×5 | 150 | 8 | 8 | 7.971 | 8.725 |
+| Cube 7×7 | 294 | 8 | 8 | 15.158 | 15.277 |
+
+Worst observed p95 = `15.158 ms`; worst max = `15.277 ms`.
+
+Validation — CI #805:
+
+```text
+new E2-8 contract tests: 13/13 PASS
+tactical benchmark cases: 7/7 PASS
+full unit/coverage: 595 passed, 70 opt-in benchmark cases skipped
+typecheck:engine2 PASS
+build:engine2 PASS
+Chromium E2E: 72/72 PASS
+```
+
+Temporary E2-8 benchmark CI step после измерения должен быть удалён перед merge; `benchmark:engine2:tactical` остаётся opt-in и воспроизводимым.
+
+**E2-8 acceptance boundary закрыт. Следующий этап: E2-9 — semeai / seki proof.**
+
+---
+
+# 16. Future stages
 
 ## E2-9 — semeai / seki
 
@@ -891,7 +993,7 @@ Adversarial corpus + final evaluation.
 
 ---
 
-# 16. CI / validation policy
+# 17. CI / validation policy
 
 Current foundation:
 
@@ -907,9 +1009,11 @@ Current foundation:
 - exact 3-lib attacker generation + complete defender enumeration validated;
 - exact 4-lib attacker generation + complete defender enumeration validated;
 - exact small eye-space bounds/vital-point analysis validated on strict regions;
+- graph-native connection/cut/counter-capture/ladder/net/snapback/sacrifice/preparation candidates validated;
+- connection survival authority is limited to actual Benson/pass-alive after authoritative transition;
 - shared/friendly-shared/oversized/ko/budget eye-space boundaries remain explicit incomplete;
-- generic move generation outside exact 3/4 liberties remains explicitly incomplete;
-- no generic or E2-7 classifier integration.
+- tactical augmentation outside already-complete 3/4-lib defender sets remains explicit incomplete;
+- no generic, E2-7 or E2-8 classifier integration.
 
 Scoped typecheck:
 
@@ -931,7 +1035,7 @@ Benchmarks are opt-in; temporary CI benchmark steps must be removed before merge
 
 ---
 
-# 17. Metrics
+# 18. Metrics
 
 Track false automatic statuses, precision/coverage, median/p95/max nodes/runtime, budget/ko/boundary unresolved counts, root/deep move counts, causal cone size, PV/max depth, implementation complexity, dependency/license surface, maintainability, Cube/Torus graph consistency.
 
@@ -943,13 +1047,13 @@ cost third
 
 ---
 
-# 18. External references
+# 19. External references
 
 GNU Go / tsumego.js / Darkforest / research solvers / KataGo may be used for architecture ideas, regression, benchmark, differential oracle or diagnostics subject to licenses. Они не являются production proof authority; GPL implementation code не копируется.
 
 ---
 
-# 19. Roadmap
+# 20. Roadmap
 
 ```text
 E2-1   DONE — Graph Core
@@ -965,13 +1069,13 @@ E2-4c  DONE — generic differential/performance gate
 E2-5   DONE — exact 3-lib move generation + defender completeness + benchmark
 E2-6   DONE — exact 4-lib move generation + defender completeness + benchmark
 E2-7   DONE — exact small eye-space + bounds/vital points + benchmark
-E2-8   NEXT — connections / snapback / ladder / net / sacrifice
-E2-9   semeai / seki proof
+E2-8   DONE — connections / cuts / ladder-net pressure / snapback / sacrifice / preparation + benchmark
+E2-9   NEXT — semeai / seki proof
 E2-10  transpositions + performance optimization
 E2-11  adversarial corpus + final evaluation
 ```
 
-E2-4/E2-7 overall acceptance boundary:
+E2-4/E2-8 overall acceptance boundary:
 
 1. attacker OR / defender AND explicit;
 2. every proof node deterministic and budgeted;
@@ -986,6 +1090,10 @@ E2-4/E2-7 overall acceptance boundary:
 11. exact small eye-space authority is limited to strict target-only connected regions inside the explicit size/budget boundary;
 12. shared/friendly-shared/oversized regions and ko/cycle/budget/non-local uncertainty remain incomplete conservative bounds;
 13. eye-space bounds/vital points do not themselves produce `alive`, `dead` or `seki` and are not classifier-integrated;
-14. no generic classifier integration before later generic coverage and acceptance gates.
+14. E2-8 tactical labels are candidate evidence, not fate proofs;
+15. connection produces survival authority only after the resulting target is actually Benson/pass-alive;
+16. ladder/net labels encode exact liberty-pressure transitions, not a complete global ladder/net theorem;
+17. tactical augmentation never upgrades an incomplete move set to complete, and unknown-root ko remains fail-closed;
+18. no generic classifier integration before later generic coverage and acceptance gates.
 
 > Engine 2 автоматически ставит `alive`, `dead` или `seki` только там, где может предъявить законченное доказательство. Во всех остальных случаях правильный результат — `UNRESOLVED`.
