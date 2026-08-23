@@ -1,0 +1,64 @@
+name: Temporary Endgame Documentation Patch
+
+on:
+  push:
+    branches:
+      - ui/endgame-contextual-status-controls
+
+permissions:
+  contents: write
+
+jobs:
+  patch-documentation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Update canonical Endgame Review behavior and remove this workflow
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('docs/GAME_CUBE_GO.md')
+          text = path.read_text(encoding='utf-8')
+          old = '''## 9.1. Выбор и ручная классификация группы
+
+- При наведении подсвечивается вся logical group, а не отдельный камень.
+- Click по **любому** камню группы выбирает всю группу.
+- Click работает независимо от текущего происхождения статуса: unresolved, automatic proposal или ранее установленное пользователем решение остаются интерактивными до завершения review.
+- Для выбранной группы показываются три действия: `Alive`, `Dead`, `Seki`.
+- Пользователь может повторно менять статус сколько угодно раз до явного завершения scoring review.
+- Пользовательский выбор перекрывает automatic proposal этой группы.
+'''
+          new = '''## 9.1. Выбор и ручная классификация группы
+
+- При наведении подсвечивается вся logical group, а не отдельный камень.
+- Click по **любому** камню группы выбирает всю группу.
+- Click работает независимо от текущего происхождения статуса: unresolved, automatic proposal или ранее установленное пользователем решение остаются интерактивными до завершения review.
+- После click рядом с выбранной logical group непосредственно над игровой областью показывается ровно один компактный floating control с действиями `Alive`, `Dead`, `Seki`; эти три кнопки располагаются вертикально одна под другой и относятся только к текущей выбранной группе.
+- Group-local `Alive` / `Dead` / `Seki` не занимают постоянное место в общей левой панели. В ней остаются только общая информация review и global actions, включая `Finish scoring`.
+- Floating control привязан к видимому bounding box всей выбранной logical group, а не к clicked stone. Предпочтительное положение — над группой, по её горизонтальному центру и с небольшим зазором от stones/contour. Если сверху места недостаточно, используются в порядке пригодности положение снизу, слева или справа.
+- Control целиком удерживается внутри доступной игровой области и viewport. Он не должен уходить за край экрана или становиться недоступным из-за близости группы к краю.
+- Для группы любой формы, включая logical group через Torus seam или реальные Cube topology edges, существует только один selection и один floating control: control не дублируется возле отдельных stones/copies и не разбивается на несколько частей.
+- При выборе другой группы прежняя spatial привязка заменяется новой; одновременно отображается не более одного такого control. Повторный click по уже выбранной группе сохраняет привязку к ней.
+- Текущий статус выбранной группы показывается selected-state соответствующей кнопки. Semantic color основной group annotation остаётся главным обозначением `Alive` / `Dead` / `Seki`; сами кнопки не превращаются в крупные semantic-color панели.
+- Floating control находится выше renderer layer и принимает pointer events как screen-space UI. Click по его кнопке выполняет только классификацию: не ставит stone, не меняет board selection, не запускает pan/navigation и не должен просачиваться в игровую область под control.
+- После выбора `Alive`, `Dead` или `Seki` control остаётся доступным у той же группы, чтобы решение можно было немедленно изменить повторно.
+- При zoom, pan, Torus navigation, Cube 2D navigation/rebuild и переносе Cube TOP/BOTTOM pair экранная позиция control пересчитывается по новому положению выбранной группы. Control не застывает в старой screen position.
+- Размер control и его кнопок остаётся удобной screen-space величиной и не масштабируется вместе с zoom доски.
+- Появление control допускает короткий ненавязчивый fade/translate; смена выбранной группы не должна создавать длинную очередь animations.
+- Пользователь может повторно менять статус сколько угодно раз до явного завершения scoring review.
+- Пользовательский выбор перекрывает automatic proposal этой группы.
+'''
+          if old not in text:
+              raise SystemExit('Canonical Endgame Review block was not found exactly; refusing partial documentation edit.')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          Path('.github/workflows/tmp-endgame-doc-patch.yml').unlink()
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/GAME_CUBE_GO.md .github/workflows/tmp-endgame-doc-patch.yml
+          git commit -m "Document contextual endgame group controls"
+          git push
