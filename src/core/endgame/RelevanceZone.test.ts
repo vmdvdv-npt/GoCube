@@ -111,6 +111,29 @@ describe('RelevanceZone', () => {
     expect(changedZone).toEqual(originalZone);
   });
 
+  it('expands through direct opponent contact instead of treating touching stones as a boundary', () => {
+    const topology = new GraphTopology('relevance-direct-contact', [
+      ['t', 'local'],
+      ['t', 'enemy'],
+      ['enemy', 'outside'],
+      ['outside', 'far'],
+    ]);
+    const board = makeBoard(topology, {
+      t: 'white',
+      enemy: 'black',
+    });
+    const target = targetAt(board, topology, 't');
+
+    const zone = buildRelevanceZone(target, board, topology);
+
+    expect(zone.stringKeys).toEqual([
+      targetAt(board, topology, 'enemy').key,
+      target.key,
+    ].sort());
+    expect(zone.outcome).toBe('unknown-boundary');
+    expect(zone.reason).toBe('localisation-covers-whole-board');
+  });
+
   it('fails closed with unknown-boundary when dependency closure consumes the whole board', () => {
     const topology = new GraphTopology('relevance-open', [
       ['t', 'a'],
