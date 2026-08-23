@@ -1297,15 +1297,40 @@ Acceptance закрыт:
 
 Итог Work 4 и ko hardening зафиксированы в разделе 42.
 
-## Work 5 — Relevance Zone + Connection
+## Work 5A — Relevance Zone Core — CLOSED 2026-08-23
 
-Доказанно локализовать problems и решать forced safe connection/cut.
+Только доказанная локализация problem, без connection/cut proof.
+
+Acceptance закрыт:
+
+- topology-neutral dependency closure включает target, complete unresolved strings, direct tactical stone contacts и complete ordinary empty regions, reachable через liberties;
+- Benson/pass-alive strings используются как текущая доказанная boundary: их stones включаются в zone, но expansion не продолжается через их внешние liberties/contacts;
+- irrelevant occupancy change за неизменившейся safe boundary сохраняет **весь** bounded `RelevanceZoneResult`, включая `localPositionKey`;
+- whole-board closure, deterministic point-budget overflow и target identity mismatch возвращают `unknown-boundary`;
+- classifier/TacticalReader proof semantics этим этапом не расширялись.
+
+Итог Work 5A зафиксирован в разделе 43.
+
+## Work 5B — Safe Connection
+
+На готовой bounded Relevance Zone доказать простой forced connection к Benson-alive group. Не включать сложные cut/fight варианты.
 
 Acceptance:
 
-- same result under irrelevant outside-board changes;
-- correct `UNKNOWN_BOUNDARY` when localisation fails;
-- safe connection to Benson-alive group.
+- safe connection to Benson-alive group;
+- defender completeness в разрешённом bounded scope;
+- ko/budget/boundary uncertainty не повышается до automatic `alive`.
+
+## Work 5C — Cut + hardening
+
+Добавить только простые доказанные разрезания, негативные случаи и regression/acceptance. После Work 5C закрыть исходный Work 5 целиком.
+
+Acceptance:
+
+- простые proven cuts;
+- negative connection/cut cases;
+- regression на false proof и boundary escape;
+- финальный Work 5 acceptance поверх 5A + 5B + 5C.
 
 ## Work 6 — Full Local Life/Death Search
 
@@ -1402,7 +1427,7 @@ failure to prove relevance boundary
 small eye-space -> dead
 surrounded visually -> dead
 ownership 90% -> dead
-search did not find escape -> dead
+search did not find escape -> alive
 search did not find kill -> alive
 ```
 
@@ -1424,7 +1449,7 @@ search did not find kill -> alive
 
 1. Нужен ли production df-pn или DFS + strong relevance/move ordering достаточно?
 2. Какой exact representation использовать для `AnalysisPosition`?
-3. Как formalize `ConflictRegion` и `RelevanceZone` API?
+3. Как formalize richer multi-group `ConflictRegion` / `RelevanceZone` API поверх принятой Work 5A single-target conservative closure?
 4. Нужно ли отдельное `EndgameAdjudicationPolicy` или достаточно текущего classifier contract?
 5. Какие raw outcomes хранить: `critical`, `ko-dependent`, multiple proof strengths?
 6. Какой node budget приемлем для browser runtime на 19x19 Torus?
@@ -2009,4 +2034,125 @@ Work 4 закрывает первый production tactical layer:
 - classifier сохраняет положительный non-ko automatic tactical-dead path;
 - Work 5 relevance-zone/connection semantics намеренно не введены преждевременно.
 
-**Следующий этап — Work 5: Relevance Zone + Connection.**
+**Work 5 продолжен как отдельные Work 5A / 5B / 5C; Work 5A закрыт в разделе 43.**
+
+---
+
+# 43. Work 5A — Relevance Zone Core: финальный результат
+
+Срез на **2026-08-23**. **Work 5A закрыт.** Реализован первый topology-neutral localisation layer. Он только строит и сертифицирует локальную область задачи; Safe Connection и Cut proof намеренно не входят в этот этап.
+
+## 43.1. Production localisation boundary
+
+`RelevanceZone` строится поверх существующих `EndgameGraphCore` и hardened `BensonPassAlive`, без второй Board/group implementation и без renderer geometry.
+
+Для single-target Work 5A dependency closure работает консервативно:
+
+1. начинает с полной target string;
+2. для каждой non-safe string включает все её stones;
+3. включает **direct tactical stone contacts** через `Topology.neighbors()` — в частности, непосредственно соприкасающуюся opposing string нельзя потерять только потому, что между группами нет empty point;
+4. из liberties string переходит в соответствующие ordinary `EndgameGraphCore.emptyRegions` и включает region целиком;
+5. из полного empty region включает все его boundary strings;
+6. повторяет expansion до closure;
+7. Benson/pass-alive string считается текущей доказанной separator boundary: её stones входят в zone, но expansion не продолжается через её внешние liberties или внешние tactical contacts.
+
+Таким образом Work 5A не пытается угадать arbitrary fixed radius. Зона выводится из graph dependencies и proven-safe separators.
+
+Текущий deterministic safety budget:
+
+```text
+maxPoints = 96 by default
+```
+
+Это engineering safety limit текущего Work 5A, а не окончательный browser-performance contract; будущая настройка остаётся benchmark-driven.
+
+Если closure:
+
+- превышает `maxPoints`;
+- охватывает весь logical topology graph, то есть фактически перестаёт быть локальной;
+- или supplied target identity больше не соответствует board snapshot,
+
+результат только:
+
+```text
+outcome = unknown-boundary
+```
+
+Ни один такой case не превращается в `alive`, `dead` или `seki`.
+
+## 43.2. Outside-invariance certificate
+
+Для bounded zone возвращается `localPositionKey`:
+
+```text
+topology.id
++ targetGroupKey
++ occupancy всех zone points
++ boundarySafeGroupKeys
+```
+
+Outside occupancy намеренно не входит в этот key.
+
+Главный Work 5A metamorphic invariant проверяется сильнее, чем простым сравнением enum: если occupancy меняется далеко за доказанной и **не изменившейся** Benson-safe boundary, builder должен вернуть exact тот же bounded `RelevanceZoneResult`, включая:
+
+- `points`;
+- `stringKeys`;
+- `emptyRegionKeys`;
+- `boundarySafeGroupKeys`;
+- `localPositionKey`.
+
+Важно различать действительно irrelevant outside change и изменение самого proof boundary. Если внешний ход меняет Benson/pass-alive certificate boundary group, такое изменение больше не считается доказанно irrelevant: zone разрешено расширить или вернуть `unknown-boundary`. Work 5A не утверждает независимость от изменений, которые разрушают собственную локализационную предпосылку.
+
+## 43.3. Regression coverage
+
+Добавлен deterministic arbitrary-graph corpus, который проверяет именно topology semantics, а не rectangular coordinates:
+
+1. bounded local problem, закрытый Benson-alive string;
+2. exact equality bounded result после far-away occupancy mutation за той же safe boundary;
+3. direct opponent contact входит в closure и не становится ложной границей;
+4. open dependency chain, которая охватывает весь topology graph, -> `unknown-boundary`;
+5. deterministic `maxPoints` overflow -> `unknown-boundary`;
+6. stale/mismatching target identity -> `unknown-boundary`.
+
+Прямой contact regression добавлен отдельно после проверки design: closure только через empty regions была бы неполной для двух непосредственно соприкасающихся strings и могла бы ложно объявить boundary раньше реального tactical interaction.
+
+## 43.4. Integration boundary
+
+Work 5A намеренно **не** подключает новый result к automatic classifier и не меняет Work 4 Tactical Reader outcome semantics.
+
+На этом этапе `RelevanceZone` является подготовительным correctness primitive для следующих readers:
+
+```text
+bounded zone
+  -> Work 5B Safe Connection
+  -> Work 5C simple Cut / hardening
+  -> later local L&D search
+```
+
+Поэтому Work 5A сам не создаёт новый proof вида `PROVEN_ALIVE` или `PROVEN_DEAD`. Если локализация не доказана, consumer обязан fail closed через `UNKNOWN_BOUNDARY`/unresolved semantics.
+
+## 43.5. Validation
+
+Code-head `cfe84fc40452fd69d50d693863d086ddbb3f3535` на PR #156 прошёл CI run #722 полностью:
+
+- lint — pass;
+- typecheck — pass;
+- unit/coverage — pass;
+- build — pass;
+- Playwright E2E — pass.
+
+Final documentation head должен пройти новый полный PR CI перед acceptance Work 5A.
+
+## 43.6. Closure
+
+Work 5A закрывает только localisation foundation:
+
+- dependency closure topology-neutral;
+- direct stone contacts не теряются;
+- Benson-alive groups используются как доказанные separators;
+- far-away occupancy за неизменившейся safe boundary не меняет bounded result;
+- open/global/budget/stale-target cases fail closed как `unknown-boundary`;
+- user-facing classification не расширена;
+- Safe Connection и Cut остаются отдельными следующими этапами.
+
+**Следующий этап — Work 5B: Safe Connection.**
