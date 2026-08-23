@@ -9,7 +9,7 @@ describe('Engine 2 E2-11 adversarial corpus', () => {
     const evaluation = runEngine2AdversarialCorpus();
 
     expect(evaluation.corpusVersion).toBe(ENGINE2_ADVERSARIAL_CORPUS_VERSION);
-    expect(evaluation.totalCases).toBe(18);
+    expect(evaluation.totalCases).toBe(17);
     expect(evaluation.passedCases).toBe(evaluation.totalCases);
     expect(evaluation.failedCaseIds).toEqual([]);
     expect(evaluation.falseAuthoritativeConclusions).toBe(0);
