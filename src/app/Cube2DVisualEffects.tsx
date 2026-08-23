@@ -50,13 +50,10 @@ type GroupShape = Pick<EndgameGroupPresentation, 'points' | 'edges'>;
 const pointMap = <T extends { readonly pointId: PointId }>(points: readonly T[]) =>
   new Map(points.map((point) => [point.pointId, point]));
 
-const contourColor = (
-  status: GroupStatus | null,
-  stoneColor: 'black' | 'white',
-): string => {
+const contourColor = (status: GroupStatus | null): string => {
   if (status === 'dead') return '#e52b2b';
   if (status === 'seki') return '#80878f';
-  if (status === 'alive') return stoneColor === 'black' ? '#111111' : '#ffffff';
+  if (status === 'alive') return '#ffffff';
   return '#a8e85e';
 };
 
@@ -205,7 +202,7 @@ export function Cube2DVisualEffects({
                 const status = group.status;
                 const selected = selectedGroupId === group.id;
                 const hovered = hoveredGroupId === group.id;
-                const color = contourColor(status, group.color);
+                const color = contourColor(status);
                 const filterId = `cube-endgame-outline-${board.face}-${groupIndex}`;
                 const outlineRadius = selected ? 1.7 : hovered ? 1.45 : 1.2;
                 const shape = groupShape(group, pointsById, contentScale, contourRadius);
