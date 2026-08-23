@@ -38,13 +38,10 @@ const setAttributes = (
   for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
 };
 
-const contourColor = (
-  status: string | null,
-  groupColor: 'black' | 'white',
-): string => {
+const contourColor = (status: string | null): string => {
   if (status === 'dead') return '#e52b2b';
   if (status === 'seki') return '#80878f';
-  if (status === 'alive') return groupColor === 'black' ? '#111111' : '#ffffff';
+  if (status === 'alive') return '#ffffff';
   return '#a8e85e';
 };
 
@@ -271,7 +268,7 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
         const status = group.status === 'unknown' ? null : group.status;
         const selected = overlay.selectedGroupId === group.id;
         const hovered = overlay.hoveredGroupId === group.id;
-        const color = contourColor(status, group.color);
+        const color = contourColor(status);
         const filterId = `torus-endgame-outline-${index}`;
         const outlineRadius = selected ? 5.2 : hovered ? 4.4 : 3.7;
 
