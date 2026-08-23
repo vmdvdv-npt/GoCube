@@ -43,7 +43,7 @@
 
 Версия **0.2 Cube 2D завершена и принята** по границе `0.2 integration / regression acceptance`.
 
-Активная разрабатываемая версия — **0.3 Automatic/Assisted alive-dead-seki**. Checkpoints **0.3.01 Library/Reuse Review и contract alignment**, **0.3.02 Deterministic Endgame Test Lab**, **0.3.03 Differential Oracles и Local AI Lab**, **0.3.04 Automatic Alive core**, **0.3.05 Automatic Dead core**, **0.3.06 Obvious/Proven Seki**, **0.3.07 Assisted Review Integration** и **0.3.08 Stress / Differential Hardening** завершены. Следующий активный checkpoint — **0.3 integration / regression acceptance**.
+Активная разрабатываемая версия — **0.3 Automatic/Assisted alive-dead-seki**. Checkpoints **0.3.01 Library/Reuse Review и contract alignment**, **0.3.02 Deterministic Endgame Test Infrastructure**, **0.3.03 Differential Oracle Infrastructure**, **0.3.04 Automatic Alive core**, **0.3.05 Automatic Dead core**, **0.3.06 Obvious/Proven Seki**, **0.3.07 Assisted Review Integration** и **0.3.08 Stress / Differential Hardening** завершены. Следующий активный checkpoint — **0.3 integration / regression acceptance**.
 
 ---
 
@@ -145,14 +145,15 @@
 - automatic/assisted classification очевидных или доказуемых alive/dead/seki;
 - работа классификатора как с TorusTopology, так и с CubeTopology через общий topology-neutral contract;
 - ручной fallback для недоказанных или спорных случаев;
-- deterministic test-position generation для массовой проверки endgame logic;
-- developer test lab для воспроизведения, прогона и сравнения сгенерированных позиций;
-- differential/oracle validation infrastructure, включая опциональный локальный AI-analysis path, не являющийся production dependency;
+- deterministic test-only fixtures и seeded generators для массовой автоматической проверки endgame logic;
+- test-only differential/oracle validation infrastructure для применимых позиций;
 - regression/fixture/property/stress coverage endgame-classification для обеих topology.
+
+Интерактивный пользовательский/developer Test Case/Test Lab runtime, Test ID, live/corpus generators, replay старых generated IDs и локальный AI/KataGo bridge не входят в текущий scope 0.3.
 
 Cube 3D в 0.3 не входит. Cube-партии по-прежнему стартуют и играются в Cube 2D; Torus остаётся 2D.
 
-Точные classifier contracts, выбранные algorithms/libraries, test generators, oracle adapters, local-analysis bridge и правила доверия внешнему анализу определяет только `docs/ARCHITECTURE.md`. Пользовательское поведение assisted/manual review определяет только `docs/GAME_CUBE_GO.md`.
+Точные classifier contracts, test-only fixture generators, oracle adapters и правила differential validation определяет только `docs/ARCHITECTURE.md`. Пользовательское поведение assisted/manual review определяет только `docs/GAME_CUBE_GO.md`.
 
 ## Внутренний порядок 0.3
 
@@ -162,16 +163,16 @@ Cube 3D в 0.3 не входит. Cube-партии по-прежнему ста
    - завершить reuse review кандидатов для alive/dead/seki и test oracles;
    - привести фактический endgame flow к proposal/review boundary с возможностью `unresolved`, не меняя scoring formula и не привязывая classifier к конкретному UI.
 
-2. **0.3.02 — Deterministic Endgame Test Lab**
-   - создать воспроизводимый генератор legal game/endgame positions;
-   - создать генератор небольших life-and-death/seki patterns;
-   - добавить topology-stress размещения для Torus seams и Cube edges/corners;
-   - каждый generated case обязан иметь стабильный seed/fixture replay.
+2. **0.3.02 — Deterministic Endgame Test Infrastructure**
+   - создать воспроизводимые test-only generators legal game/endgame fixtures;
+   - создать test-only generator небольших life-and-death/seki patterns;
+   - добавить topology-stress fixtures для Torus seams и Cube edges/corners;
+   - автоматические generated fixtures обязаны быть воспроизводимы по seed/fixture metadata без runtime Test ID или пользовательского replay UI.
 
-3. **0.3.03 — Differential Oracles и Local AI Lab**
-   - подключить независимые reference/oracle paths для тех классов позиций, где сравнение корректно;
-   - добавить опциональную локальную analysis infrastructure для мощного desktop-компьютера разработчика;
-   - production game не должна зависеть от наличия локального AI, внешней сети или стороннего сервиса.
+3. **0.3.03 — Differential Oracle Infrastructure**
+   - подключить независимые test-only reference/oracle abstractions для тех классов позиций, где сравнение корректно;
+   - differential checks не входят в production correctness chain;
+   - интерактивный Local AI/KataGo bridge и внешний corpus runtime не являются частью текущей архитектуры приложения.
 
 4. **0.3.04 — Automatic Alive core**
    - сначала реализовать консервативное доказуемое определение живых/pass-alive групп;
@@ -191,8 +192,8 @@ Cube 3D в 0.3 не входит. Cube-партии по-прежнему ста
    - визуальная полировка и конкретная форма controls выполняются после стабилизации classifier core и не должны менять classifier contracts.
 
 8. **0.3.08 — Stress / Differential Hardening**
-   - массовые deterministic прогоны generated positions;
-   - fixed-seed regression corpus для всех найденных дефектов;
+   - массовые deterministic прогоны test-only generated fixtures;
+   - fixed-seed regression fixtures для всех найденных дефектов;
    - differential checks на применимых planar/Torus/Cube-reference cases;
    - отдельные проверки отсутствия ложных automatic resolutions и invariance итогового scoring после полного review.
 
@@ -206,10 +207,10 @@ Cube 3D в 0.3 не входит. Cube-партии по-прежнему ста
 0.3 достигает технической готовности к пользовательской приёмке, когда:
 
 - automatic assistance корректно работает на обеих topology через общий classifier boundary;
-- нет известных случаев, где classifier автоматически присваивает недоказанный/ошибочный статус в acceptance corpus;
+- нет известных случаев, где classifier автоматически присваивает недоказанный/ошибочный статус в acceptance fixtures;
 - всё, что classifier не может доказать, остаётся `unresolved` и полностью разрешается ручным fallback;
-- generated/fixed fixtures и stress/differential checks воспроизводимы по seed;
-- production gameplay и final scoring не требуют KataGo, local bridge, внешнего oracle, сети или компьютера разработчика;
+- test-only generated/fixed fixtures и stress/differential checks воспроизводимы по seed;
+- production gameplay и final scoring не содержат Test Case/Test ID/generator/corpus/local-AI runtime path;
 - assisted flow не создаёт расхождений в итоговом scoring относительно того же полного набора resolved statuses;
 - полный regression/acceptance gate версии проходит.
 
