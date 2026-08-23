@@ -302,7 +302,7 @@ Attacker OR:
 one proven-kill child => proven-kill
 ```
 
-Attacker `proven-survival` требует, чтобы all proof-complete attack branches были proven survival. Не найти kill недостаточно.
+Attacker `proven-survival` требует, чтобы все proof-complete attack branches были proven survival. Не найти kill недостаточно.
 
 Defender AND:
 
@@ -742,7 +742,7 @@ build:engine2 PASS
 Chromium E2E: 72/72 PASS
 ```
 
-Temporary E2-6 CI benchmark step после измерения удалён; `benchmark:engine2:four-lib` остаётся opt-in и воспроизводимым.
+Temporary E2-6 CI benchmark step после #786 удалён; `benchmark:engine2:four-lib` остаётся opt-in и воспроизводимым.
 
 **E2-6 acceptance boundary закрыт. Следующий этап: E2-7 — exact small eye-space.**
 
@@ -940,7 +940,7 @@ Benchmark использует реальные Torus/Cube topologies, 8 legal e
 CI #805 benchmark results:
 
 | Case | Points | Examined empty | Candidates | p95 ms | max ms |
-|---|---:|---:|---:|---:|---:|---:|
+|---|---:|---:|---:|---:|---:|
 | Torus 9×9 | 81 | 8 | 8 | 7.479 | 7.676 |
 | Torus 13×13 | 169 | 8 | 8 | 6.567 | 6.624 |
 | Torus 19×19 | 361 | 8 | 8 | 14.960 | 15.148 |
@@ -1370,7 +1370,7 @@ E2-4/E2-11 overall acceptance boundary:
 15. connection produces survival authority only after the resulting target is actually Benson/pass-alive;
 16. ladder/net labels encode exact liberty-pressure transitions, not a complete global ladder/net theorem;
 17. tactical augmentation never upgrades an incomplete move set to complete, and unknown-root ko remains fail-closed;
-18. semeai shared/exclusive liberties, approach candidates и eye summaries are evidence only, not fate labels;
+18. semeai shared/exclusive liberties, approach candidates and eye summaries are evidence only, not fate labels;
 19. semeai kill/survival authority comes only from existing deterministic proof search with actual side-to-move roles;
 20. failure to prove kill for both colors never implies seki;
 21. `proven-seki` requires the explicit closed two-shared-liberty mutual-capture certificate with authoritative initiation/reply legality and captures;
