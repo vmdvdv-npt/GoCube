@@ -24,3 +24,4 @@ These three files are the canonical project documentation. Do not infer current 
 - Keep changes focused; avoid mixing unrelated behavior, architecture, and visual work.
 - Use a feature/documentation branch and pull request; keep `main` releasable.
 - Run the relevant automated checks and require CI to pass before merge.
+- For version completion, acceptance, tagging, or release decisions, follow the acceptance authority defined exclusively in `docs/ROADMAP.md`; never infer acceptance from CI, merged PRs, completed checkpoints, or agent judgment.
