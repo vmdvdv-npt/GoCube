@@ -21,6 +21,7 @@ import {
 import { buildEndgameGraph } from './EndgameGraphCore';
 import { endgameGroupId } from './EndgameGroupIdentity';
 import { ManualEndgameClassifier } from './ManualEndgameClassifier';
+import { proveSafeConnectionToBenson, type SafeConnectionProof } from './SafeConnection';
 import {
   TACTICAL_READER_ALGORITHM,
   readTacticalCapture,
@@ -35,11 +36,11 @@ const TACTICAL_CLASSIFIER_MAX_NODES = 16;
  * Conservative assisted classifier.
  *
  * It proves unconditional/pass-alive groups using Benson's fixed-point
- * criterion, preserves the narrow sealed single-liberty proof, adds only
- * ultra-short two-liberty tactical forced-capture proofs at this Work 4
- * integration boundary, and resolves seki only for the existing closed mutual
- * two-liberty proof. Any group not proven by one of those boundaries remains
- * unresolved.
+ * criterion, adds the narrow Work 5B two-liberty miai connection to a Benson
+ * safe group, preserves the sealed single-liberty proof, keeps the Work 4
+ * ultra-short two-liberty tactical forced-capture proof, and resolves seki only
+ * for the existing closed mutual two-liberty proof. Any group not proven by
+ * one of those boundaries remains unresolved.
  */
 export class AssistedEndgameClassifier implements EndgameClassifier {
   private readonly manual = new ManualEndgameClassifier();
@@ -69,8 +70,33 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     }
 
     const passAliveGroupKeys = new Set(aliveProofs.keys());
+    const safeConnectionProofs = new Map<string, SafeConnectionProof>();
+    for (const group of graph.strings) {
+      if (passAliveGroupKeys.has(group.key)) continue;
+
+      // RelevanceZone is intentionally more expensive than the shared graph
+      // snapshot, so only invoke the Work 5B verifier for structural candidates
+      // that already touch a same-color Benson group through shared liberties.
+      const hasBensonConnectionCandidate = graph.possibleConnections.some((candidate) => {
+        if (!candidate.groups.includes(group.key)) return false;
+        const otherKey = candidate.groups.find((groupKey) => groupKey !== group.key);
+        return otherKey !== undefined && passAliveGroupKeys.has(otherKey);
+      });
+      if (!hasBensonConnectionCandidate) continue;
+
+      const connection = proveSafeConnectionToBenson(
+        group,
+        context.state.board,
+        context.topology,
+      );
+      if (connection.outcome === 'proven') {
+        safeConnectionProofs.set(group.key, connection.evidence);
+      }
+    }
+
     const deadProofs = new Map<string, AutomaticDeadProof>();
     for (const candidate of generateDeadCandidates(graph.stringsByKey, passAliveGroupKeys)) {
+      if (safeConnectionProofs.has(candidate.groupKey)) continue;
       const verification = verifyDeadCandidate(candidate, {
         state: context.state,
         topology: context.topology,
@@ -90,9 +116,10 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     for (const group of graph.strings) {
       // Keep the existing one-liberty evidence contract authoritative. Work 4
       // only promotes a new class of very short two-liberty proofs; broader
-      // tactical localization is deliberately deferred to Work 5.
+      // tactical localization remains conservative even after Work 5B.
       if (
         passAliveGroupKeys.has(group.key) ||
+        safeConnectionProofs.has(group.key) ||
         deadProofs.has(group.key) ||
         group.liberties.length !== 2
       ) {
@@ -138,6 +165,7 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
 
     const alreadyResolvedGroupKeys = new Set<string>([
       ...passAliveGroupKeys,
+      ...safeConnectionProofs.keys(),
       ...deadProofs.keys(),
       ...tacticalDeadProofs.keys(),
     ]);
@@ -172,6 +200,16 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
               proof: 'two-vital-regions',
               vitalRegions: Object.freeze(vitalRegions.map((region) => region.points)),
             }),
+          });
+        }
+
+        const safeConnectionProof = safeConnectionProofs.get(groupKey);
+        if (safeConnectionProof) {
+          return Object.freeze({
+            points: proposal.points,
+            status: 'alive' as const,
+            source: 'automatic' as const,
+            evidence: Object.freeze({ ...safeConnectionProof }),
           });
         }
 
