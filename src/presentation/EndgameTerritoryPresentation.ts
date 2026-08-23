@@ -91,3 +91,47 @@ export const provisionalEndgameTerritory = (
 
   return owners;
 };
+
+/** Points occupied in the saved final position but emptied by scoring. */
+export const finalDeadStonePointIds = (viewModel: GameViewModel): ReadonlySet<PointId> => {
+  if (viewModel.phase !== 'finished' || !viewModel.finalScore) return new Set<PointId>();
+
+  const scoringEmptyPoints = new Set<PointId>([
+    ...viewModel.finalScore.territoryPoints.black,
+    ...viewModel.finalScore.territoryPoints.white,
+    ...viewModel.finalScore.territoryPoints.neutral,
+    ...viewModel.finalScore.territoryPoints.seki,
+  ]);
+
+  return new Set(
+    viewModel.points.flatMap((point) =>
+      point.occupancy !== 'empty' && scoringEmptyPoints.has(point.logicalPointId)
+        ? [point.logicalPointId]
+        : [],
+    ),
+  );
+};
+
+/**
+ * Renderer-facing final board. Scoring keeps the historical GameState intact, so
+ * presentation removes dead stones without mutating domain state or persistence.
+ */
+export const finalBoardViewModel = (viewModel: GameViewModel): GameViewModel => {
+  const dead = finalDeadStonePointIds(viewModel);
+  if (dead.size === 0) return viewModel;
+
+  return Object.freeze({
+    ...viewModel,
+    points: Object.freeze(
+      viewModel.points.map((point) =>
+        dead.has(point.logicalPointId)
+          ? Object.freeze({ ...point, occupancy: 'empty' as const, moveNumber: null })
+          : point,
+      ),
+    ),
+    lastMovePointId:
+      viewModel.lastMovePointId && dead.has(viewModel.lastMovePointId)
+        ? null
+        : viewModel.lastMovePointId,
+  });
+};
