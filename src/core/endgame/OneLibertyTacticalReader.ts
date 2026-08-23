@@ -15,7 +15,7 @@ export type DefenseReason = 'extend' | 'connect' | 'counter-capture';
 
 export interface OneLibertyAttackLine {
   readonly move: PointId;
-  readonly result: 'kill' | 'unresolved';
+  readonly result: 'kill' | 'ko-dependent' | 'unresolved';
   readonly rejectionReason?: string;
 }
 
@@ -80,6 +80,32 @@ const survivingTargetGroup = (
   return survivingPoint ? engine.groupAt(state, survivingPoint) : null;
 };
 
+/**
+ * The analysis context does not currently carry the board position preceding
+ * the endgame position, so first-ply simple-ko legality cannot always be known.
+ * A single-stone capture that leaves the newly placed stone as a one-stone
+ * group with exactly the captured point as its sole liberty is the structural
+ * shape that can be an immediate ko recapture. Treat it conservatively as a ko
+ * dependency instead of assuming the first move is legal.
+ */
+const isPotentialSimpleKoCapture = (
+  engine: GameEngine,
+  stateAfterMove: GameState,
+  move: PointId,
+  mover: StoneColor,
+  captured: readonly PointId[],
+): boolean => {
+  if (captured.length !== 1) return false;
+  const placedGroup = engine.groupAt(stateAfterMove, move);
+  return (
+    placedGroup !== null &&
+    placedGroup.color === mover &&
+    placedGroup.points.length === 1 &&
+    placedGroup.liberties.length === 1 &&
+    placedGroup.liberties[0] === captured[0]
+  );
+};
+
 const collectDefenseCandidates = (
   state: GameState,
   topology: Topology,
@@ -139,6 +165,8 @@ const collectDefenseCandidates = (
  *
  * The reader intentionally stops as soon as a legal defense reaches two or
  * more liberties. That is an escape from this short proof, not a proof of life.
+ * First-ply captures with a simple-ko recapture shape are also stopped as
+ * `ko-dependent` because the preceding board position is not in this context.
  */
 export const readOneLibertyTactics = (
   state: GameState,
@@ -160,14 +188,24 @@ export const readOneLibertyTactics = (
   const attackerState = asPlayingState(state, attacker);
   exploredNodes += 1;
   const attackerMove = engine.placeStone(attackerState, attackPoint, attacker);
-  const attackerFirst: OneLibertyAttackLine = attackerMove.ok &&
-    crucialStonesCaptured(attackerMove.state, target.color, crucialStones)
-    ? Object.freeze({ move: attackPoint, result: 'kill' as const })
-    : Object.freeze({
-        move: attackPoint,
-        result: 'unresolved' as const,
-        ...(!attackerMove.ok ? { rejectionReason: attackerMove.reason } : {}),
-      });
+  let attackerFirst: OneLibertyAttackLine;
+  if (attackerMove.ok && crucialStonesCaptured(attackerMove.state, target.color, crucialStones)) {
+    attackerFirst = isPotentialSimpleKoCapture(
+      engine,
+      attackerMove.state,
+      attackPoint,
+      attacker,
+      attackerMove.captured,
+    )
+      ? Object.freeze({ move: attackPoint, result: 'ko-dependent' as const })
+      : Object.freeze({ move: attackPoint, result: 'kill' as const });
+  } else {
+    attackerFirst = Object.freeze({
+      move: attackPoint,
+      result: 'unresolved' as const,
+      ...(!attackerMove.ok ? { rejectionReason: attackerMove.reason } : {}),
+    });
+  }
 
   const defenseCandidates = collectDefenseCandidates(state, topology, graph, target);
   const defenseLines: OneLibertyDefenseLine[] = [];
@@ -188,6 +226,26 @@ export const readOneLibertyTactics = (
           reasons,
           result: 'illegal' as const,
           rejectionReason: defenseMove.reason,
+        }),
+      );
+      continue;
+    }
+
+    if (
+      isPotentialSimpleKoCapture(
+        engine,
+        defenseMove.state,
+        candidate.point,
+        defender,
+        defenseMove.captured,
+      )
+    ) {
+      koDependent = true;
+      defenseLines.push(
+        Object.freeze({
+          move: candidate.point,
+          reasons,
+          result: 'ko-dependent' as const,
         }),
       );
       continue;
@@ -270,15 +328,17 @@ export const readOneLibertyTactics = (
         : 'unresolved';
 
   const outcome: OneLibertyOutcome =
-    attackerFirst.result !== 'kill'
-      ? 'unresolved'
-      : defenderFirstResult === 'forced-kill'
-        ? 'proven-dead'
-        : defenderFirstResult === 'ko-dependent'
-          ? 'ko-dependent'
-          : defenderFirstResult === 'escape'
-            ? 'critical'
-            : 'unresolved';
+    attackerFirst.result === 'ko-dependent'
+      ? 'ko-dependent'
+      : attackerFirst.result !== 'kill'
+        ? 'unresolved'
+        : defenderFirstResult === 'forced-kill'
+          ? 'proven-dead'
+          : defenderFirstResult === 'ko-dependent'
+            ? 'ko-dependent'
+            : defenderFirstResult === 'escape'
+              ? 'critical'
+              : 'unresolved';
 
   const principalVariation =
     outcome === 'proven-dead'
