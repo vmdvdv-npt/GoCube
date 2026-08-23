@@ -1,5 +1,5 @@
 import type { GroupStatus } from '../core/endgame/EndgameClassifier';
-import { AssistedEndgameClassifier } from '../core/endgame/AssistedEndgameClassifier';
+import { ConfidenceAutoEndgameClassifier } from '../core/endgame/ConfidenceAutoEndgameClassifier';
 import { effectiveEndgameStatus } from '../core/endgame/EndgameReviewState';
 import { GameEngine } from '../core/game/GameEngine';
 import {
@@ -72,8 +72,8 @@ const scoringFor = (ruleSet: RuleSet, topology: CubeTopology): ScoringStrategy =
 /**
  * Thin presentation-friendly adapter for Cube 2D.
  * GameSession owns proposal, partial review, final classification and scoring;
- * the controller activates assisted classification while keeping every proposed
- * status editable by the user until the review is explicitly finished.
+ * the controller activates E2-12d confidence auto-selection while keeping every
+ * proposed status editable by the user until the review is explicitly finished.
  */
 export class Cube2DGameController {
   readonly size: CubeSize;
@@ -101,7 +101,7 @@ export class Cube2DGameController {
     this.topology = new CubeTopology(this.size);
     const engine = new GameEngine(this.topology);
     const config = {
-      endgameClassifier: new AssistedEndgameClassifier(),
+      endgameClassifier: new ConfidenceAutoEndgameClassifier(),
       scoringStrategy: scoringFor(ruleSet, this.topology),
       boardSize: this.size,
       komi,
