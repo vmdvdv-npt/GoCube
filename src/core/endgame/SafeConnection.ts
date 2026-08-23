@@ -3,6 +3,7 @@ import type { BoardOccupancy, GameState, StoneColor } from '../game/types';
 import type { PointId, Topology } from '../topology/Topology';
 import { proveBensonPassAlive } from './BensonPassAlive';
 import { buildEndgameGraph, type EndgameStoneString } from './EndgameGraphCore';
+import { compareEndgamePointIds } from './EndgameGroupIdentity';
 import { buildRelevanceZone, type RelevanceZoneReason } from './RelevanceZone';
 
 export const SAFE_CONNECTION_ALGORITHM = 'safe-connection-v1';
@@ -90,7 +91,7 @@ export const proveSafeConnectionToBenson = (
   topology: Topology,
   options: SafeConnectionOptions = {},
 ): SafeConnectionResult => {
-  const zone = buildRelevanceZone(target, board, topology, { maxPoints: options.maxPoints });
+  const zone = buildRelevanceZone(target, board, topology, options);
   if (zone.outcome !== 'bounded') {
     return Object.freeze({ outcome: 'unknown-boundary', reason: zone.reason });
   }
@@ -147,7 +148,7 @@ export const proveSafeConnectionToBenson = (
   const opponent = opponentOf(currentTarget.color);
 
   for (const candidate of candidates) {
-    const connectors = [...candidate.connectors].sort();
+    const connectors = [...candidate.connectors].sort(compareEndgamePointIds);
     for (let leftIndex = 0; leftIndex < connectors.length; leftIndex += 1) {
       for (let rightIndex = leftIndex + 1; rightIndex < connectors.length; rightIndex += 1) {
         const left = connectors[leftIndex]!;
