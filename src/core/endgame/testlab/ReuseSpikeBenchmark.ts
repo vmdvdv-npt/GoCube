@@ -1,4 +1,3 @@
-import type { EndgameProposalStatus } from '../EndgameClassifier';
 import {
   buildReuseSpikeCorpus,
   type ReuseSpikeCorpusCase,
@@ -11,13 +10,23 @@ export type ReuseSpikeCandidateId =
   | 'relevance-zone'
   | 'darkforest';
 
-export type ReuseSpikeSolverStatus =
-  | EndgameProposalStatus
+/**
+ * Work 1 compares the fate of the marked target, not GoCube production proof
+ * statuses. External tsumego solvers normally answer a local "can this side
+ * kill/save the target?" question; mapping that directly to PROVEN_* would be
+ * semantically unsafe.
+ */
+export type ReuseSpikeTargetOutcome =
+  | 'target-survives'
+  | 'target-captured'
+  | 'seki'
+  | 'ko-dependent'
+  | 'unknown'
   | 'unsupported'
   | 'error';
 
 export interface ReuseSpikeSolverResult {
-  readonly status: ReuseSpikeSolverStatus;
+  readonly outcome: ReuseSpikeTargetOutcome;
   readonly move?: string;
   readonly nodes?: number;
   readonly detail?: string;
@@ -39,7 +48,7 @@ export type ReuseSpikeCorrectness = 'match' | 'mismatch' | 'not-scored';
 export interface ReuseSpikeBenchmarkCaseResult {
   readonly id: string;
   readonly sourceStatus: ReferenceStatus;
-  readonly solverStatus: ReuseSpikeSolverStatus;
+  readonly solverOutcome: ReuseSpikeTargetOutcome;
   readonly correctness: ReuseSpikeCorrectness;
   readonly elapsedMs: number;
   readonly nodes?: number;
@@ -64,21 +73,29 @@ export interface ReuseSpikeBenchmarkSummary {
 
 export type ReuseSpikeClock = () => number;
 
-const isScorableReference = (
+const expectedOutcome = (
   status: ReferenceStatus,
-): status is EndgameProposalStatus =>
-  status === 'alive' ||
-  status === 'dead' ||
-  status === 'seki' ||
-  status === 'unresolved';
+): ReuseSpikeTargetOutcome | undefined => {
+  switch (status) {
+    case 'alive':
+      return 'target-survives';
+    case 'dead':
+      return 'target-captured';
+    case 'seki':
+      return 'seki';
+    default:
+      // unresolved/unknown/unavailable/unstable are not known-answer labels.
+      return undefined;
+  }
+};
 
 const classifyCorrectness = (
   sourceStatus: ReferenceStatus,
-  solverStatus: ReuseSpikeSolverStatus,
+  solverOutcome: ReuseSpikeTargetOutcome,
 ): ReuseSpikeCorrectness => {
-  if (!isScorableReference(sourceStatus)) return 'not-scored';
-  if (solverStatus === 'unsupported' || solverStatus === 'error') return 'mismatch';
-  return sourceStatus === solverStatus ? 'match' : 'mismatch';
+  const expected = expectedOutcome(sourceStatus);
+  if (expected === undefined) return 'not-scored';
+  return expected === solverOutcome ? 'match' : 'mismatch';
 };
 
 const finiteElapsed = (start: number, end: number): number => {
@@ -106,7 +123,7 @@ export const runReuseSpikeBenchmark = async (
       result = await adapter.solve(problem);
     } catch (error) {
       result = {
-        status: 'error',
+        outcome: 'error',
         detail: error instanceof Error ? error.message : String(error),
       };
     }
@@ -116,8 +133,8 @@ export const runReuseSpikeBenchmark = async (
       Object.freeze({
         id: problem.id,
         sourceStatus: problem.sourceStatus,
-        solverStatus: result.status,
-        correctness: classifyCorrectness(problem.sourceStatus, result.status),
+        solverOutcome: result.outcome,
+        correctness: classifyCorrectness(problem.sourceStatus, result.outcome),
         elapsedMs,
         ...(result.nodes === undefined ? {} : { nodes: result.nodes }),
         ...(result.move === undefined ? {} : { move: result.move }),
@@ -139,8 +156,8 @@ export const runReuseSpikeBenchmark = async (
     scoredCases: scored.length,
     matches: scored.filter(({ correctness }) => correctness === 'match').length,
     mismatches: scored.filter(({ correctness }) => correctness === 'mismatch').length,
-    unsupported: cases.filter(({ solverStatus }) => solverStatus === 'unsupported').length,
-    errors: cases.filter(({ solverStatus }) => solverStatus === 'error').length,
+    unsupported: cases.filter(({ solverOutcome }) => solverOutcome === 'unsupported').length,
+    errors: cases.filter(({ solverOutcome }) => solverOutcome === 'error').length,
     totalElapsedMs,
     meanElapsedMs: cases.length === 0 ? 0 : totalElapsedMs / cases.length,
     ...(nodeCounts.length === 0
