@@ -302,7 +302,7 @@ Attacker OR:
 one proven-kill child => proven-kill
 ```
 
-Attacker `proven-survival` требует, чтобы все proof-complete attack branches были proven survival. Не найти kill недостаточно.
+Attacker `proven-survival` требует, чтобы all proof-complete attack branches были proven survival. Не найти kill недостаточно.
 
 Defender AND:
 
@@ -742,7 +742,7 @@ build:engine2 PASS
 Chromium E2E: 72/72 PASS
 ```
 
-Temporary E2-6 CI benchmark step после #786 удалён; `benchmark:engine2:four-lib` остаётся opt-in и воспроизводимым.
+Temporary E2-6 CI benchmark step после измерения удалён; `benchmark:engine2:four-lib` остаётся opt-in и воспроизводимым.
 
 **E2-6 acceptance boundary закрыт. Следующий этап: E2-7 — exact small eye-space.**
 
@@ -940,7 +940,7 @@ Benchmark использует реальные Torus/Cube topologies, 8 legal e
 CI #805 benchmark results:
 
 | Case | Points | Examined empty | Candidates | p95 ms | max ms |
-|---|---:|---:|---:|---:|---:|
+|---|---:|---:|---:|---:|---:|---:|
 | Torus 9×9 | 81 | 8 | 8 | 7.479 | 7.676 |
 | Torus 13×13 | 169 | 8 | 8 | 6.567 | 6.624 |
 | Torus 19×19 | 361 | 8 | 8 | 14.960 | 15.148 |
@@ -1348,6 +1348,7 @@ E2-8   DONE — connections / cuts / ladder-net pressure / snapback / sacrifice 
 E2-9   DONE — semeai shared/exclusive/approach analysis + positive seki certificate + benchmark
 E2-10  DONE — deterministic transposition cache + differential/performance gate
 E2-11  DONE — adversarial corpus + final evaluation
+E2-12a PLAYTEST READY — current endgame UX + diagnostic-only real-game Engine 2 harness
 ```
 
 E2-4/E2-11 overall acceptance boundary:
@@ -1369,7 +1370,7 @@ E2-4/E2-11 overall acceptance boundary:
 15. connection produces survival authority only after the resulting target is actually Benson/pass-alive;
 16. ladder/net labels encode exact liberty-pressure transitions, not a complete global ladder/net theorem;
 17. tactical augmentation never upgrades an incomplete move set to complete, and unknown-root ko remains fail-closed;
-18. semeai shared/exclusive liberties, approach candidates and eye summaries are evidence only, not fate labels;
+18. semeai shared/exclusive liberties, approach candidates и eye summaries are evidence only, not fate labels;
 19. semeai kill/survival authority comes only from existing deterministic proof search with actual side-to-move roles;
 20. failure to prove kill for both colors never implies seki;
 21. `proven-seki` requires the explicit closed two-shared-liberty mutual-capture certificate with authoritative initiation/reply legality and captures;
@@ -1380,3 +1381,104 @@ E2-4/E2-11 overall acceptance boundary:
 26. fixed E2-11 corpus must remain deterministic and retain zero false authoritative conclusions on its marked fail-closed boundaries.
 
 > Engine 2 автоматически ставит `alive`, `dead` или `seki` только там, где может предъявить законченное доказательство. Во всех остальных случаях правильный результат — `UNRESOLVED`.
+
+---
+
+# 23. E2-12a — real-game playtest harness
+
+Статус: **PLAYTEST READY / DIAGNOSTIC ONLY / CI PASS / NOT CLASSIFIER-INTEGRATED**.
+
+E2-12a — отдельный пользовательский playtest checkpoint после final evaluation E2-11. Он не расширяет proof authority и не включает полный Engine 2 в `AssistedEndgameClassifier`; цель — дать возможность проверять завершённый proof stack на реальных сыгранных позициях в обычном Torus/Cube UI.
+
+### Разрешённая UX integration boundary
+
+По отдельному явному решению владельца для playtest разрешён узкий перенос актуального endgame UX из `main`, без merge истории веток.
+
+```text
+engine2 base SHA = 5d1035d4dd56dde15ea77da0e788cc5af7120c5f
+work branch = engine2-work16-main-ux-integration
+main UX source snapshot = 28b857b348d4030b9f8fde02715598288dcca5fa
+PR = #179 -> engine2 (Draft)
+```
+
+Из `main` selectively перенесены только 12 endgame UI/renderer/E2E files: contour geometry/rendering, contextual floating Alive/Dead/Seki controls и их regression coverage. Не переносились `main` history, docs, `AGENTS.md`, workflow/template files или `src/core/endgame/**` implementation.
+
+Это явное одноразовое playtest-исключение из обычного правила изоляции Engine 2; оно не является разрешением автоматически синхронизировать `main` и `engine2` в дальнейшем.
+
+UX-only checkpoint CI #834 прошёл полностью до добавления diagnostic harness, что отдельно подтвердило совместимость выбранного UX subset с текущим Engine 2.
+
+### Diagnostic bridge
+
+```text
+src/core/endgame/Engine2PlaytestDiagnostic.ts
+src/app/Engine2PlaytestDiagnostics.tsx
+algorithm = engine2-real-game-playtest-diagnostic-v1
+default diagnostic node budget = 512
+```
+
+Diagnostic использует реальный persisted `GameSessionSnapshot` текущей сыгранной партии и выбранную пользователем logical stone group. Если доступна предыдущая позиция из history, exact `previousBoard` передаётся в root proof context.
+
+Для выбранной группы независимо выполняются:
+
+```text
+attacker-first deterministic AND/OR proof search
+defender-first deterministic AND/OR proof search
+E2-7 small eye-space analysis
+E2-9 strict semeai/seki analysis
+```
+
+AND/OR path использует `TacticalExtensionProofSearchGoAdapter`, поэтому diagnostic наблюдает уже принятые E2-1…E2-10 boundaries: specialised 1/2-lib proof terminals, exact 3/4-lib adapters, tactical extensions, Benson/pass-alive survival authority, conservative ko/history handling и deterministic transposition cache.
+
+Пользовательский verdict ограничен следующими diagnostic labels:
+
+```text
+PROVEN DEAD
+PROVEN ALIVE
+PROVEN SEKI
+FIRST-PLAYER DEPENDENT
+KO DEPENDENT
+BUDGET EXHAUSTED
+UNRESOLVED
+```
+
+`PROVEN DEAD` требует `proven-kill` в обоих first-player orders. `PROVEN ALIVE` требует `proven-survival` в обоих orders. `PROVEN SEKI` выдаётся только существующим строгим E2-9 certificate. Incomplete search, ko или budget не апгрейдятся в fate conclusion.
+
+### UI safety boundary
+
+Diagnostic доступен в Endgame Review после выбора реальной stone group и запускается только по явной кнопке `Analyze selected group`.
+
+Он показывает verdict, runtime, stones/liberties, attacker-first/defender-first outcomes и nodes, eye-space bounds/completeness, semeai/seki evidence, reasons и principal variations.
+
+Критический invariant E2-12a:
+
+```text
+diagnostic result != automatic classification
+diagnostic result != scoring mutation
+```
+
+Diagnostic не вызывает изменение manual Alive/Dead/Seki decision и не меняет final score. Пользователь остаётся единственным authority для review status до отдельного classifier-integration этапа.
+
+### Validation
+
+Intermediate diagnostic CI #839 прошёл normal gate полностью.
+
+Exact functional head `2ff21f731da1e8af6b602ea72ca1114efafcb8ce` прошёл CI #840:
+
+```text
+test files: 82 passed, 9 skipped
+unit/integration tests: 621 passed, 79 opt-in skipped
+Engine2PlaytestDiagnostic tests: 2/2 PASS
+typecheck:engine2 PASS
+build:engine2 PASS
+Chromium E2E: 75/75 PASS
+lint: 0 errors, 2 pre-existing TestCaseReplayService warnings
+```
+
+Новый Chromium real-game scenario запускает Cube 2×2, делает реальные ходы, два Pass, выбирает группу в Endgame Review, запускает diagnostic и отдельно проверяет, что выбранный manual review status после анализа не изменился.
+
+### Playtest acceptance boundary
+
+- E2-12a предназначен для ручного тестирования реальных партий, а не для production classifier rollout.
+- `BUDGET EXHAUSTED` и `UNRESOLVED` являются допустимыми fail-closed результатами, особенно на сложных больших позициях при diagnostic budget `512`.
+- PR #179 должен оставаться Draft/open на период ручного playtest; E2-12a не мержится в `main`.
+- Любое последующее автоматическое использование полного Engine 2 для Alive/Dead/Seki требует отдельного classifier-integration/production-acceptance решения.
