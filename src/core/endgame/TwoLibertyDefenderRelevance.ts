@@ -2,10 +2,12 @@ import type { PointId, Topology } from '../topology/Topology';
 import type { EndgameGraph } from './EndgameGraphCore';
 
 export const TWO_LIBERTY_POST_DEFENSE_MAX_PLIES = 3;
+export const TWO_LIBERTY_DEFENDER_CAUSAL_WAVES = 6;
 
 export interface TwoLibertyDefenderRelevance {
   readonly targetGroupKey: string;
   readonly postDefenseMaxPlies: typeof TWO_LIBERTY_POST_DEFENSE_MAX_PLIES;
+  readonly causalWaves: typeof TWO_LIBERTY_DEFENDER_CAUSAL_WAVES;
   readonly causalConePoints: readonly PointId[];
   readonly relevantRootPlacements: readonly PointId[];
 }
@@ -38,28 +40,31 @@ const closeThroughExistingStoneStrings = (
 };
 
 /**
- * Builds a conservative graph-native causal cone for the bounded defender-first
- * continuation used by the current two-liberty reader.
+ * Builds a conservative graph-native causal cone for the exact bounded
+ * continuation used by the current two-liberty proof.
  *
- * The continuation after a root defender placement has at most three further
- * moves that can affect the proof result:
+ * A single general Go move can affect a target two graph edges away: a move
+ * can capture an adjacent connected string, and removing that string changes
+ * the liberties of groups adjacent to any of its stones. Existing connected
+ * strings are therefore collapsed at zero extra wave cost whenever one of
+ * their stones is reached.
  *
- *   two-lib attacker reduction
- *   -> one-lib defender reply
- *   -> attacker capture reply
+ * The longest current defender-first continuation is stage-specific:
  *
- * Ordinary move effects propagate through Topology adjacency. Captures can
- * affect an arbitrarily long already-connected stone string in one move, so an
- * encountered stone point closes through its complete current string at zero
- * additional ply cost. After the three move-expansion waves, one extra root
- * halo is included because the root defender move itself can directly change
- * the liberty/capture state of any point in the causal cone.
+ *   root defender move                         <= 2 dependency waves
+ *   -> two-lib attacker reduction              <= 1 wave
+ *   -> one-lib defender extension/countercap   <= 2 waves
+ *   -> final attacker liberty capture          <= 1 wave
  *
- * A root placement outside `relevantRootPlacements` is therefore not adjacent
- * to any point that the bounded continuation can causally reach, even after
- * collapsing existing connected strings. Such a placement still has to be
- * checked separately for authoritative legality and root-ko capture semantics;
- * this helper certifies only local tactical irrelevance.
+ * Total: six graph-adjacency waves, with complete current-string closure after
+ * every wave. This is intentionally wider than geometric locality and keeps
+ * long strings, counter-captures, cuts/connections and seam/edge adjacency in
+ * the same proof boundary.
+ *
+ * A root placement outside `relevantRootPlacements` has no board-effect path
+ * into that bounded tactical continuation. It still MUST be passed through
+ * authoritative GameEngine legality and root-ko detection; this helper only
+ * certifies tactical irrelevance after those checks.
  */
 export const buildTwoLibertyDefenderRelevance = (
   topology: Topology,
@@ -69,10 +74,10 @@ export const buildTwoLibertyDefenderRelevance = (
   const target = graph.groups.get(targetGroupKey);
   if (!target || target.liberties.length !== 2) return null;
 
-  let cone = closeThroughExistingStoneStrings(new Set(target.points), graph);
+  const cone = closeThroughExistingStoneStrings(new Set(target.points), graph);
   let frontier = new Set<PointId>(cone);
 
-  for (let ply = 0; ply < TWO_LIBERTY_POST_DEFENSE_MAX_PLIES; ply += 1) {
+  for (let wave = 0; wave < TWO_LIBERTY_DEFENDER_CAUSAL_WAVES; wave += 1) {
     const nextSeeds = new Set<PointId>();
     for (const point of frontier) {
       for (const neighbor of topology.neighbors(point)) {
@@ -91,15 +96,11 @@ export const buildTwoLibertyDefenderRelevance = (
     if (frontier.size === 0) break;
   }
 
-  const relevantRootPlacements = new Set<PointId>(cone);
-  for (const point of cone) {
-    for (const neighbor of topology.neighbors(point)) relevantRootPlacements.add(neighbor);
-  }
-
   return Object.freeze({
     targetGroupKey,
     postDefenseMaxPlies: TWO_LIBERTY_POST_DEFENSE_MAX_PLIES,
+    causalWaves: TWO_LIBERTY_DEFENDER_CAUSAL_WAVES,
     causalConePoints: Object.freeze([...cone].sort(comparePoints)),
-    relevantRootPlacements: Object.freeze([...relevantRootPlacements].sort(comparePoints)),
+    relevantRootPlacements: Object.freeze([...cone].sort(comparePoints)),
   });
 };
