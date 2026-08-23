@@ -47,7 +47,6 @@ type EffectsStyle = CSSProperties & {
 
 type BoardPoint = ReturnType<typeof createCube2DRenderModel>['boards'][number]['points'][number];
 type GroupShape = Pick<EndgameGroupPresentation, 'points' | 'edges'>;
-type AxisDirection = Readonly<{ x: -1 | 0 | 1; y: -1 | 0 | 1 }>;
 type DisplayPoint = Readonly<{ x: number; y: number }>;
 
 const pointMap = <T extends { readonly pointId: PointId }>(points: readonly T[]) =>
@@ -60,13 +59,10 @@ const contourColor = (status: EndgameVisualStatus | null): string => {
   return '#a8e85e';
 };
 
-const axisDirection = (from: DisplayPoint, to: DisplayPoint): AxisDirection => {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  if (Math.abs(dx) >= Math.abs(dy)) {
-    return { x: Math.sign(dx) as -1 | 0 | 1, y: 0 };
-  }
-  return { x: 0, y: Math.sign(dy) as -1 | 0 | 1 };
+const contourPaintPriority = (status: EndgameVisualStatus | null): number => {
+  if (status === 'dead') return 0;
+  if (status === 'alive') return 1;
+  return 2;
 };
 
 const groupShape = (
@@ -87,21 +83,12 @@ const groupShape = (
   const displayedById = new Map<PointId, DisplayPoint>(
     visible.map(([pointId, point]) => [pointId, display(point)]),
   );
-  const directionsByPoint = new Map<PointId, AxisDirection[]>();
   const visibleEdges = group.edges.flatMap((edge) => {
     const from = displayedById.get(edge.from);
     const to = displayedById.get(edge.to);
     if (!from || !to) return [];
-    const direction = axisDirection(from, to);
-    const fromDirections = directionsByPoint.get(edge.from) ?? [];
-    const toDirections = directionsByPoint.get(edge.to) ?? [];
-    fromDirections.push(direction);
-    toDirections.push({ x: -direction.x as -1 | 0 | 1, y: -direction.y as -1 | 0 | 1 });
-    directionsByPoint.set(edge.from, fromDirections);
-    directionsByPoint.set(edge.to, toDirections);
     return [[edge, from, to] as const];
   });
-  const filletSize = radius * 0.42;
 
   return (
     <>
@@ -117,46 +104,11 @@ const groupShape = (
           strokeLinecap="round"
         />
       ))}
-      {visible.flatMap(([pointId]) => {
-        const position = displayedById.get(pointId);
-        if (!position) return [];
-        const uniqueDirections = Array.from(
-          new Map(
-            (directionsByPoint.get(pointId) ?? []).map((direction) => [
-              `${direction.x},${direction.y}`,
-              direction,
-            ]),
-          ).values(),
-        );
-        const fillets: ReactNode[] = [];
-        for (let first = 0; first < uniqueDirections.length; first += 1) {
-          for (let second = first + 1; second < uniqueDirections.length; second += 1) {
-            const a = uniqueDirections[first];
-            const b = uniqueDirections[second];
-            if (!a || !b || a.x * b.x + a.y * b.y !== 0) continue;
-            const corner = {
-              x: position.x + (a.x + b.x) * radius,
-              y: position.y + (a.y + b.y) * radius,
-            };
-            const tangentA = {
-              x: corner.x + a.x * filletSize,
-              y: corner.y + a.y * filletSize,
-            };
-            const tangentB = {
-              x: corner.x + b.x * filletSize,
-              y: corner.y + b.y * filletSize,
-            };
-            fillets.push(
-              <path
-                key={`fillet:${pointId}:${a.x},${a.y}:${b.x},${b.y}`}
-                d={`M ${tangentA.x} ${tangentA.y} L ${corner.x} ${corner.y} L ${tangentB.x} ${tangentB.y} Q ${corner.x} ${corner.y} ${tangentA.x} ${tangentA.y} Z`}
-                fill="currentColor"
-              />,
-            );
-          }
-        }
-        return fillets;
-      })}
+      {/*
+        Round-ended edge capsules plus the stone circles form one smooth union.
+        Extra corner patches make the subtraction outline locally thicker and can
+        create the doubled inner bands visible at bends.
+      */}
       {visible.map(([pointId]) => {
         const position = displayedById.get(pointId);
         if (!position) return null;
@@ -249,6 +201,14 @@ export function Cube2DVisualEffects({
   );
   const sekiRegions = buildEndgameSekiRegions(groupStates, new CubeTopology(renderModel.size));
   const sekiGroupIds = new Set(sekiRegions.flatMap((region) => region.groupIds));
+  const regularGroups = groupStates
+    .map((group, index) => ({ group, index }))
+    .filter(({ group }) => !sekiGroupIds.has(group.id))
+    .sort(
+      (left, right) =>
+        contourPaintPriority(left.group.status) - contourPaintPriority(right.group.status) ||
+        left.index - right.index,
+    );
   const size = renderModel.size;
   const step = CUBE_2D_SVG_SIZE / size;
   const contentScale = cube2DContentScale(size);
@@ -302,8 +262,12 @@ export function Cube2DVisualEffects({
             </g>
 
             <g className="cube-2d-effects__groups">
-              {groupStates.map((group, groupIndex) => {
-                if (sekiGroupIds.has(group.id)) return null;
+              {/*
+                Dead contours are intentionally painted first. If a red outline
+                coincides with unresolved or seki geometry, the non-red contour is
+                the single visible shared stroke and the red contour continues as a branch.
+              */}
+              {regularGroups.map(({ group, index: groupIndex }) => {
                 if (!group.points.some((pointId) => pointsById.has(pointId))) return null;
                 const status = group.status;
                 const selected = selectedGroupId === group.id;
