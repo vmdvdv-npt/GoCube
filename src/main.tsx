@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { App } from './app/App';
 import { Cube2DPreview } from './app/Cube2DPreview';
 import { EndgameGroupFloatingControls } from './app/EndgameGroupFloatingControls';
+import { Engine2PlaytestDiagnostics } from './app/Engine2PlaytestDiagnostics';
 import { installTorus2DVectorCameraGuard } from './renderer2d/Torus2DVectorCameraGuard';
 import './styles.css';
 import './visual-overrides.css';
@@ -22,6 +23,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <>
         <App />
         <EndgameGroupFloatingControls />
+        <Engine2PlaytestDiagnostics />
       </>
     )}
   </React.StrictMode>,
