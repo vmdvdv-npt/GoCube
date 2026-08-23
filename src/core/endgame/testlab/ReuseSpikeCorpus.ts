@@ -1,4 +1,11 @@
-export type ReuseSpikeReferenceStatus = 'alive' | 'dead' | 'seki' | 'unknown';
+export type ReuseSpikeReferenceStatus =
+  | 'alive'
+  | 'dead'
+  | 'seki'
+  | 'unresolved'
+  | 'unknown'
+  | 'unavailable'
+  | 'unstable';
 
 export interface ReuseSpikePlanarStone {
   readonly row: number;
