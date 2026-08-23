@@ -34,6 +34,9 @@ describe('TorusGameController endgame Undo', () => {
 
     await controller.setEndgameDecision('["0,0"]', 'alive');
     await controller.setEndgameDecision('["4,4"]', 'alive');
-    expect(controller.viewModel().phase).toBe('finished');
+    expect(controller.viewModel().phase).toBe('endgame');
+
+    const finished = await controller.finishEndgame();
+    expect(finished.viewModel.phase).toBe('finished');
   });
 });
