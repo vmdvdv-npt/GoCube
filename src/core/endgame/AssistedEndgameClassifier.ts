@@ -20,6 +20,7 @@ import {
 } from './BensonPassAlive';
 import {
   buildEndgameGraph,
+  type EndgameConflictComponent,
   type EndgameGraph,
   type EndgameStoneString,
 } from './EndgameGraphCore';
@@ -39,6 +40,11 @@ import {
   type BasicSekiResult,
 } from './SekiSearch';
 import {
+  SIMPLE_SEMEAI_ALGORITHM,
+  analyzeSimpleSemeai,
+  type SimpleSemeaiResult,
+} from './SemeaiCore';
+import {
   BOUNDED_SEMEAI_ALGORITHM,
   analyzeBoundedSemeai,
   type BoundedSemeaiOrderResult,
@@ -57,7 +63,14 @@ const LOCAL_LIFE_DEATH_CLASSIFIER_MAX_NODES = 256;
 const LOCAL_LIFE_DEATH_CLASSIFIER_MAX_ZONE_POINTS = 24;
 const SEMEAI_SEKI_CLASSIFIER_MAX_NODES = 256;
 const SEMEAI_SEKI_CLASSIFIER_MAX_ZONE_POINTS = 24;
+const SIMPLE_SEMEAI_CLASSIFIER_MAX_EXCLUSIVE_LIBERTIES = 3;
 const SEMEAI_SEKI_CLASSIFIER_MAX_TARGET_LIBERTIES = 4;
+const SEMEAI_SEKI_CLASSIFIER_MAX_DISTINCT_LIBERTIES = 4;
+const SEMEAI_SEKI_CLASSIFIER_MAX_SHARED_LIBERTIES = 2;
+const SEMEAI_SEKI_CLASSIFIER_MAX_TARGET_STONES = 8;
+const SEMEAI_SEKI_CLASSIFIER_MAX_COMPONENT_STRINGS = 4;
+const SEMEAI_SEKI_CLASSIFIER_MAX_COMPONENT_REGIONS = 4;
+const SEMEAI_SEKI_CLASSIFIER_MAX_PAIRS = 8;
 
 type LocalLifeDeathClassifierStatus = 'alive' | 'dead';
 
@@ -71,17 +84,24 @@ interface InteractingPair {
   readonly right: EndgameStoneString;
 }
 
+interface SharedInteractingPair extends InteractingPair {
+  readonly sharedLiberties: readonly string[];
+}
+
 interface StableSemeaiDeadProof {
-  readonly algorithm: typeof BOUNDED_SEMEAI_ALGORITHM;
-  readonly proof: 'stable-loser-both-first-player-orders';
+  readonly algorithm: typeof SIMPLE_SEMEAI_ALGORITHM | typeof BOUNDED_SEMEAI_ALGORITHM;
+  readonly proof:
+    | 'stable-simple-loser-both-first-player-orders'
+    | 'stable-loser-both-first-player-orders';
   readonly winnerGroupKey: string;
   readonly loserGroupKey: string;
   readonly winnerCrucialStones: readonly string[];
   readonly loserCrucialStones: readonly string[];
-  readonly zonePoints: readonly string[];
   readonly leftFirst: Readonly<Record<string, unknown>>;
   readonly rightFirst: Readonly<Record<string, unknown>>;
   readonly proofReason: string;
+  readonly zonePoints?: readonly string[];
+  readonly liberties?: Readonly<Record<string, unknown>>;
 }
 
 interface BasicSekiClassifierProof {
@@ -135,7 +155,7 @@ const summarizeSemeaiOrder = (order: BoundedSemeaiOrderResult) =>
     transpositionHits: order.search?.transpositionHits ?? 0,
   });
 
-const toStableSemeaiDeadProof = (
+const toBoundedSemeaiDeadProof = (
   result: BoundedSemeaiResult,
 ): Readonly<{ readonly loserGroupKey: string; readonly evidence: StableSemeaiDeadProof }> | null => {
   if (result.outcome !== 'left-wins' && result.outcome !== 'right-wins') return null;
@@ -163,6 +183,39 @@ const toStableSemeaiDeadProof = (
       leftFirst: summarizeSemeaiOrder(result.leftFirst),
       rightFirst: summarizeSemeaiOrder(result.rightFirst),
       proofReason: result.proofReason,
+    }),
+  });
+};
+
+const toSimpleSemeaiDeadProof = (
+  result: SimpleSemeaiResult,
+  left: EndgameStoneString,
+  right: EndgameStoneString,
+): Readonly<{ readonly loserGroupKey: string; readonly evidence: StableSemeaiDeadProof }> | null => {
+  if (result.outcome !== 'left-wins' && result.outcome !== 'right-wins') return null;
+  if (!result.leftFirst || !result.rightFirst) return null;
+
+  const leftWins = result.outcome === 'left-wins';
+  const winner = leftWins ? left : right;
+  const loser = leftWins ? right : left;
+
+  return Object.freeze({
+    loserGroupKey: loser.key,
+    evidence: Object.freeze({
+      algorithm: SIMPLE_SEMEAI_ALGORITHM,
+      proof: 'stable-simple-loser-both-first-player-orders' as const,
+      winnerGroupKey: winner.key,
+      loserGroupKey: loser.key,
+      winnerCrucialStones: winner.points,
+      loserCrucialStones: loser.points,
+      liberties: Object.freeze({
+        leftExclusive: result.liberties.leftExclusive,
+        rightExclusive: result.liberties.rightExclusive,
+        shared: result.liberties.shared,
+      }),
+      leftFirst: Object.freeze({ ...result.leftFirst }),
+      rightFirst: Object.freeze({ ...result.rightFirst }),
+      proofReason: 'both first-player orders prove the same simple capture-race loser',
     }),
   });
 };
@@ -198,49 +251,101 @@ const toBasicSekiClassifierProof = (
   });
 };
 
-const collectInteractingPairs = (
+const componentForPair = (
+  graph: EndgameGraph,
+  leftKey: string,
+  rightKey: string,
+): EndgameConflictComponent | null =>
+  graph.conflictComponents.find((component) => {
+    const strings = new Set([...component.blackStrings, ...component.whiteStrings]);
+    return strings.has(leftKey) && strings.has(rightKey);
+  }) ?? null;
+
+const componentFitsProductionGate = (component: EndgameConflictComponent | null): boolean =>
+  component !== null &&
+  component.blackStrings.length + component.whiteStrings.length <=
+    SEMEAI_SEKI_CLASSIFIER_MAX_COMPONENT_STRINGS &&
+  component.emptyRegions.length <= SEMEAI_SEKI_CLASSIFIER_MAX_COMPONENT_REGIONS;
+
+const pairFitsCommonGate = (
+  left: EndgameStoneString,
+  right: EndgameStoneString,
+): boolean =>
+  left.color !== right.color &&
+  left.points.length + right.points.length <= SEMEAI_SEKI_CLASSIFIER_MAX_TARGET_STONES &&
+  left.liberties.length <= SEMEAI_SEKI_CLASSIFIER_MAX_TARGET_LIBERTIES &&
+  right.liberties.length <= SEMEAI_SEKI_CLASSIFIER_MAX_TARGET_LIBERTIES;
+
+const collectSimpleSemeaiPairs = (
   graph: EndgameGraph,
   excludedGroupKeys: ReadonlySet<string>,
 ): readonly InteractingPair[] => {
-  const pairKeys = new Map<string, readonly [string, string]>();
+  const sharedPairKeys = new Set(
+    graph.sharedLiberties.map((entry) => JSON.stringify(entry.groups)),
+  );
+  const pairs: InteractingPair[] = [];
 
-  const addPair = (groups: readonly [string, string]): void => {
-    const [firstKey, secondKey] = groups;
-    if (excludedGroupKeys.has(firstKey) || excludedGroupKeys.has(secondKey)) return;
-
-    const first = graph.stringsByKey.get(firstKey);
-    const second = graph.stringsByKey.get(secondKey);
-    if (!first || !second || first.color === second.color) return;
+  for (const adjacency of graph.opponentAdjacencies) {
+    const [leftKey, rightKey] = adjacency.groups;
     if (
-      first.liberties.length > SEMEAI_SEKI_CLASSIFIER_MAX_TARGET_LIBERTIES ||
-      second.liberties.length > SEMEAI_SEKI_CLASSIFIER_MAX_TARGET_LIBERTIES
+      excludedGroupKeys.has(leftKey) ||
+      excludedGroupKeys.has(rightKey) ||
+      sharedPairKeys.has(JSON.stringify(adjacency.groups))
     ) {
-      return;
+      continue;
     }
 
-    const ordered =
-      first.key < second.key
-        ? (Object.freeze([first.key, second.key]) as readonly [string, string])
-        : (Object.freeze([second.key, first.key]) as readonly [string, string]);
-    pairKeys.set(JSON.stringify(ordered), ordered);
-  };
+    const left = graph.stringsByKey.get(leftKey);
+    const right = graph.stringsByKey.get(rightKey);
+    if (!left || !right || !pairFitsCommonGate(left, right)) continue;
+    if (
+      left.liberties.length > SIMPLE_SEMEAI_CLASSIFIER_MAX_EXCLUSIVE_LIBERTIES ||
+      right.liberties.length > SIMPLE_SEMEAI_CLASSIFIER_MAX_EXCLUSIVE_LIBERTIES
+    ) {
+      continue;
+    }
+    if (!componentFitsProductionGate(componentForPair(graph, left.key, right.key))) continue;
 
-  for (const adjacency of graph.opponentAdjacencies) addPair(adjacency.groups);
-  for (const shared of graph.sharedLiberties) addPair(shared.groups);
+    pairs.push(Object.freeze({ left, right }));
+    if (pairs.length >= SEMEAI_SEKI_CLASSIFIER_MAX_PAIRS) break;
+  }
 
-  return Object.freeze(
-    [...pairKeys.values()]
-      .sort((left, right) => {
-        const leftKey = JSON.stringify(left);
-        const rightKey = JSON.stringify(right);
-        return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
-      })
-      .flatMap(([leftKey, rightKey]) => {
-        const left = graph.stringsByKey.get(leftKey);
-        const right = graph.stringsByKey.get(rightKey);
-        return left && right ? [Object.freeze({ left, right })] : [];
+  return Object.freeze(pairs);
+};
+
+const collectSharedSemeaiPairs = (
+  graph: EndgameGraph,
+  excludedGroupKeys: ReadonlySet<string>,
+): readonly SharedInteractingPair[] => {
+  const pairs: SharedInteractingPair[] = [];
+
+  for (const shared of graph.sharedLiberties) {
+    const [leftKey, rightKey] = shared.groups;
+    if (excludedGroupKeys.has(leftKey) || excludedGroupKeys.has(rightKey)) continue;
+
+    const left = graph.stringsByKey.get(leftKey);
+    const right = graph.stringsByKey.get(rightKey);
+    if (!left || !right || !pairFitsCommonGate(left, right)) continue;
+    if (
+      shared.liberties.length > SEMEAI_SEKI_CLASSIFIER_MAX_SHARED_LIBERTIES ||
+      new Set([...left.liberties, ...right.liberties]).size >
+        SEMEAI_SEKI_CLASSIFIER_MAX_DISTINCT_LIBERTIES
+    ) {
+      continue;
+    }
+    if (!componentFitsProductionGate(componentForPair(graph, left.key, right.key))) continue;
+
+    pairs.push(
+      Object.freeze({
+        left,
+        right,
+        sharedLiberties: shared.liberties,
       }),
-  );
+    );
+    if (pairs.length >= SEMEAI_SEKI_CLASSIFIER_MAX_PAIRS) break;
+  }
+
+  return Object.freeze(pairs);
 };
 
 /**
@@ -248,11 +353,13 @@ const collectInteractingPairs = (
  *
  * It promotes only proof-bearing statuses. Benson/pass-alive, safe connection,
  * sealed one-liberty death, the short tactical reader and bounded local L&D run
- * first. Work 7D then evaluates only structurally interacting unresolved pairs
- * with small target-liberty counts. A basic-seki proof promotes both targets to
- * seki; a stable bounded-semeai winner promotes only the losing target to dead.
- * A race winner is never promoted to alive. First-player dependence, ko,
- * boundary escape, budget exhaustion, cycles and incomplete paths stay
+ * first. Work 7D then applies a strict production candidate gate before semeai
+ * and seki: small targets, small conflict components, bounded pair count and,
+ * for the AND/OR path, only compact shared-liberty races. Simple Work 7A races
+ * are integrated through their cheaper proof path. A basic-seki proof promotes
+ * both targets to seki; a stable semeai winner promotes only the losing target
+ * to dead. A race winner is never promoted to alive. First-player dependence,
+ * ko, boundary escape, budget exhaustion, cycles and incomplete paths stay
  * unresolved. The older closed-two-liberty seki certificate remains a strict
  * fallback for unresolved groups.
  */
@@ -288,9 +395,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     for (const group of graph.strings) {
       if (passAliveGroupKeys.has(group.key)) continue;
 
-      // RelevanceZone is intentionally more expensive than the shared graph
-      // snapshot, so only invoke the Work 5B verifier for structural candidates
-      // that already touch a same-color Benson group through shared liberties.
       const hasBensonConnectionCandidate = graph.possibleConnections.some((candidate) => {
         if (!candidate.groups.includes(group.key)) return false;
         const otherKey = candidate.groups.find((groupKey) => groupKey !== group.key);
@@ -328,9 +432,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     );
     const tacticalDeadProofs = new Map<string, TacticalDeadProof>();
     for (const group of graph.strings) {
-      // Keep the existing one-liberty evidence contract authoritative. Work 4
-      // only promotes a new class of very short two-liberty proofs; broader
-      // tactical localization remains conservative even after Work 5B.
       if (
         passAliveGroupKeys.has(group.key) ||
         safeConnectionProofs.has(group.key) ||
@@ -388,13 +489,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
         continue;
       }
 
-      // Work 6C deliberately keeps the first production search class narrow.
-      // One-liberty groups already have a sealed proof and two-liberty groups
-      // already belong to the Work 4 tactical layer. The local L&D reader is
-      // therefore used here only for small 3–4 liberty targets whose every
-      // liberty is immediately bounded by a Benson/pass-alive opponent string.
-      // This is only a candidate/performance gate: the reader must still prove
-      // both first-player orders before any automatic status is emitted.
       if (group.liberties.length < 3 || group.liberties.length > 4) continue;
       const opponent: StoneColor = group.color === 'black' ? 'white' : 'black';
       const enclosedBySafeOpponent = group.liberties.every((liberty) =>
@@ -421,14 +515,12 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
       ...tacticalDeadProofs.keys(),
       ...localLifeDeathProofs.keys(),
     ]);
-    const interactingPairs = collectInteractingPairs(graph, resolvedBeforeRaces);
+    const simplePairs = collectSimpleSemeaiPairs(graph, resolvedBeforeRaces);
+    const sharedPairs = collectSharedSemeaiPairs(graph, resolvedBeforeRaces);
 
-    // Seki is checked before semeai-death promotion. This prevents a pair that
-    // has a complete mutual-restraint proof from being interpreted through a
-    // narrower capture-race lens. Each accepted proof applies symmetrically to
-    // both original crucial targets.
     const basicSekiProofs = new Map<string, BasicSekiClassifierProof>();
-    for (const pair of interactingPairs) {
+    for (const pair of sharedPairs) {
+      if (pair.sharedLiberties.length < 2) continue;
       if (basicSekiProofs.has(pair.left.key) || basicSekiProofs.has(pair.right.key)) continue;
       const result = analyzeBasicSeki(
         pair.left,
@@ -447,7 +539,20 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     }
 
     const semeaiDeadProofs = new Map<string, StableSemeaiDeadProof>();
-    for (const pair of interactingPairs) {
+    for (const pair of simplePairs) {
+      const result = analyzeSimpleSemeai(
+        pair.left,
+        pair.right,
+        context.state,
+        context.topology,
+        { maxExclusiveLiberties: SIMPLE_SEMEAI_CLASSIFIER_MAX_EXCLUSIVE_LIBERTIES },
+      );
+      const proof = toSimpleSemeaiDeadProof(result, pair.left, pair.right);
+      if (!proof || semeaiDeadProofs.has(proof.loserGroupKey)) continue;
+      semeaiDeadProofs.set(proof.loserGroupKey, proof.evidence);
+    }
+
+    for (const pair of sharedPairs) {
       if (basicSekiProofs.has(pair.left.key) || basicSekiProofs.has(pair.right.key)) continue;
       const result = analyzeBoundedSemeai(
         pair.left,
@@ -459,7 +564,7 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
           maxZonePoints: SEMEAI_SEKI_CLASSIFIER_MAX_ZONE_POINTS,
         },
       );
-      const proof = toStableSemeaiDeadProof(result);
+      const proof = toBoundedSemeaiDeadProof(result);
       if (!proof || semeaiDeadProofs.has(proof.loserGroupKey)) continue;
       semeaiDeadProofs.set(proof.loserGroupKey, proof.evidence);
     }
