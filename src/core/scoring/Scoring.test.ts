@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EndgameClassification } from '../endgame/EndgameClassifier';
+import { resolveTerritory } from '../endgame/TerritoryResolver';
 import type { GameState, PointOccupancy } from '../game/types';
 import type { PointId, Topology } from '../topology/Topology';
 import { TorusTopology } from '../topology/TorusTopology';
@@ -193,7 +194,7 @@ describe('endgame classification in scoring', () => {
     expect(japanese.black).toBe(2);
   });
 
-  it('does not turn a seki-adjacent empty region into territory', () => {
+  it('hands seki-neutral territory from TerritoryResolver to both scoring rules', () => {
     const state = makeState('black', { '4,4': 'empty' });
     const sekiGroup = topology.points().filter((point) => point !== '4,4');
     const classification = Object.freeze([
@@ -204,11 +205,46 @@ describe('endgame classification in scoring', () => {
       }),
     ]);
 
-    const score = new JapaneseScoring(topology).score(state, classification, 0);
+    const [resolvedRegion] = resolveTerritory(state, classification, topology).regions;
+    expect(resolvedRegion).toMatchObject({
+      points: ['4,4'],
+      borderingColors: ['black'],
+      touchesSeki: true,
+      owner: 'NEUTRAL',
+    });
 
-    expect(score.territory.black).toBe(0);
-    expect(score.territory.seki).toBe(1);
-    expect(score.territoryPoints.seki).toEqual(['4,4']);
+    const chinese = new ChineseScoring(topology).score(state, classification, 0);
+    const japanese = new JapaneseScoring(topology).score(state, classification, 0);
+
+    for (const score of [chinese, japanese]) {
+      expect(score.territory.black).toBe(0);
+      expect(score.territory.neutral).toBe(0);
+      expect(score.territory.seki).toBe(1);
+      expect(score.territoryPoints.seki).toEqual(['4,4']);
+    }
+  });
+
+  it('hands ordinary dame to the neutral bucket rather than the seki bucket', () => {
+    const state = makeState('black', { '4,4': 'empty', '3,4': 'white' });
+    const [resolvedRegion] = resolveTerritory(state, noClassification, topology).regions;
+
+    expect(resolvedRegion).toMatchObject({
+      points: ['4,4'],
+      borderingColors: ['black', 'white'],
+      touchesSeki: false,
+      owner: 'NEUTRAL',
+    });
+
+    const chinese = new ChineseScoring(topology).score(state, noClassification, 0);
+    const japanese = new JapaneseScoring(topology).score(state, noClassification, 0);
+
+    for (const score of [chinese, japanese]) {
+      expect(score.territory.black).toBe(0);
+      expect(score.territory.white).toBe(0);
+      expect(score.territory.neutral).toBe(1);
+      expect(score.territory.seki).toBe(0);
+      expect(score.territoryPoints.neutral).toEqual(['4,4']);
+    }
   });
 });
 
