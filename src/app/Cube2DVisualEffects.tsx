@@ -148,7 +148,7 @@ export function Cube2DVisualEffects({
   const step = CUBE_2D_SVG_SIZE / size;
   const contentScale = cube2DContentScale(size);
   const stoneRadius = step * 0.39 * contentScale;
-  const contourRadius = stoneRadius * 1.12;
+  const contourRadius = stoneRadius;
   const territoryRadius = Math.max(1.25, step * 0.115 * contentScale);
   const effectsStyle: EffectsStyle = { '--cube-2d-cell-size': `${layoutCellSize}px` };
   const captureArtworkPrefix = 'cube-2d-capture-artwork';
