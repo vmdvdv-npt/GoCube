@@ -192,7 +192,7 @@ describe('AssistedEndgameClassifier automatic alive/dead core', () => {
     }
   });
 
-  it('keeps a sealed candidate unresolved when its opponent boundary is not proven alive', async () => {
+  it('proves a one-liberty target dead tactically even when its boundary is not pass-alive', async () => {
     const topology = new TorusTopology(9);
     const target = new Set<PointId>(['4,4', '5,4']);
     const liberty = '3,4';
@@ -213,8 +213,20 @@ describe('AssistedEndgameClassifier automatic alive/dead core', () => {
       return 'empty';
     });
     const result = await analyzeState(topology, state);
+    const dead = proposalForColor(result, state, 'black');
 
-    expect(proposalForColor(result, state, 'black')?.status).toBe('unresolved');
+    expect(dead).toMatchObject({
+      points: [...target].sort(),
+      status: 'dead',
+      source: 'automatic',
+      evidence: {
+        algorithm: 'one-liberty-tactical-reader-v1',
+        attackPoints: [liberty],
+        attackerFirst: { result: 'kill' },
+        defenderFirst: { result: 'forced-kill' },
+        outcome: 'proven-dead',
+      },
+    });
   });
 
   it('uses the actual Torus seams and Cube face graph in positive alive proofs', async () => {
