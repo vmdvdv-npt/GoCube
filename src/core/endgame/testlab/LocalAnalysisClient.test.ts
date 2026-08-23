@@ -20,26 +20,29 @@ const jsonResponse = (body: unknown, status = 200): Response =>
 
 describe('LocalAnalysisClient', () => {
   it('reports a configured compatible loopback bridge as available', async () => {
-    const fetchImpl = vi.fn(async () =>
+    const fetchMock = vi.fn(async () =>
       jsonResponse({ protocolVersion: 1, available: true, version: '0.3.03' }),
-    ) as unknown as typeof fetch;
-    const client = new LocalAnalysisClient({ fetchImpl, token: 'secret' });
+    );
+    const client = new LocalAnalysisClient({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      token: 'secret',
+    });
 
     await expect(client.availability()).resolves.toEqual({
       available: true,
       reason: undefined,
       version: '0.3.03',
     });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const init = fetchImpl.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
     expect(init?.headers).toMatchObject({ Authorization: 'Bearer secret' });
   });
 
   it('degrades cleanly when no local bridge is running', async () => {
-    const fetchImpl = vi.fn(async () => {
+    const fetchMock = vi.fn(async () => {
       throw new TypeError('fetch failed');
-    }) as unknown as typeof fetch;
-    const client = new LocalAnalysisClient({ fetchImpl });
+    });
+    const client = new LocalAnalysisClient({ fetchImpl: fetchMock as unknown as typeof fetch });
 
     await expect(client.availability()).resolves.toEqual({
       available: false,
@@ -48,10 +51,10 @@ describe('LocalAnalysisClient', () => {
   });
 
   it('rejects incompatible protocol versions before treating the helper as usable', async () => {
-    const fetchImpl = vi.fn(async () =>
+    const fetchMock = vi.fn(async () =>
       jsonResponse({ protocolVersion: 2, available: true, version: 'future' }),
-    ) as unknown as typeof fetch;
-    const client = new LocalAnalysisClient({ fetchImpl });
+    );
+    const client = new LocalAnalysisClient({ fetchImpl: fetchMock as unknown as typeof fetch });
 
     await expect(client.availability()).resolves.toEqual({
       available: false,
@@ -60,7 +63,7 @@ describe('LocalAnalysisClient', () => {
   });
 
   it('sends only the fixed analysis payload and returns KataGo diagnostics', async () => {
-    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       expect(init?.method).toBe('POST');
       const body = JSON.parse(String(init?.body)) as {
         protocolVersion: number;
@@ -77,8 +80,8 @@ describe('LocalAnalysisClient', () => {
           policy: [0.1, 0.9],
         },
       });
-    }) as unknown as typeof fetch;
-    const client = new LocalAnalysisClient({ fetchImpl });
+    });
+    const client = new LocalAnalysisClient({ fetchImpl: fetchMock as unknown as typeof fetch });
 
     const result = await client.analyze(position);
 
@@ -90,10 +93,10 @@ describe('LocalAnalysisClient', () => {
   });
 
   it('surfaces bridge rejection as an explicit oracle error', async () => {
-    const fetchImpl = vi.fn(async () =>
+    const fetchMock = vi.fn(async () =>
       jsonResponse({ error: 'CUBEGO_KATAGO_MODEL is not configured.' }, 503),
-    ) as unknown as typeof fetch;
-    const client = new LocalAnalysisClient({ fetchImpl });
+    );
+    const client = new LocalAnalysisClient({ fetchImpl: fetchMock as unknown as typeof fetch });
 
     await expect(client.analyze(position)).rejects.toThrow(
       'Local analysis bridge rejected request: CUBEGO_KATAGO_MODEL is not configured.',
