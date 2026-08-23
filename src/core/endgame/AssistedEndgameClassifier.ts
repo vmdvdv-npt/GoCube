@@ -372,9 +372,8 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     const tacticalDeadProofs = new Map<string, TacticalDeadProof>();
     for (const group of graph.strings) {
       const tacticalShape =
-        group.points.length === 1 &&
-        group.liberties.length >= 1 &&
-        group.liberties.length <= 2;
+        group.liberties.length === 2 ||
+        (group.liberties.length === 1 && group.points.length === 1);
       if (
         passAliveGroupKeys.has(group.key) ||
         safeConnectionProofs.has(group.key) ||
