@@ -10,9 +10,9 @@ Choose via PR title:
 
 - `[no-test]` — no automated test suite for this PR
 - no marker — standard CI: lint, typecheck, unit/integration coverage, build, Chromium E2E
-- `[full]` — full CI: standard checks plus Chromium, Firefox, and WebKit E2E
+- `[full]` — full CI: standard checks plus Chromium, Firefox, and WebKit E2E; use only when the user explicitly requests Full CI for this PR
 
-Release finalization always runs full CI regardless of PR title.
+Do not select `[full]` because a PR seems complex, risky, large, architectural, or renderer-related. Release finalization always runs full CI automatically regardless of PR title.
 
 ## Verification
 

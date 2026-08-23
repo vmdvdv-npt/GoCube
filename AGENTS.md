@@ -25,5 +25,6 @@ For work specifically on the automatic/assisted endgame engine, after reading th
 - Use repository code and tests for implementation-specific details after reading the relevant canonical documentation.
 - Keep changes focused; avoid mixing unrelated behavior, architecture, and visual work.
 - Use a feature/documentation branch and pull request; keep `main` releasable.
+- Before naming/opening a PR, read and follow the CI mode-selection policy in `docs/ARCHITECTURE.md` §19; do not infer CI mode from task complexity.
 - Run the relevant automated checks and require CI to pass before merge.
 - For version completion, acceptance, tagging, or release decisions, follow the acceptance authority defined exclusively in `docs/ROADMAP.md`; never infer acceptance from CI, merged PRs, completed checkpoints, or agent judgment.
