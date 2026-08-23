@@ -48,10 +48,12 @@ const cloneBoard = (board: BoardOccupancy): BoardOccupancy =>
 const forcedThreeLibertyFixture = () => {
   const topology = makeTopology({
     w: Object.freeze(['a', 'b', 'c']),
-    q: Object.freeze(['a', 'b', 'c']),
+    q: Object.freeze(['a', 'b', 'c', 'q1', 'q2']),
     a: Object.freeze(['q', 'w']),
     b: Object.freeze(['q', 'w']),
     c: Object.freeze(['q', 'w']),
+    q1: Object.freeze(['q']),
+    q2: Object.freeze(['q']),
   });
   const state = makeState(
     topology,
