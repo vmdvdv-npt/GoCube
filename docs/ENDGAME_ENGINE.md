@@ -1407,11 +1407,25 @@ Acceptance закрыт:
 - оба first-player orders вычисляются отдельно; stable winner выдаётся только когда победитель один и тот же в обоих orders, иначе результат `first-player-dependent`;
 - classifier integration не добавлена и остаётся scope Work 7D.
 
-Итог Work 7A зафиксирован в разделе 49. Следующий этап — **Work 7B: Shared Liberties + Multi-group Semeai**.
+Итог Work 7A зафиксирован в разделе 49.
 
-## Work 7B — Shared Liberties + Multi-group Semeai
+## Work 7B — Shared Liberties + Multi-group Semeai — CLOSED 2026-08-23
 
-Общие дыхания, несколько взаимодействующих групп, соединения/захваты соседней группы и случаи, где static countdown недостаточен. Основной путь — bounded AND/OR search на conflict region поверх существующего search core.
+Поверх Work 6A AND/OR core и Work 5A Relevance Zone реализован `bounded-semeai-v1` для двух opposing target strings внутри одного certified local conflict region. Shared-liberty play, changing liberties, соединения и захваты соседних auxiliary groups теперь проходят как ordinary authoritative search transitions, а не как static rejection.
+
+Acceptance закрыт:
+
+- обе target Relevance Zones должны быть `bounded`; conflict region — deterministic union этих certified zones;
+- every local empty point перебирается через authoritative `GameEngine.placeStone()` плюс явный `tenuki`;
+- исходные stones обеих target groups фиксируются как independent crucial targets;
+- third-group connections/merges/captures и changing shared/exclusive liberties разрешены внутри certified region и переоцениваются после каждого хода;
+- выход любой target dependency zone за исходную certified union или `maxZonePoints` overflow -> `unknown-boundary`;
+- оба first-player orders решаются отдельно через deterministic AND/OR search; stable winner и `first-player-dependent` различаются;
+- simple ko, budget, boundary, cycle и incomplete uncertainty fail closed;
+- Work 7B остаётся two-primary-target solver: остальные strings внутри region являются auxiliary interaction state; general N-primary-target public API не заявляется;
+- seki не маркируется, classifier integration не добавлена — это scope 7C/7D.
+
+Итог Work 7B зафиксирован в разделе 50. Следующий этап — **Work 7C: Basic Seki Proof**.
 
 ## Work 7C — Basic Seki Proof
 
@@ -1514,7 +1528,7 @@ search did not find kill -> alive
 
 1. Нужен ли production df-pn или DFS + strong relevance/move ordering достаточно?
 2. Какой exact representation использовать для `AnalysisPosition`?
-3. Как formalize richer multi-group `ConflictRegion` / `RelevanceZone` API поверх принятой Work 5A single-target conservative closure?
+3. Нужен ли в будущем general N-primary-target `ConflictRegion` / `RelevanceZone` API поверх принятой Work 7B композиции двух single-target bounded certificates?
 4. Нужно ли отдельное `EndgameAdjudicationPolicy` или достаточно текущего classifier contract?
 5. Какие raw outcomes хранить: `critical`, `ko-dependent`, multiple proof strengths?
 6. Какой node budget приемлем для browser runtime на 19x19 Torus?
@@ -2913,4 +2927,166 @@ Work 7A намеренно **не** меняет `AssistedEndgameClassifier`, au
 - shared liberties, third groups, changing-liberty fights и oversized races остаются unresolved;
 - classifier integration отложена до Work 7D.
 
-**Следующий этап — Work 7B: Shared Liberties + Multi-group Semeai.**
+**Work 7B закрыт в разделе 50; следующий этап — Work 7C: Basic Seki Proof.**
+
+---
+
+# 50. Work 7B — Shared Liberties + Multi-group Semeai: финальный результат
+
+Срез на **2026-08-23**. **Work 7B закрыт.** Добавлен topology-neutral `SemeaiSearch` / `bounded-semeai-v1`, который переводит deferred shared-liberty и multi-group interaction cases Work 7A в bounded game-theoretic search. Production classifier этим этапом намеренно не менялся.
+
+## 50.1. Accepted proof boundary
+
+Raw result имеет identity:
+
+```text
+algorithm = bounded-semeai-v1
+proof = bounded-and-or-capture-race
+```
+
+Вход остаётся pair-oriented: две текущие opposing target strings. Перед search обе supplied identities сверяются с новым `EndgameGraphCore` snapshot. `stale-group`, `same-color` и `not-interacting` остаются `unresolved`.
+
+Обе target groups получают собственный Work 5A `RelevanceZone`. Search допускается только если обе зоны доказанно `bounded`. Certified Work 7B conflict region определяется как deterministic union двух bounded zones; union также обязан уложиться в `maxZonePoints`.
+
+Текущий default safety boundary:
+
+```text
+maxZonePoints = 96
+```
+
+Оригинальные stones каждой target фиксируются отдельно как `leftCrucialStones` / `rightCrucialStones`. Это позволяет target расширяться и соединяться в ходе search, не теряя identity исходной capturing race.
+
+Work 7B намеренно не вводит general N-primary-target public API. Две исходные groups являются primary objectives, а любые дополнительные strings внутри certified conflict region — auxiliary interacting groups, которые могут соединяться, захватываться или менять liberty structure в ходе search.
+
+## 50.2. Search semantics
+
+Search формулирует одно симметричное objective:
+
+```text
+left side = OR
+  доказать force-capture исходного right target
+
+right side = AND
+  опровергнуть этот objective, в том числе force-capture исходного left target
+```
+
+Terminal facts:
+
+```text
+all right crucial stones captured -> proved -> left-wins
+all left crucial stones captured  -> refuted -> right-wins
+```
+
+На каждом nonterminal node:
+
+- перебираются **все empty points исходной certified union**;
+- legal placement / capture / suicide / simple-ko legality выполняются только через authoritative `GameEngine.placeStone()`;
+- illegal placements не являются children;
+- connection/merge с friendly group, capture соседней auxiliary group и изменение shared/exclusive liberties не отклоняются статически — это обычные authoritative transitions;
+- после хода заново строится `EndgameGraphCore`, восстанавливаются текущие target structures по crucial stones и заново строятся обе dependency zones;
+- если любой current target больше не имеет bounded zone, либо его current zone выходит за исходную certified union, continuation становится explicit `unknown-boundary`;
+- отдельный `tenuki` child моделирует pass / irrelevant outside move: local occupancy не меняется, side-to-move меняется, immediate local ko context снимается.
+
+Work 6A `AndOrSearchCore` остаётся единственным search mechanism: deterministic DFS, resolved-only transposition reuse, explicit incomplete/cycle/budget uncertainty и immutable proof trace.
+
+Текущий default node budget:
+
+```text
+maxNodes = 20_000 per first-player order
+```
+
+Это Work 7B engineering safety limit, а не финальный production performance contract. Performance/candidate gating относится к Work 7D.
+
+## 50.3. Ko, first-player orders и raw outcomes
+
+После legal local move reader проверяет immediate restoring simple-ko recapture через authoritative repetition semantics с exact previous-board context. Если continuation требует такой ko, она становится explicit `ko-dependent`, а не winner.
+
+Global ko threats, positional-history solving и complex repetition Work 7B не решает.
+
+Reader всегда решает обе постановки независимо:
+
+```text
+left moves first
+right moves first
+```
+
+Per-order outcome:
+
+```text
+left-wins
+right-wins
+ko-dependent
+unknown-budget
+unknown-boundary
+unknown-cycle
+unknown-incomplete
+```
+
+Pair interpretation:
+
+```text
+same proved winner in both orders -> stable left-wins / right-wins
+different proved winners           -> first-player-dependent
+required simple ko                 -> ko-dependent
+anything else                      -> unresolved
+```
+
+`first-player-dependent` и `ko-dependent` остаются raw semeai facts. Work 7B не преобразует их в `alive`, `dead` или `seki`.
+
+## 50.4. Regression coverage
+
+`SemeaiSearch.test.ts` содержит семь targeted deterministic tests:
+
+1. shared-liberty race, которую Work 7A оставляет `shared-liberties-deferred`, реально решается search и даёт `first-player-dependent`;
+2. shared-liberty race с одной дополнительной liberty у left target доказывает stable `left-wins` при обоих first-player orders;
+3. third-group connection interaction, которую Work 7A отклоняет как `multi-group-interaction`, проходит через search как обычная authoritative transition и остаётся game-theoretically first-player-dependent;
+4. `maxNodes = 0` даёт `unknown-budget` для обоих orders и общий `unresolved`;
+5. conflict region, который нельзя сертифицировать как локальный, возвращает `unknown-boundary` до search;
+6. restoring simple-ko capture возвращает `ko-dependent`, а не winner;
+7. stale supplied target identity отвергается до search как `unresolved`.
+
+Fixtures используют arbitrary graph `Topology`; rectangular geometry в correctness path отсутствует.
+
+## 50.5. Validation
+
+Code-head `560e6f8e41c03a99b68016bee0c6912c74046293` на PR #172 дважды прошёл Engine-relevant standard CI stages:
+
+- lint — pass; остаются только два прежних non-blocking warning в `TestCaseReplayService.ts`, вне Work 7B scope;
+- typecheck — pass;
+- unit/coverage — **596/596 tests pass** в 80 test files;
+- `SemeaiSearch.test.ts` — **7/7 pass**;
+- `SemeaiSearch.ts` coverage — **90% statements / 85.62% branches / 100% functions / 92% lines**;
+- build — pass.
+
+Chromium E2E на том же code-head дважды дал **71/72 pass** из-за одного visual timing assertion вне Engine scope: `e2e/duplicate-regions.spec.ts:62` требует computed opacity exact `1`, но во время stone-placement animation получил промежуточное `0.998486`, а на retry — `0.999854`. Work 7B не меняет renderer, animation или этот E2E. Этот unrelated race не исправляется изменением Engine semantics; exact documentation head всё равно получает свой standard CI перед merge.
+
+## 50.6. Integration boundary и closure
+
+После Work 7B разделение остаётся явным:
+
+```text
+Work 7A
+  cheap exact static proof простых exclusive-liberty races
+
+Work 7B
+  bounded game-theoretic search shared-liberty / auxiliary multi-group interactions
+
+Work 7C
+  отдельный strict proof basic seki
+
+Work 7D
+  adversarial hardening + invariance + budgets + determinism + performance
+  + только после этого production classifier integration
+```
+
+Главные Work 7B invariants:
+
+- authoritative Go transitions — только `GameEngine`;
+- locality — только certified bounded Relevance Zones;
+- original target identity — separate crucial-stone sets;
+- shared liberties и auxiliary captures/connections являются searchable state transitions, а не static rejection;
+- boundary, budget, cycle, incomplete и ko uncertainty fail closed;
+- classifier integration отсутствует;
+- seki status не выводится из невозможности доказать capture.
+
+**Следующий этап — Work 7C: Basic Seki Proof.**
