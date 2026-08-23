@@ -742,7 +742,7 @@ build:engine2 PASS
 Chromium E2E: 72/72 PASS
 ```
 
-Temporary E2-6 CI benchmark step после измерения удалён; `benchmark:engine2:four-lib` остаётся opt-in и воспроизводимым.
+Temporary E2-6 CI benchmark step после #786 удалён; `benchmark:engine2:four-lib` остаётся opt-in и воспроизводимым.
 
 **E2-6 acceptance boundary закрыт. Следующий этап: E2-7 — exact small eye-space.**
 
@@ -1372,7 +1372,7 @@ E2-4/E2-11 overall acceptance boundary:
 18. semeai shared/exclusive liberties, approach candidates and eye summaries are evidence only, not fate labels;
 19. semeai kill/survival authority comes only from existing deterministic proof search with actual side-to-move roles;
 20. failure to prove kill for both colors never implies seki;
-21. `proven-seki` requires the explicit closed two-shared-liberty mutual-capture certificate with authoritative initiation/reply legality и captures;
+21. `proven-seki` requires the explicit closed two-shared-liberty mutual-capture certificate with authoritative initiation/reply legality and captures;
 22. ko, open boundary, exclusive liberty, third-group interaction or failed mutual-capture refutation keeps seki unresolved;
 23. transposition equality is trusted only through canonical adapter `nodeKey` including all proof-relevant target/role/history state;
 24. only completed non-budget frames may be memoized; cache hits do not spend node budget and cannot upgrade incomplete proof semantics;
@@ -1652,7 +1652,7 @@ Temporary benchmark workflow step удалён после measurement; opt-in be
 
 # 24. E2-12c — Confidence Auto-Selection Core
 
-Статус: **IMPLEMENTED / CORE-ONLY / VALIDATION IN PROGRESS / NOT APPLICATION-INTEGRATED**.
+Статус: **DONE / CORE-ONLY / CORPUS-VALIDATED / CI PASS / NOT APPLICATION-INTEGRATED**.
 
 ```text
 selector algorithm = engine2-confidence-auto-select-v1
@@ -1791,7 +1791,7 @@ deepProofSearchInvocations = 0
 - Torus seam source result;
 - Cube face-edge source result.
 
-Expected initial metrics:
+Validated metrics:
 
 ```text
 total cases = 20
@@ -1815,7 +1815,7 @@ Existing E2-12b 16-case corpus остаётся отдельным raw regressio
 
 ## 24.7. Tests / performance boundary
 
-`EndgameConfidenceAutoSelector.test.ts` покрывает:
+`EndgameConfidenceAutoSelector.test.ts` покрывает 22 targeted contracts:
 
 - high/medium/low bands;
 - all three raw-unresolved auto selections;
@@ -1838,7 +1838,7 @@ Existing E2-12b 16-case corpus остаётся отдельным raw regressio
 
 E2-12c **не подключает selector к Endgame Review или scoring**.
 
-На этом этапе также не реализуются:
+На этом этапе также не реализованы:
 
 - automatic UI fill;
 - floating Alive/Dead/Seki UI changes;
@@ -1856,16 +1856,19 @@ Production Endgame Review semantics не переключаются этим cor
 
 ## 24.9. CI / completion
 
-Source head normal CI выполняется через стандартный gate:
+Clean normal CI #857 на source-cleanup head `dedfbaabcb07c6d4af58873351b28700bf4ad332`:
 
 ```text
-lint
-test:coverage
-typecheck:engine2
-build:engine2
-Chromium E2E
+E2-12c targeted tests: 22/22 PASS
+E2-12b raw targeted tests: 16/16 PASS
+full unit/coverage: 651 passed, 83 opt-in tests skipped
+test files: 82 passed, 10 skipped
+typecheck:engine2 PASS
+build:engine2 PASS
+Chromium E2E: 72/72 PASS
+lint: 0 errors, 2 pre-existing TestCaseReplayService warnings
 ```
 
-Финальный exact-head CI после этого documentation commit должен быть записан здесь и в Draft PR body перед merge readiness.
+No E2-12c benchmark workflow was added. The existing E2-12b confidence benchmark remains opt-in and unchanged. This final documentation-only cleanup is followed by an exact-head normal CI; its exact SHA/run is recorded in PR #184 and the final implementation report.
 
-**Следующий этап строго: E2-12d — Endgame Review / scoring / player override application integration.**
+**E2-12c core acceptance boundary закрыт. Следующий этап строго: E2-12d — Endgame Review / scoring / player override application integration.**
