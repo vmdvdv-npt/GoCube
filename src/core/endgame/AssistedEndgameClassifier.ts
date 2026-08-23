@@ -9,6 +9,11 @@ import {
   type AutomaticDeadProof,
   type DeadAnalysisGroup,
 } from './AutomaticDeadProof';
+import {
+  generateSekiCandidates,
+  verifySekiCandidate,
+  type AutomaticSekiProof,
+} from './AutomaticSekiProof';
 import { endgameGroupId } from './EndgameGroupIdentity';
 import { ManualEndgameClassifier } from './ManualEndgameClassifier';
 import type { StoneColor } from '../game/types';
@@ -36,9 +41,10 @@ const ALIVE_ALGORITHM = 'benson-pass-alive-v1';
  * Conservative assisted classifier.
  *
  * It proves unconditional/pass-alive groups using Benson's fixed-point
- * criterion, then sends only narrow single-liberty dead candidates through a
- * separate strict verifier. Any group not proven by either boundary remains
- * unresolved; automatic seki is intentionally left to a later checkpoint.
+ * criterion, sends only narrow single-liberty dead candidates through a
+ * separate strict verifier, and resolves seki only for a closed mutual
+ * two-liberty proof. Any group not proven by one of those boundaries remains
+ * unresolved.
  */
 export class AssistedEndgameClassifier implements EndgameClassifier {
   private readonly manual = new ManualEndgameClassifier();
@@ -77,6 +83,27 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
       if (verification.proven) deadProofs.set(candidate.groupKey, verification.evidence);
     }
 
+    const alreadyResolvedGroupKeys = new Set<string>([
+      ...passAliveGroupKeys,
+      ...deadProofs.keys(),
+    ]);
+    const sekiProofs = new Map<string, AutomaticSekiProof>();
+    for (const candidate of generateSekiCandidates(
+      groupIndex.byKey,
+      alreadyResolvedGroupKeys,
+    )) {
+      const verification = verifySekiCandidate(candidate, {
+        state: context.state,
+        topology: context.topology,
+        groups: groupIndex.byKey,
+        pointOwner: groupIndex.pointOwner,
+      });
+      if (!verification.proven) continue;
+      for (const groupKey of candidate.groupKeys) {
+        sekiProofs.set(groupKey, verification.evidence);
+      }
+    }
+
     return Object.freeze(
       baseline.map((proposal) => {
         const groupKey = endgameGroupId(proposal.points);
@@ -101,6 +128,16 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
             status: 'dead' as const,
             source: 'automatic' as const,
             evidence: Object.freeze({ ...deadProof }),
+          });
+        }
+
+        const sekiProof = sekiProofs.get(groupKey);
+        if (sekiProof) {
+          return Object.freeze({
+            points: proposal.points,
+            status: 'seki' as const,
+            source: 'automatic' as const,
+            evidence: Object.freeze({ ...sekiProof }),
           });
         }
 
