@@ -57,10 +57,6 @@ jobs:
       - run: npm run test:coverage
         if: steps.mode.outputs.mode != 'none'
 
-      - name: Run Engine2 E2-5 three-liberty benchmark
-        if: steps.mode.outputs.mode != 'none' && github.event_name == 'pull_request' && github.head_ref == 'engine2-work9-three-liberty'
-        run: npm run benchmark:engine2:three-lib
-
       - run: npm run typecheck:engine2
         if: steps.mode.outputs.mode != 'none'
 
