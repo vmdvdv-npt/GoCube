@@ -14,6 +14,7 @@
     "typecheck": "tsc -b --pretty false",
     "typecheck:engine2": "tsc -p tsconfig.engine2.json --pretty false",
     "test:coverage": "vitest run --coverage",
+    "benchmark:engine2:two-lib": "ENGINE2_BENCHMARK=1 vitest run src/core/endgame/TwoLibertyTacticalReader.benchmark.test.ts --coverage.enabled=false --reporter=verbose",
     "lab:local-ai": "node tools/local-ai/bridge.mjs"
   },
   "dependencies": {
