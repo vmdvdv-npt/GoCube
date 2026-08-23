@@ -49,6 +49,9 @@ const expectNavigationAnchored = async (page: Page) => {
   expectNear(downArrow.x + downArrow.width / 2, bottomBoard.x + bottomBoard.width / 2);
 };
 
+const differentStatusLabel = (label: string | null): 'Alive' | 'Dead' =>
+  label?.trim() === 'Dead' ? 'Alive' : 'Dead';
+
 test('Cube 2D navigation arrows stay anchored to face edges through anchor movement and zoom', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Cube', exact: true }).click();
@@ -143,30 +146,34 @@ test('0.2 production Cube flow: New Game, seam capture, history, zoom, resume an
   const initialResolved = Number(totalMatch![1]);
   const groupTotal = Number(totalMatch![2]);
   expect(groupTotal).toBeGreaterThan(1);
-  expect(initialResolved).toBeLessThan(groupTotal);
+  expect(initialResolved).toBe(groupTotal);
+  expect(progressText).toContain(`${groupTotal} automatic proposals`);
+  await expect(page.getByRole('button', { name: 'Finish scoring' })).toBeEnabled();
 
-  // Acceptance checkpoint: persist a partial assisted review, reload before scoring,
-  // and require Continue to restore the already reviewed decision.
+  // Persist one explicit player override while every other group keeps its automatic proposal.
+  const overridePoint = 'front:0:3';
+  await hit(page, overridePoint).click();
   const statuses = page.getByRole('group', { name: 'Selected group status' });
-  await statuses.getByRole('button', { name: 'Alive' }).click();
-  const partialProgress = (await progress.textContent()) ?? '';
-  expect(partialProgress).toContain(`Resolved ${initialResolved + 1} of ${groupTotal}`);
+  const selectedAutomatic = statuses.locator('button[aria-pressed="true"]');
+  await expect(selectedAutomatic).toHaveCount(1);
+  const overrideLabel = differentStatusLabel(await selectedAutomatic.textContent());
+  await statuses.getByRole('button', { name: overrideLabel, exact: true }).click();
+  await expect(statuses.getByRole('button', { name: overrideLabel, exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(progress).toContainText(`Resolved ${groupTotal} of ${groupTotal}`);
 
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Continue saved game?' })).toBeVisible();
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
-  await expect(page.locator('.endgame-progress')).toHaveText(partialProgress);
-
-  const visibleStonePointIds = await page.locator('.cube-2d-stone').evaluateAll((nodes) =>
-    [...new Set(nodes.map((node) => node.getAttribute('data-logical-point-id')).filter(Boolean))] as string[],
-  );
-  for (const pointId of visibleStonePointIds) {
-    await hit(page, pointId).click();
-    await page.getByRole('group', { name: 'Selected group status' })
-      .getByRole('button', { name: 'Alive' })
-      .click();
-  }
+  await expect(progress).toContainText(`Resolved ${groupTotal} of ${groupTotal}`);
+  await hit(page, overridePoint).click();
+  await expect(
+    page.getByRole('group', { name: 'Selected group status' })
+      .getByRole('button', { name: overrideLabel, exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
 
   await expect(page.getByRole('button', { name: 'Finish scoring' })).toBeEnabled();
   await expect(page.getByRole('dialog')).toHaveCount(0);

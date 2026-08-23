@@ -11,6 +11,9 @@ const expectSixBoards = async (page: Page) => {
   await expect(page.locator('.cube-2d-renderer')).toHaveAttribute('data-board-count', '6');
 };
 
+const differentStatusLabel = (label: string | null): 'Alive' | 'Dead' =>
+  label?.trim() === 'Dead' ? 'Alive' : 'Dead';
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Cube', exact: true }).click();
@@ -52,7 +55,7 @@ test('Cube 2D capture can be undone/redone without creating face duplicates', as
   await expectSixBoards(page);
 });
 
-test('Cube 2D completes assisted endgame, stays navigable when finished, and Undo reopens play', async ({ page }) => {
+test('Cube 2D completes confidence auto endgame, stays navigable when finished, and Undo reopens play', async ({ page }) => {
   const reviewPoints = ['front:1:2', 'back:0:0', 'right:1:0', 'front:0:0'] as const;
   await hit(page, reviewPoints[0]).click();
   await hit(page, reviewPoints[1]).click();
@@ -72,13 +75,25 @@ test('Cube 2D completes assisted endgame, stays navigable when finished, and Und
   await page.getByRole('button', { name: 'Pass (1)' }).click();
 
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
-  await expect(page.locator('.endgame-progress')).toContainText('Resolved 0 of');
+  const progress = page.locator('.endgame-progress');
+  const progressText = (await progress.textContent()) ?? '';
+  const match = progressText.match(/Resolved (\d+) of (\d+)/);
+  expect(match).not.toBeNull();
+  expect(Number(match![1])).toBe(Number(match![2]));
+  expect(progressText).toContain(`${match![2]} automatic proposals`);
+  await expect(page.getByRole('button', { name: 'Finish scoring' })).toBeEnabled();
 
+  // Every automatic proposal remains editable; override one without manually sweeping all groups.
+  await hit(page, reviewPoints[0]).click();
   const statuses = page.getByRole('group', { name: 'Selected group status' });
-  for (const pointId of reviewPoints) {
-    await hit(page, pointId).click();
-    await statuses.getByRole('button', { name: 'Alive' }).click();
-  }
+  const selectedAutomatic = statuses.locator('button[aria-pressed="true"]');
+  await expect(selectedAutomatic).toHaveCount(1);
+  const overrideLabel = differentStatusLabel(await selectedAutomatic.textContent());
+  await statuses.getByRole('button', { name: overrideLabel, exact: true }).click();
+  await expect(statuses.getByRole('button', { name: overrideLabel, exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
 
   await expect(page.getByRole('button', { name: 'Finish scoring' })).toBeEnabled();
   await expect(page.getByRole('dialog')).toHaveCount(0);

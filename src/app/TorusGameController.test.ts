@@ -3,7 +3,6 @@ import { TorusGameController } from './TorusGameController';
 
 const markAllAlive = async (controller: TorusGameController): Promise<void> => {
   for (const group of controller.endgameGroups()) {
-    if (controller.nextUnresolvedEndgameGroupId() === null) break;
     await controller.setEndgameDecision(group.id, 'alive');
   }
 };
@@ -32,7 +31,7 @@ describe('TorusGameController assisted endgame flow', () => {
     expect(finished.viewModel.finalScore).not.toBeNull();
   });
 
-  it('exposes deterministic stone groups and their topology edges for assisted review', async () => {
+  it('exposes deterministic auto-resolved stone groups and their topology edges for assisted review', async () => {
     const controller = new TorusGameController();
     await controller.placeStone('0,0');
     await controller.placeStone('4,4');
@@ -54,7 +53,12 @@ describe('TorusGameController assisted endgame flow', () => {
         edges: [],
       },
     ]);
-    expect(controller.nextUnresolvedEndgameGroupId()).toBe('["0,0"]');
+    expect(Object.keys(controller.endgameDecisions()).sort()).toEqual([
+      '["0,0"]',
+      '["4,4"]',
+    ]);
+    expect(controller.endgameManualGroupIds()).toEqual([]);
+    expect(controller.nextUnresolvedEndgameGroupId()).toBeNull();
   });
 
   it('exposes a seam-connected group as one logical group with one topology edge', async () => {
@@ -72,21 +76,25 @@ describe('TorusGameController assisted endgame flow', () => {
     });
   });
 
-  it('requires a manual decision for every unresolved group', async () => {
+  it('allows immediate finish for normal auto-resolved groups while preserving a player override', async () => {
     const controller = new TorusGameController();
     await controller.placeStone('0,0');
     await controller.placeStone('4,4');
     await controller.pass();
     await controller.pass();
 
+    expect(controller.endgameManualGroupIds()).toEqual([]);
+    expect(controller.nextUnresolvedEndgameGroupId()).toBeNull();
     await controller.setEndgameDecision('["0,0"]', 'alive');
-    await expect(controller.finishEndgame()).rejects.toThrow(
-      'Missing manual endgame decision',
-    );
 
-    expect(controller.viewModel().phase).toBe('endgame');
-    expect(controller.endgameGroups()).toHaveLength(2);
-    expect(controller.nextUnresolvedEndgameGroupId()).toBe('["4,4"]');
+    const finished = await controller.finishEndgame();
+    expect(finished.viewModel.phase).toBe('finished');
+    expect(controller.snapshot().endgameClassification).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ points: ['0,0'], status: 'alive', source: 'user' }),
+        expect.objectContaining({ points: ['4,4'], source: 'automatic' }),
+      ]),
+    );
   });
 
   it('validates manual decisions and completes Chinese scoring through GameSession', async () => {
@@ -141,7 +149,7 @@ describe('TorusGameController assisted endgame flow', () => {
     expect(undone.viewModel.finalScore).toBeNull();
   });
 
-  it('blocks move/Pass while unresolved assisted review is pending but allows Undo', async () => {
+  it('blocks move/Pass while Endgame Review is active but allows Undo', async () => {
     const controller = new TorusGameController();
     await controller.placeStone('0,0');
     await controller.placeStone('4,4');

@@ -11,7 +11,7 @@ const point = (page: Page, logicalPointId: string): Locator =>
     `.torus-board__hit-target[data-logical-point-id="${logicalPointId}"][data-copy-role="primary"]`,
   );
 
-test('assisted endgame keeps every logical group editable until explicit scoring finish', async ({ page }) => {
+test('confidence auto endgame is immediately finishable while every logical group remains editable', async ({ page }) => {
   await startGame(page);
 
   // Black becomes one logical group through the horizontal torus seam.
@@ -23,34 +23,36 @@ test('assisted endgame keeps every logical group editable until explicit scoring
   await page.getByRole('button', { name: 'Pass' }).click();
 
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
-  await expect(page.getByText('Resolved 0 of 2')).toBeVisible();
-  await expect(page.locator('.torus-board__group-contour--unresolved')).toHaveCount(2);
-
-  // Clicking either stone of the seam-connected black group selects the same group.
-  await point(page, '0,4').click();
-  await expect(page.locator('.endgame-selection .stone-chip--black')).toHaveCount(1);
-  const statuses = page.getByRole('group', { name: 'Selected group status' });
-  await statuses.getByRole('button', { name: 'Seki', exact: true }).click();
-
-  await expect(page.getByText('Resolved 1 of 2')).toBeVisible();
-  await expect(page.locator('.torus-board__group-contour--seki')).toHaveCount(1);
-  await expect(page.locator('.torus-board__seki-mask')).toHaveAttribute('opacity', '0.6');
-
-  await point(page, '4,4').click();
-  await expect(page.locator('.endgame-selection .stone-chip--white')).toHaveCount(1);
-  await statuses.getByRole('button', { name: 'Alive', exact: true }).click();
   await expect(page.getByText('Resolved 2 of 2')).toBeVisible();
+  await expect(page.getByText('2 automatic proposals')).toBeVisible();
+  await expect(page.locator('.torus-board__group-contour--unresolved')).toHaveCount(0);
+  await expect(page.locator('.torus-board__group-contour')).toHaveCount(2);
 
-  // Resolving the last group no longer ends review. A previously resolved group
-  // remains selectable and can still override its prior/manual/automatic status.
+  // E2-12c proposals are sufficient to finish immediately; no manual sweep is required.
   const finish = page.getByRole('button', { name: 'Finish scoring' });
   await expect(finish).toBeEnabled();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await point(page, '8,4').click();
+
+  // Clicking either stone of the seam-connected black group selects the same auto-classified group.
+  await point(page, '0,4').click();
   await expect(page.locator('.endgame-selection .stone-chip--black')).toHaveCount(1);
-  await statuses.getByRole('button', { name: 'Dead', exact: true }).click();
-  await expect(page.locator('.torus-board__group-contour--dead')).toHaveCount(1);
-  await expect(page.locator('.torus-board__group-contour--seki')).toHaveCount(0);
+  const statuses = page.getByRole('group', { name: 'Selected group status' });
+  const selectedAutomatic = statuses.locator('button[aria-pressed="true"]');
+  await expect(selectedAutomatic).toHaveCount(1);
+  const automaticLabel = await selectedAutomatic.textContent();
+  const overrideLabel = automaticLabel?.trim() === 'Dead' ? 'Alive' : 'Dead';
+  await statuses.getByRole('button', { name: overrideLabel, exact: true }).click();
+  await expect(statuses.getByRole('button', { name: overrideLabel, exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(page.getByText('Resolved 2 of 2')).toBeVisible();
+  await expect(finish).toBeEnabled();
+
+  // The other automatically classified group remains editable without becoming required manual work.
+  await point(page, '4,4').click();
+  await expect(page.locator('.endgame-selection .stone-chip--white')).toHaveCount(1);
+  await expect(statuses.locator('button[aria-pressed="true"]')).toHaveCount(1);
 
   // Passive duplicate strips do not duplicate logical endgame contours.
   const contourCount = await page.locator('.torus-board__group-contour').count();
