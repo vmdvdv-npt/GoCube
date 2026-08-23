@@ -5,53 +5,37 @@ import { AssistedEndgameClassifier } from './AssistedEndgameClassifier';
 import { buildEndgameGraph } from './EndgameGraphCore';
 import { TACTICAL_READER_ALGORITHM } from './TacticalReader';
 
-class GridTopology implements Topology {
-  readonly id = 'tactical-integration-grid-3';
-  private readonly allPoints: readonly PointId[];
-  private readonly pointSet: ReadonlySet<PointId>;
-
-  constructor() {
-    const points: PointId[] = [];
-    for (let y = 0; y < 3; y += 1) {
-      for (let x = 0; x < 3; x += 1) points.push(`${x},${y}`);
-    }
-    this.allPoints = Object.freeze(points);
-    this.pointSet = new Set(points);
-  }
+class CorridorTopology implements Topology {
+  readonly id = 'tactical-integration-corridor';
+  private readonly allPoints = Object.freeze(['a', 'w1', 'w2', 'b', 'c'] as const);
+  private readonly adjacency: Readonly<Record<PointId, readonly PointId[]>> = Object.freeze({
+    a: Object.freeze(['w1']),
+    w1: Object.freeze(['a', 'w2', 'c']),
+    w2: Object.freeze(['w1', 'b']),
+    b: Object.freeze(['w2']),
+    c: Object.freeze(['w1']),
+  });
 
   points(): readonly PointId[] {
     return this.allPoints;
   }
 
   neighbors(point: PointId): readonly PointId[] {
-    if (!this.has(point)) throw new Error(`Unknown grid point: ${point}`);
-    const [x, y] = point.split(',').map(Number) as [number, number];
-    return Object.freeze(
-      [
-        [x - 1, y],
-        [x + 1, y],
-        [x, y - 1],
-        [x, y + 1],
-      ]
-        .filter(
-          ([nextX, nextY]) =>
-            nextX >= 0 && nextY >= 0 && nextX < 3 && nextY < 3,
-        )
-        .map(([nextX, nextY]) => `${nextX},${nextY}`),
-    );
+    const neighbors = this.adjacency[point];
+    if (!neighbors) throw new Error(`Unknown corridor point: ${point}`);
+    return neighbors;
   }
 
   has(point: PointId): boolean {
-    return this.pointSet.has(point);
+    return this.allPoints.includes(point as (typeof this.allPoints)[number]);
   }
 }
 
 const makeState = (topology: Topology): GameState => {
   const stones: Readonly<Partial<Record<PointId, PointOccupancy>>> = Object.freeze({
-    '0,0': 'white',
-    '1,1': 'black',
-    '2,0': 'black',
-    '0,2': 'black',
+    w1: 'white',
+    w2: 'white',
+    c: 'black',
   });
   const board: Record<PointId, PointOccupancy> = {};
   for (const point of topology.points()) board[point] = stones[point] ?? 'empty';
@@ -66,8 +50,8 @@ const makeState = (topology: Topology): GameState => {
 };
 
 describe('TacticalReader classifier integration', () => {
-  it('promotes a bounded two-liberty forced capture to automatic dead', async () => {
-    const topology = new GridTopology();
+  it('promotes a bounded non-ko two-liberty forced capture to automatic dead', async () => {
+    const topology = new CorridorTopology();
     const state = makeState(topology);
     const graph = buildEndgameGraph(state.board, topology);
 
@@ -76,10 +60,10 @@ describe('TacticalReader classifier integration', () => {
       topology,
       groups: Object.freeze(graph.strings.map((group) => group.points)),
     });
-    const target = result.find((proposal) => proposal.points.includes('0,0'));
+    const target = result.find((proposal) => proposal.points.includes('w1'));
 
     expect(target).toMatchObject({
-      points: ['0,0'],
+      points: ['w1', 'w2'],
       status: 'dead',
       source: 'automatic',
       evidence: {
