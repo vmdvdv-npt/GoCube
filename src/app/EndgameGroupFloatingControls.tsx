@@ -191,6 +191,16 @@ const availableGameBounds = (): Bounds | null => {
   });
 };
 
+const visibleStoneBounds = (mode: SurfaceMode, available: Bounds): readonly Bounds[] =>
+  Object.freeze(
+    [...document.querySelectorAll<Element>(stoneSelector(mode))].flatMap((element) => {
+      const rect = element.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return [];
+      const visible = intersectBounds(rectToBounds(rect), available);
+      return visible ? [visible] : [];
+    }),
+  );
+
 const groupBounds = (selection: GroupSelection, available: Bounds): Bounds | null => {
   const pointIds = new Set(selection.pointIds);
   const rawRects: Bounds[] = [];
@@ -228,18 +238,37 @@ const overlapArea = (
   top: number,
   width: number,
   height: number,
-  group: Bounds,
+  obstacle: Bounds,
 ): number => {
-  const overlapWidth = Math.max(0, Math.min(left + width, group.right) - Math.max(left, group.left));
-  const overlapHeight = Math.max(0, Math.min(top + height, group.bottom) - Math.max(top, group.top));
+  const overlapWidth = Math.max(
+    0,
+    Math.min(left + width, obstacle.right) - Math.max(left, obstacle.left),
+  );
+  const overlapHeight = Math.max(
+    0,
+    Math.min(top + height, obstacle.bottom) - Math.max(top, obstacle.top),
+  );
   return overlapWidth * overlapHeight;
 };
+
+const obstacleOverlap = (
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  obstacles: readonly Bounds[],
+): number =>
+  obstacles.reduce(
+    (total, obstacle) => total + overlapArea(left, top, width, height, obstacle),
+    0,
+  );
 
 const positionControl = (
   group: Bounds,
   available: Bounds,
   width: number,
   height: number,
+  obstacles: readonly Bounds[],
 ): PositionedControl => {
   const centerX = (group.left + group.right) / 2;
   const centerY = (group.top + group.bottom) / 2;
@@ -266,26 +295,36 @@ const positionControl = (
     }),
   ]);
 
-  const fitting = candidates.find((candidate) =>
-    fits(candidate.left, candidate.top, width, height, available),
+  const fitting = candidates.find(
+    (candidate) =>
+      fits(candidate.left, candidate.top, width, height, available) &&
+      obstacleOverlap(candidate.left, candidate.top, width, height, obstacles) === 0,
   );
   if (fitting) return fitting;
 
   const maxLeft = Math.max(available.left, available.right - width);
   const maxTop = Math.max(available.top, available.bottom - height);
-  const clamped = candidates.map((candidate) => {
+  const clamped = candidates.map((candidate, preference) => {
     const left = clamp(candidate.left, available.left, maxLeft);
     const top = clamp(candidate.top, available.top, maxTop);
     return Object.freeze({
       placement: candidate.placement,
       left,
       top,
-      overlap: overlapArea(left, top, width, height, group),
+      overlap: obstacleOverlap(left, top, width, height, obstacles),
+      selectedGroupOverlap: overlapArea(left, top, width, height, group),
+      preference,
     });
   });
-  const best = clamped.reduce((current, candidate) =>
-    candidate.overlap < current.overlap ? candidate : current,
-  );
+  const best = clamped.reduce((current, candidate) => {
+    if (candidate.overlap !== current.overlap) {
+      return candidate.overlap < current.overlap ? candidate : current;
+    }
+    if (candidate.selectedGroupOverlap !== current.selectedGroupOverlap) {
+      return candidate.selectedGroupOverlap < current.selectedGroupOverlap ? candidate : current;
+    }
+    return candidate.preference < current.preference ? candidate : current;
+  });
   return Object.freeze({ placement: best.placement, left: best.left, top: best.top });
 };
 
@@ -336,6 +375,7 @@ const syncFloatingControl = (selection: GroupSelection): boolean => {
     available,
     controlRect.width,
     controlRect.height,
+    visibleStoneBounds(selection.mode, available),
   );
   control.style.left = `${position.left.toFixed(1)}px`;
   control.style.top = `${position.top.toFixed(1)}px`;
