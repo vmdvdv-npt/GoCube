@@ -29,6 +29,7 @@ test('0.3 acceptance: Torus assisted fallback survives reload and completes scor
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
   await expect(page.locator('.endgame-progress')).toHaveText('Resolved 0 of 2');
 
+  await torusPoint(page, '0,0').click();
   const statuses = page.getByRole('group', { name: 'Selected group status' });
   await statuses.getByRole('button', { name: 'Alive', exact: true }).click();
   await expect(page.locator('.endgame-progress')).toHaveText('Resolved 1 of 2');
@@ -41,6 +42,7 @@ test('0.3 acceptance: Torus assisted fallback survives reload and completes scor
   await expect(page.locator('.endgame-progress')).toHaveText('Resolved 1 of 2');
   await expect(page.locator('.endgame-selection .stone-chip--white')).toHaveCount(1);
 
+  await torusPoint(page, '4,4').click();
   await page.getByRole('group', { name: 'Selected group status' })
     .getByRole('button', { name: 'Seki', exact: true })
     .click();

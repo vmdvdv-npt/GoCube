@@ -145,10 +145,23 @@ test('0.2 production Cube flow: New Game, seam capture, history, zoom, resume an
   expect(groupTotal).toBeGreaterThan(1);
   expect(initialResolved).toBeLessThan(groupTotal);
 
-  // Acceptance checkpoint: persist a partial assisted review, reload before scoring,
-  // and require Continue to restore the already reviewed decision.
+  // Acceptance checkpoint: explicitly select one unresolved group, persist a
+  // partial assisted review, reload before scoring, and require Continue to
+  // restore the already reviewed decision.
+  const preReloadPointIds = await page.locator('.cube-2d-stone').evaluateAll((nodes) =>
+    [...new Set(nodes.map((node) => node.getAttribute('data-logical-point-id')).filter(Boolean))] as string[],
+  );
   const statuses = page.getByRole('group', { name: 'Selected group status' });
-  await statuses.getByRole('button', { name: 'Alive' }).click();
+  let resolvedOneGroup = false;
+  for (const pointId of preReloadPointIds) {
+    await hit(page, pointId).click();
+    const selectedStatusCount = await statuses.locator('button[aria-pressed="true"]').count();
+    if (selectedStatusCount > 0) continue;
+    await statuses.getByRole('button', { name: 'Alive' }).click();
+    resolvedOneGroup = true;
+    break;
+  }
+  expect(resolvedOneGroup).toBe(true);
   const partialProgress = (await progress.textContent()) ?? '';
   expect(partialProgress).toContain(`Resolved ${initialResolved + 1} of ${groupTotal}`);
 

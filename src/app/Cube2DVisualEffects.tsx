@@ -1,11 +1,12 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties } from 'react';
 import type { EndgameClassification, GroupStatus } from '../core/endgame/EndgameClassifier';
 import type { FinalScore } from '../core/scoring/Scoring';
 import { CubeTopology } from '../core/topology/CubeTopology';
-import type { PointId } from '../core/topology/Topology';
+import type { PointId, Topology } from '../core/topology/Topology';
 import type {
   EndgameGroupPresentation,
   EndgameGroupRenderState,
+  EndgameVisualStatus,
 } from '../presentation/EndgameGroupPresentation';
 import { buildEndgameSekiRegions } from '../presentation/EndgameSekiPresentation';
 import type { Cube2DLayout } from '../presentation/cube/Cube2DLayout';
@@ -23,6 +24,10 @@ import {
   createCube2DRenderModel,
   cube2DContentScale,
 } from '../renderer2d/Cube2DRenderer';
+import {
+  buildEndgameContourPath,
+  endgameContourStrokeWidth,
+} from '../renderer2d/EndgameContourGeometry';
 import { StoneArtworkDefs, stoneArtworkFill } from '../renderer2d/StoneArtwork';
 
 export { CUBE_2D_CAPTURE_FLIGHT_MS, CUBE_2D_CAPTURE_STAGGER_MS };
@@ -46,173 +51,96 @@ type EffectsStyle = CSSProperties & {
 
 type BoardPoint = ReturnType<typeof createCube2DRenderModel>['boards'][number]['points'][number];
 type GroupShape = Pick<EndgameGroupPresentation, 'points' | 'edges'>;
-type AxisDirection = Readonly<{ x: -1 | 0 | 1; y: -1 | 0 | 1 }>;
-type DisplayPoint = Readonly<{ x: number; y: number }>;
+type ContourStatus = 'dead' | 'seki' | 'unresolved';
+type StoneColor = EndgameGroupPresentation['color'];
+type ContourBundle = Readonly<{
+  status: ContourStatus;
+  color: StoneColor;
+  groupIds: readonly string[];
+  shape: GroupShape;
+}>;
 
-const pointMap = <T extends { readonly pointId: PointId }>(points: readonly T[]) =>
-  new Map(points.map((point) => [point.pointId, point]));
+const contourStatus = (status: EndgameVisualStatus | null): ContourStatus | null => {
+  if (status === 'alive') return null;
+  if (status === 'dead') return 'dead';
+  if (status === 'seki') return 'seki';
+  return 'unresolved';
+};
 
-const contourColor = (status: GroupStatus | null): string => {
+const contourColor = (status: ContourStatus): string => {
   if (status === 'dead') return '#e52b2b';
   if (status === 'seki') return '#80878f';
-  if (status === 'alive') return 'transparent';
   return '#a8e85e';
 };
 
-const axisDirection = (from: DisplayPoint, to: DisplayPoint): AxisDirection => {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  if (Math.abs(dx) >= Math.abs(dy)) {
-    return { x: Math.sign(dx) as -1 | 0 | 1, y: 0 };
+const mergedContourShape = (
+  groups: readonly GroupShape[],
+  topology: Topology,
+): GroupShape => {
+  const points = [...new Set(groups.flatMap((group) => group.points))];
+  const pointSet = new Set(points);
+  const edges = new Map<string, Readonly<{ from: PointId; to: PointId }>>();
+
+  for (const from of points) {
+    for (const to of topology.neighbors(from)) {
+      if (!pointSet.has(to) || from === to) continue;
+      const first = from < to ? from : to;
+      const second = from < to ? to : from;
+      const key = `${first}\u0000${second}`;
+      if (!edges.has(key)) edges.set(key, Object.freeze({ from: first, to: second }));
+    }
   }
-  return { x: 0, y: Math.sign(dy) as -1 | 0 | 1 };
+
+  return Object.freeze({
+    points: Object.freeze(points),
+    edges: Object.freeze([...edges.values()]),
+  });
 };
 
-const groupShape = (
-  group: GroupShape,
-  pointsById: ReadonlyMap<PointId, BoardPoint>,
+const contourBundles = (
+  groups: readonly EndgameGroupRenderState[],
+  topology: Topology,
+): readonly ContourBundle[] =>
+  Object.freeze(
+    (['dead', 'unresolved', 'seki'] as const).flatMap((status) =>
+      (['black', 'white'] as const).flatMap((color) => {
+        const matching = groups.filter(
+          (group) => contourStatus(group.status) === status && group.color === color,
+        );
+        if (matching.length === 0) return [];
+        return [
+          Object.freeze({
+            status,
+            color,
+            groupIds: Object.freeze(matching.map((group) => group.id)),
+            shape: mergedContourShape(matching, topology),
+          }),
+        ];
+      }),
+    ),
+  );
+
+const contourPathForBoard = (
+  shape: GroupShape,
+  boardPoints: readonly BoardPoint[],
+  step: number,
   contentScale: number,
-  radius: number,
-): ReactNode => {
+): string => {
+  const pointIds = new Set(shape.points);
+  const cells = boardPoints.flatMap((point) =>
+    pointIds.has(point.pointId) ? [{ column: point.column, row: point.row }] : [],
+  );
+  if (cells.length === 0) return '';
+
   const center = CUBE_2D_SVG_SIZE / 2;
-  const display = (point: BoardPoint): DisplayPoint => ({
-    x: center + (point.x - center) * contentScale,
-    y: center + (point.y - center) * contentScale,
+  const spacing = step * contentScale;
+  const origin = center + (step * 0.5 - center) * contentScale;
+  return buildEndgameContourPath(cells, {
+    originX: origin,
+    originY: origin,
+    spacing,
   });
-  const visible = group.points.flatMap((pointId) => {
-    const point = pointsById.get(pointId);
-    return point ? [[pointId, point] as const] : [];
-  });
-  const displayedById = new Map<PointId, DisplayPoint>(
-    visible.map(([pointId, point]) => [pointId, display(point)]),
-  );
-  const directionsByPoint = new Map<PointId, AxisDirection[]>();
-  const visibleEdges = group.edges.flatMap((edge) => {
-    const from = displayedById.get(edge.from);
-    const to = displayedById.get(edge.to);
-    if (!from || !to) return [];
-    const direction = axisDirection(from, to);
-    const fromDirections = directionsByPoint.get(edge.from) ?? [];
-    const toDirections = directionsByPoint.get(edge.to) ?? [];
-    fromDirections.push(direction);
-    toDirections.push({ x: -direction.x as -1 | 0 | 1, y: -direction.y as -1 | 0 | 1 });
-    directionsByPoint.set(edge.from, fromDirections);
-    directionsByPoint.set(edge.to, toDirections);
-    return [[edge, from, to] as const];
-  });
-  const filletSize = radius * 0.42;
-
-  return (
-    <>
-      {visibleEdges.map(([edge, from, to]) => (
-        <line
-          key={`edge:${edge.from}:${edge.to}`}
-          x1={from.x}
-          y1={from.y}
-          x2={to.x}
-          y2={to.y}
-          stroke="currentColor"
-          strokeWidth={radius * 2}
-          strokeLinecap="round"
-        />
-      ))}
-      {visible.flatMap(([pointId]) => {
-        const position = displayedById.get(pointId);
-        if (!position) return [];
-        const uniqueDirections = Array.from(
-          new Map(
-            (directionsByPoint.get(pointId) ?? []).map((direction) => [
-              `${direction.x},${direction.y}`,
-              direction,
-            ]),
-          ).values(),
-        );
-        const fillets: ReactNode[] = [];
-        for (let first = 0; first < uniqueDirections.length; first += 1) {
-          for (let second = first + 1; second < uniqueDirections.length; second += 1) {
-            const a = uniqueDirections[first];
-            const b = uniqueDirections[second];
-            if (!a || !b || a.x * b.x + a.y * b.y !== 0) continue;
-            const corner = {
-              x: position.x + (a.x + b.x) * radius,
-              y: position.y + (a.y + b.y) * radius,
-            };
-            const tangentA = {
-              x: corner.x + a.x * filletSize,
-              y: corner.y + a.y * filletSize,
-            };
-            const tangentB = {
-              x: corner.x + b.x * filletSize,
-              y: corner.y + b.y * filletSize,
-            };
-            fillets.push(
-              <path
-                key={`fillet:${pointId}:${a.x},${a.y}:${b.x},${b.y}`}
-                d={`M ${tangentA.x} ${tangentA.y} L ${corner.x} ${corner.y} L ${tangentB.x} ${tangentB.y} Q ${corner.x} ${corner.y} ${tangentA.x} ${tangentA.y} Z`}
-                fill="currentColor"
-              />,
-            );
-          }
-        }
-        return fillets;
-      })}
-      {visible.map(([pointId]) => {
-        const position = displayedById.get(pointId);
-        if (!position) return null;
-        return (
-          <circle
-            key={`point:${pointId}`}
-            cx={position.x}
-            cy={position.y}
-            r={radius}
-            fill="currentColor"
-          />
-        );
-      })}
-    </>
-  );
 };
-
-const groupOutline = (
-  group: GroupShape,
-  pointsById: ReadonlyMap<PointId, BoardPoint>,
-  contentScale: number,
-  innerRadius: number,
-  outlineWidth: number,
-  color: string,
-  maskId: string,
-): ReactNode => (
-  <>
-    <defs>
-      <mask
-        id={maskId}
-        maskUnits="userSpaceOnUse"
-        x={0}
-        y={0}
-        width={CUBE_2D_SVG_SIZE}
-        height={CUBE_2D_SVG_SIZE}
-      >
-        <rect
-          x={0}
-          y={0}
-          width={CUBE_2D_SVG_SIZE}
-          height={CUBE_2D_SVG_SIZE}
-          fill="#ffffff"
-        />
-        <g style={{ color: '#000000' }}>
-          {groupShape(group, pointsById, contentScale, innerRadius)}
-        </g>
-      </mask>
-    </defs>
-    <g
-      className="cube-2d-group-contour__outline-source"
-      style={{ color }}
-      mask={`url(#${maskId})`}
-    >
-      {groupShape(group, pointsById, contentScale, innerRadius + outlineWidth)}
-    </g>
-  </>
-);
 
 export function Cube2DVisualEffects({
   layout,
@@ -246,14 +174,19 @@ export function Cube2DVisualEffects({
       return Object.freeze({ ...group, status });
     }),
   );
-  const sekiRegions = buildEndgameSekiRegions(groupStates, new CubeTopology(renderModel.size));
+  const topology = new CubeTopology(renderModel.size);
+  const sekiRegions = buildEndgameSekiRegions(groupStates, topology);
   const sekiGroupIds = new Set(sekiRegions.flatMap((region) => region.groupIds));
+  const regularBundles = contourBundles(
+    groupStates.filter((group) => !sekiGroupIds.has(group.id)),
+    topology,
+  );
   const size = renderModel.size;
   const step = CUBE_2D_SVG_SIZE / size;
   const contentScale = cube2DContentScale(size);
+  const contourSpacing = step * contentScale;
   const stoneRadius = step * 0.39 * contentScale;
-  const contourRadius = stoneRadius;
-  const contourWidth = 1.2;
+  const contourWidth = endgameContourStrokeWidth(contourSpacing, stoneRadius);
   const territoryRadius = Math.max(1.25, step * 0.115 * contentScale);
   const effectsStyle: EffectsStyle = { '--cube-2d-cell-size': `${layoutCellSize}px` };
   const captureArtworkPrefix = 'cube-2d-capture-artwork';
@@ -266,104 +199,100 @@ export function Cube2DVisualEffects({
       data-capture-count={capturedStones.length}
       data-layout-cell-size={layoutCellSize.toFixed(3)}
     >
-      {renderModel.boards.map((board) => {
-        const pointsById = pointMap(board.points);
-        return (
-          <svg
-            key={board.face}
-            className="cube-2d-effects__board"
-            viewBox={`0 0 ${CUBE_2D_SVG_SIZE} ${CUBE_2D_SVG_SIZE}`}
-            style={{ gridRow: board.row + 1, gridColumn: board.column + 1 }}
-            data-face={board.face}
-          >
-            <g className="cube-2d-effects__territory">
-              {board.points.map((point) => {
-                const owner = effects.territory.get(point.pointId);
-                if (!owner) return null;
-                const center = CUBE_2D_SVG_SIZE / 2;
-                const displayX = center + (point.x - center) * contentScale;
-                const displayY = center + (point.y - center) * contentScale;
-                return (
-                  <circle
-                    key={`territory:${point.pointId}`}
-                    className={`cube-2d-territory-dot cube-2d-territory-dot--${owner}`}
-                    cx={displayX}
-                    cy={displayY}
-                    r={territoryRadius}
-                    fill={owner === 'black' ? '#111111' : '#ffffff'}
-                    stroke={owner === 'white' ? 'rgb(40 40 40 / 36%)' : 'none'}
-                    strokeWidth={owner === 'white' ? 0.55 : 0}
-                    data-logical-point-id={point.pointId}
-                    data-territory={owner}
+      {renderModel.boards.map((board) => (
+        <svg
+          key={board.face}
+          className="cube-2d-effects__board"
+          viewBox={`0 0 ${CUBE_2D_SVG_SIZE} ${CUBE_2D_SVG_SIZE}`}
+          style={{ gridRow: board.row + 1, gridColumn: board.column + 1 }}
+          data-face={board.face}
+        >
+          <g className="cube-2d-effects__territory">
+            {board.points.map((point) => {
+              const owner = effects.territory.get(point.pointId);
+              if (!owner) return null;
+              const center = CUBE_2D_SVG_SIZE / 2;
+              const displayX = center + (point.x - center) * contentScale;
+              const displayY = center + (point.y - center) * contentScale;
+              return (
+                <circle
+                  key={`territory:${point.pointId}`}
+                  className={`cube-2d-territory-dot cube-2d-territory-dot--${owner}`}
+                  cx={displayX}
+                  cy={displayY}
+                  r={territoryRadius}
+                  fill={owner === 'black' ? '#111111' : '#ffffff'}
+                  stroke={owner === 'white' ? 'rgb(40 40 40 / 36%)' : 'none'}
+                  strokeWidth={owner === 'white' ? 0.55 : 0}
+                  data-logical-point-id={point.pointId}
+                  data-territory={owner}
+                />
+              );
+            })}
+          </g>
+
+          <g className="cube-2d-effects__groups">
+            {regularBundles.map((bundle) => {
+              const path = contourPathForBoard(bundle.shape, board.points, step, contentScale);
+              if (!path) return null;
+              return (
+                <g
+                  key={`bundle:${bundle.status}:${bundle.color}`}
+                  className={`cube-2d-group-contour cube-2d-group-contour--${bundle.status}`}
+                  data-endgame-group-ids={bundle.groupIds.join(' ')}
+                  data-group-status={bundle.status}
+                  data-group-color={bundle.color}
+                  pointerEvents="none"
+                >
+                  <path
+                    className="cube-2d-group-contour__outline-source"
+                    d={path}
+                    fill="none"
+                    stroke={contourColor(bundle.status)}
+                    strokeWidth={contourWidth}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   />
-                );
-              })}
-            </g>
+                </g>
+              );
+            })}
 
-            <g className="cube-2d-effects__groups">
-              {groupStates.map((group, groupIndex) => {
-                if (sekiGroupIds.has(group.id)) return null;
-                if (!group.points.some((pointId) => pointsById.has(pointId))) return null;
-                const status = group.status;
-                const selected = selectedGroupId === group.id;
-                const hovered = hoveredGroupId === group.id;
-                const color = contourColor(status);
-                const maskId = `cube-endgame-outline-mask-${board.face}-${groupIndex}`;
-                return (
-                  <g
-                    key={`group:${group.id}`}
-                    className={`cube-2d-group-contour cube-2d-group-contour--${status ?? 'unresolved'}${selected ? ' is-selected' : ''}${hovered ? ' is-hovered' : ''}`}
-                    data-endgame-group-id={group.id}
-                    data-group-status={status ?? 'unresolved'}
-                    pointerEvents="none"
-                  >
-                    {groupOutline(
-                      group,
-                      pointsById,
-                      contentScale,
-                      contourRadius,
-                      contourWidth,
-                      color,
-                      maskId,
-                    )}
-                  </g>
-                );
-              })}
-
-              {sekiRegions.map((region, regionIndex) => {
-                if (!region.points.some((pointId) => pointsById.has(pointId))) return null;
-                const selected = selectedGroupId !== null && region.groupIds.includes(selectedGroupId);
-                const hovered = hoveredGroupId !== null && region.groupIds.includes(hoveredGroupId);
-                const maskId = `cube-endgame-seki-outline-mask-${board.face}-${regionIndex}`;
-                const shape = groupShape(region, pointsById, contentScale, contourRadius);
-                return (
-                  <g
-                    key={`seki-region:${region.id}`}
-                    className={`cube-2d-group-contour cube-2d-group-contour--seki${selected ? ' is-selected' : ''}${hovered ? ' is-hovered' : ''}`}
-                    data-endgame-seki-region-id={region.id}
-                    data-endgame-group-ids={region.groupIds.join(' ')}
-                    data-group-status="seki"
-                    pointerEvents="none"
-                  >
-                    <g className="cube-2d-seki-mask" style={{ color: '#80878f' }} opacity={0.6}>
-                      {shape}
-                    </g>
-                    {groupOutline(
-                      region,
-                      pointsById,
-                      contentScale,
-                      contourRadius,
-                      contourWidth,
-                      '#80878f',
-                      maskId,
-                    )}
-                  </g>
-                );
-              })}
-            </g>
-          </svg>
-        );
-      })}
+            {sekiRegions.map((region) => {
+              const path = contourPathForBoard(region, board.points, step, contentScale);
+              if (!path) return null;
+              const selected = selectedGroupId !== null && region.groupIds.includes(selectedGroupId);
+              const hovered = hoveredGroupId !== null && region.groupIds.includes(hoveredGroupId);
+              return (
+                <g
+                  key={`seki-region:${region.id}`}
+                  className={`cube-2d-group-contour cube-2d-group-contour--seki${selected ? ' is-selected' : ''}${hovered ? ' is-hovered' : ''}`}
+                  data-endgame-seki-region-id={region.id}
+                  data-endgame-group-ids={region.groupIds.join(' ')}
+                  data-group-status="seki"
+                  pointerEvents="none"
+                >
+                  <path
+                    className="cube-2d-seki-mask"
+                    d={path}
+                    fill="#80878f"
+                    fillRule="evenodd"
+                    opacity={0.6}
+                  />
+                  <path
+                    className="cube-2d-group-contour__outline-source"
+                    d={path}
+                    fill="none"
+                    stroke="#80878f"
+                    strokeWidth={contourWidth}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </g>
+              );
+            })}
+          </g>
+        </svg>
+      ))}
 
       {effects.capturedStones.length > 0 ? (
         <svg
