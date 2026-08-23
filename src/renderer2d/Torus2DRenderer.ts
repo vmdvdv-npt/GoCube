@@ -24,6 +24,9 @@ type Torus2DEndgameShape = Readonly<{
   points: readonly PointId[];
   edges: readonly Readonly<{ from: PointId; to: PointId }>[];
 }>;
+type AxisDirection = Readonly<{ x: -1 | 0 | 1; y: -1 | 0 | 1 }>;
+
+type Coordinate = Readonly<{ x: number; y: number }>;
 
 const sameViewState = (
   left: Torus2DViewState | null,
@@ -43,6 +46,15 @@ const contourColor = (status: string | null): string => {
   if (status === 'seki') return '#80878f';
   if (status === 'alive') return 'transparent';
   return '#a8e85e';
+};
+
+const axisDirection = (from: Coordinate, to: Coordinate): AxisDirection => {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return { x: Math.sign(dx) as -1 | 0 | 1, y: 0 };
+  }
+  return { x: 0, y: Math.sign(dy) as -1 | 0 | 1 };
 };
 
 export class Torus2DRenderer extends BaseTorus2DRenderer {
@@ -151,6 +163,15 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
     radius: number,
   ): void {
     const document = this.navigationRoot.ownerDocument;
+    const directionsByPoint = new Map<PointId, AxisDirection[]>();
+    const visibleEdges: Array<
+      Readonly<{
+        fromId: PointId;
+        toId: PointId;
+        from: Torus2DScenePoint;
+        to: Torus2DScenePoint;
+      }>
+    > = [];
 
     for (const edge of group.edges) {
       const from = pointsById.get(edge.from);
@@ -159,12 +180,64 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
       const distance = Math.hypot(to.x - from.x, to.y - from.y);
       if (distance > scene.spacing * 1.5) continue;
 
+      const direction = axisDirection(from, to);
+      const fromDirections = directionsByPoint.get(edge.from) ?? [];
+      const toDirections = directionsByPoint.get(edge.to) ?? [];
+      fromDirections.push(direction);
+      toDirections.push({ x: -direction.x as -1 | 0 | 1, y: -direction.y as -1 | 0 | 1 });
+      directionsByPoint.set(edge.from, fromDirections);
+      directionsByPoint.set(edge.to, toDirections);
+      visibleEdges.push({ fromId: edge.from, toId: edge.to, from, to });
+    }
+
+    for (const edge of visibleEdges) {
       const line = document.createElementNS(SVG_NS, 'line');
       setAttributes(line, {
-        x1: String(from.x), y1: String(from.y), x2: String(to.x), y2: String(to.y),
+        x1: String(edge.from.x), y1: String(edge.from.y), x2: String(edge.to.x), y2: String(edge.to.y),
         stroke: 'currentColor', 'stroke-width': String(radius * 2), 'stroke-linecap': 'round',
       });
       target.appendChild(line);
+    }
+
+    const filletSize = radius * 0.42;
+    for (const pointId of group.points) {
+      const point = pointsById.get(pointId);
+      if (!point) continue;
+      const uniqueDirections = Array.from(
+        new Map(
+          (directionsByPoint.get(pointId) ?? []).map((direction) => [
+            `${direction.x},${direction.y}`,
+            direction,
+          ]),
+        ).values(),
+      );
+
+      for (let first = 0; first < uniqueDirections.length; first += 1) {
+        for (let second = first + 1; second < uniqueDirections.length; second += 1) {
+          const a = uniqueDirections[first];
+          const b = uniqueDirections[second];
+          if (!a || !b || a.x * b.x + a.y * b.y !== 0) continue;
+
+          const corner = {
+            x: point.x + (a.x + b.x) * radius,
+            y: point.y + (a.y + b.y) * radius,
+          };
+          const tangentA = {
+            x: corner.x + a.x * filletSize,
+            y: corner.y + a.y * filletSize,
+          };
+          const tangentB = {
+            x: corner.x + b.x * filletSize,
+            y: corner.y + b.y * filletSize,
+          };
+          const fillet = document.createElementNS(SVG_NS, 'path');
+          setAttributes(fillet, {
+            d: `M ${tangentA.x} ${tangentA.y} L ${corner.x} ${corner.y} L ${tangentB.x} ${tangentB.y} Q ${corner.x} ${corner.y} ${tangentA.x} ${tangentA.y} Z`,
+            fill: 'currentColor',
+          });
+          target.appendChild(fillet);
+        }
+      }
     }
 
     for (const pointId of group.points) {
@@ -178,32 +251,67 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
     }
   }
 
-  private appendOutlineFilter(
+  private appendOutlineMask(
     defs: SVGDefsElement,
-    filterId: string,
-    outlineRadius: number,
-    color: string,
+    maskId: string,
+    scene: Torus2DScene,
+    pointsById: ReadonlyMap<PointId, Torus2DScenePoint>,
+    group: Torus2DEndgameShape,
+    innerRadius: number,
   ): void {
     const document = this.navigationRoot.ownerDocument;
-    const filter = document.createElementNS(SVG_NS, 'filter');
-    setAttributes(filter, {
-      id: filterId, x: '-30%', y: '-30%', width: '160%', height: '160%',
-      'color-interpolation-filters': 'sRGB',
+    const mask = document.createElementNS(SVG_NS, 'mask');
+    setAttributes(mask, {
+      id: maskId,
+      x: '0',
+      y: '0',
+      width: String(scene.viewBoxSize),
+      height: String(scene.viewBoxSize),
+      maskUnits: 'userSpaceOnUse',
     });
-    const morphology = document.createElementNS(SVG_NS, 'feMorphology');
-    setAttributes(morphology, {
-      in: 'SourceAlpha', operator: 'dilate', radius: String(outlineRadius), result: 'dilated',
+
+    const background = document.createElementNS(SVG_NS, 'rect');
+    setAttributes(background, {
+      x: '0',
+      y: '0',
+      width: String(scene.viewBoxSize),
+      height: String(scene.viewBoxSize),
+      fill: '#ffffff',
     });
-    const subtract = document.createElementNS(SVG_NS, 'feComposite');
-    setAttributes(subtract, {
-      in: 'dilated', in2: 'SourceAlpha', operator: 'out', result: 'outline',
+
+    const cutout = document.createElementNS(SVG_NS, 'g');
+    cutout.setAttribute('style', 'color:#000000');
+    this.appendGroupShape(cutout, scene, pointsById, group, innerRadius);
+
+    mask.append(background, cutout);
+    defs.appendChild(mask);
+  }
+
+  private appendOutlineShape(
+    target: SVGGElement,
+    scene: Torus2DScene,
+    pointsById: ReadonlyMap<PointId, Torus2DScenePoint>,
+    group: Torus2DEndgameShape,
+    innerRadius: number,
+    outlineWidth: number,
+    color: string,
+    maskId: string,
+  ): void {
+    const document = this.navigationRoot.ownerDocument;
+    const outline = document.createElementNS(SVG_NS, 'g');
+    setAttributes(outline, {
+      class: 'torus-board__group-contour-source',
+      style: `color:${color}`,
+      mask: `url(#${maskId})`,
     });
-    const flood = document.createElementNS(SVG_NS, 'feFlood');
-    setAttributes(flood, { 'flood-color': color, result: 'outline-color' });
-    const colorize = document.createElementNS(SVG_NS, 'feComposite');
-    setAttributes(colorize, { in: 'outline-color', in2: 'outline', operator: 'in' });
-    filter.append(morphology, subtract, flood, colorize);
-    defs.appendChild(filter);
+    this.appendGroupShape(
+      outline,
+      scene,
+      pointsById,
+      group,
+      innerRadius + outlineWidth,
+    );
+    target.appendChild(outline);
   }
 
   private renderEndgameOverlay(): void {
@@ -259,6 +367,7 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
       const groupsLayer = document.createElementNS(SVG_NS, 'g');
       groupsLayer.setAttribute('class', 'torus-board__endgame-contours');
       const shapeRadius = scene.stoneRadius;
+      const outlineWidth = 3.7;
       const sekiRegions = buildEndgameSekiRegions(overlay.groups, new TorusTopology(scene.size));
       const sekiGroupIds = new Set(sekiRegions.flatMap((region) => region.groupIds));
 
@@ -266,13 +375,10 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
         if (sekiGroupIds.has(group.id)) return;
 
         const status = group.status === 'unknown' ? null : group.status;
-        const selected = overlay.selectedGroupId === group.id;
-        const hovered = overlay.hoveredGroupId === group.id;
         const color = contourColor(status);
-        const filterId = `torus-endgame-outline-${index}`;
-        const outlineRadius = selected ? 5.2 : hovered ? 4.4 : 3.7;
+        const maskId = `torus-endgame-outline-mask-${index}`;
 
-        this.appendOutlineFilter(defs, filterId, outlineRadius, color);
+        this.appendOutlineMask(defs, maskId, scene, pointsById, group, shapeRadius);
 
         const groupLayer = document.createElementNS(SVG_NS, 'g');
         setAttributes(groupLayer, {
@@ -281,24 +387,23 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
           'data-endgame-status': status ?? 'unresolved',
         });
 
-        const outlineSource = document.createElementNS(SVG_NS, 'g');
-        setAttributes(outlineSource, {
-          class: 'torus-board__group-contour-source', style: 'color:#ffffff', filter: `url(#${filterId})`,
-        });
-        this.appendGroupShape(outlineSource, scene, pointsById, group, shapeRadius);
-        groupLayer.appendChild(outlineSource);
+        this.appendOutlineShape(
+          groupLayer,
+          scene,
+          pointsById,
+          group,
+          shapeRadius,
+          outlineWidth,
+          color,
+          maskId,
+        );
         groupsLayer.appendChild(groupLayer);
       });
 
       sekiRegions.forEach((region, index) => {
-        const selected =
-          overlay.selectedGroupId !== null && region.groupIds.includes(overlay.selectedGroupId);
-        const hovered =
-          overlay.hoveredGroupId !== null && region.groupIds.includes(overlay.hoveredGroupId);
-        const filterId = `torus-endgame-seki-outline-${index}`;
-        const outlineRadius = selected ? 5.2 : hovered ? 4.4 : 3.7;
+        const maskId = `torus-endgame-seki-outline-mask-${index}`;
 
-        this.appendOutlineFilter(defs, filterId, outlineRadius, '#80878f');
+        this.appendOutlineMask(defs, maskId, scene, pointsById, region, shapeRadius);
 
         const regionLayer = document.createElementNS(SVG_NS, 'g');
         setAttributes(regionLayer, {
@@ -308,19 +413,23 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
           'data-endgame-status': 'seki',
         });
 
-        const mask = document.createElementNS(SVG_NS, 'g');
-        setAttributes(mask, {
+        const sekiMask = document.createElementNS(SVG_NS, 'g');
+        setAttributes(sekiMask, {
           class: 'torus-board__seki-mask', style: 'color:#80878f', opacity: '0.6',
         });
-        this.appendGroupShape(mask, scene, pointsById, region, shapeRadius);
-        regionLayer.appendChild(mask);
+        this.appendGroupShape(sekiMask, scene, pointsById, region, shapeRadius);
+        regionLayer.appendChild(sekiMask);
 
-        const outlineSource = document.createElementNS(SVG_NS, 'g');
-        setAttributes(outlineSource, {
-          class: 'torus-board__group-contour-source', style: 'color:#ffffff', filter: `url(#${filterId})`,
-        });
-        this.appendGroupShape(outlineSource, scene, pointsById, region, shapeRadius);
-        regionLayer.appendChild(outlineSource);
+        this.appendOutlineShape(
+          regionLayer,
+          scene,
+          pointsById,
+          region,
+          shapeRadius,
+          outlineWidth,
+          '#80878f',
+          maskId,
+        );
         groupsLayer.appendChild(regionLayer);
       });
 
