@@ -1646,4 +1646,229 @@ Temporary benchmark workflow step удалён после measurement; opt-in be
 - corpus intentionally small (16 designed cases), не представляет empirical real-game accuracy percentage;
 - никакой UI/scoring/automatic-status authority в E2-12b не добавлена.
 
-**E2-12b core acceptance boundary закрыт после final exact-head CI PASS. Следующий этап: E2-12c — validation/integration верхнего confidence layer в пользовательский endgame flow без изменения scoring authority до отдельного explicit решения.**
+**E2-12b core acceptance boundary закрыт после final exact-head CI PASS. Следующий этап: E2-12c — Confidence Auto-Selection Core.**
+
+---
+
+# 24. E2-12c — Confidence Auto-Selection Core
+
+Статус: **DONE / CORE-ONLY / CORPUS-VALIDATED / CI PASS / NOT APPLICATION-INTEGRATED**.
+
+```text
+selector algorithm = engine2-confidence-auto-select-v1
+selector corpus = engine2-confidence-auto-selection-corpus-v1
+raw classifier = engine2-confidence-classifier-v1
+```
+
+E2-12c добавляет отдельный application-level policy/composition layer **поверх** E2-12b и не меняет значение raw classifier result:
+
+```text
+Position confidence result
+  ↓
+strict authority, если уже доступна
+  ↓
+иначе deterministic max score
+  ↓
+alive / dead / seki
+  +
+high / medium / low metadata
+```
+
+Raw E2-12b продолжает отвечать на вопрос «достаточно ли силён high-confidence conclusion?» и может законно вернуть `label = unresolved` из-за threshold/dominance policy. E2-12c отвечает на другой вопрос: «какой initial automatic status лучше выбрать для valid group?». Поэтому raw `unresolved` **не является** application `unresolved`.
+
+Пример:
+
+```text
+scores = { alive: 0.46, dead: 0.43, seki: 0.11 }
+raw label = unresolved
+auto selection = alive / low / confidence
+```
+
+`score` по-прежнему не является probability. `confidenceBand` — deterministic product metadata, без statistical calibration claim.
+
+## 24.1. Strict proof precedence
+
+Already-computed strict evidence имеет абсолютный приоритет над heuristic max score:
+
+```text
+strict alive + confidence dead winner -> alive / strict-proof
+strict dead  + confidence alive winner -> dead / strict-proof
+strict seki  + confidence alternative -> seki / strict-proof
+```
+
+Selector использует proof evidence, уже embedded в E2-12b result, и при необходимости принимает дополнительное **already-computed** strict evidence. Он сам не запускает proof search.
+
+Если одновременно присутствуют разные strict authoritative labels, например `alive + dead`, это invariant violation. Selector возвращает explicit `technical-failure / contradictory-strict-authority`; tie policy к strict conflict не применяется.
+
+## 24.2. Confidence max-score policy
+
+Если strict authority отсутствует, valid normal input всегда получает один из:
+
+```text
+alive
+dead
+seki
+```
+
+Выбирается реальный максимальный score. Threshold `0.90`, маленький margin или raw `unresolved` не отменяют initial auto-selection.
+
+Exact equality разрешается централизованной versioned policy:
+
+```text
+alive > dead > seki
+```
+
+Этот порядок применяется **только** к exact equality top scores. Near tie не является tie:
+
+```text
+alive=.460 dead=.459 seki=.081 -> alive
+```
+
+Никакие object/Map/array incidental iteration orders не определяют outcome.
+
+## 24.3. Confidence bands
+
+Thresholds находятся только в `EndgameConfidenceAutoSelectionPolicy`:
+
+```text
+HIGH:
+  raw E2-12b уже выбрал тот же status
+  OR winner >= 0.90 AND margin >= 0.05
+
+MEDIUM:
+  winner >= 0.65
+  AND HIGH не выполнен
+
+LOW:
+  любой другой valid confidence selection
+```
+
+Low/medium confidence не являются technical unresolved. Technical failure существует отдельно и допускается только для malformed/invariant-broken input.
+
+## 24.4. Validation / technical failure boundary
+
+Selector fail-closed проверяет:
+
+- algorithm/source identity;
+- non-empty group identity;
+- raw label shape;
+- required `alive/dead/seki` scores;
+- finite scores в `[0,1]`;
+- valid reason/proof arrays;
+- valid versioned selector policy;
+- internally consistent strict authority.
+
+`NaN`, `Infinity`, negative и `>1` scores не clamp-ятся. Malformed input возвращает explicit `technical-failure`, а не normal low-confidence choice.
+
+## 24.5. Determinism и position-level composition
+
+`selectAutomaticEndgameStatus(...)` не импортирует и не вызывает raw classifier API. `selectAutomaticPositionStatuses(...)` принимает уже вычисленный `classifyPositionConfidence(...)` snapshot, сортирует existing results по stable `groupKey` и применяет selector без повторного анализа позиции.
+
+Diagnostics фиксируют:
+
+```text
+additionalGraphBuilds = 0
+additionalConfidenceAnalyses = 0
+deepProofSearchInvocations = 0
+```
+
+Нет random, timestamps, wall clock или unstable iteration ordering. Repeated selector execution покрыто byte-for-byte deterministic tests.
+
+## 24.6. Designed corpus
+
+Отдельный deterministic corpus содержит 20 cases:
+
+- high / medium / low alive;
+- high / low dead;
+- high / medium seki;
+- raw unresolved -> auto alive/dead/seki;
+- exact alive/dead tie;
+- exact dead/seki tie;
+- exact three-way tie;
+- near tie;
+- strict alive/dead/seki override heuristic winner;
+- contradictory strict authority -> technical failure;
+- Torus seam source result;
+- Cube face-edge source result.
+
+Validated metrics:
+
+```text
+total cases = 20
+valid normal cases = 19
+automatic selections = 19
+technical failures = 1
+strict selections = 3
+confidence selections = 16
+high / medium / low = 8 / 2 / 9
+exact ties = 3
+raw unresolved cases = 12
+raw unresolved auto-selected = 11
+deterministic mismatches = 0
+designed-corpus agreement = 20/20
+valid-normal automatic coverage = 100%
+```
+
+Technical-conflict fixture исключён из normal coverage denominator. `designed-corpus agreement` не называется real-Go accuracy: corpus детерминированный и hand-designed, а не statistically representative dataset.
+
+Existing E2-12b 16-case corpus остаётся отдельным raw regression contract и не переписывается под 100% auto-selection coverage.
+
+## 24.7. Tests / performance boundary
+
+`EndgameConfidenceAutoSelector.test.ts` покрывает 22 targeted contracts:
+
+- high/medium/low bands;
+- all three raw-unresolved auto selections;
+- strict precedence и embedded proof evidence;
+- exact/near ties;
+- contradictory strict authority;
+- malformed/missing/NaN/Infinity/out-of-range scores;
+- invalid group/raw label/policy;
+- raw E2-12b immutability;
+- E2-12b 16-case corpus preservation;
+- E2-12c designed corpus metrics/coverage;
+- Torus seam / Cube face-edge;
+- byte-for-byte determinism;
+- deterministic position ordering;
+- prepared 36-group position with zero additional graph/classifier/deep-search work.
+
+Отдельный E2-12c timing benchmark не добавлялся: selector — pure O(groups) composition over prepared confidence snapshot, а performance contract закреплён direct diagnostics и 36-group selector-only regression. Existing E2-12b confidence benchmark остаётся неизменённым.
+
+## 24.8. Explicit non-integration boundary
+
+E2-12c **не подключает selector к Endgame Review или scoring**.
+
+На этом этапе также не реализованы:
+
+- automatic UI fill;
+- floating Alive/Dead/Seki UI changes;
+- player override;
+- Finish scoring;
+- `JapaneseScoring` / `ChineseScoring` integration;
+- persistence;
+- Undo/Redo lifecycle;
+- GameSession lifecycle;
+- async stale-result handling;
+- UI confidence labels;
+- new browser E2E flow.
+
+Production Endgame Review semantics не переключаются этим core PR.
+
+## 24.9. CI / completion
+
+Clean normal CI #857 на source-cleanup head `dedfbaabcb07c6d4af58873351b28700bf4ad332`:
+
+```text
+E2-12c targeted tests: 22/22 PASS
+E2-12b raw targeted tests: 16/16 PASS
+full unit/coverage: 651 passed, 83 opt-in tests skipped
+test files: 82 passed, 10 skipped
+typecheck:engine2 PASS
+build:engine2 PASS
+Chromium E2E: 72/72 PASS
+lint: 0 errors, 2 pre-existing TestCaseReplayService warnings
+```
+
+No E2-12c benchmark workflow was added. The existing E2-12b confidence benchmark remains opt-in and unchanged. This final documentation-only cleanup is followed by an exact-head normal CI; its exact SHA/run is recorded in PR #184 and the final implementation report.
+
+**E2-12c core acceptance boundary закрыт. Следующий этап строго: E2-12d — Endgame Review / scoring / player override application integration.**
