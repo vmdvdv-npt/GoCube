@@ -494,7 +494,7 @@ export const generateControlledEndgameTestCase = async (
   const allPoints = topology.points();
   const pointCount = allPoints.length;
   const deadCount = pointCount >= 90 || topology instanceof TorusTopology ? 2 : 1;
-  const radius = deadCount >= 2 ? 4 : 4;
+  const radius = deadCount >= 2 ? 5 : 4;
   const requestSeki = identity.size >= SEKI_SIZE && new DeterministicRandom(
     `controlled-endgame-seki-v${String(CONTROLLED_ENDGAME_GENERATOR_VERSION)}:${identity.topology}:${identity.size}:${seed}`,
   ).integer(3) === 0;
