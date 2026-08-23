@@ -1,4 +1,5 @@
 import type { EndgameClassification } from '../endgame/EndgameClassifier';
+import { resolveTerritory } from '../endgame/TerritoryResolver';
 import type { CaptureCounts, GameState, RuleSet, StoneColor } from '../game/types';
 import type { PointId, Topology } from '../topology/Topology';
 
@@ -66,30 +67,13 @@ const freezePair = <T extends { readonly black: number; readonly white: number }
   value: T,
 ): T => Object.freeze({ ...value }) as T;
 
-const classifyPoints = (
-  state: GameState,
+const classificationStatuses = (
   classification: EndgameClassification,
-  topology: Topology,
-): ReadonlyMap<string, 'alive' | 'dead' | 'seki'> => {
-  const statuses = new Map<string, 'alive' | 'dead' | 'seki'>();
-
+): ReadonlyMap<PointId, 'alive' | 'dead' | 'seki'> => {
+  const statuses = new Map<PointId, 'alive' | 'dead' | 'seki'>();
   for (const group of classification) {
-    for (const point of group.points) {
-      if (!topology.has(point)) {
-        throw new Error(`Classification contains unknown point: ${point}`);
-      }
-      if (state.board[point] === 'empty' || state.board[point] === undefined) {
-        throw new Error(`Classification point is not occupied by a stone: ${point}`);
-      }
-
-      const existing = statuses.get(point);
-      if (existing && existing !== group.status) {
-        throw new Error(`Conflicting classification for point: ${point}`);
-      }
-      statuses.set(point, group.status);
-    }
+    for (const point of group.points) statuses.set(point, group.status);
   }
-
   return statuses;
 };
 
@@ -98,10 +82,12 @@ export const analyzeScoringPosition = (
   classification: EndgameClassification,
   topology: Topology,
 ): ScoringPosition => {
-  const statuses = classifyPoints(state, classification, topology);
-  const effectiveBoard = { ...state.board };
+  // TerritoryResolver is the authoritative handoff for dead removal, region
+  // connectivity, seki neutrality, and ordinary dame ownership.
+  const resolution = resolveTerritory(state, classification, topology);
+  const statuses = classificationStatuses(classification);
   const deadStones = { black: 0, white: 0 };
-  const sekiStones = new Set<string>();
+  const stonesOnBoard = { black: 0, white: 0 };
 
   for (const point of topology.points()) {
     const occupancy = state.board[point];
@@ -109,21 +95,14 @@ export const analyzeScoringPosition = (
       throw new Error(`GameState board is missing or invalid at point: ${point}`);
     }
 
-    const status = statuses.get(point);
-    if (status === 'dead') {
+    if (statuses.get(point) === 'dead') {
       if (occupancy === 'empty') {
         throw new Error(`Dead classification points to an empty point: ${point}`);
       }
       deadStones[occupancy] += 1;
-      effectiveBoard[point] = 'empty';
-    } else if (status === 'seki') {
-      sekiStones.add(point);
+      continue;
     }
-  }
 
-  const stonesOnBoard = { black: 0, white: 0 };
-  for (const point of topology.points()) {
-    const occupancy = effectiveBoard[point];
     if (occupancy === 'black' || occupancy === 'white') stonesOnBoard[occupancy] += 1;
   }
 
@@ -139,46 +118,20 @@ export const analyzeScoringPosition = (
     neutral: [] as PointId[],
     seki: [] as PointId[],
   };
-  const visited = new Set<string>();
 
-  for (const start of topology.points()) {
-    if (effectiveBoard[start] !== 'empty' || visited.has(start)) continue;
-
-    const region: string[] = [];
-    const boundaryColors = new Set<StoneColor>();
-    let touchesSeki = false;
-    const pending = [start];
-    visited.add(start);
-
-    while (pending.length > 0) {
-      const point = pending.pop()!;
-      region.push(point);
-
-      for (const neighbor of topology.neighbors(point)) {
-        const occupancy = effectiveBoard[neighbor];
-        if (occupancy === 'empty') {
-          if (!visited.has(neighbor)) {
-            visited.add(neighbor);
-            pending.push(neighbor);
-          }
-          continue;
-        }
-
-        boundaryColors.add(occupancy);
-        if (sekiStones.has(neighbor)) touchesSeki = true;
-      }
-    }
-
-    if (touchesSeki) {
-      territory.seki += region.length;
-      territoryPoints.seki.push(...region);
-    } else if (boundaryColors.size === 1) {
-      const [owner] = boundaryColors;
-      territory[owner] += region.length;
-      territoryPoints[owner].push(...region);
+  for (const region of resolution.regions) {
+    if (region.touchesSeki) {
+      territory.seki += region.points.length;
+      territoryPoints.seki.push(...region.points);
+    } else if (region.owner === 'BLACK') {
+      territory.black += region.points.length;
+      territoryPoints.black.push(...region.points);
+    } else if (region.owner === 'WHITE') {
+      territory.white += region.points.length;
+      territoryPoints.white.push(...region.points);
     } else {
-      territory.neutral += region.length;
-      territoryPoints.neutral.push(...region);
+      territory.neutral += region.points.length;
+      territoryPoints.neutral.push(...region.points);
     }
   }
 
