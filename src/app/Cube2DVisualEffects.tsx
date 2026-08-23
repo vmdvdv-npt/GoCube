@@ -49,8 +49,10 @@ type BoardPoint = ReturnType<typeof createCube2DRenderModel>['boards'][number]['
 type GroupShape = Pick<EndgameGroupPresentation, 'points' | 'edges'>;
 type DisplayPoint = Readonly<{ x: number; y: number }>;
 type ContourStatus = 'dead' | 'seki' | 'unresolved';
+type StoneColor = EndgameGroupPresentation['color'];
 type ContourBundle = Readonly<{
   status: ContourStatus;
+  color: StoneColor;
   groupIds: readonly string[];
   shape: GroupShape;
 }>;
@@ -103,17 +105,22 @@ const contourBundles = (
   topology: Topology,
 ): readonly ContourBundle[] =>
   Object.freeze(
-    (['dead', 'unresolved', 'seki'] as const).flatMap((status) => {
-      const matching = groups.filter((group) => contourStatus(group.status) === status);
-      if (matching.length === 0) return [];
-      return [
-        Object.freeze({
-          status,
-          groupIds: Object.freeze(matching.map((group) => group.id)),
-          shape: mergedContourShape(matching, topology),
-        }),
-      ];
-    }),
+    (['dead', 'unresolved', 'seki'] as const).flatMap((status) =>
+      (['black', 'white'] as const).flatMap((color) => {
+        const matching = groups.filter(
+          (group) => contourStatus(group.status) === status && group.color === color,
+        );
+        if (matching.length === 0) return [];
+        return [
+          Object.freeze({
+            status,
+            color,
+            groupIds: Object.freeze(matching.map((group) => group.id)),
+            shape: mergedContourShape(matching, topology),
+          }),
+        ];
+      }),
+    ),
   );
 
 const contourSmoothingRadius = (radius: number): number => Math.max(1.5, radius * 0.22);
@@ -334,10 +341,11 @@ export function Cube2DVisualEffects({
                 const maskId = `cube-endgame-outline-mask-${board.face}-${bundleIndex}`;
                 return (
                   <g
-                    key={`bundle:${bundle.status}`}
+                    key={`bundle:${bundle.status}:${bundle.color}`}
                     className={`cube-2d-group-contour cube-2d-group-contour--${bundle.status}`}
                     data-endgame-group-ids={bundle.groupIds.join(' ')}
                     data-group-status={bundle.status}
+                    data-group-color={bundle.color}
                     pointerEvents="none"
                   >
                     {groupOutline(
