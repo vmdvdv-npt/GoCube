@@ -53,7 +53,7 @@ test('new game exposes every supported 0.1 torus size', async ({ page }) => {
   ]);
 });
 
-test('release acceptance covers capture, Pass/Undo and editable assisted endgame statuses', async ({ page }) => {
+test('acceptance covers capture, Pass/Undo and editable assisted endgame statuses', async ({ page }) => {
   await startGame(page, { size: '9', rules: 'chinese', komi: '7.5' });
 
   for (const point of ['1,1', '0,1', '5,5', '1,0', '5,6', '2,1', '6,5', '1,2']) {
