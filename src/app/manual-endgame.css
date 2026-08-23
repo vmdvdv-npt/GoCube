@@ -2,6 +2,11 @@
   cursor: pointer;
 }
 
+/* Final territory is rendered by the product Torus renderer as point markers. */
+.torus-board__final-territory {
+  display: none;
+}
+
 .endgame-progress {
   color: #9aa5ae;
   font-size: 11px;
