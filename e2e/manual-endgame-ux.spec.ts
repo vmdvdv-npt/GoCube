@@ -24,7 +24,13 @@ test('assisted endgame keeps every logical group editable until explicit scoring
 
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
   await expect(page.getByText('Resolved 0 of 2')).toBeVisible();
-  await expect(page.locator('.torus-board__group-contour--unresolved')).toHaveCount(2);
+
+  // The two logical unresolved groups remain independently editable, but adjacent
+  // same-status groups intentionally share one visual contour to avoid double bands.
+  const unresolvedContour = page.locator('.torus-board__group-contour--unresolved');
+  await expect(unresolvedContour).toHaveCount(1);
+  const unresolvedGroupIds = await unresolvedContour.getAttribute('data-endgame-group-ids');
+  expect(unresolvedGroupIds?.trim().split(/\s+/)).toHaveLength(2);
 
   // Clicking either stone of the seam-connected black group selects the same group.
   await point(page, '0,4').click();
