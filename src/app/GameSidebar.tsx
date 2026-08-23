@@ -1,5 +1,6 @@
 import { useEffect, useMemo, type ReactNode } from 'react';
 import type { GameViewModel } from '../presentation/PresentationModel';
+import type { ReferenceStatus } from '../core/endgame/testlab/TestCase';
 import { useLiveTestGeneratorControls } from './LiveTestGeneratorContext';
 import { LocalStoragePreferencesStorage } from './persistence/LocalStoragePreferencesStorage';
 
@@ -24,6 +25,25 @@ export interface GameSidebarProps {
   readonly endgame?: ReactNode;
   readonly feedback?: string | null;
 }
+
+const referenceStatusLabel = (status: ReferenceStatus): string => {
+  switch (status) {
+    case 'alive':
+      return 'Alive';
+    case 'dead':
+      return 'Dead';
+    case 'seki':
+      return 'Seki';
+    case 'unresolved':
+      return 'Unresolved';
+    case 'unstable':
+      return 'Unstable';
+    case 'unavailable':
+      return 'Unavailable';
+    case 'unknown':
+      return 'Unknown';
+  }
+};
 
 export function GameSidebar({
   size,
@@ -153,59 +173,82 @@ export function GameSidebar({
           <section
             className="live-test-generator-controls"
             data-testid="live-test-generator-controls"
-            aria-label="Developer test generators"
+            aria-label="Developer test cases"
           >
-            <strong>Test generators</strong>
-            <div className="live-test-generator-actions">
+            <strong>Test cases</strong>
+            <div className="live-test-generator-actions live-test-generator-actions--three">
               <button
                 type="button"
-                onClick={() => developerGeneration.onGenerate('game-like')}
+                onClick={developerGeneration.onGenerateGame}
                 disabled={developerGeneration.busy}
               >
                 Generate game
               </button>
               <button
                 type="button"
-                onClick={() => developerGeneration.onGenerate('endgame')}
+                onClick={developerGeneration.onGenerateEndgame}
                 disabled={developerGeneration.busy}
               >
                 Generate endgame
               </button>
-            </div>
-            <p className="live-test-generator-current" aria-live="polite">
-              {developerGeneration.current
-                ? `${developerGeneration.current.generator === 'game-like' ? 'Game-like' : 'Endgame'} · ${developerGeneration.current.topology === 'cube' ? 'Cube' : 'Torus'} · ${developerGeneration.current.size}×${developerGeneration.current.size} · Seed ${developerGeneration.current.seed}`
-                : 'No generated position'}
-            </p>
-            <div className="live-test-generator-replay">
-              <select
-                aria-label="Generator type for replay"
-                value={developerGeneration.selectedGenerator}
-                onChange={(event) =>
-                  developerGeneration.onSelectedGeneratorChange(
-                    event.target.value === 'endgame' ? 'endgame' : 'game-like',
-                  )
-                }
+              <button
+                type="button"
+                onClick={developerGeneration.onGenerateCorpus}
                 disabled={developerGeneration.busy}
               >
-                <option value="game-like">Game-like</option>
-                <option value="endgame">Endgame</option>
-              </select>
+                AI-verified case
+              </button>
+            </div>
+
+            <label className="live-test-id-control">
+              <span>Test ID</span>
               <input
-                aria-label="Replay seed"
-                value={developerGeneration.seedInput}
-                onChange={(event) => developerGeneration.onSeedInputChange(event.target.value)}
-                placeholder="Seed"
+                aria-label="Test ID"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={developerGeneration.testIdInput}
+                onChange={(event) => developerGeneration.onTestIdInputChange(event.target.value)}
+                placeholder="Test ID"
                 disabled={developerGeneration.busy}
               />
               <button
                 type="button"
-                onClick={developerGeneration.onReplay}
-                disabled={developerGeneration.busy || developerGeneration.seedInput.trim().length === 0}
+                onClick={developerGeneration.onLoadTestId}
+                disabled={developerGeneration.busy || developerGeneration.testIdInput.trim().length === 0}
               >
-                Replay seed
+                Load
               </button>
-            </div>
+            </label>
+
+            <p className="live-test-generator-current" aria-live="polite">
+              Current Test ID: {developerGeneration.current?.testId ?? '—'}
+            </p>
+            {developerGeneration.current ? (
+              <p className="live-test-generator-current">
+                {developerGeneration.current.identity.source === 'game-like'
+                  ? 'Game-like'
+                  : developerGeneration.current.identity.source === 'synthetic-endgame'
+                    ? `Synthetic · ${developerGeneration.current.scenario}`
+                    : `Corpus · ${developerGeneration.current.scenario}`}
+              </p>
+            ) : null}
+
+            {developerGeneration.current?.diagnostics ? (
+              <div className="live-test-diagnostics" aria-label="Differential results">
+                <span>Source: {referenceStatusLabel(developerGeneration.current.diagnostics.sourceStatus)}</span>
+                <span>KataGo: {referenceStatusLabel(developerGeneration.current.diagnostics.kataGoStatus)}</span>
+                <span>Cube Go: {referenceStatusLabel(developerGeneration.current.diagnostics.cubeGoStatus)}</span>
+                {developerGeneration.current.diagnostics.attention ? (
+                  <strong className="live-test-diagnostics__mismatch">MISMATCH / REVIEW</strong>
+                ) : null}
+              </div>
+            ) : null}
+
+            {developerGeneration.feedback ? (
+              <p className="live-test-generator-feedback" role="status">
+                {developerGeneration.feedback}
+              </p>
+            ) : null}
           </section>
         ) : null}
 
