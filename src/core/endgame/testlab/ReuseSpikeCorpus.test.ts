@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { externalCorpusCaseCount } from './ExternalCorpusImporter';
 import {
   buildReuseSpikeCorpus,
   reuseSpikeKnownCaseCount,
@@ -7,26 +6,20 @@ import {
 } from './ReuseSpikeCorpus';
 
 describe('ReuseSpikeCorpus', () => {
-  it('exports every external and known-answer record exactly once and deterministically', () => {
+  it('exports the retained independent known-answer records exactly once and deterministically', () => {
     const first = buildReuseSpikeCorpus();
     const second = buildReuseSpikeCorpus();
 
     expect(first).toEqual(second);
-    expect(first).toHaveLength(externalCorpusCaseCount() + reuseSpikeKnownCaseCount());
+    expect(first).toHaveLength(reuseSpikeKnownCaseCount());
+    expect(first.map(({ id }) => id)).toEqual([
+      'work1:forced-capture',
+      'work1:two-eye-alive',
+    ]);
     expect(new Set(first.map(({ id }) => id)).size).toBe(first.length);
   });
 
-  it('serializes the source position without Cube/Torus embedding', () => {
-    const [problem] = buildReuseSpikeCorpus();
-
-    expect(problem?.id).toBe('xuanxuan-qijing:1');
-    expect(problem?.sourceStatus).toBe('unknown');
-    expect(problem?.sgf).toBe(
-      '(;FF[4]GM[1]SZ[19]PL[W]AB[kj][ik][kh][ih][hj]AW[ji]MA[ji])',
-    );
-  });
-
-  it('appends a deterministic forced-capture known-answer case', () => {
+  it('keeps a deterministic forced-capture known-answer case', () => {
     const forcedCapture = buildReuseSpikeCorpus().find(
       ({ id }) => id === 'work1:forced-capture',
     );
@@ -37,7 +30,7 @@ describe('ReuseSpikeCorpus', () => {
     });
   });
 
-  it('appends a two-eye group with exactly two protected internal liberties', () => {
+  it('keeps a two-eye group with exactly two protected internal liberties', () => {
     const alive = buildReuseSpikeCorpus().find(({ id }) => id === 'work1:two-eye-alive');
     expect(alive?.sourceStatus).toBe('alive');
     expect(alive?.position.currentPlayer).toBe('white');
