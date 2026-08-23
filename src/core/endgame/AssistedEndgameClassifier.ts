@@ -21,19 +21,25 @@ import {
 import { buildEndgameGraph } from './EndgameGraphCore';
 import { endgameGroupId } from './EndgameGroupIdentity';
 import { ManualEndgameClassifier } from './ManualEndgameClassifier';
-import { verifyTacticalDead, type TacticalDeadProof } from './TacticalReader';
+import {
+  TACTICAL_READER_ALGORITHM,
+  readTacticalCapture,
+  type TacticalDeadProof,
+} from './TacticalReader';
 import type { StoneColor } from '../game/types';
 
 const COLORS: readonly StoneColor[] = Object.freeze(['black', 'white']);
+const TACTICAL_CLASSIFIER_MAX_NODES = 8;
 
 /**
  * Conservative assisted classifier.
  *
  * It proves unconditional/pass-alive groups using Benson's fixed-point
- * criterion, preserves the narrow sealed single-liberty proof, adds bounded
- * tactical forced-capture proofs for contested low-liberty strings, and
- * resolves seki only for the existing closed mutual two-liberty proof. Any
- * group not proven by one of those boundaries remains unresolved.
+ * criterion, preserves the narrow sealed single-liberty proof, adds only
+ * ultra-short two-liberty tactical forced-capture proofs at this Work 4
+ * integration boundary, and resolves seki only for the existing closed mutual
+ * two-liberty proof. Any group not proven by one of those boundaries remains
+ * unresolved.
  */
 export class AssistedEndgameClassifier implements EndgameClassifier {
   private readonly manual = new ManualEndgameClassifier();
@@ -82,11 +88,13 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     );
     const tacticalDeadProofs = new Map<string, TacticalDeadProof>();
     for (const group of graph.strings) {
+      // Keep the existing one-liberty evidence contract authoritative. Work 4
+      // only promotes a new class of very short two-liberty proofs; broader
+      // tactical localization is deliberately deferred to Work 5.
       if (
         passAliveGroupKeys.has(group.key) ||
         deadProofs.has(group.key) ||
-        group.liberties.length === 0 ||
-        group.liberties.length > 3
+        group.liberties.length !== 2
       ) {
         continue;
       }
@@ -100,13 +108,32 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
       );
       if (!contested) continue;
 
-      const verification = verifyTacticalDead(
-        group,
-        context.state,
-        context.topology,
+      const sharedOptions = Object.freeze({
         safeGroupPoints,
+        maxNodes: TACTICAL_CLASSIFIER_MAX_NODES,
+      });
+      const attackerFirst = readTacticalCapture(group, context.state, context.topology, {
+        ...sharedOptions,
+        firstPlayer: 'attacker',
+      });
+      if (attackerFirst.outcome !== 'proved-kill') continue;
+
+      const defenderFirst = readTacticalCapture(group, context.state, context.topology, {
+        ...sharedOptions,
+        firstPlayer: 'defender',
+      });
+      if (defenderFirst.outcome !== 'proved-kill') continue;
+
+      tacticalDeadProofs.set(
+        group.key,
+        Object.freeze({
+          algorithm: TACTICAL_READER_ALGORITHM,
+          proof: 'forced-capture-both-first-player-orders' as const,
+          crucialStones: group.points,
+          attackerFirst,
+          defenderFirst,
+        }),
       );
-      if (verification.proven) tacticalDeadProofs.set(group.key, verification.evidence);
     }
 
     const alreadyResolvedGroupKeys = new Set<string>([
