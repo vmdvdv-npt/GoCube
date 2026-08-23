@@ -3,20 +3,18 @@ import {
   useContext,
   type ReactNode,
 } from 'react';
-import type {
-  LiveTestGenerationSpec,
-  LiveTestGeneratorType,
-} from '../core/endgame/testlab/LiveTestGenerators';
+import type { ReplayableTestCase } from '../core/endgame/testlab/TestCase';
 
 export interface LiveTestGeneratorControls {
-  readonly current: LiveTestGenerationSpec | null;
-  readonly selectedGenerator: LiveTestGeneratorType;
-  readonly seedInput: string;
+  readonly current: ReplayableTestCase | null;
+  readonly testIdInput: string;
   readonly busy: boolean;
-  readonly onSelectedGeneratorChange: (generator: LiveTestGeneratorType) => void;
-  readonly onSeedInputChange: (seed: string) => void;
-  readonly onGenerate: (generator: LiveTestGeneratorType) => void;
-  readonly onReplay: () => void;
+  readonly feedback: string | null;
+  readonly onTestIdInputChange: (testId: string) => void;
+  readonly onGenerateGame: () => void;
+  readonly onGenerateEndgame: () => void;
+  readonly onGenerateCorpus: () => void;
+  readonly onLoadTestId: () => void;
 }
 
 const LiveTestGeneratorContext = createContext<LiveTestGeneratorControls | null>(null);
