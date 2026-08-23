@@ -6,6 +6,7 @@ import type { PointId } from '../core/topology/Topology';
 import type {
   EndgameGroupPresentation,
   EndgameGroupRenderState,
+  EndgameVisualStatus,
 } from '../presentation/EndgameGroupPresentation';
 import { buildEndgameSekiRegions } from '../presentation/EndgameSekiPresentation';
 import type { Cube2DLayout } from '../presentation/cube/Cube2DLayout';
@@ -52,7 +53,7 @@ type DisplayPoint = Readonly<{ x: number; y: number }>;
 const pointMap = <T extends { readonly pointId: PointId }>(points: readonly T[]) =>
   new Map(points.map((point) => [point.pointId, point]));
 
-const contourColor = (status: GroupStatus | null): string => {
+const contourColor = (status: EndgameVisualStatus | null): string => {
   if (status === 'dead') return '#e52b2b';
   if (status === 'seki') return '#80878f';
   if (status === 'alive') return 'transparent';
