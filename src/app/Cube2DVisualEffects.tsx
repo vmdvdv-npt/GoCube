@@ -110,6 +110,47 @@ const groupShape = (
   );
 };
 
+const groupOutline = (
+  group: GroupShape,
+  pointsById: ReadonlyMap<PointId, BoardPoint>,
+  contentScale: number,
+  innerRadius: number,
+  outlineWidth: number,
+  color: string,
+  maskId: string,
+): ReactNode => (
+  <>
+    <defs>
+      <mask
+        id={maskId}
+        maskUnits="userSpaceOnUse"
+        x={0}
+        y={0}
+        width={CUBE_2D_SVG_SIZE}
+        height={CUBE_2D_SVG_SIZE}
+      >
+        <rect
+          x={0}
+          y={0}
+          width={CUBE_2D_SVG_SIZE}
+          height={CUBE_2D_SVG_SIZE}
+          fill="#ffffff"
+        />
+        <g style={{ color: '#000000' }}>
+          {groupShape(group, pointsById, contentScale, innerRadius)}
+        </g>
+      </mask>
+    </defs>
+    <g
+      className="cube-2d-group-contour__outline-source"
+      style={{ color }}
+      mask={`url(#${maskId})`}
+    >
+      {groupShape(group, pointsById, contentScale, innerRadius + outlineWidth)}
+    </g>
+  </>
+);
+
 export function Cube2DVisualEffects({
   layout,
   layoutCellSize = CUBE_2D_BASE_CELL_SIZE,
@@ -149,6 +190,7 @@ export function Cube2DVisualEffects({
   const contentScale = cube2DContentScale(size);
   const stoneRadius = step * 0.39 * contentScale;
   const contourRadius = stoneRadius;
+  const contourWidth = 1.2;
   const territoryRadius = Math.max(1.25, step * 0.115 * contentScale);
   const effectsStyle: EffectsStyle = { '--cube-2d-cell-size': `${layoutCellSize}px` };
   const captureArtworkPrefix = 'cube-2d-capture-artwork';
@@ -203,9 +245,7 @@ export function Cube2DVisualEffects({
                 const selected = selectedGroupId === group.id;
                 const hovered = hoveredGroupId === group.id;
                 const color = contourColor(status);
-                const filterId = `cube-endgame-outline-${board.face}-${groupIndex}`;
-                const outlineRadius = selected ? 1.7 : hovered ? 1.45 : 1.2;
-                const shape = groupShape(group, pointsById, contentScale, contourRadius);
+                const maskId = `cube-endgame-outline-mask-${board.face}-${groupIndex}`;
                 return (
                   <g
                     key={`group:${group.id}`}
@@ -214,28 +254,15 @@ export function Cube2DVisualEffects({
                     data-group-status={status ?? 'unresolved'}
                     pointerEvents="none"
                   >
-                    <defs>
-                      <filter
-                        id={filterId}
-                        x="-30%"
-                        y="-30%"
-                        width="160%"
-                        height="160%"
-                        colorInterpolationFilters="sRGB"
-                      >
-                        <feMorphology in="SourceAlpha" operator="dilate" radius={outlineRadius} result="dilated" />
-                        <feComposite in="dilated" in2="SourceAlpha" operator="out" result="outline" />
-                        <feFlood floodColor={color} result="outline-color" />
-                        <feComposite in="outline-color" in2="outline" operator="in" />
-                      </filter>
-                    </defs>
-                    <g
-                      className="cube-2d-group-contour__outline-source"
-                      style={{ color: '#ffffff' }}
-                      filter={`url(#${filterId})`}
-                    >
-                      {shape}
-                    </g>
+                    {groupOutline(
+                      group,
+                      pointsById,
+                      contentScale,
+                      contourRadius,
+                      contourWidth,
+                      color,
+                      maskId,
+                    )}
                   </g>
                 );
               })}
@@ -244,8 +271,7 @@ export function Cube2DVisualEffects({
                 if (!region.points.some((pointId) => pointsById.has(pointId))) return null;
                 const selected = selectedGroupId !== null && region.groupIds.includes(selectedGroupId);
                 const hovered = hoveredGroupId !== null && region.groupIds.includes(hoveredGroupId);
-                const filterId = `cube-endgame-seki-outline-${board.face}-${regionIndex}`;
-                const outlineRadius = selected ? 1.7 : hovered ? 1.45 : 1.2;
+                const maskId = `cube-endgame-seki-outline-mask-${board.face}-${regionIndex}`;
                 const shape = groupShape(region, pointsById, contentScale, contourRadius);
                 return (
                   <g
@@ -256,31 +282,18 @@ export function Cube2DVisualEffects({
                     data-group-status="seki"
                     pointerEvents="none"
                   >
-                    <defs>
-                      <filter
-                        id={filterId}
-                        x="-30%"
-                        y="-30%"
-                        width="160%"
-                        height="160%"
-                        colorInterpolationFilters="sRGB"
-                      >
-                        <feMorphology in="SourceAlpha" operator="dilate" radius={outlineRadius} result="dilated" />
-                        <feComposite in="dilated" in2="SourceAlpha" operator="out" result="outline" />
-                        <feFlood floodColor="#80878f" result="outline-color" />
-                        <feComposite in="outline-color" in2="outline" operator="in" />
-                      </filter>
-                    </defs>
                     <g className="cube-2d-seki-mask" style={{ color: '#80878f' }} opacity={0.6}>
                       {shape}
                     </g>
-                    <g
-                      className="cube-2d-group-contour__outline-source"
-                      style={{ color: '#ffffff' }}
-                      filter={`url(#${filterId})`}
-                    >
-                      {shape}
-                    </g>
+                    {groupOutline(
+                      region,
+                      pointsById,
+                      contentScale,
+                      contourRadius,
+                      contourWidth,
+                      '#80878f',
+                      maskId,
+                    )}
                   </g>
                 );
               })}
