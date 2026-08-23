@@ -3250,7 +3250,7 @@ Work 7D
 
 # 52. Work 8 decomposition; Work 8A — TerritoryResolver Core: финальный результат
 
-Срез на **2026-08-24**. Work 8 детализирован на три изолированных этапа. **Work 8A закрыт.** Work 8B и Work 8C остаются отдельным последующим scope.
+Срез на **2026-08-24**. Work 8 детализирован на три изолированных этапа. **Work 8A, Work 8B и Work 8C закрыты.** Финальные результаты Work 8B и Work 8C зафиксированы в разделах 53 и 54.
 
 ## 52.1. Detailed decomposition
 
@@ -3263,7 +3263,7 @@ Work 7D
 - correctness только через `Topology.neighbors()`;
 - без изменения Chinese/Japanese scoring.
 
-### Work 8B — Seki / Dame + Scoring Handoff
+### Work 8B — Seki / Dame + Scoring Handoff — CLOSED 2026-08-24
 
 - корректная нейтральность seki;
 - `touchesSeki`;
@@ -3271,7 +3271,7 @@ Work 7D
 - передача результата Resolver существующим Chinese/Japanese scorers;
 - никаких новых life/death proofs.
 
-### Work 8C — Hardening + Differential
+### Work 8C — Hardening + Differential — CLOSED 2026-08-24
 
 - planar comparison с `goscorer`, где semantics действительно совпадают;
 - Torus seam и Cube edge/corner fixtures;
@@ -3375,7 +3375,7 @@ Work 8A закрывает только TerritoryResolver foundation:
 - no seki/dame-specific Resolver semantics;
 - no new life/death proofs.
 
-Следующий этап именно TerritoryResolver track — **Work 8B: Seki / Dame + Scoring Handoff**. Work 7D остаётся отдельным ранее запланированным classifier hardening/integration scope и этим этапом не считается закрытым.
+Work 8B и Work 8C закрыты в разделах 53–54. TerritoryResolver Work 8 track завершён. Work 7D остаётся отдельным ранее запланированным classifier hardening/integration scope и Work 8 его не закрывает.
 
 ---
 
@@ -3463,7 +3463,7 @@ Work 8B не добавляет и не расширяет:
 - graph-isomorphism/metamorphic hardening;
 - performance acceptance gate.
 
-Все последние пункты остаются строго Work 8C либо отдельным Work 7D scope согласно decomposition.
+Все последние пункты были строго переданы Work 8C либо остаются отдельным Work 7D scope согласно decomposition.
 
 ## 53.5. Validation boundary
 
@@ -3494,4 +3494,198 @@ Work 8B закрывает Seki / Dame + Scoring Handoff layer:
 - scoring formulas и prisoner semantics не переписаны;
 - никаких новых life/death/seki proofs не введено.
 
-**Следующий этап TerritoryResolver track — Work 8C: Hardening + Differential.** Work 7D остаётся отдельным classifier-hardening/integration scope и Work 8B его не закрывает.
+Work 8C закрыт в разделе 54. TerritoryResolver Work 8 track завершён; Work 7D остаётся отдельным classifier-hardening/integration scope.
+
+---
+
+# 54. Work 8C — Hardening + Differential: финальный результат
+
+Срез на **2026-08-24**. **Work 8C закрыт по implementation и code-head acceptance scope.** Production `TerritoryResolver`, scoring formulas и life/death/seki proof semantics этим этапом не менялись: Work 8C добавляет отдельный deterministic hardening/differential corpus поверх принятого Work 8A/8B pipeline.
+
+## 54.1. Planar `goscorer` differential boundary
+
+External differential намеренно ограничен только тем случаем, где semantics действительно совпадают.
+
+Oracle зафиксирован exact upstream revision:
+
+```text
+lightvector/goscorer
+commit = 0ac5f59962a9e40f39f4667645335ba5068acf86
+fixture = python/expected_test_output/test_basic.txt
+```
+
+Выбранный upstream `test_basic` не содержит detected seki и false-eye overrides. Поэтому для его empty points ordinary connected-region ownership по surviving boundary color является совместимой семантикой для прямого `TerritoryResolver` differential.
+
+Work 8C **не** использует `goscorer` automatic seki/false-eye heuristics как authority для GoCube classification и не переносит его dead-stone scoring representation в project scoring contract. Это сохраняет правило:
+
+```text
+external oracle comparison only where semantics match
+```
+
+Pinned fixture проверяет point-by-point ownership и итоговый handoff в оба scorer. Expected empty-point totals:
+
+```text
+BLACK   = 10
+WHITE   = 19
+NEUTRAL = 28
+SEKI    = 0
+```
+
+Chinese и Japanese scoring обязаны получить одинаковый territory partition из одного Resolver result.
+
+## 54.2. Topology hardening
+
+Добавлены отдельные topology fixtures без специальных production branches:
+
+1. Torus interior two-point black territory сравнивается с изоморфным two-point region через wraparound seam;
+2. оба дают одинаковый Resolver fact и одинаковый Chinese/Japanese score contribution;
+3. Cube empty region проходит через physical face edge `front -> left`;
+4. отдельный Cube fixture соединяет empty region вокруг physical corner через три faces;
+5. ownership во всех этих cases выводится только из `Topology.neighbors()` и surviving boundary, без coordinate/face-specific Resolver logic.
+
+Production Resolver при этом не изменён: tests подтверждают topology-neutral behavior уже существующего `EndgameGraphCore` handoff.
+
+## 54.3. Graph-isomorphism / metamorphic invariants
+
+Отдельный arbitrary-graph fixture одновременно проверяет:
+
+- чистое переименование всех `PointId`;
+- reverse `Topology.points()` iteration order;
+- reverse neighbor iteration order;
+- permutation classification entry order;
+- dead virtual removal;
+- seki interaction;
+- stable boundary colors/groups count и final owner.
+
+После canonical relabeling normalized `TerritoryResolution` обязан совпадать exact.
+
+Проверяемый composite region после dead removal содержит `dw`, `e1`, `e2`, имеет только black surviving boundary, но `touchesSeki = true`, поэтому остаётся `NEUTRAL`. Это фиксирует одновременно isomorphism, dead-removal и seki override semantics.
+
+## 54.4. Determinism и full scoring regression
+
+Repeated-run regression 25 раз вычисляет один и тот же complex Torus case через:
+
+```text
+classification
+  -> resolveTerritory(...)
+  -> ChineseScoring
+  -> JapaneseScoring
+```
+
+и требует exact equality Resolver facts и обоих final score results.
+
+Отдельный full-pipeline fixture одновременно содержит:
+
+- classified white `dead` stone;
+- classified black `seki` stone рядом с empty point;
+- ordinary dame с `touchesSeki = false`;
+- captures during play;
+- komi `0.5`.
+
+Accepted result:
+
+```text
+territory = black 1 / white 0 / neutral 1 / seki 1
+deadStones = black 0 / white 1
+captures = black 2 / white 1
+```
+
+Chinese сохраняет area semantics:
+
+```text
+stonesOnBoard = black 77 / white 1
+score = black 78 / white 1.5
+prisoners = null
+```
+
+Japanese сохраняет prisoner semantics:
+
+```text
+prisoners = black 3 / white 1
+score = black 4 / white 1.5
+```
+
+Этот regression подтверждает именно единый handoff Work 8B; новой scoring formula Work 8C не вводит.
+
+## 54.5. Deterministic performance / acceptance gate
+
+Wall-clock threshold для correctness gate не используется, чтобы CI machine variance не превращалась в semantic flake.
+
+Вместо этого `CountingTopology` измеряет число вызовов `Topology.neighbors()` при `resolveTerritory()` на полном `CubeTopology(9)`:
+
+```text
+6 faces * 9 * 9 = 486 logical points
+```
+
+Acceptance bound:
+
+```text
+neighborCalls <= logicalPointCount * 6
+```
+
+Board fixture детерминированно смешивает stones и empty points, требует non-empty set resolved regions и подтверждает линейный topology-traversal budget для текущего Resolver path. Gate является regression ceiling, а не новым production API или wall-clock SLA.
+
+## 54.6. Regression corpus и validation
+
+Новый файл `TerritoryResolver.hardening.test.ts` содержит **7 targeted Work 8C tests**:
+
+1. pinned semantics-compatible planar `goscorer` differential;
+2. Torus interior vs seam metamorphic parity;
+3. Cube face-edge + three-face physical-corner connectivity;
+4. graph-isomorphism + iteration-order + classification-order invariance;
+5. repeated Resolver + Chinese/Japanese determinism;
+6. full `classification -> TerritoryResolver -> scoring` regression;
+7. deterministic linear neighbor-call acceptance gate на Cube 9x9.
+
+Первый CI #853 остановился только на TypeScript typing defect test helper `reverseRename`: `Map` вывел слишком узкий literal key union. Production code и proof/scoring semantics не менялись. Helper исправлен явным `Map<string, string>`.
+
+Исправленный code-head:
+
+```text
+fd9b27f12e2ba5551f4130abfb2e43a1d30ab72d
+```
+
+полностью прошёл full CI **#854**:
+
+- lint — pass; только два прежних non-blocking warnings вне Work 8C scope;
+- typecheck — pass;
+- unit/coverage — **620/620 tests pass** в 83 test files;
+- `TerritoryResolver.hardening.test.ts` — **7/7 pass**;
+- `TerritoryResolver.ts` — 97.67% statements / 95.23% branches / 100% functions / 97.43% lines;
+- build — pass;
+- full Playwright — **216/216 pass** across Chromium / Firefox / WebKit.
+
+Exact final documentation head обязан пройти новый полный `[full]` PR CI перед merge.
+
+## 54.7. Scope boundary и closure
+
+Work 8C не добавляет и не расширяет:
+
+- automatic life/death proof;
+- semeai proof;
+- seki proof;
+- classifier integration Work 7D;
+- Chinese scoring formula;
+- Japanese scoring formula или prisoner semantics;
+- production topology special cases;
+- новую runtime dependency на `goscorer`.
+
+Work 8 теперь закрыт как последовательность:
+
+```text
+8A — TerritoryResolver Core
+8B — Seki / Dame + Scoring Handoff
+8C — Hardening + Differential
+```
+
+Главные invariants после closure:
+
+- `dead` удаляется только виртуально;
+- seki/dame facts различимы через `touchesSeki`;
+- один Resolver является source territory facts для обоих scorers;
+- Torus/Cube connectivity остаётся полностью graph-driven;
+- planar external differential используется только при совместимых semantics;
+- graph-isomorphism и determinism являются explicit acceptance invariants;
+- performance gate deterministic и algorithmic, без wall-clock correctness threshold.
+
+**TerritoryResolver Work 8 track завершён. Work 7D остаётся отдельным classifier hardening/integration scope; Work 9 остаётся отдельным massive acceptance / shadow-comparison scope.**
