@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DETERMINISTIC_AND_OR_PROOF_SEARCH_ALGORITHM,
+  DETERMINISTIC_AND_OR_TRANSPOSITION_POLICY,
   searchDeterministicAndOrProof,
   type DeterministicProofSearchAdapter,
   type ProofSearchExpansion,
@@ -269,6 +270,101 @@ describe('DeterministicAndOrProofSearch', () => {
     expect(second).toEqual(first);
     expect(first.outcome).toBe('proven-survival');
     expect(first.principalVariation).toEqual(['a']);
+  });
+
+  it('memoizes completed transpositions by canonical node key without changing proof semantics', () => {
+    const leaf = terminal('leaf', 'proven-survival');
+    const shared = branch(
+      'shared',
+      'attacker',
+      Object.freeze([move('finish', leaf)]),
+    );
+    const root = branch(
+      'root',
+      'attacker',
+      Object.freeze([move('b-route', shared), move('a-route', shared)]),
+    );
+
+    const optimized = searchDeterministicAndOrProof(root, adapter);
+    const baseline = searchDeterministicAndOrProof(
+      root,
+      adapter,
+      Object.freeze({ useTranspositions: false }),
+    );
+
+    expect(optimized.outcome).toBe(baseline.outcome);
+    expect(optimized.reason).toBe(baseline.reason);
+    expect(optimized.principalVariation).toEqual(baseline.principalVariation);
+    expect(optimized.maxDepth).toBe(baseline.maxDepth);
+    expect(optimized.exploredNodes).toBe(3);
+    expect(baseline.exploredNodes).toBe(5);
+    expect(optimized.transpositionsEnabled).toBe(true);
+    expect(optimized.transpositionPolicy).toBe(
+      DETERMINISTIC_AND_OR_TRANSPOSITION_POLICY,
+    );
+    expect(optimized.transpositionHits).toBe(1);
+    expect(optimized.transpositionEntries).toBe(3);
+    expect(baseline.transpositionsEnabled).toBe(false);
+    expect(baseline.transpositionPolicy).toBeNull();
+    expect(baseline.transpositionHits).toBe(0);
+    expect(baseline.transpositionEntries).toBe(0);
+  });
+
+  it('does not charge transposition hits against the node budget', () => {
+    const leaf = terminal('leaf', 'proven-survival');
+    const shared = branch(
+      'shared',
+      'attacker',
+      Object.freeze([move('finish', leaf)]),
+    );
+    const root = branch(
+      'root',
+      'attacker',
+      Object.freeze([move('a-route', shared), move('b-route', shared)]),
+    );
+
+    const optimized = searchDeterministicAndOrProof(
+      root,
+      adapter,
+      Object.freeze({ nodeBudget: 3 }),
+    );
+    const baseline = searchDeterministicAndOrProof(
+      root,
+      adapter,
+      Object.freeze({ nodeBudget: 3, useTranspositions: false }),
+    );
+
+    expect(optimized.outcome).toBe('proven-survival');
+    expect(optimized.exploredNodes).toBe(3);
+    expect(optimized.transpositionHits).toBe(1);
+    expect(baseline.outcome).toBe('budget-exhausted');
+    expect(baseline.exploredNodes).toBe(3);
+  });
+
+  it('never memoizes a frame whose proof was cut off by node-budget exhaustion', () => {
+    const root = branch(
+      'root',
+      'attacker',
+      Object.freeze([
+        move(
+          'continue',
+          branch(
+            'middle',
+            'attacker',
+            Object.freeze([move('finish', terminal('leaf', 'proven-survival'))]),
+          ),
+        ),
+      ]),
+    );
+
+    const result = searchDeterministicAndOrProof(
+      root,
+      adapter,
+      Object.freeze({ nodeBudget: 2 }),
+    );
+
+    expect(result.outcome).toBe('budget-exhausted');
+    expect(result.transpositionEntries).toBe(0);
   });
 
   it('rejects duplicate move keys because they break deterministic branch identity', () => {
