@@ -6,7 +6,7 @@ import type { GameState, PointOccupancy } from '../game/types';
 import type { PointId, Topology } from '../topology/Topology';
 
 class GraphTopology implements Topology {
-  readonly id = 'work8a-opaque-graph';
+  readonly id = 'work8-territory-opaque-graph';
   private readonly allPoints: readonly PointId[];
 
   constructor(private readonly adjacency: Readonly<Record<PointId, readonly PointId[]>>) {
@@ -62,7 +62,7 @@ const classification = (
     ),
   );
 
-describe('TerritoryResolver Work 8A', () => {
+describe('TerritoryResolver Work 8A/8B', () => {
   it('virtually removes dead stones and flood-fills through the removed points without mutating GameState', () => {
     const topology = new GraphTopology({
       'black-left': ['empty-left'],
@@ -89,6 +89,7 @@ describe('TerritoryResolver Work 8A', () => {
     expect(result.regions[0]).toMatchObject({
       points: ['dead-white', 'empty-left', 'empty-right'],
       borderingColors: ['black'],
+      touchesSeki: false,
       owner: 'BLACK',
     });
     expect(result.regions[0].borderingGroups).toEqual([
@@ -125,6 +126,7 @@ describe('TerritoryResolver Work 8A', () => {
 
     expect(result.regions).toHaveLength(1);
     expect(result.regions[0].points).toEqual(['dead']);
+    expect(result.regions[0].touchesSeki).toBe(false);
     expect(result.regions[0].owner).toBe('NEUTRAL');
     expect(result.regionByPoint.has('alive')).toBe(false);
     expect(result.regionByPoint.has('seki')).toBe(false);
@@ -146,6 +148,7 @@ describe('TerritoryResolver Work 8A', () => {
     const [region] = resolveTerritory(state, Object.freeze([]), topology).regions;
 
     expect(region.owner).toBe('WHITE');
+    expect(region.touchesSeki).toBe(false);
     expect(region.borderingColors).toEqual(['white']);
     expect(region.borderingGroups).toEqual([
       endgameGroupId(['white-a']),
@@ -153,7 +156,34 @@ describe('TerritoryResolver Work 8A', () => {
     ]);
   });
 
-  it('keeps a region bordered by both colors NEUTRAL', () => {
+  it('marks a single-color region touching classified seki as neutral', () => {
+    const topology = new GraphTopology({
+      'seki-black': ['shared-empty'],
+      'shared-empty': ['seki-black', 'alive-black'],
+      'alive-black': ['shared-empty'],
+    });
+    const state = makeState(topology, {
+      'seki-black': 'black',
+      'shared-empty': 'empty',
+      'alive-black': 'black',
+    });
+
+    const [region] = resolveTerritory(
+      state,
+      classification([
+        ['seki-black', 'seki'],
+        ['alive-black', 'alive'],
+      ]),
+      topology,
+    ).regions;
+
+    expect(region.points).toEqual(['shared-empty']);
+    expect(region.borderingColors).toEqual(['black']);
+    expect(region.touchesSeki).toBe(true);
+    expect(region.owner).toBe('NEUTRAL');
+  });
+
+  it('keeps mixed-color dame neutral without misclassifying it as seki', () => {
     const topology = new GraphTopology({
       black: ['dame'],
       dame: ['black', 'white'],
@@ -169,6 +199,7 @@ describe('TerritoryResolver Work 8A', () => {
 
     expect(region.points).toEqual(['dame']);
     expect(region.borderingColors).toEqual(['black', 'white']);
+    expect(region.touchesSeki).toBe(false);
     expect(region.owner).toBe('NEUTRAL');
   });
 
@@ -188,6 +219,7 @@ describe('TerritoryResolver Work 8A', () => {
 
     expect(region.points).toEqual(['portal-one', 'totally-unrelated-name']);
     expect(region.owner).toBe('BLACK');
+    expect(region.touchesSeki).toBe(false);
     expect(region.borderingGroups).toEqual([endgameGroupId(['boundary'])]);
   });
 
