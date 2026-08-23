@@ -1229,3 +1229,23 @@ Transition короткий и мягкий; физически точная fol
 - Torus показан слегка сверху и под углом;
 - одновременно хорошо читаются central hole, top, inner и outer surfaces;
 - zoom возвращается к стандартному значению Torus 3D.
+
+# 42. Developer-only live test generators
+
+Во время developer/UAT-проверок общая левая панель из раздела 12 может показывать компактный блок генерации тестовых позиций. Это временный developer-only UI и он не является обязательной частью финального production gameplay.
+
+Когда блок включён:
+
+- `Generate game` создаёт для текущих topology и board size новую воспроизводимую game-like позицию с автоматически созданным seed;
+- `Generate endgame` создаёт для текущих topology и board size новую воспроизводимую endgame-oriented позицию с автоматически созданным seed;
+- рядом показывается текущая identity generated case: generator type, topology, board size и seed;
+- пользователь может выбрать generator type, ввести seed и нажать `Replay seed`, чтобы точно повторно открыть case с этой комбинацией параметров;
+- одинаковые generator type + topology + board size + seed должны приводить к одной и той же позиции;
+- разные generator types используют один и тот же способ задания/replay seed с точки зрения пользователя;
+- controls одинаково доступны для Cube и Torus и находятся в существующей общей панели, без отдельного test sidebar.
+
+После `Generate game` создаётся обычная активная партия: пользователь может поставить дополнительные stones, использовать Pass, Undo/Redo и завершить партию стандартным способом.
+
+После `Generate endgame` также создаётся обычная активная партия, но позиция ориентирована на немедленную визуальную проверку финального классификатора; типовой ручной сценарий — `Pass → Pass → Assisted Review`.
+
+Production UI должен иметь возможность полностью скрыть этот developer block. Скрытие/удаление presentation controls не меняет обычное gameplay behavior.
