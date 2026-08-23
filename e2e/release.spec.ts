@@ -175,7 +175,7 @@ test('Chinese game reaches result, can reopen it, and Undo restores play', async
   await page.getByRole('button', { name: 'Pass' }).click();
 
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
-  await expect(page.locator('.endgame-progress')).toHaveText('Resolved 0 of 0');
+  await expect(page.getByText('There are no stone groups to review.')).toBeVisible();
   await finishScoring(page);
 
   const dialog = page.getByRole('dialog');
