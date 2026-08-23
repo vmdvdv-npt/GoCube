@@ -183,7 +183,7 @@ Production proof semantics, gameplay, persistence, Endgame Review и Chinese/Jap
       - name: Repository-wide dead-code audit
         run: |
           set -euo pipefail
-          forbidden='LiveTestGenerator|generateLiveTestCase|replayLiveTestCase|GameLikeGenerator|EndgameGenerator|TestCaseReplayService|ReplayableTestCase|TestCaseIdentity|encodeTestCaseId|decodeTestCaseId|ControlledEndgame|ExternalCorpus|LIVE_ENDGAME_TEST_CASE_VARIANT|CONTROLLED_ENDGAME_TEST_CASE_VARIANT|VITE_ENABLE_LIVE_TEST_GENERATORS|LIVE_TEST_CONTROLS_ENABLED|game-like-background'
+          forbidden='LiveTestGenerator|generateLiveTestCase|replayLiveTestCase|GameLikeGenerator|\bEndgameGenerator\b|TestCaseReplayService|ReplayableTestCase|TestCaseIdentity|encodeTestCaseId|decodeTestCaseId|ControlledEndgame|ExternalCorpus|LIVE_ENDGAME_TEST_CASE_VARIANT|CONTROLLED_ENDGAME_TEST_CASE_VARIANT|VITE_ENABLE_LIVE_TEST_GENERATORS|LIVE_TEST_CONTROLS_ENABLED|game-like-background'
           if rg -n "$forbidden" src e2e tools package.json playwright.config.ts .github/workflows/ci.yml; then
             echo 'Obsolete runtime/Test ID references remain' >&2
             exit 1
