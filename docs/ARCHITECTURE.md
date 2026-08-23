@@ -626,6 +626,13 @@ Scoring получает уже полностью разрешённую `Endga
 - Torus/Cube-specific знания допускаются только в topology/adapter/proof helper, а не отдельными scoring engines;
 - false automatic resolution считается более тяжёлым дефектом, чем лишний `unresolved`.
 
+Текущий strict seki verifier `closed-mutual-two-liberties-seki-v1` автоматически подтверждает только замкнутую mutual-life пару:
+
+- две противоположные logical groups имеют ровно две одинаковые shared liberties;
+- каждая shared liberty соприкасается только с этими двумя groups и, возможно, со второй shared liberty; третья group или дополнительный empty neighbour разрушает proof;
+- при таком замкнутом boundary первый ход любой стороны в одну shared liberty оставляет обеим группам только вторую, где ответ соперника захватывает инициирующую группу; критерий симметричен по цвету и использует только `Topology.neighbors(PointId)`;
+- любая seki-like форма вне этого критерия остаётся `unresolved`; topology-specific расположение не создаёт отдельного shortcut к automatic `seki`.
+
 Минимальная стратегия reuse для production core:
 
 - адаптировать зрелую deterministic pass-alive/Benson implementation к `Topology.neighbors(PointId)`;
