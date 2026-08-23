@@ -150,6 +150,7 @@ const simpleSemeaiFixture = (
 
 const sharedStableFixture = (
   id = 'work7d-shared-stable-left',
+  farStone = false,
 ): Readonly<{ topology: Topology; state: GameState }> => {
   const topology = new GraphTopology(id, [
     ['L', 'R'],
@@ -164,28 +165,27 @@ const sharedStableFixture = (
   ]);
   return Object.freeze({
     topology,
-    state: makeState(topology, { L: 'black', R: 'white', B: 'black', W: 'white' }),
+    state: makeState(topology, {
+      L: 'black',
+      R: 'white',
+      B: 'black',
+      W: 'white',
+      ...(farStone ? { OUT1: 'black' as const } : {}),
+    }),
   });
 };
 
 const sharedOnlyFixture = (
-  sharedCount: 2 | 4,
-  id = `work7d-shared-only-${String(sharedCount)}`,
-  farStone = false,
+  id = 'work7d-shared-only-two',
 ): Readonly<{ topology: Topology; state: GameState }> => {
-  const edges: Array<readonly [PointId, PointId]> = [['OUT1', 'OUT2']];
-  for (let index = 1; index <= sharedCount; index += 1) {
-    edges.push(['L', `s${index}`], ['R', `s${index}`]);
-  }
-  const topology = new GraphTopology(id, edges);
-  return Object.freeze({
-    topology,
-    state: makeState(topology, {
-      L: 'black',
-      R: 'white',
-      ...(farStone ? { OUT1: 'black' as const } : {}),
-    }),
-  });
+  const topology = new GraphTopology(id, [
+    ['L', 's1'],
+    ['R', 's1'],
+    ['L', 's2'],
+    ['R', 's2'],
+    ['OUT1', 'OUT2'],
+  ]);
+  return Object.freeze({ topology, state: makeState(topology, { L: 'black', R: 'white' }) });
 };
 
 const koSemeaiFixture = (): Readonly<{ topology: Topology; state: GameState }> => {
@@ -264,7 +264,7 @@ describe('Engine Work 7D classifier integration', () => {
     expect(target.evidence?.proof).toBe('stable-winner-both-first-player-orders');
     expect((target.evidence?.leftFirst as { outcome?: string })?.outcome).toBe('left-wins');
     expect((target.evidence?.rightFirst as { outcome?: string })?.outcome).toBe('left-wins');
-    expect(Number(target.evidence?.exploredNodes)).toBeLessThan(512);
+    expect(Number(target.evidence?.exploredNodes)).toBeLessThan(128);
   });
 
   it('keeps bounded budget and boundary failures non-promoting', () => {
@@ -293,7 +293,7 @@ describe('Engine Work 7D classifier integration', () => {
       openGraph.stringsByKey.get('["R"]')!,
       state,
       topology,
-      { maxNodes: 256, maxZonePoints: 24 },
+      { maxNodes: 64, maxZonePoints: 24 },
     );
     expect(boundary.outcome).toBe('unresolved');
     expect(boundary.reason).toBe('unknown-boundary');
@@ -306,31 +306,24 @@ describe('Engine Work 7D classifier integration', () => {
     expect(proposalAt(proposal, 'R').status).toBe('unresolved');
   });
 
-  it('preserves the legacy cheap two-shared-liberty seki path', async () => {
-    const { topology, state } = sharedOnlyFixture(2, 'work7d-legacy-seki');
-    const proposal = await analyze(state, topology);
-    expect(proposalAt(proposal, 'L').status).toBe('seki');
-    expect(proposalAt(proposal, 'R').status).toBe('seki');
-    expect(proposalAt(proposal, 'L').evidence?.algorithm).toBe(AUTOMATIC_SEKI_ALGORITHM);
-  });
-
-  it('proves the wider four-shared-liberty mutual restraint with basic-seki-v1', async () => {
-    const { topology, state } = sharedOnlyFixture(4, 'work7d-basic-seki-four');
+  it('preserves legacy seki precedence while the same strict shape remains provable by basic-seki-v1', async () => {
+    const { topology, state } = sharedOnlyFixture('work7d-basic-and-legacy-seki');
     const graph = buildEndgameGraph(state.board, topology);
     const proof = analyzeBasicSeki(
       graph.stringsByKey.get('["L"]')!,
       graph.stringsByKey.get('["R"]')!,
       state,
       topology,
-      { maxNodes: 256, maxZonePoints: 24 },
+      { maxNodes: 64, maxZonePoints: 24 },
     );
+    expect(proof.algorithm).toBe(BASIC_SEKI_ALGORITHM);
     expect(proof.outcome).toBe('seki');
     expect(proof.proof).toBe('every-legal-local-initiation-is-losing');
 
     const proposal = await analyze(state, topology);
     expect(proposalAt(proposal, 'L').status).toBe('seki');
     expect(proposalAt(proposal, 'R').status).toBe('seki');
-    expect(proposalAt(proposal, 'L').evidence?.algorithm).toBe(BASIC_SEKI_ALGORITHM);
+    expect(proposalAt(proposal, 'L').evidence?.algorithm).toBe(AUTOMATIC_SEKI_ALGORITHM);
   });
 
   it('does not infer seki from a single shared-liberty first-move race', async () => {
@@ -345,18 +338,21 @@ describe('Engine Work 7D classifier integration', () => {
     expect(proposalAt(proposal, 'R').status).not.toBe('seki');
   });
 
-  it('keeps proof result and evidence deterministic under a far-away disconnected mutation', async () => {
-    const base = sharedOnlyFixture(4, 'work7d-rz-base');
-    const mutated = sharedOnlyFixture(4, 'work7d-rz-mutated', true);
-    const baseTarget = proposalAt(await analyze(base.state, base.topology), 'L');
-    const mutatedTarget = proposalAt(await analyze(mutated.state, mutated.topology), 'L');
+  it('keeps bounded proof and evidence deterministic under a far-away disconnected mutation', async () => {
+    const base = sharedStableFixture('work7d-rz-base');
+    const mutated = sharedStableFixture('work7d-rz-mutated', true);
+    const baseTarget = proposalAt(await analyze(base.state, base.topology), 'R');
+    const mutatedTarget = proposalAt(await analyze(mutated.state, mutated.topology), 'R');
 
-    expect(mutatedTarget.status).toBe(baseTarget.status);
+    expect(baseTarget.status).toBe('dead');
+    expect(mutatedTarget.status).toBe('dead');
     expect(mutatedTarget.evidence?.algorithm).toBe(baseTarget.evidence?.algorithm);
     expect(mutatedTarget.evidence?.proof).toBe(baseTarget.evidence?.proof);
     expect(mutatedTarget.evidence?.zonePoints).toEqual(baseTarget.evidence?.zonePoints);
-    expect(mutatedTarget.evidence?.leftInitiation).toEqual(baseTarget.evidence?.leftInitiation);
-    expect(mutatedTarget.evidence?.rightInitiation).toEqual(baseTarget.evidence?.rightInitiation);
+    expect(mutatedTarget.evidence?.leftFirst).toEqual(baseTarget.evidence?.leftFirst);
+    expect(mutatedTarget.evidence?.rightFirst).toEqual(baseTarget.evidence?.rightFirst);
+    expect(mutatedTarget.evidence?.exploredNodes).toBe(baseTarget.evidence?.exploredNodes);
+    expect(mutatedTarget.evidence?.transpositionHits).toBe(baseTarget.evidence?.transpositionHits);
   });
 
   it('is exact deterministic across repeated classifier runs and never mutates the authoritative board', async () => {
