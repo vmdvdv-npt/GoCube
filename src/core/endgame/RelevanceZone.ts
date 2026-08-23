@@ -109,11 +109,12 @@ const makeResult = (
 /**
  * Builds a conservative dependency closure for one target string.
  *
- * Expansion alternates between complete unresolved strings and complete ordinary
- * empty regions. A Benson/pass-alive string is a certified separator: its stones
- * are retained in the zone, but dependencies are not expanded through its
- * outside liberties. If that closure cannot stay local, the result fails closed
- * as unknown-boundary.
+ * Expansion follows complete unresolved strings, their direct tactical contacts,
+ * and complete ordinary empty regions reachable from their liberties. A
+ * Benson/pass-alive string is a certified separator: its stones are retained in
+ * the zone, but dependencies are not expanded through its outside liberties or
+ * outside tactical contacts. If that closure cannot stay local, the result fails
+ * closed as unknown-boundary.
  */
 export const buildRelevanceZone = (
   target: EndgameStoneString,
@@ -128,7 +129,7 @@ export const buildRelevanceZone = (
 
   const graph = buildEndgameGraph(board, topology);
   const currentTarget = graph.stringsByKey.get(target.key);
-  const emptyPoints = new Set<PointId>();
+  const zonePoints = new Set<PointId>();
   const stringKeys = new Set<string>();
   const regionKeys = new Set<string>();
   const boundarySafeGroupKeys = new Set<string>();
@@ -140,7 +141,7 @@ export const buildRelevanceZone = (
       target.key,
       'unknown-boundary',
       'target-mismatch',
-      emptyPoints,
+      zonePoints,
       stringKeys,
       regionKeys,
       boundarySafeGroupKeys,
@@ -154,8 +155,8 @@ export const buildRelevanceZone = (
   const processedRegions = new Set<string>();
 
   const addPoint = (point: PointId): boolean => {
-    emptyPoints.add(point);
-    return emptyPoints.size <= maxPoints;
+    zonePoints.add(point);
+    return zonePoints.size <= maxPoints;
   };
 
   while (pendingGroups.length > 0 || pendingRegions.length > 0) {
@@ -172,7 +173,7 @@ export const buildRelevanceZone = (
           target.key,
           'unknown-boundary',
           'target-mismatch',
-          emptyPoints,
+          zonePoints,
           stringKeys,
           regionKeys,
           boundarySafeGroupKeys,
@@ -188,7 +189,7 @@ export const buildRelevanceZone = (
             target.key,
             'unknown-boundary',
             'max-points-exceeded',
-            emptyPoints,
+            zonePoints,
             stringKeys,
             regionKeys,
             boundarySafeGroupKeys,
@@ -199,6 +200,19 @@ export const buildRelevanceZone = (
       if (safeGroupKeys.has(groupKey)) {
         boundarySafeGroupKeys.add(groupKey);
         continue;
+      }
+
+      for (const point of group.points) {
+        for (const neighbor of topology.neighbors(point)) {
+          const adjacentGroupKey = graph.stringByPoint.get(neighbor);
+          if (
+            adjacentGroupKey &&
+            adjacentGroupKey !== groupKey &&
+            !processedGroups.has(adjacentGroupKey)
+          ) {
+            pendingGroups.push(adjacentGroupKey);
+          }
+        }
       }
 
       for (const liberty of group.liberties) {
@@ -223,7 +237,7 @@ export const buildRelevanceZone = (
             target.key,
             'unknown-boundary',
             'max-points-exceeded',
-            emptyPoints,
+            zonePoints,
             stringKeys,
             regionKeys,
             boundarySafeGroupKeys,
@@ -237,14 +251,14 @@ export const buildRelevanceZone = (
   }
 
   const topologyPointCount = topology.points().length;
-  if (emptyPoints.size >= topologyPointCount) {
+  if (zonePoints.size >= topologyPointCount) {
     return makeResult(
       board,
       topology,
       target.key,
       'unknown-boundary',
       'localisation-covers-whole-board',
-      emptyPoints,
+      zonePoints,
       stringKeys,
       regionKeys,
       boundarySafeGroupKeys,
@@ -257,7 +271,7 @@ export const buildRelevanceZone = (
     target.key,
     'bounded',
     'bounded-closure',
-    emptyPoints,
+    zonePoints,
     stringKeys,
     regionKeys,
     boundarySafeGroupKeys,
