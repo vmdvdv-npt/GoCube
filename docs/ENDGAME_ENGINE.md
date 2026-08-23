@@ -217,7 +217,6 @@ certificate = outside-six-wave-string-closed-causal-cone
 ```
 
 Geometric radius запрещён. Causal cone строится graph-native и закрывается через complete existing stone strings.
-
 Bounded continuation:
 
 ```text
@@ -458,17 +457,63 @@ build:engine2 PASS
 Chromium E2E: 72/72 PASS
 ```
 
-## E2-4c — NEXT: generic-path differential/performance gate
+## E2-4c — generic-path differential/performance gate
 
-Следующий этап должен проверить generic path как отдельный слой до 3-lib move generation:
+Статус: **DONE / DIFFERENTIALLY TESTED / BENCHMARKED / CI PASS / NOT CLASSIFIER-INTEGRATED**.
 
-1. зафиксировать differential agreement с one-lib/two-lib proof terminals на overlap corpus;
-2. измерить deterministic adapter/search overhead, node counts и p95/max runtime на Torus/Cube cases;
-3. добавить adversarial negative cases, где incomplete move set обязан оставаться `UNRESOLVED`/`KO_DEPENDENT`;
-4. подтвердить, что никакой universal conclusion не появляется без complete/proof-safe move set;
-5. не подключать `AssistedEndgameClassifier` и не начинать E2-5 до прохождения correctness + performance gate.
+```text
+src/core/endgame/EndgameProofSearchGoAdapter.gate.test.ts
+src/core/endgame/EndgameProofSearchGoAdapter.benchmark.test.ts
+npm run benchmark:engine2:generic
+```
 
-Только после E2-4c переходить к E2-5 3-lib move generation.
+Correctness gate фиксирует boundary generic path до появления 3-lib move generation:
+
+- one-lib positive attacker/defender proofs совпадают со specialised reader и дают только `proven-kill`;
+- validated two-lib positive attacker/defender proofs совпадают со specialised reader и дают только `proven-kill`;
+- specialised one-lib `escape` не превращается в generic survival;
+- при explicit incomplete Go move set attacker не может получить universal `proven-survival`, а defender — universal `proven-kill`;
+- unknown-root simple-ko остаётся conservative на specialised, transition и generic layers и не даёт false kill proof.
+
+Performance gate запускается отдельно от normal test suite: 2 warmups + 20 samples, deterministic result/node/depth/PV assertions, gross-regression ceilings `p95 <= 250 ms` и `max <= 1000 ms`.
+
+CI #750 benchmark results:
+
+| Case | Workload | Points | Nodes | p95 ms | max ms |
+|---|---|---:|---:|---:|---:|
+| Torus 9×9 | one-lib positive | 81 | 1 | 2.935 | 3.145 |
+| Torus 9×9 | incomplete | 81 | 1 | 1.123 | 1.283 |
+| Torus 13×13 | one-lib positive | 169 | 1 | 2.144 | 2.175 |
+| Torus 13×13 | incomplete | 169 | 1 | 1.981 | 2.041 |
+| Torus 19×19 | one-lib positive | 361 | 1 | 4.285 | 4.442 |
+| Torus 19×19 | incomplete | 361 | 1 | 4.992 | 5.565 |
+| Cube 2×2 | one-lib positive | 24 | 1 | 1.334 | 2.047 |
+| Cube 2×2 | incomplete | 24 | 1 | 1.018 | 1.045 |
+| Cube 4×4 | one-lib positive | 96 | 1 | 3.540 | 3.646 |
+| Cube 4×4 | incomplete | 96 | 1 | 1.993 | 2.038 |
+| Cube 5×5 | one-lib positive | 150 | 1 | 3.130 | 3.243 |
+| Cube 5×5 | incomplete | 150 | 1 | 4.692 | 5.992 |
+| Cube 7×7 | one-lib positive | 294 | 1 | 5.759 | 6.079 |
+| Cube 7×7 | incomplete | 294 | 1 | 5.652 | 5.790 |
+
+Worst observed p95 = `5.759 ms`; worst max = `6.079 ms`. Gate margin остаётся большим относительно `250/1000 ms` ceilings.
+
+Validation — CI #750:
+
+```text
+new E2-4c correctness tests: 5/5 PASS
+generic benchmark cases: 14/14 PASS
+full unit/coverage: 560 passed, 28 opt-in benchmark cases skipped
+typecheck:engine2 PASS
+build:engine2 PASS
+Chromium E2E: 72/72 PASS
+```
+
+Temporary CI benchmark step, использованный для #750, удалён перед merge согласно benchmark policy; benchmark script остаётся opt-in и воспроизводимым.
+
+E2-4c не меняет production proof semantics: generic Go move generation всё ещё explicit `incomplete(go-move-generation-not-installed-e2-4b)`, classifier integration отсутствует, 3-lib search не начат.
+
+**E2-4 correctness + differential + performance boundary закрыт. Следующий этап: E2-5 3-lib move generation.**
 
 ---
 
@@ -525,6 +570,7 @@ Current foundation:
 - proof-pruned two-lib validated, not classifier-integrated;
 - deterministic generic AND/OR core validated;
 - Go proof-search adapter bridge validated;
+- generic-path correctness/differential/performance gate passed;
 - generic Go move generation explicitly incomplete;
 - no generic classifier integration.
 
@@ -578,8 +624,8 @@ E2-3d  DONE — proof-safe pruning + differential + benchmark
 
 E2-4a  DONE — deterministic generic AND/OR semantic core
 E2-4b  DONE — Go adapter + one/two-lib proof-preserving terminal bridge
-E2-4c  NEXT — generic differential/performance gate
-E2-5   3 liberties
+E2-4c  DONE — generic differential/performance gate
+E2-5   NEXT — 3 liberties
 E2-6   4 liberties
 E2-7   exact small eye-space
 E2-8   connections / snapback / ladder / net / sacrifice
