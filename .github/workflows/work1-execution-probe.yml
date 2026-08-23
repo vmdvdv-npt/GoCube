@@ -1,9 +1,9 @@
 name: Work 1 execution artifact probe
 
 on:
-  push:
+  pull_request:
     branches:
-      - engine-work1-validation
+      - engine
     paths:
       - .github/workflows/work1-execution-probe.yml
 
