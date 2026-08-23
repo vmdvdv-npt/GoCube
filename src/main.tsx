@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './app/App';
 import { Cube2DPreview } from './app/Cube2DPreview';
+import { EndgameGroupFloatingControls } from './app/EndgameGroupFloatingControls';
 import { installTorus2DVectorCameraGuard } from './renderer2d/Torus2DVectorCameraGuard';
 import './styles.css';
 import './visual-overrides.css';
@@ -15,6 +16,13 @@ installTorus2DVectorCameraGuard();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    {showCube2DPreview ? <Cube2DPreview /> : <App />}
+    {showCube2DPreview ? (
+      <Cube2DPreview />
+    ) : (
+      <>
+        <App />
+        <EndgameGroupFloatingControls />
+      </>
+    )}
   </React.StrictMode>,
 );
