@@ -20,7 +20,7 @@ const jsonResponse = (body: unknown, status = 200): Response =>
 
 describe('LocalAnalysisClient', () => {
   it('reports a configured compatible loopback bridge as available', async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
       jsonResponse({ protocolVersion: 1, available: true, version: '0.3.03' }),
     );
     const client = new LocalAnalysisClient({
@@ -34,7 +34,7 @@ describe('LocalAnalysisClient', () => {
       version: '0.3.03',
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    const init = fetchMock.mock.calls[0]?.[1];
     expect(init?.headers).toMatchObject({ Authorization: 'Bearer secret' });
   });
 
