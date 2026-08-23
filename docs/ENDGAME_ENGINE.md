@@ -390,22 +390,85 @@ Chromium E2E PASS
 
 Первый CI run имел только test-adapter TypeScript contextual-typing error из-за `Object.freeze`; исправлено explicit callback parameter typing, production search semantics не менялись.
 
-## E2-4b — NEXT: Go adapter + specialised terminal bridge
+## E2-4b — Go adapter + specialised terminal bridge
 
-Не переходить сразу к 3-lib classification.
+Статус: **DONE / DIFFERENTIALLY TESTED / CI PASS / NOT CLASSIFIER-INTEGRATED**.
 
-Следующий слой должен:
+```text
+src/core/endgame/EndgameProofSearchGoAdapter.ts
+algorithm = endgame-go-proof-adapter-v1
+move generation boundary = go-move-generation-not-installed-e2-4b
+```
 
-1. хранить `GameState`, target crucial stones/color, node role и known/unknown `previousBoard`;
-2. выполнять legal transitions только через authoritative `GameEngine`;
-3. использовать one-lib и validated two-lib readers только как proof-preserving terminal/reduction facts;
-4. выдавать `complete`, `proof-safe-pruned(certificate)` или `incomplete(reason)` явно;
-5. differentially сравнивать generic proof со specialised readers там, где domains overlap;
-6. не подключаться к `AssistedEndgameClassifier` до correctness + performance gates.
+Proof node хранит:
 
-## E2-4c — после adapter
+```text
+GameState
+target color
+sorted crucial stones
+attacker / defender role
+optional exact previousBoard
+```
 
-Generic-path differential/performance gate. Только после него переходить к E2-5 3-lib move generation.
+Bridge semantics:
+
+- target identity сохраняется через crucial stones, а не переопределяется эвристикой после каждого ply;
+- все place/pass transitions проходят только через authoritative `GameEngine`;
+- known `previousBoard` передаётся как exact simple-ko context;
+- unknown-history root simple-ko-shaped placement не создаёт child и возвращает `ko-dependent`;
+- каждый accepted child получает `previousBoard = parent.state.board`;
+- deterministic node key включает board signature, role, target color/crucial stones и previous-board signature.
+
+Specialised readers используются только как **positive proof-preserving kill terminals**:
+
+```text
+one-lib attacker kill          -> proven-kill
+one-lib defender forced-kill   -> proven-kill
+two-lib attacker forced-kill   -> proven-kill
+two-lib defender forced-kill   -> proven-kill
+captured crucial target        -> proven-kill
+```
+
+Specialised `escape`, `critical`, `unresolved` и отсутствие specialised proof **никогда не превращаются в generic survival**.
+
+Generic Go expansion в E2-4b намеренно остаётся:
+
+```text
+incomplete(go-move-generation-not-installed-e2-4b)
+```
+
+Поэтому non-terminal adapter state остаётся `UNRESOLVED`; неполный defender move set не может случайно породить universal kill proof. 3-lib move generation и classifier integration в E2-4b отсутствуют.
+
+Differential/contract tests покрывают:
+
+- one-lib/two-lib overlap со specialised readers;
+- attacker/defender role-sensitive critical cases;
+- captured target terminal;
+- ordinary legal, illegal и Pass transitions;
+- unknown-root ko против known exact history;
+- deterministic target/node identity.
+
+Validation — CI #733:
+
+```text
+new E2-4b tests: 12/12 PASS
+full unit/coverage: 555 passed, 14 opt-in benchmark cases skipped
+typecheck:engine2 PASS
+build:engine2 PASS
+Chromium E2E: 72/72 PASS
+```
+
+## E2-4c — NEXT: generic-path differential/performance gate
+
+Следующий этап должен проверить generic path как отдельный слой до 3-lib move generation:
+
+1. зафиксировать differential agreement с one-lib/two-lib proof terminals на overlap corpus;
+2. измерить deterministic adapter/search overhead, node counts и p95/max runtime на Torus/Cube cases;
+3. добавить adversarial negative cases, где incomplete move set обязан оставаться `UNRESOLVED`/`KO_DEPENDENT`;
+4. подтвердить, что никакой universal conclusion не появляется без complete/proof-safe move set;
+5. не подключать `AssistedEndgameClassifier` и не начинать E2-5 до прохождения correctness + performance gate.
+
+Только после E2-4c переходить к E2-5 3-lib move generation.
 
 ---
 
@@ -461,7 +524,8 @@ Current foundation:
 - exhaustive two-lib retained as oracle;
 - proof-pruned two-lib validated, not classifier-integrated;
 - deterministic generic AND/OR core validated;
-- generic Go adapter not yet implemented;
+- Go proof-search adapter bridge validated;
+- generic Go move generation explicitly incomplete;
 - no generic classifier integration.
 
 Scoped typecheck:
@@ -513,8 +577,8 @@ E2-3c  DONE — exhaustive benchmark -> Variant B
 E2-3d  DONE — proof-safe pruning + differential + benchmark
 
 E2-4a  DONE — deterministic generic AND/OR semantic core
-E2-4b  NEXT — Go adapter + one/two-lib proof-preserving terminal bridge
-E2-4c  NEXT AFTER — generic differential/performance gate
+E2-4b  DONE — Go adapter + one/two-lib proof-preserving terminal bridge
+E2-4c  NEXT — generic differential/performance gate
 E2-5   3 liberties
 E2-6   4 liberties
 E2-7   exact small eye-space
