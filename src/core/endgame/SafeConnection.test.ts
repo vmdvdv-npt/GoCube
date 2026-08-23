@@ -140,6 +140,18 @@ describe('SafeConnection', () => {
     expect(result).toEqual({ outcome: 'not-proven', reason: 'no-simple-miai-pair' });
   });
 
+  it('propagates the relevance-zone point budget as unknown-boundary', () => {
+    const { topology, board } = twoLibertyFixture();
+    const target = targetAt(board, topology, 't');
+
+    const result = proveSafeConnectionToBenson(target, board, topology, { maxPoints: 4 });
+
+    expect(result).toEqual({
+      outcome: 'unknown-boundary',
+      reason: 'max-points-exceeded',
+    });
+  });
+
   it('propagates unknown-boundary instead of attempting a global connection proof', () => {
     const topology = new GraphTopology('safe-connection-open', [
       ['t', 'a'],
