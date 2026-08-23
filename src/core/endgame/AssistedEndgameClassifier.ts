@@ -20,18 +20,25 @@ import {
 } from './EndgameGraphCore';
 import { endgameGroupId } from './EndgameGroupIdentity';
 import { ManualEndgameClassifier } from './ManualEndgameClassifier';
+import {
+  readOneLibertyTactics,
+  type OneLibertyTacticalResult,
+} from './OneLibertyTacticalReader';
 import type { StoneColor } from '../game/types';
 
 const COLORS: readonly StoneColor[] = Object.freeze(['black', 'white']);
 const ALIVE_ALGORITHM = 'benson-pass-alive-v1';
 
+type DeadEvidence = AutomaticDeadProof | OneLibertyTacticalResult;
+
 /**
  * Conservative assisted classifier.
  *
  * Structural facts come from the shared topology-neutral Endgame Graph Core.
- * Benson proves unconditional/pass-alive groups; dead and seki candidates are
- * promoted only by their dedicated strict verifiers. Everything else remains
- * unresolved.
+ * Benson proves unconditional/pass-alive groups. The legacy narrow sealed
+ * single-liberty proof remains a cheap fast path, then the graph-native
+ * one-liberty reader checks all immediate defenses before promoting additional
+ * groups to dead. Seki still requires its dedicated strict verifier.
  */
 export class AssistedEndgameClassifier implements EndgameClassifier {
   private readonly manual = new ManualEndgameClassifier();
@@ -65,7 +72,9 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     }
 
     const passAliveGroupKeys = new Set(aliveProofs.keys());
-    const deadProofs = new Map<string, AutomaticDeadProof>();
+    const deadProofs = new Map<string, DeadEvidence>();
+
+    // Preserve the existing smallest proof as the cheapest path.
     for (const candidate of generateDeadCandidates(graph.groups, passAliveGroupKeys)) {
       const verification = verifyDeadCandidate(candidate, {
         state: context.state,
@@ -75,6 +84,29 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
         passAliveGroupKeys,
       });
       if (verification.proven) deadProofs.set(candidate.groupKey, verification.evidence);
+    }
+
+    // Expand dead coverage only when the short reader proves both move orders:
+    // attacker can capture immediately and every direct defender-first save is
+    // either illegal or itself immediately capturable.
+    for (const group of [...graph.groups.values()].sort((left, right) =>
+      left.key < right.key ? -1 : left.key > right.key ? 1 : 0,
+    )) {
+      if (
+        passAliveGroupKeys.has(group.key) ||
+        deadProofs.has(group.key) ||
+        group.liberties.length !== 1
+      ) {
+        continue;
+      }
+
+      const tactical = readOneLibertyTactics(
+        context.state,
+        context.topology,
+        graph,
+        group.key,
+      );
+      if (tactical?.outcome === 'proven-dead') deadProofs.set(group.key, tactical);
     }
 
     const alreadyResolvedGroupKeys = new Set<string>([
