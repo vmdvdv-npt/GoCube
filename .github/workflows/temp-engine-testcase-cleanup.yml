@@ -1,0 +1,242 @@
+name: Temporary Engine Test Case Cleanup
+
+on:
+  push:
+    branches: [engine-work10-remove-test-case-lab]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify engine isolation
+        run: |
+          set -euo pipefail
+          git fetch origin engine engine-work10-remove-test-case-lab
+          git switch -C engine-work10-remove-test-case-lab origin/engine-work10-remove-test-case-lab
+          test "$(git merge-base HEAD origin/engine)" = "d9378937018a7626516594ab6d262343c3efe930"
+          test "$(git rev-parse origin/engine)" = "d9378937018a7626516594ab6d262343c3efe930"
+          echo "branch=$(git branch --show-current)"
+          echo "head=$(git rev-parse HEAD)"
+          echo "engine=$(git rev-parse origin/engine)"
+          echo "merge_base=$(git merge-base HEAD origin/engine)"
+
+      - name: Audit consumers before cleanup
+        run: |
+          set -euo pipefail
+          rg -n "LiveTestGenerator|generateLiveTestCase|replayLiveTestCase|TestCaseReplayService|ReplayableTestCase|TestCaseIdentity|ControlledEndgame|ExternalCorpus|VITE_ENABLE_LIVE_TEST_GENERATORS|LIVE_TEST_CONTROLS_ENABLED|game-like-background|xuanxuan|LocalAnalysisClient" src e2e tools package.json playwright.config.ts || true
+
+      - name: Apply Test Case subsystem cleanup
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str = '') -> None:
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, got {count}: {old[:100]!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          # App: remove all interactive Test Case/Test ID state, handlers and provider wiring.
+          p = Path('src/app/App.tsx')
+          text = p.read_text()
+          text = text.replace("import { externalCorpusCaseCount } from '../core/endgame/testlab/ExternalCorpusImporter';\n", '')
+          text = text.replace("import type { ReplayableTestCase, TestCaseSource } from '../core/endgame/testlab/TestCase';\n", '')
+          text = text.replace('  type TestCaseActiveGame,\n', '')
+          text = text.replace("import {\n  LiveTestGeneratorProvider,\n  type LiveTestGeneratorControls,\n} from './LiveTestGeneratorContext';\n", '')
+          text = text.replace("const LIVE_TEST_CONTROLS_ENABLED =\n  import.meta.env.DEV || import.meta.env.VITE_ENABLE_LIVE_TEST_GENERATORS === '1';\nlet fallbackRandomCounter = 0;\n\n", '')
+          start = text.index('const randomUint32 = (): number => {')
+          end = text.index('export function App() {', start)
+          text = text[:start] + text[end:]
+          for line in [
+              "  const [currentTestCase, setCurrentTestCase] = useState<ReplayableTestCase | null>(null);\n",
+              "  const [testIdInput, setTestIdInput] = useState('');\n",
+              "  const [testCaseBusy, setTestCaseBusy] = useState(false);\n",
+              "  const [testCaseFeedback, setTestCaseFeedback] = useState<string | null>(null);\n",
+          ]:
+              if line not in text:
+                  raise SystemExit(f'App.tsx missing state line: {line!r}')
+              text = text.replace(line, '', 1)
+          start = text.index('  const resetTestCaseState = (): void => {')
+          end = text.index('  const continueSavedGame', start)
+          text = text[:start] + text[end:]
+          if text.count('    resetTestCaseState();\n') != 3:
+              raise SystemExit(f'App.tsx expected 3 resetTestCaseState calls, got {text.count("    resetTestCaseState();\\n")}')
+          text = text.replace('    resetTestCaseState();\n', '')
+          start = text.index('  const applyTestCase = (loaded: TestCaseActiveGame): void => {')
+          end = text.index('  const sizes = sizesForMode(gameMode);', start)
+          text = text[:start] + text[end:]
+          text = text.replace('    <LiveTestGeneratorProvider value={liveTestControls}>\n', '', 1)
+          text = text.replace('    </LiveTestGeneratorProvider>\n', '', 1)
+          p.write_text(text)
+
+          # Sidebar: remove Test Case controls and diagnostics, preserving gameplay/endgame controls.
+          p = Path('src/app/GameSidebar.tsx')
+          text = p.read_text()
+          text = text.replace("import type { ReferenceStatus } from '../core/endgame/testlab/TestCase';\n", '')
+          text = text.replace("import { useLiveTestGeneratorControls } from './LiveTestGeneratorContext';\n", '')
+          start = text.index('const referenceStatusLabel = (status: ReferenceStatus): string => {')
+          end = text.index('export function GameSidebar', start)
+          text = text[:start] + text[end:]
+          text = text.replace('  const developerGeneration = useLiveTestGeneratorControls();\n', '', 1)
+          start = text.index('\n        {developerGeneration ? (')
+          end_marker = '\n        ) : null}\n'
+          end = text.index(end_marker, start) + len(end_marker)
+          text = text[:start] + '\n' + text[end:]
+          p.write_text(text)
+
+          # Application lifecycle: remove generated/Test ID runtime API only.
+          p = Path('src/app/GameApplication.ts')
+          text = p.read_text()
+          import_end = text.index("import type { GameRepository, SavedGame } from '../core/persistence/GameRepository';")
+          prefix = "import type { RuleSet } from '../core/game/types';\n"
+          if not text.startswith(prefix):
+              raise SystemExit('GameApplication.ts unexpected import prefix')
+          text = prefix + text[import_end:]
+          start = text.index('export interface GeneratedActiveGame {')
+          end = text.index('export interface ApplicationSavedState {', start)
+          text = text[:start] + text[end:]
+          start = text.index('const modeForTopology = (topology: TestCaseTopology): GameMode =>')
+          end = text.index('/**\n * Bridges the shared GameSession persistence contract', start)
+          text = text[:start] + text[end:]
+          old_ctor = """  constructor(
+    private readonly repository: GameRepository<ApplicationSavedState> =
+      new LocalStorageGameRepository<ApplicationSavedState>(),
+    private readonly now: () => string = () => new Date().toISOString(),
+    private readonly testCases: TestCaseReplayService = new TestCaseReplayService({
+      localAnalysisClient: new LocalAnalysisClient(),
+    }),
+  ) {}
+"""
+          new_ctor = """  constructor(
+    private readonly repository: GameRepository<ApplicationSavedState> =
+      new LocalStorageGameRepository<ApplicationSavedState>(),
+    private readonly now: () => string = () => new Date().toISOString(),
+  ) {}
+"""
+          if old_ctor not in text:
+              raise SystemExit('GameApplication.ts constructor shape changed unexpectedly')
+          text = text.replace(old_ctor, new_ctor, 1)
+          start = text.index("  /**\n   * Legacy stage-1 compatibility path retained for existing fixed-seed tests.")
+          end = text.index('  async restoreSavedGame(): Promise<ActiveGame | null> {', start)
+          text = text[:start] + text[end:]
+          start = text.index('  private async loadReplayableTestCase(')
+          end = text.index('  private persistenceConfig(gameMode: GameMode)', start)
+          text = text[:start] + text[end:]
+          p.write_text(text)
+
+          # Runtime CSS import disappears with the panel.
+          replace_once('src/main.tsx', "import './app/live-test-generators.css';\n")
+
+          # Delete subsystem-only runtime/tests/E2E.
+          delete_paths = [
+              'src/app/LiveTestGeneratorContext.tsx',
+              'src/app/live-test-generators.css',
+              'src/app/GameApplication.live-generators.test.ts',
+              'src/app/GameApplication.test-cases.test.ts',
+              'src/core/endgame/testlab/LiveTestGenerators.ts',
+              'src/core/endgame/testlab/LiveTestGenerators.test.ts',
+              'src/core/endgame/testlab/ControlledEndgameGenerator.ts',
+              'src/core/endgame/testlab/ExternalCorpusImporter.ts',
+              'src/core/endgame/testlab/TestCase.ts',
+              'src/core/endgame/testlab/TestCaseReplayService.ts',
+              'src/core/endgame/testlab/TestCaseReplayService.test.ts',
+              'e2e/live-test-generators.spec.ts',
+          ]
+          for path in delete_paths:
+              p = Path(path)
+              if not p.exists():
+                  raise SystemExit(f'Expected delete target missing: {path}')
+              p.unlink()
+
+          # Record cleanup in the sole active Engine working document.
+          doc = Path('docs/ENDGAME_ENGINE.md')
+          checkpoint = """
+
+---
+
+# 55. Cleanup checkpoint — interactive Test Case / Test ID lab removed
+
+Срез на **2026-08-24**. Старый пользовательский runtime Test Case / Test ID subsystem удалён из линии `engine`.
+
+Удалены interactive `Generate Game`, `Generate Endgame`, `Generate Corpus`, Test ID input/load/current ID, Test Case feedback/diagnostics, live generator, controlled generated-endgame runtime, obsolete external-corpus runtime и legacy Test ID replay/compatibility. Dedicated UI/TestCase unit tests и E2E удалены вместе с feature; скрытого compatibility adapter или replacement generator не оставлено.
+
+Production proof semantics, gameplay, persistence, Endgame Review и Chinese/Japanese scoring этим cleanup не менялись. Automated correctness infrastructure сохранена отдельно: `Work9Acceptance.ts`, `Work9Acceptance.test.ts`, `Work9TopologyAcceptance.test.ts`, `EndgameHardening`, differential/oracle utilities и deterministic test-only generators/fixtures продолжают выполнять proof/hardening/shadow acceptance задачи и не являются пользовательским Test Case runtime.
+
+Новый neutral position generator в этот cleanup **не входит** и остаётся отдельной будущей задачей.
+"""
+          current = doc.read_text()
+          if '# 55. Cleanup checkpoint — interactive Test Case / Test ID lab removed' in current:
+              raise SystemExit('Cleanup checkpoint already exists')
+          doc.write_text(current.rstrip() + checkpoint + '\n')
+          PY
+
+      - name: Repository-wide dead-code audit
+        run: |
+          set -euo pipefail
+          forbidden='LiveTestGenerator|generateLiveTestCase|replayLiveTestCase|GameLikeGenerator|EndgameGenerator|TestCaseReplayService|ReplayableTestCase|TestCaseIdentity|encodeTestCaseId|decodeTestCaseId|ControlledEndgame|ExternalCorpus|LIVE_ENDGAME_TEST_CASE_VARIANT|CONTROLLED_ENDGAME_TEST_CASE_VARIANT|VITE_ENABLE_LIVE_TEST_GENERATORS|LIVE_TEST_CONTROLS_ENABLED|game-like-background'
+          if rg -n "$forbidden" src e2e tools package.json playwright.config.ts .github/workflows/ci.yml; then
+            echo 'Obsolete runtime/Test ID references remain' >&2
+            exit 1
+          fi
+          echo 'Remaining TestCase/xuanxuan/local-oracle references for manual classification:'
+          rg -n "TestCase|xuanxuan|LocalAnalysisClient|lab:local-ai" src e2e tools package.json || true
+          echo 'Preserved Work 9 files:'
+          test -f src/core/endgame/testlab/Work9Acceptance.ts
+          test -f src/core/endgame/testlab/Work9Acceptance.test.ts
+          test -f src/core/endgame/testlab/Work9TopologyAcceptance.test.ts
+          ls -l src/core/endgame/testlab/Work9Acceptance.ts src/core/endgame/testlab/Work9Acceptance.test.ts src/core/endgame/testlab/Work9TopologyAcceptance.test.ts
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Targeted Engine acceptance
+        run: |
+          npx vitest run \
+            src/core/endgame/testlab/Work9Acceptance.test.ts \
+            src/core/endgame/testlab/Work9TopologyAcceptance.test.ts \
+            src/core/endgame/testlab/EndgameHardening.test.ts \
+            src/core/endgame/TerritoryResolver.hardening.test.ts
+
+      - name: npm test
+        run: npm test
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Install full Playwright browsers
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Full E2E
+        run: npm run test:e2e
+
+      - name: Commit validated cleanup and remove temporary workflow
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current)" = "engine-work10-remove-test-case-lab"
+          test "$(git merge-base HEAD origin/engine)" = "d9378937018a7626516594ab6d262343c3efe930"
+          git rm .github/workflows/temp-engine-testcase-cleanup.yml
+          git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Remove obsolete Engine Test Case lab"
+          git push origin HEAD:engine-work10-remove-test-case-lab
