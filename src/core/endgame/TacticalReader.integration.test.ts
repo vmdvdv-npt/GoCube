@@ -5,15 +5,15 @@ import { AssistedEndgameClassifier } from './AssistedEndgameClassifier';
 import { buildEndgameGraph } from './EndgameGraphCore';
 import { TACTICAL_READER_ALGORITHM } from './TacticalReader';
 
-class CorridorTopology implements Topology {
-  readonly id = 'tactical-integration-corridor';
-  private readonly allPoints = Object.freeze(['a', 'w1', 'w2', 'b', 'c'] as const);
+class RingTopology implements Topology {
+  readonly id = 'tactical-integration-ring';
+  private readonly allPoints = Object.freeze(['a', 'w1', 'w2', 'b', 'd'] as const);
   private readonly adjacency: Readonly<Record<PointId, readonly PointId[]>> = Object.freeze({
-    a: Object.freeze(['w1']),
-    w1: Object.freeze(['a', 'w2', 'c']),
+    a: Object.freeze(['w1', 'd']),
+    w1: Object.freeze(['a', 'w2']),
     w2: Object.freeze(['w1', 'b']),
-    b: Object.freeze(['w2']),
-    c: Object.freeze(['w1']),
+    b: Object.freeze(['w2', 'd']),
+    d: Object.freeze(['a', 'b']),
   });
 
   points(): readonly PointId[] {
@@ -22,7 +22,7 @@ class CorridorTopology implements Topology {
 
   neighbors(point: PointId): readonly PointId[] {
     const neighbors = this.adjacency[point];
-    if (!neighbors) throw new Error(`Unknown corridor point: ${point}`);
+    if (!neighbors) throw new Error(`Unknown ring point: ${point}`);
     return neighbors;
   }
 
@@ -35,7 +35,7 @@ const makeState = (topology: Topology): GameState => {
   const stones: Readonly<Partial<Record<PointId, PointOccupancy>>> = Object.freeze({
     w1: 'white',
     w2: 'white',
-    c: 'black',
+    d: 'black',
   });
   const board: Record<PointId, PointOccupancy> = {};
   for (const point of topology.points()) board[point] = stones[point] ?? 'empty';
@@ -51,9 +51,12 @@ const makeState = (topology: Topology): GameState => {
 
 describe('TacticalReader classifier integration', () => {
   it('promotes a bounded non-ko two-liberty forced capture to automatic dead', async () => {
-    const topology = new CorridorTopology();
+    const topology = new RingTopology();
     const state = makeState(topology);
     const graph = buildEndgameGraph(state.board, topology);
+    const targetGroup = graph.strings.find((group) => group.points.includes('w1'));
+
+    expect(targetGroup?.liberties).toEqual(['a', 'b']);
 
     const result = await new AssistedEndgameClassifier().analyze({
       state,
