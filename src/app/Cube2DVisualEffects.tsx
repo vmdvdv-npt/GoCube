@@ -46,6 +46,8 @@ type EffectsStyle = CSSProperties & {
 
 type BoardPoint = ReturnType<typeof createCube2DRenderModel>['boards'][number]['points'][number];
 type GroupShape = Pick<EndgameGroupPresentation, 'points' | 'edges'>;
+type AxisDirection = Readonly<{ x: -1 | 0 | 1; y: -1 | 0 | 1 }>;
+type DisplayPoint = Readonly<{ x: number; y: number }>;
 
 const pointMap = <T extends { readonly pointId: PointId }>(points: readonly T[]) =>
   new Map(points.map((point) => [point.pointId, point]));
@@ -57,6 +59,15 @@ const contourColor = (status: GroupStatus | null): string => {
   return '#a8e85e';
 };
 
+const axisDirection = (from: DisplayPoint, to: DisplayPoint): AxisDirection => {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return { x: Math.sign(dx) as -1 | 0 | 1, y: 0 };
+  }
+  return { x: 0, y: Math.sign(dy) as -1 | 0 | 1 };
+};
+
 const groupShape = (
   group: GroupShape,
   pointsById: ReadonlyMap<PointId, BoardPoint>,
@@ -64,7 +75,7 @@ const groupShape = (
   radius: number,
 ): ReactNode => {
   const center = CUBE_2D_SVG_SIZE / 2;
-  const display = (point: BoardPoint) => ({
+  const display = (point: BoardPoint): DisplayPoint => ({
     x: center + (point.x - center) * contentScale,
     y: center + (point.y - center) * contentScale,
   });
@@ -72,30 +83,82 @@ const groupShape = (
     const point = pointsById.get(pointId);
     return point ? [[pointId, point] as const] : [];
   });
+  const displayedById = new Map<PointId, DisplayPoint>(
+    visible.map(([pointId, point]) => [pointId, display(point)]),
+  );
+  const directionsByPoint = new Map<PointId, AxisDirection[]>();
+  const visibleEdges = group.edges.flatMap((edge) => {
+    const from = displayedById.get(edge.from);
+    const to = displayedById.get(edge.to);
+    if (!from || !to) return [];
+    const direction = axisDirection(from, to);
+    const fromDirections = directionsByPoint.get(edge.from) ?? [];
+    const toDirections = directionsByPoint.get(edge.to) ?? [];
+    fromDirections.push(direction);
+    toDirections.push({ x: -direction.x as -1 | 0 | 1, y: -direction.y as -1 | 0 | 1 });
+    directionsByPoint.set(edge.from, fromDirections);
+    directionsByPoint.set(edge.to, toDirections);
+    return [[edge, from, to] as const];
+  });
+  const filletSize = radius * 0.42;
 
   return (
     <>
-      {group.edges.map((edge) => {
-        const from = pointsById.get(edge.from);
-        const to = pointsById.get(edge.to);
-        if (!from || !to) return null;
-        const a = display(from);
-        const b = display(to);
-        return (
-          <line
-            key={`edge:${edge.from}:${edge.to}`}
-            x1={a.x}
-            y1={a.y}
-            x2={b.x}
-            y2={b.y}
-            stroke="currentColor"
-            strokeWidth={radius * 2}
-            strokeLinecap="round"
-          />
+      {visibleEdges.map(([edge, from, to]) => (
+        <line
+          key={`edge:${edge.from}:${edge.to}`}
+          x1={from.x}
+          y1={from.y}
+          x2={to.x}
+          y2={to.y}
+          stroke="currentColor"
+          strokeWidth={radius * 2}
+          strokeLinecap="round"
+        />
+      ))}
+      {visible.flatMap(([pointId]) => {
+        const position = displayedById.get(pointId);
+        if (!position) return [];
+        const uniqueDirections = Array.from(
+          new Map(
+            (directionsByPoint.get(pointId) ?? []).map((direction) => [
+              `${direction.x},${direction.y}`,
+              direction,
+            ]),
+          ).values(),
         );
+        const fillets: ReactNode[] = [];
+        for (let first = 0; first < uniqueDirections.length; first += 1) {
+          for (let second = first + 1; second < uniqueDirections.length; second += 1) {
+            const a = uniqueDirections[first];
+            const b = uniqueDirections[second];
+            if (!a || !b || a.x * b.x + a.y * b.y !== 0) continue;
+            const corner = {
+              x: position.x + (a.x + b.x) * radius,
+              y: position.y + (a.y + b.y) * radius,
+            };
+            const tangentA = {
+              x: corner.x + a.x * filletSize,
+              y: corner.y + a.y * filletSize,
+            };
+            const tangentB = {
+              x: corner.x + b.x * filletSize,
+              y: corner.y + b.y * filletSize,
+            };
+            fillets.push(
+              <path
+                key={`fillet:${pointId}:${a.x},${a.y}:${b.x},${b.y}`}
+                d={`M ${tangentA.x} ${tangentA.y} L ${corner.x} ${corner.y} L ${tangentB.x} ${tangentB.y} Q ${corner.x} ${corner.y} ${tangentA.x} ${tangentA.y} Z`}
+                fill="currentColor"
+              />,
+            );
+          }
+        }
+        return fillets;
       })}
-      {visible.map(([pointId, point]) => {
-        const position = display(point);
+      {visible.map(([pointId]) => {
+        const position = displayedById.get(pointId);
+        if (!position) return null;
         return (
           <circle
             key={`point:${pointId}`}
