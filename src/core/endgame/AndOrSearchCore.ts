@@ -24,17 +24,16 @@ export interface AndOrExpansion<State> {
 export interface AndOrSearchAdapter<State> {
   /**
    * Must identify the complete game-theoretic node, including all context that
-   * can change future legality or outcome. The search core deliberately does
-   * not guess which parts of a domain state belong in the transposition key.
+   * can change future legality or outcome. The core deliberately does not guess
+   * which parts of a domain state belong in the transposition key.
    */
   readonly stateKey: (state: State) => string;
   readonly nodeType: (state: State) => AndOrNodeType;
   readonly terminal: (state: State) => AndOrResolvedOutcome | null;
   /**
    * Children are searched in the exact order returned here. Callers therefore
-   * own deterministic move ordering. `complete: false` means that legal or
-   * relevant continuations may have been omitted and fail-closed semantics
-   * apply.
+   * own deterministic move ordering. `complete: false` means that relevant
+   * continuations may have been omitted and fail-closed semantics apply.
    */
   readonly expand: (state: State) => AndOrExpansion<State>;
 }
@@ -147,8 +146,8 @@ const expandedTrace = (
     children: Object.freeze([...children]),
   });
 
-const resolvedVerdict = (
-  runtime: SearchRuntime<unknown>,
+const resolvedVerdict = <State>(
+  runtime: SearchRuntime<State>,
   cacheKey: string,
   nodeKey: string,
   nodeType: AndOrNodeType,
@@ -213,14 +212,7 @@ const search = <State>(
 
   const terminal = runtime.adapter.terminal(state);
   if (terminal) {
-    return resolvedVerdict(
-      runtime as SearchRuntime<unknown>,
-      cacheKey,
-      nodeKey,
-      nodeType,
-      terminal,
-      'terminal',
-    );
+    return resolvedVerdict(runtime, cacheKey, nodeKey, nodeType, terminal, 'terminal');
   }
 
   const expansion = runtime.adapter.expand(state);
@@ -236,7 +228,7 @@ const search = <State>(
 
       if (verdict.outcome === 'proved') {
         return resolvedVerdict(
-          runtime as SearchRuntime<unknown>,
+          runtime,
           cacheKey,
           nodeKey,
           nodeType,
@@ -262,7 +254,7 @@ const search = <State>(
     }
 
     return resolvedVerdict(
-      runtime as SearchRuntime<unknown>,
+      runtime,
       cacheKey,
       nodeKey,
       nodeType,
@@ -278,7 +270,7 @@ const search = <State>(
 
     if (verdict.outcome === 'refuted') {
       return resolvedVerdict(
-        runtime as SearchRuntime<unknown>,
+        runtime,
         cacheKey,
         nodeKey,
         nodeType,
@@ -304,7 +296,7 @@ const search = <State>(
   }
 
   return resolvedVerdict(
-    runtime as SearchRuntime<unknown>,
+    runtime,
     cacheKey,
     nodeKey,
     nodeType,
