@@ -250,7 +250,7 @@ export const searchDeterministicAndOrProof = <Node, Move>(
         }),
       );
 
-      const maxRelativeDepth = 1 + child.maxRelativeDepth;
+      const maxRelativeDepth = 1 + maxChildRelativeDepth(children);
 
       if (role === 'attacker' && child.outcome === 'proven-kill') {
         return remember(
