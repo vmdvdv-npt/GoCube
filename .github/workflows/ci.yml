@@ -57,6 +57,13 @@ jobs:
       - run: npm run test:coverage
         if: steps.mode.outputs.mode != 'none'
 
+      - name: Run Engine2 generic proof-search performance gate
+        if: >-
+          steps.mode.outputs.mode != 'none' &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.base.ref == 'engine2'
+        run: npm run benchmark:engine2:generic
+
       - run: npm run typecheck:engine2
         if: steps.mode.outputs.mode != 'none'
 
