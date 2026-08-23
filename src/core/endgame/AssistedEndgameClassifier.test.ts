@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GameEngine } from '../game/GameEngine';
-import type { GameState, PointOccupancy } from '../game/types';
+import type { GameState, PointOccupancy, StoneColor } from '../game/types';
 import { CubeTopology } from '../topology/CubeTopology';
 import type { PointId, Topology } from '../topology/Topology';
 import { TorusTopology } from '../topology/TorusTopology';
@@ -51,7 +51,13 @@ const analyzeState = async (topology: Topology, state: GameState) =>
     groups: collectStoneGroups(topology, state),
   });
 
-describe('AssistedEndgameClassifier automatic alive core', () => {
+const proposalForColor = (
+  result: Awaited<ReturnType<typeof analyzeState>>,
+  state: GameState,
+  color: StoneColor,
+) => result.find((proposal) => state.board[proposal.points[0]!] === color);
+
+describe('AssistedEndgameClassifier automatic alive/dead core', () => {
   it('proves the deterministic two-eye fixture alive on Torus and Cube', async () => {
     const lab = new EndgameTestLab();
     const classifier = new AssistedEndgameClassifier();
@@ -75,6 +81,59 @@ describe('AssistedEndgameClassifier automatic alive core', () => {
         },
       });
       expect(result[0]?.evidence?.vitalRegions).toHaveLength(2);
+    }
+  });
+
+  it('proves a sealed single-liberty group dead only behind pass-alive boundary groups', async () => {
+    const cases: readonly Readonly<{
+      topology: Topology;
+      target: readonly PointId[];
+      liberty: PointId;
+      opponentEyes: readonly PointId[];
+    }>[] = [
+      Object.freeze({
+        topology: new TorusTopology(9),
+        target: Object.freeze(['4,4', '5,4']),
+        liberty: '3,4',
+        opponentEyes: Object.freeze(['0,0', '2,2']),
+      }),
+      Object.freeze({
+        topology: new CubeTopology(5),
+        target: Object.freeze(['front:2:2', 'front:2:3']),
+        liberty: 'front:2:1',
+        opponentEyes: Object.freeze(['back:2:2', 'top:2:2']),
+      }),
+    ];
+
+    for (const { topology, target, liberty, opponentEyes } of cases) {
+      const targetSet = new Set(target);
+      const empty = new Set([liberty, ...opponentEyes]);
+      const state = makeState(topology, (point) => {
+        if (targetSet.has(point)) return 'black';
+        if (empty.has(point)) return 'empty';
+        return 'white';
+      });
+      const result = await analyzeState(topology, state);
+      const dead = proposalForColor(result, state, 'black');
+      const alive = proposalForColor(result, state, 'white');
+
+      expect(dead).toMatchObject({
+        points: [...target].sort(),
+        status: 'dead',
+        source: 'automatic',
+        evidence: {
+          algorithm: 'sealed-single-liberty-dead-v1',
+          candidate: 'single-liberty',
+          proof: 'sealed-liberty-with-pass-alive-boundary',
+          liberty,
+        },
+      });
+      expect(dead?.evidence?.boundaryAliveGroups).toHaveLength(1);
+      expect(alive).toMatchObject({
+        status: 'alive',
+        source: 'automatic',
+        evidence: { algorithm: 'benson-pass-alive-v1' },
+      });
     }
   });
 
@@ -110,6 +169,52 @@ describe('AssistedEndgameClassifier automatic alive core', () => {
         expect(result.every((proposal) => proposal.status === 'unresolved')).toBe(true);
       }
     }
+  });
+
+  it('keeps an atari candidate unresolved when filling its liberty can escape', async () => {
+    const lab = new EndgameTestLab();
+    const classifier = new AssistedEndgameClassifier();
+
+    for (const topology of [new TorusTopology(9), new CubeTopology(5)]) {
+      const fixture = lab.generate({
+        kind: 'life-death-pattern',
+        topology,
+        seed: '0.3.05-open-atari',
+        pattern: 'atari-group',
+      });
+      const result = await lab.analyze(fixture, classifier);
+      const target = result.find(
+        (proposal) => fixture.state.board[proposal.points[0]!] === 'black',
+      );
+
+      expect(target?.status).toBe('unresolved');
+      expect(target?.source).toBeUndefined();
+    }
+  });
+
+  it('keeps a sealed candidate unresolved when its opponent boundary is not proven alive', async () => {
+    const topology = new TorusTopology(9);
+    const target = new Set<PointId>(['4,4', '5,4']);
+    const liberty = '3,4';
+    const white = new Set<PointId>();
+
+    for (const point of target) {
+      for (const neighbor of topology.neighbors(point)) {
+        if (!target.has(neighbor) && neighbor !== liberty) white.add(neighbor);
+      }
+    }
+    for (const neighbor of topology.neighbors(liberty)) {
+      if (!target.has(neighbor)) white.add(neighbor);
+    }
+
+    const state = makeState(topology, (point) => {
+      if (target.has(point)) return 'black';
+      if (white.has(point)) return 'white';
+      return 'empty';
+    });
+    const result = await analyzeState(topology, state);
+
+    expect(proposalForColor(result, state, 'black')?.status).toBe('unresolved');
   });
 
   it('uses the actual Torus seams and Cube face graph in positive alive proofs', async () => {
