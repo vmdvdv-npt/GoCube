@@ -106,9 +106,6 @@ const compareStrings = (left: string, right: string): number =>
 const uniqueSorted = <T extends string>(values: Iterable<T>): readonly T[] =>
   Object.freeze([...new Set(values)].sort(compareStrings));
 
-const opponentOf = (color: StoneColor): StoneColor =>
-  color === 'black' ? 'white' : 'black';
-
 const sharedLibertiesFor = (
   left: EndgameStoneString,
   right: EndgameStoneString,
