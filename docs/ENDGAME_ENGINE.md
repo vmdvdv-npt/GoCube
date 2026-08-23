@@ -632,15 +632,123 @@ Temporary E2-5 CI benchmark step после #769 удалён; `benchmark:engine
 
 ---
 
-# 13. Future stages
+# 13. E2-6 — exact four-liberty proof move generation
 
-## E2-6 — 4 liberties
+Статус: **DONE / CONTRACT-TESTED / BENCHMARKED / CI PASS / NOT CLASSIFIER-INTEGRATED**.
 
 ```text
-4 liberties -> attack -> E2-5 exact 3-lib -> 2-lib -> 1-lib
+src/core/endgame/FourLibertyProofSearchGoAdapter.ts
+algorithm = endgame-go-four-liberty-adapter-v1
+attacker boundary = e2-6-four-liberty-attacks-limited-to-current-liberties
+unknown-root ko boundary = e2-6-four-liberty-unknown-root-ko-branch
 ```
 
-Liberty reduction сама по себе не proof kill. Defender AND completeness / proof-safe relevance обязательны. 4-lib attacker generation не должна превращать ограниченный candidate set в ложный survival proof.
+E2-6 активируется только когда surviving crucial stones остаются одной target group с **ровно четырьмя liberties**. Target identity сохраняется crucial-stone based; topology/graph recomputation используется только для актуального состояния target, без эвристического retargeting.
+
+### Attacker OR
+
+Attacker рассматривает только четыре current liberties target group. Каждый placement проходит authoritative `transitionEndgameProofSearchMove` / `GameEngine`.
+
+Move set всегда остаётся explicit:
+
+```text
+incomplete(e2-6-four-liberty-attacks-limited-to-current-liberties)
+```
+
+Поэтому найденная цепочка `4-lib -> 3-lib -> E2-5 -> 2-lib/1-lib positive terminal` может доказать existential `proven-kill`, но отсутствие kill среди этих четырёх кандидатов **не может** доказать `proven-survival`. Liberty reduction сама по себе не является proof kill; preparation moves и tactical extensions остаются за более поздними этапами.
+
+Если среди ограниченных attacker candidates встречается неизвестная root-ko legality, candidate не создаётся, а incomplete reason дополнительно фиксирует `e2-6-four-liberty-unknown-root-ko-branch`; это не расширяет силу доказательства.
+
+### Defender AND
+
+Для exact-four-lib defender node correctness-first expansion перечисляет:
+
+```text
+all empty Topology.points()
++
+Pass
+```
+
+Каждый placement проходит authoritative legality. При безопасной known history и отсутствии неизвестных ko branches move set может быть `complete`. Remote legal moves не отбрасываются locality assumption-ом.
+
+Unknown-root structural simple-ko-shaped placement не создаёт child и понижает весь defender expansion до:
+
+```text
+incomplete(e2-6-four-liberty-unknown-root-ko-branch)
+```
+
+Следовательно universal `proven-kill` возможен только при действительно complete defender set; неизвестная ko legality остаётся fail-closed.
+
+Exact-three-lib children делегируются неизменённому E2-5 adapter. Все прочие non-terminal nodes делегируются дальше по существующей цепочке и вне exact 3/4 liberties сохраняют E2-4b explicit incomplete boundary. Classifier integration в E2-6 отсутствует; E2-7 eye-space semantics не добавлялись.
+
+Contract tests покрывают:
+
+- legal exact-four current-liberty attacker reductions + explicit incompleteness;
+- positive `4 -> 3 -> 2` existential kill через E2-5 и validated specialised terminal;
+- complete whole-board defender set + Pass;
+- remote legal defender placement, исключающий locality assumption;
+- unknown-root ko fail-closed против exact known history;
+- authoritative attacker-suicide filtering;
+- exact-three delegation к E2-5;
+- fallback к E2-4b incomplete boundary за пределами exact 3/4 liberties.
+
+Validation — CI #784:
+
+```text
+new E2-6 contract tests: 7/7 PASS
+full unit/coverage: 573 passed, 56 opt-in benchmark cases skipped
+typecheck:engine2 PASS
+build:engine2 PASS
+Chromium E2E: 72/72 PASS
+```
+
+### E2-6 performance gate
+
+```text
+src/core/endgame/FourLibertyProofSearchGoAdapter.benchmark.test.ts
+npm run benchmark:engine2:four-lib
+```
+
+Benchmark измеряет exact-four expansion boundary отдельно от normal suite: 2 warmups + 20 samples, deterministic generated-move/completeness assertions. Sparse fixture содержит single exact-4-lib target; attacker генерирует ровно четыре current-liberty candidates, defender перечисляет every legal empty point + Pass.
+
+CI #786 benchmark results:
+
+| Case | Workload | Points | Generated moves | p95 ms | max ms |
+|---|---|---:|---:|---:|---:|
+| Torus 9×9 | attacker | 81 | 4 | 2.199 | 2.394 |
+| Torus 9×9 | defender | 81 | 81 | 3.220 | 3.224 |
+| Torus 13×13 | attacker | 169 | 4 | 1.520 | 1.563 |
+| Torus 13×13 | defender | 169 | 169 | 4.064 | 4.352 |
+| Torus 19×19 | attacker | 361 | 4 | 2.911 | 2.939 |
+| Torus 19×19 | defender | 361 | 361 | 19.813 | 20.315 |
+| Cube 2×2 | attacker | 24 | 4 | 1.173 | 1.188 |
+| Cube 2×2 | defender | 24 | 24 | 0.802 | 0.814 |
+| Cube 4×4 | attacker | 96 | 4 | 2.148 | 2.676 |
+| Cube 4×4 | defender | 96 | 96 | 3.887 | 4.020 |
+| Cube 5×5 | attacker | 150 | 4 | 1.951 | 2.033 |
+| Cube 5×5 | defender | 150 | 150 | 4.677 | 4.712 |
+| Cube 7×7 | attacker | 294 | 4 | 3.484 | 3.721 |
+| Cube 7×7 | defender | 294 | 294 | 15.402 | 15.606 |
+
+Worst observed p95 = `19.813 ms`; worst max = `20.315 ms`. Gross-regression ceilings остаются `100/500 ms` для attacker expansion и `1000/3000 ms` для defender expansion.
+
+CI #786 также подтвердил normal gate на benchmark head:
+
+```text
+four-lib benchmark cases: 14/14 PASS
+full unit/coverage: 573 passed, 56 opt-in benchmark cases skipped
+typecheck:engine2 PASS
+build:engine2 PASS
+Chromium E2E: 72/72 PASS
+```
+
+Temporary E2-6 CI benchmark step после #786 удалён; `benchmark:engine2:four-lib` остаётся opt-in и воспроизводимым.
+
+**E2-6 acceptance boundary закрыт. Следующий этап: E2-7 — exact small eye-space.**
+
+---
+
+# 14. Future stages
 
 ## E2-7 — exact small eye-space
 
@@ -673,7 +781,7 @@ Adversarial corpus + final evaluation.
 
 ---
 
-# 14. CI / validation policy
+# 15. CI / validation policy
 
 Current foundation:
 
@@ -687,7 +795,8 @@ Current foundation:
 - Go proof-search adapter bridge validated;
 - generic-path correctness/differential/performance gate passed;
 - exact 3-lib attacker generation + complete defender enumeration validated;
-- generic move generation outside exact 3 liberties remains explicitly incomplete;
+- exact 4-lib attacker generation + complete defender enumeration validated;
+- generic move generation outside exact 3/4 liberties remains explicitly incomplete;
 - no generic classifier integration.
 
 Scoped typecheck:
@@ -710,7 +819,7 @@ Benchmarks are opt-in; temporary CI benchmark steps must be removed before merge
 
 ---
 
-# 15. Metrics
+# 16. Metrics
 
 Track false automatic statuses, precision/coverage, median/p95/max nodes/runtime, budget/ko/boundary unresolved counts, root/deep move counts, causal cone size, PV/max depth, implementation complexity, dependency/license surface, maintainability, Cube/Torus graph consistency.
 
@@ -722,13 +831,13 @@ cost third
 
 ---
 
-# 16. External references
+# 17. External references
 
 GNU Go / tsumego.js / Darkforest / research solvers / KataGo may be used for architecture ideas, regression, benchmark, differential oracle or diagnostics subject to licenses. Они не являются production proof authority; GPL implementation code не копируется.
 
 ---
 
-# 17. Roadmap
+# 18. Roadmap
 
 ```text
 E2-1   DONE — Graph Core
@@ -742,15 +851,15 @@ E2-4a  DONE — deterministic generic AND/OR semantic core
 E2-4b  DONE — Go adapter + one/two-lib proof-preserving terminal bridge
 E2-4c  DONE — generic differential/performance gate
 E2-5   DONE — exact 3-lib move generation + defender completeness + benchmark
-E2-6   NEXT — 4 liberties
-E2-7   exact small eye-space
+E2-6   DONE — exact 4-lib move generation + defender completeness + benchmark
+E2-7   NEXT — exact small eye-space
 E2-8   connections / snapback / ladder / net / sacrifice
 E2-9   semeai / seki proof
 E2-10  transpositions + performance optimization
 E2-11  adversarial corpus + final evaluation
 ```
 
-E2-4/E2-5 overall acceptance boundary:
+E2-4/E2-6 overall acceptance boundary:
 
 1. attacker OR / defender AND explicit;
 2. every proof node deterministic and budgeted;
@@ -760,6 +869,8 @@ E2-4/E2-5 overall acceptance boundary:
 6. Go adapter differentially agrees with specialised proofs on overlap;
 7. exact 3-lib attacker set remains explicit incomplete, so no false survival;
 8. exact 3-lib defender set is universal only when whole-board legality is complete and ko history is known/safe;
-9. no classifier integration before later generic coverage and acceptance gates.
+9. exact 4-lib attacker set remains explicit incomplete, so liberty reduction cannot become false survival proof;
+10. exact 4-lib defender set is universal only when whole-board legality is complete and ko history is known/safe;
+11. no generic classifier integration before later generic coverage and acceptance gates.
 
 > Engine 2 автоматически ставит `alive`, `dead` или `seki` только там, где может предъявить законченное доказательство. Во всех остальных случаях правильный результат — `UNRESOLVED`.
