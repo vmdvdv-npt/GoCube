@@ -940,7 +940,7 @@ Benchmark использует реальные Torus/Cube topologies, 8 legal e
 CI #805 benchmark results:
 
 | Case | Points | Examined empty | Candidates | p95 ms | max ms |
-|---|---:|---:|---:|---:|---:|
+|---|---:|---:|---:|---:|---:|---:|
 | Torus 9×9 | 81 | 8 | 8 | 7.479 | 7.676 |
 | Torus 13×13 | 169 | 8 | 8 | 6.567 | 6.624 |
 | Torus 19×19 | 361 | 8 | 8 | 14.960 | 15.148 |
@@ -1872,3 +1872,174 @@ lint: 0 errors, 2 pre-existing TestCaseReplayService warnings
 No E2-12c benchmark workflow was added. The existing E2-12b confidence benchmark remains opt-in and unchanged. This final documentation-only cleanup is followed by an exact-head normal CI; its exact SHA/run is recorded in PR #184 and the final implementation report.
 
 **E2-12c core acceptance boundary закрыт. Следующий этап строго: E2-12d — Endgame Review / scoring / player override application integration.**
+
+---
+
+# 25. E2-12d — Endgame Review / scoring / player override application integration
+
+Статус: **DONE / APPLICATION-INTEGRATED / CI PASS**.
+
+Starting `engine2` exact SHA:
+
+```text
+dce0a884e26e6537619e6722e3b062593a07c660
+```
+
+Application adapter:
+
+```text
+src/core/endgame/ConfidenceAutoEndgameClassifier.ts
+algorithm = engine2-confidence-auto-endgame-classifier-v1
+selector = engine2-confidence-auto-select-v1
+source classifier = engine2-confidence-classifier-v1
+```
+
+## 25.1. Application path
+
+E2-12d подключает готовые E2-12b/E2-12c результаты к уже существующему `GameSession` lifecycle и не создаёт второй endgame state machine:
+
+```text
+second Pass / resumeEndgame
+  ↓
+GameSession.enterEndgame()
+  ↓
+ConfidenceAutoEndgameClassifier.analyze(context)
+  ↓
+classifyPositionConfidence(state, topology)       exactly once
+  ↓
+selectAutomaticPositionStatuses(snapshot)        exactly once
+  ↓
+EndgameProposal
+  ↓
+EndgameReviewState { proposal, userDecision }
+  ↓
+resolveEndgameClassification()
+  ↓
+existing JapaneseScoring / ChineseScoring
+```
+
+`ConfidenceAutoEndgameClassifier` заменяет `AssistedEndgameClassifier` только как injected production `EndgameClassifier` в `TorusGameController` и `Cube2DGameController`. Старый classifier не удалён и остаётся доступен существующим unit/regression consumers.
+
+Mapping выполняется через canonical `endgameGroupId`, а не array index. Adapter проверяет empty/duplicate input groups, missing/unknown/duplicate selector decisions и omitted coverage. Proposal содержит каждую исходную logical stone group ровно один раз и сортируется canonical group identity.
+
+## 25.2. Automatic proposal semantics
+
+Для `outcome=selected` обычный proposal получает:
+
+```text
+status = alive | dead | seki
+source = automatic
+```
+
+Raw E2-12b `unresolved` не означает application unresolved: если E2-12c сделал normal LOW/MEDIUM/HIGH selection, proposal уже resolved и `Finish scoring` может быть выполнен без обязательной manual sweep.
+
+Strict E2-12c precedence не переоценивается application layer-ом. Evidence сохраняет deterministic diagnostic metadata: selector/source/adapter algorithms, raw label, selected status, strict/confidence mode, confidenceBand, selected/runner-up scores, margin, tie metadata, selector/source reasons, strict proof algorithms и cost diagnostics. Topology/graph/search state в persisted evidence не хранится.
+
+## 25.3. Technical failure boundary
+
+Explicit selector `technical-failure` переводится fail-closed в:
+
+```text
+proposal.status = unresolved
+source = automatic
+```
+
+Сохраняются failure kind/reasons и algorithm diagnostics. Такой unresolved требует `userDecision` перед Finish scoring; скрытого alive/dead/seki fallback нет. Настоящие invariant/programming errors не blanket-catch-ятся и остаются видимыми как bugs.
+
+## 25.4. Player override authority
+
+Существующее разделение `proposal` и `userDecision` сохранено без изменения:
+
+```text
+effective = userDecision ?? proposal.status
+```
+
+Игрок может изменить любую automatic group, включая strict-proof proposal, и может менять решение повторно до Finish scoring. Automatic proposal при этом не мутируется. Final `EndgameClassification` получает `source=automatic`, если override отсутствует, и `source=user`, если player decision присутствует.
+
+`endgameManualGroupIds()` продолжает означать только groups, которым обязательно нужна manual decision (`proposal.status === unresolved`), а не editability whitelist. Все review groups остаются editable. Для normal fully-auto position `nextUnresolvedEndgameGroupId() === null` сразу после входа в review является корректным состоянием.
+
+## 25.5. Persistence / Undo / Redo / stale result
+
+Existing `GameSession` persistence сохраняет automatic proposal evidence/status отдельно от `userDecision`. Correct modern snapshot восстанавливается без повторного confidence analysis; override сохраняется byte-for-byte вместе с original proposal.
+
+Undo после second Pass удаляет active review вместе с endgame metadata и возвращает previous playing snapshot. Redo восстанавливает тот же proposal + override без recalculation. Existing finished-score history semantics не менялись.
+
+Async stale-result guard сохранён: если GameState изменился, пока analysis pending, старый result не устанавливается и rejected как `Endgame state changed while analysis was pending`.
+
+## 25.6. Scoring handoff
+
+`Scoring.ts`, `ChineseScoring` и `JapaneseScoring` formulas в E2-12d не менялись. Selector заканчивает работу до scorer boundary; scorer получает обычный final `EndgameClassification`.
+
+Targeted scoring integration доказывает фактический результат, а не только факт вызова scorer:
+
+- Chinese automatic dead удаляется из effective board/dead-stone accounting; player `dead → alive` меняет board/score;
+- Japanese automatic dead попадает в existing prisoner/dead semantics; `dead → alive` убирает соответствующего prisoner, не повреждая existing captures/komi;
+- automatic seki и manual seki идут через один existing path; seki stones остаются, а touching empty regions сохраняют seki-neutral territory.
+
+## 25.7. Torus + Cube / UI
+
+Оба controllers используют один `ConfidenceAutoEndgameClassifier`. Targeted integration покрывает обычные groups, Torus seam identity и Cube face-edge identity.
+
+UI redesign, confidence badges, numeric scores/reasons/tooltips не добавлялись. Existing Endgame Review controls отображают effective status и позволяют manual override любой group. Browser flow подтверждает, что normal groups resolved сразу, Finish scoring enabled без manual sweep, одна automatic group может быть overridden, и final review завершается обычным scoring flow.
+
+## 25.8. Cost / determinism
+
+На один initial review generation:
+
+```text
+confidence position analyses = 1
+E2-12b graph builds = 1
+E2-12c selector compositions = 1
+E2-12c additional graph builds = 0
+E2-12c additional confidence analyses = 0
+selector deep proof search invocations = 0
+```
+
+Player selection/hover/status changes, Finish scoring, save, correct snapshot reload и UI rerenders не запускают повторный confidence analysis. Repeated adapter execution покрыто byte-stable deterministic regression.
+
+Отдельный E2-12d timing benchmark не добавлялся: этап является application wiring поверх уже benchmarked E2-12b whole-position analysis и pure E2-12c composition; permanent benchmark workflow step не требуется.
+
+## 25.9. Tests / CI
+
+Добавлено **17 новых targeted Vitest tests**:
+
+```text
+ConfidenceAutoEndgameClassifier.test.ts                 7
+GameSessionConfidenceAutoIntegration.test.ts            8
+ConfidenceAutoEndgameController.integration.test.ts     2
+```
+
+Они покрывают adapter contract, raw unresolved selection, strict alive/dead/seki, LOW resolved behavior, technical failure, exact coverage/order, Torus seam/Cube face edge, one-analysis cost boundary, determinism, GameSession lifecycle, immediate finish, arbitrary/repeated override, persistence/reload, Undo/Redo, stale async result и actual Chinese/Japanese/seki scoring effects.
+
+Дополнительно обновлены существующие Torus regressions и пять historical browser/acceptance flows, которые раньше кодировали manual-only `Resolved 0 of N` semantics. `manual-endgame-ux.spec.ts` теперь является E2-12d browser flow с fully automatic initial review + one player override.
+
+Clean code-head CI #878 на `f5b78ecfb0b2a12fb54ba6e1c7865bf84fae60e6`:
+
+```text
+full unit/coverage: 668 passed, 83 opt-in tests skipped
+test files: 85 passed, 10 skipped
+typecheck:engine2 PASS
+build:engine2 PASS
+Chromium E2E: 72/72 PASS
+lint: 0 errors, 2 pre-existing TestCaseReplayService warnings
+```
+
+Existing E2-12b/E2-12c corpora остаются частью full suite и проходят без semantic retuning. Отдельный confidence benchmark не запускался для E2-12d: confidence implementation/weights/thresholds не менялись, а adapter tests фиксируют one-position-analysis и zero-extra-selector-work contract.
+
+## 25.10. Explicit non-goals / remaining limitations
+
+E2-12d не добавляет и не меняет:
+
+- E2-12b confidence weights/thresholds/caps;
+- E2-12c dominance/tie/confidence-band policy;
+- real-Go statistical calibration/accuracy claims;
+- global AND/OR, ladder, net, semeai или иной new deep proof dispatcher;
+- new proof algorithms;
+- scoring formulas;
+- UI redesign или confidence display;
+- snapshot version bump;
+- backend/network/telemetry/analytics.
+
+Player override является final application/scoring authority и не переписывает mathematical truth claim proof engine-а.
+
+**E2-12d — DONE / APPLICATION-INTEGRATED / CI PASS.**
