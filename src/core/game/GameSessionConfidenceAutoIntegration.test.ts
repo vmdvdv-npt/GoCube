@@ -9,7 +9,10 @@ import {
   ConfidenceAutoEndgameClassifier,
   type ConfidenceAutoEndgameClassifierDependencies,
 } from '../endgame/ConfidenceAutoEndgameClassifier';
-import { classifyPositionConfidence } from '../endgame/EndgameConfidenceClassifier';
+import {
+  classifyPositionConfidence,
+  type EndgamePositionConfidenceResult,
+} from '../endgame/EndgameConfidenceClassifier';
 import {
   selectAutomaticPositionStatuses,
   type EndgameConfidenceAutoPositionSelectionResult,
@@ -24,6 +27,7 @@ import {
 import { ChineseScoring } from '../scoring/ChineseScoring';
 import { JapaneseScoring } from '../scoring/JapaneseScoring';
 import type { ScoringStrategy } from '../scoring/Scoring';
+import type { Topology } from '../topology/Topology';
 import { TorusTopology } from '../topology/TorusTopology';
 import { GameEngine } from './GameEngine';
 import { GameSession, type GameSessionConfig } from './GameSession';
@@ -78,7 +82,7 @@ const reviewFixture = async (
 
 const technicalFailureDependencies = (): ConfidenceAutoEndgameClassifierDependencies => Object.freeze({
   classifyPosition: classifyPositionConfidence,
-  selectPosition: (position) => {
+  selectPosition: (position: EndgamePositionConfidenceResult) => {
     const selected = selectAutomaticPositionStatuses(position);
     const first = selected.decisions[0];
     if (!first) throw new Error('Expected confidence selector decision');
@@ -172,7 +176,7 @@ describe('E2-12d GameSession application integration', () => {
     const engine = new GameEngine(topology);
     let analysisCalls = 0;
     const dependencies: ConfidenceAutoEndgameClassifierDependencies = Object.freeze({
-      classifyPosition: (state, logicalTopology) => {
+      classifyPosition: (state: GameState, logicalTopology: Topology) => {
         analysisCalls += 1;
         return classifyPositionConfidence(state, logicalTopology);
       },
@@ -199,7 +203,7 @@ describe('E2-12d GameSession application integration', () => {
       new GameEngine(topology),
       sessionConfig(
         new ConfidenceAutoEndgameClassifier(Object.freeze({
-          classifyPosition: (state, logicalTopology) => {
+          classifyPosition: (state: GameState, logicalTopology: Topology) => {
             restoredAnalysisCalls += 1;
             return classifyPositionConfidence(state, logicalTopology);
           },
