@@ -218,6 +218,15 @@ defender node = AND
 
 Crucial stones исходной target structure фиксируются в начале задачи и не теряют identity после defensive extensions.
 
+Для **ровно одной liberty** полный набор немедленных defensive moves фиксируется строго:
+
+1. defender играет в sole liberty — extension/connection;
+2. defender одним ходом захватывает соседний attacker string, если тот сам находится в atari.
+
+Любой другой ход оставляет target с той же единственной liberty и не предотвращает немедленный capture. Это даёт конечный complete defensive set для короткого proof.
+
+Reader прекращает доказательство, если legal defense получает две или больше liberties: это `escape from short proof`, а не `PROVEN_ALIVE`.
+
 ---
 
 # 9. Оба порядка первого хода
@@ -240,6 +249,8 @@ defender first
 | unknown | any | UNRESOLVED |
 
 `CRITICAL` нельзя автоматически превращать в seki.
+
+Для E2-2 `PROVEN_DEAD` выдаётся только если attacker немедленно захватывает target и **каждая** defender-first немедленная защита либо illegal, либо захватывается следующим attacker move.
 
 ---
 
@@ -286,6 +297,8 @@ Tactical reader не должен считать sole liberty единствен
 
 Forced connection к `PROVEN_ALIVE` structure может быть самостоятельным short survival proof.
 
+E2-2 уже учитывает connection через sole liberty и one-move counter-capture соседнего attacker string в atari. Более глубокие connection/counter-capture sequences остаются для E2-3/E2-5.
+
 ---
 
 # 12. Semeai и seki
@@ -327,6 +340,8 @@ Ko/repetition нельзя угадывать.
 KO_DEPENDENT -> UI unresolved
 ```
 
+E2-2 использует authoritative `GameEngine` для simulated moves. Для второго хода короткой линии передаётся исходная board occupancy как simple-ko `previousBoard`, поэтому немедленный forbidden recapture не может ошибочно стать proof of kill.
+
 Search должен иметь deterministic node budget. Для correctness tests node budget предпочтительнее wall-clock.
 
 Budget exhausted:
@@ -355,6 +370,18 @@ ProofResult {
 }
 ```
 
+E2-2 уже возвращает:
+
+- crucial stones;
+- attack points;
+- defense points;
+- attacker-first result;
+- все defender-first lines;
+- explored nodes;
+- max depth;
+- principal variation для short proven kill;
+- `proven-dead / critical / ko-dependent / unresolved` raw outcome.
+
 Это внутренний working contract, не public API.
 
 ---
@@ -378,19 +405,30 @@ ProofResult {
 - graph-edge topology test;
 - `AssistedEndgameClassifier` переведён на общий Graph Core для Benson/dead/seki proofs.
 
-Следующий шаг — E2-2.
-
 ## E2-2 — Tactical facts + 1-liberty reader
 
-Статус: **NEXT**.
+Статус: **IMPLEMENTED / CI PENDING**.
 
-- immediate capture;
-- legal atari escape;
-- counter-capture;
+Сделано:
+
+- attacker-first immediate capture через authoritative `GameEngine`;
+- complete immediate defender move set для one-liberty target;
+- extension;
 - connection at sole liberty;
-- proof trace.
+- one-move counter-capture соседнего attacker string в atari;
+- attacker reply после legal defense;
+- simple-ko guard на втором ply;
+- crucial-stone identity;
+- `proven-dead / critical / ko-dependent / unresolved`;
+- proof diagnostics: nodes/depth/lines/points;
+- classifier integration только для `proven-dead`;
+- старый sealed/pass-alive proof сохранён как более дешёвый fast-path;
+- abstract graph tests;
+- Torus/Cube topology integration test.
 
 ## E2-3 — Specialized 2/3/4-liberty readers
+
+Статус: **NEXT AFTER CI**.
 
 - deterministic attack move ordering;
 - all relevant defenses;
@@ -490,9 +528,11 @@ precision first, then coverage, then cost
 - branch создана от актуального `main`;
 - старый `engine` не является источником изменений `engine2`;
 - выбран независимый GNU-Go-inspired graph-native path;
-- standalone Graph Core реализован;
+- standalone Graph Core реализован и интегрирован;
 - существующие Benson/dead/seki proofs используют новый Graph Core;
-- следующий implementation target — tactical facts и strict 1-liberty reader;
+- strict one-liberty tactical reader реализован и подключён только как proof-based dead expansion;
+- attacker-first / defender-first различаются, `critical` не превращается в dead или seki;
+- следующий implementation target после зелёного CI — specialised 2/3/4-liberty reading;
 - сравнение с `engine` выполняется только после появления сопоставимого practical coverage.
 
 Этот документ должен обновляться при каждом изменении направления, search semantics, benchmark conclusion или существенном Engine-specific решении.
