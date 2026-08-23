@@ -3,12 +3,13 @@ import { TorusGameController } from './TorusGameController';
 
 const markAllAlive = async (controller: TorusGameController): Promise<void> => {
   for (const group of controller.endgameGroups()) {
+    if (controller.nextUnresolvedEndgameGroupId() === null) break;
     await controller.setEndgameDecision(group.id, 'alive');
   }
 };
 
-describe('TorusGameController manual endgame flow', () => {
-  it('exposes Pass and enters manual endgame after two consecutive passes', async () => {
+describe('TorusGameController assisted endgame flow', () => {
+  it('finishes automatically after two consecutive passes when no groups require review', async () => {
     const controller = new TorusGameController();
 
     const first = await controller.pass();
@@ -20,14 +21,14 @@ describe('TorusGameController manual endgame flow', () => {
 
     const second = await controller.pass();
     expect(second.accepted).toBe(true);
-    expect(second.viewModel.phase).toBe('endgame');
+    expect(second.viewModel.phase).toBe('finished');
     expect(second.viewModel.moveNumber).toBe(2);
     expect(second.viewModel.consecutivePasses).toBe(2);
-    expect(second.viewModel.finalScore).toBeNull();
+    expect(second.viewModel.finalScore).not.toBeNull();
     expect(controller.endgameGroups()).toEqual([]);
   });
 
-  it('exposes deterministic stone groups and their topology edges for board classification', async () => {
+  it('exposes deterministic stone groups and their topology edges for assisted review', async () => {
     const controller = new TorusGameController();
     await controller.placeStone('0,0');
     await controller.placeStone('4,4');
@@ -49,6 +50,7 @@ describe('TorusGameController manual endgame flow', () => {
         edges: [],
       },
     ]);
+    expect(controller.nextUnresolvedEndgameGroupId()).toBe('["0,0"]');
   });
 
   it('exposes a seam-connected group as one logical group with one topology edge', async () => {
@@ -66,7 +68,7 @@ describe('TorusGameController manual endgame flow', () => {
     });
   });
 
-  it('requires a manual decision for every requested group', async () => {
+  it('requires a manual decision for every unresolved group', async () => {
     const controller = new TorusGameController();
     await controller.placeStone('0,0');
     await controller.placeStone('4,4');
@@ -80,6 +82,7 @@ describe('TorusGameController manual endgame flow', () => {
 
     expect(controller.viewModel().phase).toBe('endgame');
     expect(controller.endgameGroups()).toHaveLength(2);
+    expect(controller.nextUnresolvedEndgameGroupId()).toBe('["4,4"]');
   });
 
   it('validates manual decisions and completes Chinese scoring through GameSession', async () => {
@@ -134,12 +137,16 @@ describe('TorusGameController manual endgame flow', () => {
     expect(undone.viewModel.finalScore).toBeNull();
   });
 
-  it('blocks move/Pass while manual classification is pending but allows Undo', async () => {
+  it('blocks move/Pass while unresolved assisted review is pending but allows Undo', async () => {
     const controller = new TorusGameController();
+    await controller.placeStone('0,0');
+    await controller.placeStone('4,4');
     await controller.pass();
     await controller.pass();
 
-    const place = await controller.placeStone('0,0');
+    expect(controller.viewModel().phase).toBe('endgame');
+
+    const place = await controller.placeStone('1,1');
     const pass = await controller.pass();
 
     expect(place).toMatchObject({ accepted: false, reason: 'not-playing' });
@@ -151,7 +158,7 @@ describe('TorusGameController manual endgame flow', () => {
       reason: null,
       viewModel: {
         phase: 'playing',
-        moveNumber: 1,
+        moveNumber: 3,
         consecutivePasses: 1,
         currentPlayer: 'white',
       },

@@ -36,7 +36,7 @@ export function useCube2DGame(controller: Cube2DGameController) {
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
   const [groups, setGroups] = useState<readonly Cube2DEndgameGroup[]>(() => initial.phase === 'endgame' ? controller.endgameGroups() : []);
   const [decisions, setDecisionsState] = useState<Cube2DEndgameDecisions>(() => initial.phase === 'endgame' ? controller.endgameDecisions() : {});
-  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(() => initial.phase === 'endgame' ? controller.nextUnresolvedEndgameGroupId() : null);
   const [resultOpen, setResultOpen] = useState(initial.phase === 'finished');
   const [showMoveNumbers, setShowMoveNumbers] = useState(false);
   const [passGuarded, setPassGuarded] = useState(false);
@@ -55,7 +55,7 @@ export function useCube2DGame(controller: Cube2DGameController) {
   useEffect(() => {
     const next = controller.viewModel();
     setVm(next); setView(createCube2DViewState()); setTransition(null); setHoveredPoint(null); setHoverStatus(null); setHoveredGroup(null);
-    setGroups(next.phase === 'endgame' ? controller.endgameGroups() : []); setDecisionsState(next.phase === 'endgame' ? controller.endgameDecisions() : {}); setSelectedGroup(null); setResultOpen(next.phase === 'finished');
+    setGroups(next.phase === 'endgame' ? controller.endgameGroups() : []); setDecisionsState(next.phase === 'endgame' ? controller.endgameDecisions() : {}); setSelectedGroup(next.phase === 'endgame' ? controller.nextUnresolvedEndgameGroupId() : null); setResultOpen(next.phase === 'finished');
     setPassGuarded(false); setFeedback(null); setZoomState(1); setCapturedEffects([]);
     if (captureTimer.current !== null) {
       window.clearTimeout(captureTimer.current);
@@ -73,7 +73,7 @@ export function useCube2DGame(controller: Cube2DGameController) {
   const startPassGuard = () => { clearPassGuard(); setPassGuarded(true); passTimer.current = window.setTimeout(clearPassGuard, 1000); };
   const apply = (action: Cube2DGameActionResult) => {
     clearHover(); setVm(action.viewModel); setFeedback(action.accepted ? null : action.reason ?? 'Action rejected'); setResultOpen(action.viewModel.phase === 'finished' && Boolean(action.viewModel.finalScore));
-    if (action.viewModel.phase === 'endgame') { setGroups(controller.endgameGroups()); setDecisionsState(controller.endgameDecisions()); setSelectedGroup(null); } else { setGroups([]); setDecisionsState({}); setSelectedGroup(null); }
+    if (action.viewModel.phase === 'endgame') { setGroups(controller.endgameGroups()); setDecisionsState(controller.endgameDecisions()); setSelectedGroup(controller.nextUnresolvedEndgameGroupId()); } else { setGroups([]); setDecisionsState({}); setSelectedGroup(null); }
     if (action.viewModel.phase !== 'playing' || action.viewModel.consecutivePasses === 0) clearPassGuard();
   };
   const startCaptureEffects = (
@@ -115,7 +115,11 @@ export function useCube2DGame(controller: Cube2DGameController) {
   };
   const activate = async (point: PointId) => {
     if (transition || captureAnimating || inFlight.current) return;
-    if (vm.phase === 'endgame') { const group = endgameGroupForPoint(groups, point); if (group) setSelectedGroup(group.id); return; }
+    if (vm.phase === 'endgame') {
+      const group = endgameGroupForPoint(groups, point);
+      if (group?.id === controller.nextUnresolvedEndgameGroupId()) setSelectedGroup(group.id);
+      return;
+    }
     if (vm.phase !== 'playing' || !controller.moveAvailability(point).allowed) { hover(point); return; }
 
     const renderedGeometry = createCube2DStagePointMap(layout);
@@ -141,27 +145,52 @@ export function useCube2DGame(controller: Cube2DGameController) {
   };
   const run = async (action: () => Promise<Cube2DGameActionResult>) => { if (inFlight.current || transition || captureAnimating) return; inFlight.current = true; try { apply(await action()); } finally { inFlight.current = false; } };
   const pass = async () => { if (passGuarded || vm.phase !== 'playing' || captureAnimating) return; await run(async () => { const action = await controller.pass(); if (action.accepted && action.viewModel.phase === 'playing' && action.viewModel.consecutivePasses === 1) startPassGuard(); return action; }); };
-  const setDecisions = (
-    updater: Cube2DEndgameDecisions | ((current: Cube2DEndgameDecisions) => Cube2DEndgameDecisions),
-  ) => {
-    setDecisionsState((current) => {
-      const next = typeof updater === 'function' ? updater(current) : updater;
-      for (const [groupId, status] of Object.entries(next)) {
-        if (!status || current[groupId] === status) continue;
-        void controller.setEndgameDecision(groupId, status).catch((error) => {
-          setFeedback(error instanceof Error ? error.message : 'Endgame decision could not be saved.');
-          setDecisionsState(controller.endgameDecisions());
-        });
-      }
-      return next;
-    });
+  const setDecision = async (groupId: string, status: GroupStatus) => {
+    if (
+      inFlight.current ||
+      vm.phase !== 'endgame' ||
+      controller.nextUnresolvedEndgameGroupId() !== groupId
+    ) {
+      return;
+    }
+
+    inFlight.current = true;
+    try {
+      await controller.setEndgameDecision(groupId, status);
+      apply(Object.freeze({
+        accepted: true,
+        reason: null,
+        captured: Object.freeze([]),
+        viewModel: controller.viewModel(),
+      }));
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : 'Endgame decision could not be saved.');
+      setDecisionsState(controller.endgameDecisions());
+      setSelectedGroup(controller.nextUnresolvedEndgameGroupId());
+    } finally {
+      inFlight.current = false;
+    }
   };
-  const finish = async () => { if (inFlight.current || vm.phase !== 'endgame') return; inFlight.current = true; try { apply(await controller.finishEndgame(decisions)); } catch (error) { setFeedback(error instanceof Error ? error.message : 'Endgame classification failed.'); } finally { inFlight.current = false; } };
   const setZoom = (next: number) => {
     const clamped = clampZoom(next);
     setZoomState(clamped);
     return clamped;
   };
+
+  useEffect(() => {
+    if (
+      vm.phase !== 'endgame' ||
+      controller.nextUnresolvedEndgameGroupId() !== null ||
+      inFlight.current
+    ) {
+      return;
+    }
+
+    void run(() => controller.finishEndgame());
+  }, [controller, vm.phase]);
+
   const selected = groups.find((group) => group.id === selectedGroup) ?? null;
-  return { vm, view, layout, transition, hoveredPoint, hoverStatus, hoveredGroup, groups, decisions, setDecisions, selectedGroup, setSelectedGroup, selected, resultOpen, setResultOpen, showMoveNumbers, setShowMoveNumbers, passGuarded, feedback, zoom, setZoom, capturedEffects, captureAnimating, navigate, moveAnchor, hover, activate, run, pass, finish, classified: groups.filter((group) => Boolean(decisions[group.id])).length, allClassified: groups.every((group) => Boolean(decisions[group.id])), result: vm.phase === 'finished' ? controller.resultModel() : null, finalClassification: vm.phase === 'finished' ? controller.snapshot().endgameClassification : null } as const;
+  const manualGroupIds = vm.phase === 'endgame' ? controller.endgameManualGroupIds() : [];
+  const manualReviewed = manualGroupIds.filter((groupId) => Boolean(decisions[groupId])).length;
+  return { vm, view, layout, transition, hoveredPoint, hoverStatus, hoveredGroup, groups, decisions, setDecision, selectedGroup, selected, resultOpen, setResultOpen, showMoveNumbers, setShowMoveNumbers, passGuarded, feedback, zoom, setZoom, capturedEffects, captureAnimating, navigate, moveAnchor, hover, activate, run, pass, manualReviewed, manualTotal: manualGroupIds.length, automaticClassified: Math.max(0, groups.length - manualGroupIds.length), result: vm.phase === 'finished' ? controller.resultModel() : null, finalClassification: vm.phase === 'finished' ? controller.snapshot().endgameClassification : null } as const;
 }

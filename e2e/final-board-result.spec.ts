@@ -13,12 +13,10 @@ const startGame = async (page: Page): Promise<void> => {
   await page.getByRole('button', { name: 'Start game' }).click();
 };
 
-const classify = async (
+const reviewCurrentGroup = async (
   page: Page,
-  logicalPointId: string,
   status: 'Alive' | 'Dead' | 'Seki',
 ): Promise<void> => {
-  await point(page, logicalPointId).click();
   const controls = page.getByRole('group', { name: 'Selected group status' });
   await expect(controls).toBeVisible();
   await controls.getByRole('button', { name: status, exact: true }).click();
@@ -35,8 +33,9 @@ const passTwice = async (page: Page): Promise<void> => {
 test('finished board keeps territory and dead stones visible until Undo', async ({ page }) => {
   await startGame(page);
 
-  // Leave White 4,4 on the board with one liberty at 4,5. When it is manually
-  // classified Dead, scoring removes it and the two-point region 4,4 + 4,5 is Black territory.
+  // Leave White 4,4 on the board with one liberty at 4,5. In the deterministic
+  // assisted-review order it is the fourth unresolved group; marking it Dead
+  // makes the two-point region 4,4 + 4,5 Black territory.
   for (const logicalPointId of [
     '4,3', '0,0',
     '3,4', '1,0',
@@ -49,17 +48,12 @@ test('finished board keeps territory and dead stones visible until Undo', async 
   }
 
   await passTwice(page);
-  await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
+  await expect(page.getByText('Manual review 0 of 6')).toBeVisible();
 
-  await classify(page, '4,3', 'Alive');
-  await classify(page, '3,4', 'Alive');
-  await classify(page, '5,4', 'Alive');
-  await classify(page, '4,6', 'Alive');
-  await classify(page, '0,0', 'Alive');
-  await classify(page, '4,4', 'Dead');
-
-  await expect(page.getByText('Classified 6 of 6')).toBeVisible();
-  await page.getByRole('button', { name: 'Calculate final score' }).click();
+  for (const status of ['Alive', 'Alive', 'Alive', 'Dead', 'Alive', 'Alive'] as const) {
+    await reviewCurrentGroup(page, status);
+  }
 
   const resultDialog = page.getByRole('dialog');
   await expect(resultDialog).toBeVisible();
@@ -73,6 +67,7 @@ test('finished board keeps territory and dead stones visible until Undo', async 
   expect(dialogTheme.backgroundColor).toBe('rgb(7, 16, 24)');
   expect(dialogTheme.color).toBe('rgb(238, 243, 247)');
   await expect(page.locator('.result-score-card')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: 'Calculate final score' })).toHaveCount(0);
 
   const board = page.locator('.torus-board');
   const blackTerritoryAtDeadStone = page.locator(

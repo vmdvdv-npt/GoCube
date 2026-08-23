@@ -37,17 +37,6 @@ const waitForPassGuard = async (page: Page): Promise<void> => {
   await expect(pass).toBeEnabled({ timeout: 2200 });
 };
 
-const classifyPoint = async (
-  page: Page,
-  logicalPointId: string,
-  status: 'Alive' | 'Dead' | 'Seki',
-): Promise<void> => {
-  await clickPoint(page, logicalPointId);
-  const controls = page.getByRole('group', { name: 'Selected group status' });
-  await expect(controls).toBeVisible();
-  await controls.getByRole('button', { name: status, exact: true }).click();
-};
-
 test('new game exposes every supported 0.1 torus size', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByTestId('new-game-settings-grid')).toBeVisible();
@@ -58,7 +47,7 @@ test('new game exposes every supported 0.1 torus size', async ({ page }) => {
   ]);
 });
 
-test('release acceptance covers capture, Pass/Undo and board-first manual endgame statuses', async ({ page }) => {
+test('release acceptance covers capture, Pass/Undo and sequential assisted endgame statuses', async ({ page }) => {
   await startGame(page, { size: '9', rules: 'chinese', komi: '7.5' });
 
   for (const point of ['1,1', '0,1', '5,5', '1,0', '5,6', '2,1', '6,5', '1,2']) {
@@ -90,7 +79,7 @@ test('release acceptance covers capture, Pass/Undo and board-first manual endgam
   await page.getByRole('button', { name: 'Pass' }).click();
   await waitForPassGuard(page);
   await page.getByRole('button', { name: 'Pass' }).click();
-  await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
   await expect(page.getByText(/Group 1/)).toHaveCount(0);
 
@@ -101,27 +90,23 @@ test('release acceptance covers capture, Pass/Undo and board-first manual endgam
   await expectNoLegacyPassState(page);
 
   await page.getByRole('button', { name: 'Pass' }).click();
-  await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
 
-  // The black group is connected through 5,5-5,6-6,5 and can be reclassified freely.
-  await clickPoint(page, '5,5');
-  const selectedStatus = page.getByRole('group', { name: 'Selected group status' });
-  await selectedStatus.getByRole('button', { name: 'Alive', exact: true }).click();
-  await expect(page.locator('.torus-board__endgame-line[data-endgame-status="alive"]')).not.toHaveCount(0);
-  await selectedStatus.getByRole('button', { name: 'Dead', exact: true }).click();
-  await expect(page.locator('.torus-board__endgame-line[data-endgame-status="dead"]')).not.toHaveCount(0);
-  await selectedStatus.getByRole('button', { name: 'Seki', exact: true }).click();
-  await expect(page.locator('.torus-board__endgame-line[data-endgame-status="seki"]')).not.toHaveCount(0);
+  const progressText = (await page.locator('.endgame-progress').textContent()) ?? '';
+  const totalMatch = progressText.match(/Manual review 0 of (\d+)/);
+  expect(totalMatch).not.toBeNull();
+  const manualTotal = Number(totalMatch![1]);
+  expect(manualTotal).toBeGreaterThan(0);
 
-  await classifyPoint(page, '0,1', 'Dead');
-  await classifyPoint(page, '1,0', 'Seki');
-  await classifyPoint(page, '2,1', 'Alive');
-  await classifyPoint(page, '1,2', 'Alive');
+  const statusSequence = ['Seki', 'Dead', 'Alive'] as const;
+  for (let reviewed = 0; reviewed < manualTotal; reviewed += 1) {
+    await page
+      .getByRole('group', { name: 'Selected group status' })
+      .getByRole('button', { name: statusSequence[reviewed % statusSequence.length] })
+      .click();
+  }
 
-  await expect(page.getByText('Classified 5 of 5')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Calculate final score' })).toBeEnabled();
-  await page.getByRole('button', { name: 'Calculate final score' }).click();
-
+  await expect(page.getByRole('button', { name: 'Calculate final score' })).toHaveCount(0);
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText('Chinese', { exact: true })).toBeVisible();
@@ -179,25 +164,12 @@ test('Chinese game reaches result, can reopen it, and Undo restores play', async
   await waitForPassGuard(page);
   await page.getByRole('button', { name: 'Pass' }).click();
 
-  await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
-  await expect(page.getByText('There are no stone groups to classify.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
-
-  await page.getByRole('button', { name: 'Undo' }).click();
-  await expect(page.getByText('White to move')).toBeVisible();
-  await expect(page.getByText('Move 1')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Pass (1)', exact: true })).toBeVisible();
-  await expectNoLegacyPassState(page);
-
-  await page.getByRole('button', { name: 'Pass' }).click();
-  await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
-  await page.getByRole('button', { name: 'Calculate final score' }).click();
-
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('heading', { name: 'White wins by 7.5' })).toBeVisible();
   await expect(dialog.getByRole('cell', { name: 'Area subtotal' })).toBeVisible();
   await expect(dialog.getByText('Chinese', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Calculate final score' })).toHaveCount(0);
 
   await dialog.getByRole('button', { name: 'Close game result' }).click();
   await expect(page.getByRole('button', { name: 'Game result' })).toBeVisible();
@@ -207,6 +179,9 @@ test('Chinese game reaches result, can reopen it, and Undo restores play', async
 
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(page.getByText('White to move')).toBeVisible();
+  await expect(page.getByText('Move 1')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Pass (1)', exact: true })).toBeVisible();
+  await expectNoLegacyPassState(page);
   await expect(page.getByRole('button', { name: 'Game result' })).toHaveCount(0);
 });
 
@@ -216,13 +191,13 @@ test('Japanese scoring completes with the selected board size and komi', async (
   await page.getByRole('button', { name: 'Pass' }).click();
   await waitForPassGuard(page);
   await page.getByRole('button', { name: 'Pass' }).click();
-  await page.getByRole('button', { name: 'Calculate final score' }).click();
 
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading', { name: 'White wins by 6.5' })).toBeVisible();
   await expect(dialog.getByRole('cell', { name: 'Prisoners' })).toBeVisible();
   await expect(dialog.getByText('13×13', { exact: true })).toBeVisible();
   await expect(dialog.getByText('Japanese', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Calculate final score' })).toHaveCount(0);
 });
 
 test('corrupted local save is discarded without blocking startup', async ({ page }) => {

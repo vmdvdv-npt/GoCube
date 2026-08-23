@@ -134,20 +134,23 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
     g.vm.phase === 'endgame' ? (
       <section className="endgame-panel" aria-labelledby="cube-endgame-title">
         <div>
-          <h2 id="cube-endgame-title">Manual endgame classification</h2>
-          <p>Select a stone group on the Cube surface, then choose Alive, Dead, or Seki.</p>
+          <h2 id="cube-endgame-title">Assisted endgame review</h2>
+          <p>
+            Proven groups are already marked. Review the selected unresolved group; the next one is selected automatically.
+          </p>
         </div>
         {g.groups.length ? (
           <>
             <div className="endgame-progress" aria-live="polite">
-              Classified {g.classified} of {g.groups.length}
+              Manual review {g.manualReviewed} of {g.manualTotal}
+              {g.automaticClassified > 0 ? ` · ${g.automaticClassified} automatic` : ''}
             </div>
             {g.selected ? (
               <div className="endgame-selection">
                 <div className="endgame-selection__identity">
                   <span className={`stone-chip stone-chip--${g.selected.color}`} aria-hidden="true" />
                   <div>
-                    <strong>Selected group</strong>
+                    <strong>Group to review</strong>
                     <span>
                       {g.selected.points.length} {g.selected.points.length === 1 ? 'stone' : 'stones'}
                     </span>
@@ -160,9 +163,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
                       key={status}
                       className={g.decisions[g.selected!.id] === status ? 'is-selected' : undefined}
                       aria-pressed={g.decisions[g.selected!.id] === status}
-                      onClick={() =>
-                        g.setDecisions((current) => ({ ...current, [g.selected!.id]: status }))
-                      }
+                      onClick={() => void g.setDecision(g.selected!.id, status)}
                     >
                       {cubeEndgameStatusLabel(status)}
                     </button>
@@ -170,20 +171,12 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
                 </div>
               </div>
             ) : (
-              <p className="endgame-empty">Select a stone group directly on a Cube face.</p>
+              <p className="endgame-empty">Automatic analysis resolved every required group.</p>
             )}
           </>
         ) : (
-          <p className="endgame-empty">There are no stone groups to classify.</p>
+          <p className="endgame-empty">There are no stone groups to review.</p>
         )}
-        <button
-          className="finish-game-button"
-          type="button"
-          disabled={!g.allClassified || Boolean(g.transition)}
-          onClick={() => void g.finish()}
-        >
-          Calculate final score
-        </button>
       </section>
     ) : null;
 

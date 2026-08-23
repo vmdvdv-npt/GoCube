@@ -126,7 +126,9 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   );
   const decisions = controller.endgameDecisions();
   const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(() =>
+    initialViewModel.phase === 'endgame' ? controller.nextUnresolvedEndgameGroupId() : null,
+  );
   const [resultOpen, setResultOpen] = useState(
     () => initialViewModel.phase === 'finished',
   );
@@ -190,10 +192,10 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     [endgameGroups, selectedGroupId],
   );
 
-  const classifiedCount = useMemo(
-    () => endgameGroups.filter((group) => Boolean(decisions[group.id])).length,
-    [decisions, endgameGroups],
-  );
+  const manualGroupIds =
+    viewModel.phase === 'endgame' ? controller.endgameManualGroupIds() : [];
+  const manualReviewedCount = manualGroupIds.filter((groupId) => Boolean(decisions[groupId])).length;
+  const automaticClassifiedCount = Math.max(0, endgameGroups.length - manualGroupIds.length);
 
   useEffect(() => {
     panOffsetRef.current = dragPan.offset;
@@ -205,17 +207,11 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
       return;
     }
 
-    if (
-      selectedGroupId !== null &&
-      endgameGroups.some((group) => group.id === selectedGroupId)
-    ) {
-      return;
+    const nextUnresolvedGroupId = controller.nextUnresolvedEndgameGroupId();
+    if (selectedGroupId !== nextUnresolvedGroupId) {
+      setSelectedGroupId(nextUnresolvedGroupId);
     }
-
-    const restoredSelection =
-      endgameGroups.find((group) => Boolean(decisions[group.id]))?.id ?? null;
-    if (restoredSelection !== null) setSelectedGroupId(restoredSelection);
-  }, [decisions, endgameGroups, selectedGroupId, viewModel.phase]);
+  }, [controller, decisions, endgameGroups, selectedGroupId, viewModel.phase]);
 
   useEffect(() => {
     rendererRef.current = null;
@@ -227,7 +223,9 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     setViewModel(nextViewModel);
     setFeedback(null);
     setHoveredGroupId(null);
-    setSelectedGroupId(null);
+    setSelectedGroupId(
+      nextViewModel.phase === 'endgame' ? controller.nextUnresolvedEndgameGroupId() : null,
+    );
     setShowDuplicateRegions(false);
     setShowMoveNumbers(false);
     setViewZoom(1);
@@ -405,10 +403,10 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     if (result.viewModel.phase === 'endgame') {
       setEndgameGroups(controller.endgameGroups());
       setHoveredGroupId(null);
-      setSelectedGroupId(null);
+      setSelectedGroupId(controller.nextUnresolvedEndgameGroupId());
     } else {
       setEndgameGroups([]);
-        setHoveredGroupId(null);
+      setHoveredGroupId(null);
       setSelectedGroupId(null);
     }
   };
@@ -474,7 +472,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
 
     if (viewModel.phase === 'endgame') {
       const group = groupAtClientPosition(event);
-      if (group) {
+      if (group?.id === controller.nextUnresolvedEndgameGroupId()) {
         setSelectedGroupId(group.id);
         setHoveredGroupId(group.id);
       }
@@ -651,13 +649,22 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     group: TorusEndgameGroup,
     status: GroupStatus,
   ): Promise<void> => {
-    if (actionInFlight.current || viewModel.phase !== 'endgame') return;
+    if (
+      actionInFlight.current ||
+      viewModel.phase !== 'endgame' ||
+      group.id !== controller.nextUnresolvedEndgameGroupId()
+    ) {
+      return;
+    }
 
     actionInFlight.current = true;
     try {
       await controller.setEndgameDecision(group.id, status);
-      setViewModel(controller.viewModel());
-      setFeedback(null);
+      applyResult(Object.freeze({
+        accepted: true,
+        reason: null,
+        viewModel: controller.viewModel(),
+      }));
     } catch (error) {
       setFeedback(
         error instanceof Error ? error.message : 'Endgame decision could not be saved.',
@@ -667,20 +674,6 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     }
   };
 
-  const handleFinishEndgame = async (): Promise<void> => {
-    if (actionInFlight.current || viewModel.phase !== 'endgame') return;
-
-    actionInFlight.current = true;
-    try {
-      applyResult(await controller.finishEndgame());
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : 'Endgame classification failed.');
-    } finally {
-      actionInFlight.current = false;
-    }
-  };
-
-  const allGroupsClassified = endgameGroups.every((group) => Boolean(decisions[group.id]));
   const gameResult = viewModel.phase === 'finished' ? controller.resultModel() : null;
   const passGuardActive = passGuardRemainingMs > 0;
 
@@ -688,16 +681,17 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     viewModel.phase === 'endgame' ? (
       <section className="endgame-panel" aria-labelledby="endgame-title">
         <div>
-          <h2 id="endgame-title">Manual endgame classification</h2>
+          <h2 id="endgame-title">Assisted endgame review</h2>
           <p>
-            Hover a stone to highlight its whole logical group. Click a stone or an existing group line to select it, then choose Alive, Dead, or Seki.
+            Proven groups are already marked. Review the selected unresolved group; the next one is selected automatically.
           </p>
         </div>
 
         {endgameGroups.length > 0 ? (
           <>
             <div className="endgame-progress" aria-live="polite">
-              Classified {classifiedCount} of {endgameGroups.length}
+              Manual review {manualReviewedCount} of {manualGroupIds.length}
+              {automaticClassifiedCount > 0 ? ` · ${automaticClassifiedCount} automatic` : ''}
             </div>
 
             {selectedGroup ? (
@@ -708,7 +702,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
                     aria-hidden="true"
                   />
                   <div>
-                    <strong>Selected group</strong>
+                    <strong>Group to review</strong>
                     <span>
                       {selectedGroup.points.length} {selectedGroup.points.length === 1 ? 'stone' : 'stones'}
                     </span>
@@ -733,21 +727,12 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
                 </div>
               </div>
             ) : (
-              <p className="endgame-empty">Select a stone group directly on the board.</p>
+              <p className="endgame-empty">Automatic analysis resolved every required group.</p>
             )}
           </>
         ) : (
-          <p className="endgame-empty">There are no stone groups to classify.</p>
+          <p className="endgame-empty">There are no stone groups to review.</p>
         )}
-
-        <button
-          className="finish-game-button"
-          type="button"
-          disabled={!allGroupsClassified}
-          onClick={() => void handleFinishEndgame()}
-        >
-          Calculate final score
-        </button>
       </section>
     ) : null;
 

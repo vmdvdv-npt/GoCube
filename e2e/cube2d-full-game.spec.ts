@@ -52,7 +52,7 @@ test('Cube 2D capture can be undone/redone without creating face duplicates', as
   await expectSixBoards(page);
 });
 
-test('Cube 2D completes manual endgame, stays navigable when finished, and Undo reopens play', async ({ page }) => {
+test('Cube 2D completes assisted endgame, stays navigable when finished, and Undo reopens play', async ({ page }) => {
   await hit(page, 'front:1:2').click();
   await hit(page, 'back:0:0').click();
   await hit(page, 'right:1:0').click();
@@ -70,17 +70,17 @@ test('Cube 2D completes manual endgame, stays navigable when finished, and Undo 
   await page.waitForTimeout(1050);
   await page.getByRole('button', { name: 'Pass (1)' }).click();
 
-  await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
-  await expect(page.getByText(/Classified 0 of/)).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
+  await expect(page.getByText(/Manual review 0 of/)).toBeVisible();
 
-  for (const point of ['front:1:2', 'front:0:0', 'back:0:0']) {
-    await hit(page, point).click();
-    await page.getByRole('button', { name: 'Alive' }).click();
+  const statuses = page.getByRole('group', { name: 'Selected group status' });
+  for (let index = 0; index < 3; index += 1) {
+    await statuses.getByRole('button', { name: 'Alive' }).click();
   }
 
-  await page.getByRole('button', { name: 'Calculate final score' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByText('Chinese scoring')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Calculate final score' })).toHaveCount(0);
   await expectSixBoards(page);
 
   await page.getByRole('button', { name: 'Close game result' }).click();

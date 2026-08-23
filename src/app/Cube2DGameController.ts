@@ -1,6 +1,6 @@
 import type { GroupStatus } from '../core/endgame/EndgameClassifier';
+import { AssistedEndgameClassifier } from '../core/endgame/AssistedEndgameClassifier';
 import { effectiveEndgameStatus } from '../core/endgame/EndgameReviewState';
-import { ManualEndgameClassifier } from '../core/endgame/ManualEndgameClassifier';
 import { GameEngine } from '../core/game/GameEngine';
 import {
   GameSession,
@@ -68,7 +68,8 @@ const scoringFor = (ruleSet: RuleSet, topology: CubeTopology): ScoringStrategy =
 /**
  * Thin presentation-friendly adapter for Cube 2D.
  * GameSession owns proposal, partial review, final classification and scoring;
- * the controller only forwards decisions and exposes logical groups for rendering.
+ * the controller activates assisted classification and exposes the ordered
+ * unresolved fallback that the UI must review.
  */
 export class Cube2DGameController {
   readonly size: CubeSize;
@@ -96,7 +97,7 @@ export class Cube2DGameController {
     this.topology = new CubeTopology(this.size);
     const engine = new GameEngine(this.topology);
     const config = {
-      endgameClassifier: new ManualEndgameClassifier(),
+      endgameClassifier: new AssistedEndgameClassifier(),
       scoringStrategy: scoringFor(ruleSet, this.topology),
       boardSize: this.size,
       komi,
@@ -170,10 +171,41 @@ export class Cube2DGameController {
     );
   }
 
+  endgameManualGroupIds(): readonly string[] {
+    const review = this.session.endgameReview();
+    if (!review) return Object.freeze([]);
+
+    return Object.freeze(
+      review.groups
+        .filter((group) => group.proposal.status === 'unresolved')
+        .map((group) => endgameGroupId(group.points)),
+    );
+  }
+
+  nextUnresolvedEndgameGroupId(): string | null {
+    const review = this.session.endgameReview();
+    if (!review) return null;
+
+    const group = review.groups.find(
+      (candidate) => effectiveEndgameStatus(candidate) === 'unresolved',
+    );
+    return group ? endgameGroupId(group.points) : null;
+  }
+
   async setEndgameDecision(groupId: string, status: GroupStatus): Promise<void> {
-    const group = this.endgameGroups().find((candidate) => candidate.id === groupId);
-    if (!group) throw new Error(`Unknown manual endgame group: ${groupId}`);
-    await this.session.setEndgameReviewDecision(group.points, status);
+    const review = this.session.endgameReview();
+    const reviewGroup = review?.groups.find(
+      (candidate) => endgameGroupId(candidate.points) === groupId,
+    );
+    if (!reviewGroup) throw new Error(`Unknown manual endgame group: ${groupId}`);
+    if (reviewGroup.proposal.status !== 'unresolved') {
+      throw new Error('Automatically resolved groups do not require manual review');
+    }
+
+    await this.session.setEndgameReviewDecision(reviewGroup.points, status);
+    if (this.nextUnresolvedEndgameGroupId() === null) {
+      await this.session.finishEndgameReview();
+    }
   }
 
   moveAvailability(point: PointId): Cube2DMoveAvailability {
@@ -195,19 +227,31 @@ export class Cube2DGameController {
 
   async pass(): Promise<Cube2DGameActionResult> {
     const result = await this.session.execute({ type: 'pass' });
+    if (
+      result.ok &&
+      result.state.phase === 'endgame' &&
+      this.nextUnresolvedEndgameGroupId() === null
+    ) {
+      await this.session.finishEndgameReview();
+    }
     return this.present(result.ok, result.ok ? null : result.reason);
   }
 
   async finishEndgame(
     decisions?: Cube2DEndgameDecisions,
   ): Promise<Cube2DGameActionResult> {
-    if (decisions) {
+    if (decisions && this.viewModel().phase === 'endgame') {
       for (const [groupId, status] of Object.entries(decisions)) {
-        if (status) await this.setEndgameDecision(groupId, status);
+        if (status && this.viewModel().phase === 'endgame') {
+          const current = this.endgameDecisions()[groupId];
+          if (current !== status) await this.setEndgameDecision(groupId, status);
+        }
       }
     }
 
-    await this.session.finishEndgameReview();
+    if (this.viewModel().phase !== 'finished') {
+      await this.session.finishEndgameReview();
+    }
     return this.present(true, null);
   }
 

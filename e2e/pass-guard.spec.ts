@@ -44,6 +44,11 @@ test('first Pass is shown as Pass (1), uses no visible timer and a normal move r
 test('second Pass becomes available after about one second and Undo/Redo restores endgame', async ({ page }) => {
   await startGame(page);
 
+  // Keep two isolated groups on the board so the second Pass enters a real
+  // unresolved assisted review instead of auto-finishing an empty position.
+  await clickPoint(page, '0,0');
+  await clickPoint(page, '4,4');
+
   const pass = page.getByRole('button', { name: /^Pass(?: \(1\))?$/ });
   const legacyPassState = page.getByText(/^Passes \d+$/);
   await expect(legacyPassState).toHaveCount(0);
@@ -55,7 +60,7 @@ test('second Pass becomes available after about one second and Undo/Redo restore
   await expect(pass).toBeEnabled({ timeout: 2200 });
 
   await pass.click();
-  await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
 
   const undo = page.getByRole('button', { name: 'Undo' });
   const redo = page.getByRole('button', { name: 'Redo' });
@@ -70,7 +75,7 @@ test('second Pass becomes available after about one second and Undo/Redo restore
   await expect(redo).toBeEnabled();
 
   await redo.click();
-  await expect(page.getByRole('heading', { name: 'Manual endgame classification' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
   await expect(legacyPassState).toHaveCount(0);
   await expect(redo).toBeDisabled();
 });
