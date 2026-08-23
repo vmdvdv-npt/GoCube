@@ -1,5 +1,5 @@
 import { GameEngine } from '../game/GameEngine';
-import type { BoardOccupancy, GameState, StoneColor } from '../game/types';
+import type { GameState, StoneColor } from '../game/types';
 import type { PointId, Topology } from '../topology/Topology';
 import { proveBensonPassAlive } from './BensonPassAlive';
 import { buildEndgameGraph, type EndgameStoneString } from './EndgameGraphCore';
@@ -181,9 +181,9 @@ const currentGroupFromCrucialStones = (
 };
 
 /**
- * If the initiation itself creates a restoring simple-ko recapture, the basic
- * seki proof must not lift that exact previous-board context before asking the
- * Work 7B reader to solve the continuation.
+ * An initiation-created restoring simple ko must retain exact previous-board
+ * context. Work 7B starts a new root with lifted ko context, so 7C checks this
+ * boundary before delegating the continuation.
  */
 const createsImmediateSimpleKo = (
   engine: GameEngine,
@@ -209,17 +209,18 @@ const mapContinuationOutcome = (
   initiator: BasicSekiSide,
   outcome: BoundedSemeaiOrderOutcome,
 ): BasicSekiMoveOutcome => {
-  const responderWins =
-    (initiator === 'left' && outcome === 'right-wins') ||
-    (initiator === 'right' && outcome === 'left-wins');
-  if (responderWins) return 'initiator-loses';
-
-  const initiatorWins =
-    (initiator === 'left' && outcome === 'left-wins') ||
-    (initiator === 'right' && outcome === 'right-wins');
-  if (initiatorWins) return 'initiator-wins';
-
-  return outcome;
+  switch (outcome) {
+    case 'left-wins':
+      return initiator === 'left' ? 'initiator-wins' : 'initiator-loses';
+    case 'right-wins':
+      return initiator === 'right' ? 'initiator-wins' : 'initiator-loses';
+    case 'ko-dependent':
+    case 'unknown-budget':
+    case 'unknown-boundary':
+    case 'unknown-cycle':
+    case 'unknown-incomplete':
+      return outcome;
+  }
 };
 
 const summarizeInitiationOutcome = (
@@ -336,10 +337,9 @@ const analyzeInitiations = (
  * A position is labelled seki only when both non-Benson opposing targets share
  * liberties inside one certified bounded conflict region and exhaustive testing
  * of every legal local first move shows the same game-theoretic fact: after the
- * move, the opponent can force-capture the initiator's original target before
- * losing its own target. Tenuki/pass is the safe alternative that leaves the
- * local position unchanged. Failure to prove any one initiation is losing does
- * not become seki.
+ * move, the opponent can force-capture the initiator's target before losing its
+ * own target. Tenuki/pass is the safe alternative that leaves local occupancy
+ * unchanged. Failure to prove any one initiation losing does not become seki.
  *
  * This is intentionally stronger than "7B found no winner". Budget, boundary,
  * cycle, incomplete and ko uncertainty all fail closed, and classifier
@@ -514,7 +514,7 @@ export const analyzeBasicSeki = (
     rightInitiation.outcome === 'winning-initiation'
   ) {
     reason = 'winning-initiation';
-    proofReason = 'at least one side has a legal local initiation that is not mutual-restraint seki';
+    proofReason = 'at least one side has a legal local initiation that defeats mutual restraint';
   } else if (
     leftInitiation.outcome === 'ko-dependent' ||
     rightInitiation.outcome === 'ko-dependent'
