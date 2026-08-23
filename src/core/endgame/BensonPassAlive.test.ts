@@ -74,7 +74,7 @@ describe('BensonPassAlive', () => {
     ]);
 
     const proofs = proveBensonPassAlive(board, topology, graph, 'black');
-    expect(proofs).toHaveLength(1);
+    expect(proofs.size).toBe(1);
     expect([...proofs.values()][0]).toHaveLength(2);
   });
 
