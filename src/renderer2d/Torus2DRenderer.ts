@@ -28,8 +28,10 @@ type Torus2DEndgameShape = Readonly<{
 }>;
 type Torus2DEndgameGroup = Torus2DEndgameOverlay['groups'][number];
 type ContourStatus = 'dead' | 'seki' | 'unresolved';
+type StoneColor = Torus2DEndgameGroup['color'];
 type ContourBundle = Readonly<{
   status: ContourStatus;
+  color: StoneColor;
   groupIds: readonly string[];
   shape: Torus2DEndgameShape;
 }>;
@@ -89,19 +91,24 @@ const contourBundles = (
   topology: Topology,
 ): readonly ContourBundle[] =>
   Object.freeze(
-    (['dead', 'unresolved', 'seki'] as const).flatMap((status) => {
-      const matching = groups.filter((group) =>
-        contourStatus(group.status === 'unknown' ? null : group.status) === status,
-      );
-      if (matching.length === 0) return [];
-      return [
-        Object.freeze({
-          status,
-          groupIds: Object.freeze(matching.map((group) => group.id)),
-          shape: mergedContourShape(matching, topology),
-        }),
-      ];
-    }),
+    (['dead', 'unresolved', 'seki'] as const).flatMap((status) =>
+      (['black', 'white'] as const).flatMap((color) => {
+        const matching = groups.filter(
+          (group) =>
+            contourStatus(group.status === 'unknown' ? null : group.status) === status &&
+            group.color === color,
+        );
+        if (matching.length === 0) return [];
+        return [
+          Object.freeze({
+            status,
+            color,
+            groupIds: Object.freeze(matching.map((group) => group.id)),
+            shape: mergedContourShape(matching, topology),
+          }),
+        ];
+      }),
+    ),
   );
 
 const contourSmoothingRadius = (radius: number): number => Math.max(1.5, radius * 0.22);
@@ -434,6 +441,7 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
           class: `torus-board__group-contour torus-board__group-contour--${bundle.status}`,
           'data-endgame-group-ids': bundle.groupIds.join(' '),
           'data-endgame-status': bundle.status,
+          'data-endgame-color': bundle.color,
         });
 
         this.appendOutlineShape(
