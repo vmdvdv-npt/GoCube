@@ -94,14 +94,12 @@ const toLocalLifeDeathClassifierProof = (
   result: LocalLifeDeathResult,
 ): LocalLifeDeathClassifierProof | null => {
   if (result.outcome === 'unknown') return null;
-
   const status: LocalLifeDeathClassifierStatus =
     result.outcome === 'proved-dead' ? 'dead' : 'alive';
   const proof =
     result.outcome === 'proved-dead'
       ? 'proved-dead-both-first-player-orders'
       : 'proved-alive-both-first-player-orders';
-
   return Object.freeze({
     status,
     evidence: Object.freeze({
@@ -149,7 +147,6 @@ const collectSemeaiCandidatePairs = (
   for (const key of [...groupsByPair.keys()].sort()) {
     const groups = groupsByPair.get(key)!;
     if (excludedGroupKeys.has(groups[0]) || excludedGroupKeys.has(groups[1])) continue;
-
     const left = graph.stringsByKey.get(groups[0]);
     const right = graph.stringsByKey.get(groups[1]);
     if (!left || !right || left.color === right.color) continue;
@@ -161,7 +158,6 @@ const collectSemeaiCandidatePairs = (
     ) {
       continue;
     }
-
     candidates.push(
       Object.freeze({
         key,
@@ -173,7 +169,6 @@ const collectSemeaiCandidatePairs = (
       }),
     );
   }
-
   return Object.freeze(candidates);
 };
 
@@ -198,12 +193,10 @@ const simpleSemeaiDeadClaim = (result: SimpleSemeaiResult): SemeaiDeadClaim | nu
   ) {
     return null;
   }
-
   const targetGroupKey =
     result.outcome === 'left-wins' ? result.rightGroupKey : result.leftGroupKey;
   const opponentGroupKey =
     result.outcome === 'left-wins' ? result.leftGroupKey : result.rightGroupKey;
-
   return Object.freeze({
     targetGroupKey,
     evidence: Object.freeze({
@@ -243,14 +236,12 @@ const boundedSemeaiDeadClaim = (
   ) {
     return null;
   }
-
   const targetGroupKey =
     result.outcome === 'left-wins' ? result.rightGroupKey : result.leftGroupKey;
   const opponentGroupKey =
     result.outcome === 'left-wins' ? result.leftGroupKey : result.rightGroupKey;
   const leftFirst = summarizeBoundedOrder(result.leftFirst);
   const rightFirst = summarizeBoundedOrder(result.rightFirst);
-
   return Object.freeze({
     targetGroupKey,
     evidence: Object.freeze({
@@ -281,6 +272,22 @@ const shouldRunBoundedSemeai = (
   result.reason === 'shared-liberties-deferred' &&
   pair.sharedLiberties.length > 0;
 
+const isBasicSekiCostCandidate = (pair: SemeaiCandidatePair): boolean => {
+  const sharedCount = pair.sharedLiberties.length;
+  if (sharedCount !== 2 && sharedCount !== 4) return false;
+  if (
+    pair.left.liberties.length !== sharedCount ||
+    pair.right.liberties.length !== sharedCount
+  ) {
+    return false;
+  }
+  const shared = new Set(pair.sharedLiberties);
+  return (
+    pair.left.liberties.every((liberty) => shared.has(liberty)) &&
+    pair.right.liberties.every((liberty) => shared.has(liberty))
+  );
+};
+
 const summarizeBasicSekiInitiation = (initiation: BasicSekiInitiationResult) =>
   Object.freeze({
     initiator: initiation.initiator,
@@ -305,9 +312,9 @@ const summarizeBasicSekiInitiation = (initiation: BasicSekiInitiationResult) =>
 
 /**
  * Conservative assisted classifier. Cheap/static proofs remain first. Reader
- * integration is candidate-gated and accepts only the existing authoritative
- * proof contracts. Semeai proves only a stable loser dead, never its winner
- * alive. Ko, budget, boundary, cycle and incomplete outcomes remain unresolved.
+ * integration is candidate-gated and accepts only existing authoritative proof
+ * contracts. Semeai proves only a stable loser dead, never its winner alive.
+ * Ko, budget, boundary, cycle and incomplete outcomes remain unresolved.
  */
 export class AssistedEndgameClassifier implements EndgameClassifier {
   private readonly manual = new ManualEndgameClassifier();
@@ -315,7 +322,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
   async analyze(context: EndgameAnalysisContext): Promise<EndgameProposal> {
     const baseline = await this.manual.analyze(context);
     const graph = buildEndgameGraph(context.state.board, context.topology);
-
     const complete =
       baseline.length === graph.strings.length &&
       baseline.every((proposal) => graph.stringsByKey.has(endgameGroupId(proposal.points)));
@@ -343,15 +349,12 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
         return otherKey !== undefined && passAliveGroupKeys.has(otherKey);
       });
       if (!hasBensonConnectionCandidate) continue;
-
       const connection = proveSafeConnectionToBenson(
         group,
         context.state.board,
         context.topology,
       );
-      if (connection.outcome === 'proven') {
-        safeConnectionProofs.set(group.key, connection.evidence);
-      }
+      if (connection.outcome === 'proven') safeConnectionProofs.set(group.key, connection.evidence);
     }
 
     const deadProofs = new Map<string, AutomaticDeadProof>();
@@ -385,7 +388,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
       ) {
         continue;
       }
-
       const opponent: StoneColor = group.color === 'black' ? 'white' : 'black';
       const tacticalFrontier = [...group.points, ...group.liberties];
       const contested = tacticalFrontier.some((point) =>
@@ -394,11 +396,7 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
           .some((neighbor) => context.state.board[neighbor] === opponent),
       );
       if (!contested) continue;
-
-      const sharedOptions = Object.freeze({
-        safeGroupPoints,
-        maxNodes: TACTICAL_CLASSIFIER_MAX_NODES,
-      });
+      const sharedOptions = Object.freeze({ safeGroupPoints, maxNodes: TACTICAL_CLASSIFIER_MAX_NODES });
       const attackerFirst = readTacticalCapture(group, context.state, context.topology, {
         ...sharedOptions,
         firstPlayer: 'attacker',
@@ -409,7 +407,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
         firstPlayer: 'defender',
       });
       if (defenderFirst.outcome !== 'proved-kill') continue;
-
       tacticalDeadProofs.set(
         group.key,
         Object.freeze({
@@ -442,7 +439,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
         }),
       );
       if (!enclosedBySafeOpponent) continue;
-
       const localResult = readLocalLifeDeath(group, context.state, context.topology, {
         maxNodes: LOCAL_LIFE_DEATH_CLASSIFIER_MAX_NODES,
         maxZonePoints: LOCAL_LIFE_DEATH_CLASSIFIER_MAX_ZONE_POINTS,
@@ -451,9 +447,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
       if (classifierProof) localLifeDeathProofs.set(group.key, classifierProof);
     }
 
-    // Tactical dead is intentionally not excluded here. A stable semeai proof
-    // may independently prove the same target dead; race-specific evidence is
-    // then preferred for provenance without changing the accepted status.
     const resolvedBeforeSemeai = new Set<string>([
       ...passAliveGroupKeys,
       ...safeConnectionProofs.keys(),
@@ -462,16 +455,9 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     ]);
     const semeaiPairs = collectSemeaiCandidatePairs(graph, resolvedBeforeSemeai);
     const semeaiDeadProofs = new Map<string, Readonly<Record<string, unknown>>>();
-
     for (const pair of semeaiPairs) {
-      const simple = analyzeSimpleSemeai(
-        pair.left,
-        pair.right,
-        context.state,
-        context.topology,
-      );
+      const simple = analyzeSimpleSemeai(pair.left, pair.right, context.state, context.topology);
       let claim = simpleSemeaiDeadClaim(simple);
-
       if (!claim && shouldRunBoundedSemeai(simple, pair)) {
         const bounded = analyzeBoundedSemeai(
           pair.left,
@@ -485,7 +471,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
         );
         claim = boundedSemeaiDeadClaim(bounded, pair.sharedLiberties);
       }
-
       if (claim && !semeaiDeadProofs.has(claim.targetGroupKey)) {
         semeaiDeadProofs.set(claim.targetGroupKey, claim.evidence);
       }
@@ -497,10 +482,7 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
       ...semeaiDeadProofs.keys(),
     ]);
     const sekiProofs = new Map<string, AutomaticSekiProof>();
-    for (const candidate of generateSekiCandidates(
-      graph.stringsByKey,
-      resolvedBeforeLegacySeki,
-    )) {
+    for (const candidate of generateSekiCandidates(graph.stringsByKey, resolvedBeforeLegacySeki)) {
       const verification = verifySekiCandidate(candidate, {
         state: context.state,
         topology: context.topology,
@@ -508,9 +490,7 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
         pointOwner: graph.stringByPoint,
       });
       if (!verification.proven) continue;
-      for (const groupKey of candidate.groupKeys) {
-        sekiProofs.set(groupKey, verification.evidence);
-      }
+      for (const groupKey of candidate.groupKeys) sekiProofs.set(groupKey, verification.evidence);
     }
 
     const resolvedBeforeBasicSeki = new Set<string>([
@@ -519,16 +499,7 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     ]);
     const basicSekiProofs = new Map<string, Readonly<Record<string, unknown>>>();
     for (const pair of collectSemeaiCandidatePairs(graph, resolvedBeforeBasicSeki)) {
-      // Work 7D keeps the expensive fallback deliberately narrow. The existing
-      // 7C proof still decides the result; candidate gating only controls cost.
-      if (
-        pair.sharedLiberties.length !== 2 ||
-        pair.left.liberties.length > 3 ||
-        pair.right.liberties.length > 3
-      ) {
-        continue;
-      }
-
+      if (!isBasicSekiCostCandidate(pair)) continue;
       const result = analyzeBasicSeki(
         pair.left,
         pair.right,
@@ -545,7 +516,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
       ) {
         continue;
       }
-
       const evidence = Object.freeze({
         algorithm: BASIC_SEKI_ALGORITHM,
         proof: result.proof,
@@ -559,13 +529,8 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
         rightInitiation: summarizeBasicSekiInitiation(result.rightInitiation),
         proofReason: result.proofReason,
       });
-
-      if (!basicSekiProofs.has(result.leftGroupKey)) {
-        basicSekiProofs.set(result.leftGroupKey, evidence);
-      }
-      if (!basicSekiProofs.has(result.rightGroupKey)) {
-        basicSekiProofs.set(result.rightGroupKey, evidence);
-      }
+      if (!basicSekiProofs.has(result.leftGroupKey)) basicSekiProofs.set(result.leftGroupKey, evidence);
+      if (!basicSekiProofs.has(result.rightGroupKey)) basicSekiProofs.set(result.rightGroupKey, evidence);
     }
 
     return Object.freeze(
@@ -584,7 +549,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
             }),
           });
         }
-
         const safeConnectionProof = safeConnectionProofs.get(groupKey);
         if (safeConnectionProof) {
           return Object.freeze({
@@ -594,7 +558,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
             evidence: Object.freeze({ ...safeConnectionProof }),
           });
         }
-
         const deadProof = deadProofs.get(groupKey);
         if (deadProof) {
           return Object.freeze({
@@ -604,7 +567,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
             evidence: Object.freeze({ ...deadProof }),
           });
         }
-
         const localLifeDeathProof = localLifeDeathProofs.get(groupKey);
         if (localLifeDeathProof) {
           return Object.freeze({
@@ -614,7 +576,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
             evidence: localLifeDeathProof.evidence,
           });
         }
-
         const semeaiDeadProof = semeaiDeadProofs.get(groupKey);
         if (semeaiDeadProof) {
           return Object.freeze({
@@ -624,7 +585,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
             evidence: semeaiDeadProof,
           });
         }
-
         const tacticalDeadProof = tacticalDeadProofs.get(groupKey);
         if (tacticalDeadProof) {
           return Object.freeze({
@@ -634,7 +594,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
             evidence: Object.freeze({ ...tacticalDeadProof }),
           });
         }
-
         const sekiProof = sekiProofs.get(groupKey);
         if (sekiProof) {
           return Object.freeze({
@@ -644,7 +603,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
             evidence: Object.freeze({ ...sekiProof }),
           });
         }
-
         const basicSekiProof = basicSekiProofs.get(groupKey);
         if (basicSekiProof) {
           return Object.freeze({
@@ -654,7 +612,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
             evidence: basicSekiProof,
           });
         }
-
         return proposal;
       }),
     );
