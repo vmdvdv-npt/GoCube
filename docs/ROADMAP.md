@@ -27,7 +27,7 @@
 
 Версия **0.2 Cube 2D завершена и принята** по границе `0.2 integration / regression acceptance`.
 
-Активная разрабатываемая версия — **0.3 Automatic/Assisted alive-dead-seki**. Checkpoints **0.3.01 Library/Reuse Review и contract alignment**, **0.3.02 Deterministic Endgame Test Lab**, **0.3.03 Differential Oracles и Local AI Lab** и **0.3.04 Automatic Alive core** завершены. Следующий активный checkpoint — **0.3.05 Automatic Dead core**.
+Активная разрабатываемая версия — **0.3 Automatic/Assisted alive-dead-seki**. Checkpoints **0.3.01 Library/Reuse Review и contract alignment**, **0.3.02 Deterministic Endgame Test Lab**, **0.3.03 Differential Oracles и Local AI Lab**, **0.3.04 Automatic Alive core** и **0.3.05 Automatic Dead core** завершены. Следующий активный checkpoint — **0.3.06 Obvious/Proven Seki**.
 
 ---
 
@@ -217,7 +217,7 @@ Cube 3D в 0.3 не входит. Cube-партии по-прежнему ста
 - feature parity основных игровых и endgame-визуализаций Cube 2D/Cube 3D;
 - 3D-specific automated/visual regression coverage.
 
-Точное 3D-поведение и пользовательская семантика default topology определяются `docs/GAME_CUBE_GO.md`; техническую границу Renderer3D и spatial mapping определяет `docs/ARCHITECTURE.md`.
+Точное 3D-поведение и пользовательская семантика default topology определяются `docs/GAME_CUBE_GO.md`; техническую границу Renderer3D и spatial mapping определяет только `docs/ARCHITECTURE.md`.
 
 ## Внутренний порядок 0.5
 
@@ -238,44 +238,3 @@ Cube 3D в 0.3 не входит. Cube-партии по-прежнему ста
 # Future — Online Multiplayer
 
 Online Multiplayer начинается только после стабилизации текущего локального roadmap.
-
-Будущий scope может включать:
-
-- серверно-авторитетные партии;
-- аккаунты;
-- network transport;
-- lobby/invitations/matchmaking;
-- reconnect;
-- cloud persistence;
-- spectators/rating/friends/anti-cheat и другие сетевые функции.
-
-Номер этой версии пока не назначен. Архитектурная готовность к сети описывается только в `docs/ARCHITECTURE.md` и не означает раннюю реализацию сетевых функций.
-
----
-
-# Future — 3D Torus
-
-3D Torus не входит в текущий нумерованный roadmap. Его продуктовые требования могут храниться в `docs/GAME_CUBE_GO.md`, но наличие этих требований не назначает ему версию и не разрешает реализовывать его в 0.1/0.2/0.3/0.5.
-
----
-
-# Quality gates и порядок работы
-
-Каждая пользовательская версия проходит последовательность:
-
-**Core → Functional UI → Polish → Acceptance**
-
-- **Core** — корректность логики и автоматические проверки без зависимости от финальной визуальной полировки.
-- **Functional UI** — функцию можно полностью использовать через интерфейс.
-- **Polish** — анимации, плавность и визуальная настройка после функциональной корректности.
-- **Acceptance** — полный regression/acceptance gate версии.
-
-Следующий крупный этап не начинается, пока предыдущий не является рабочей и тестируемой контрольной точкой.
-
-Перед подробным планированием крупной версии и перед существенным техническим checkpoint применяется Library/Reuse Review по правилам `docs/ARCHITECTURE.md`. Roadmap определяет **когда** выполняется этот gate; критерии выбора библиотек и технические правила review принадлежат `ARCHITECTURE.md`.
-
-# Правило scope
-
-При составлении задачи на конкретную версию или checkpoint в scope включаются только функции, уже введённые этой версией или более ранними версиями, плюс техническая работа текущего checkpoint.
-
-Наличие будущего поведения в `docs/GAME_CUBE_GO.md` или будущего архитектурного контракта в `docs/ARCHITECTURE.md` не означает разрешение реализовывать его раньше версии, указанной в этом roadmap.
