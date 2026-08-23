@@ -968,11 +968,30 @@ Temporary E2-8 benchmark CI step после измерения должен бы
 
 ---
 
-# 16. Future stages
+# 16. E2-9 — semeai / seki proof
 
-## E2-9 — semeai / seki
+Статус: **DONE / CONTRACT-TESTED / BENCHMARKED / CI PASS / NOT CLASSIFIER-INTEGRATED**.
 
-Shared/exclusive liberties, approach moves, captures, eyes, connections, side to move, ko.
+```text
+src/core/endgame/SemeaiSekiProof.ts
+algorithm = semeai-seki-proof-v1
+seki certificate = e2-9-closed-two-shared-liberties-authoritative-mutual-capture
+```
+
+E2-9 добавляет отдельный graph-native анализ пары opposing strings, имеющих хотя бы одну shared liberty. Он фиксирует shared/exclusive liberties, one-wave approach candidates, exact/conservative eye-space summaries и actual side-to-move, но не превращает арифметику liberties или shape labels в fate proof.
+
+### Semeai proof boundary
+
+Для каждой из двух target groups side to move независимо переводится в роль existing deterministic AND/OR stack:
+
+```text
+sideToMove == target.color -> defender
+sideToMove != target.color -> attacker
+```
+
+Kill/survival query выполняется через существующий `TacticalExtensionProofSearchGoAdapter` E2-8. Поэтому captures, connections, snapback, ladder/net pressure, sacrifice, preparation, exact 3/4-lib expansion, one/two-lib positive terminals, Benson/pass-alive и ko/history boundary используются только с уже установленной ими proof authority.
+
+Главное правило E2-9:
 
 ```text
 failure to prove kill for black
@@ -981,7 +1000,86 @@ failure to prove kill for white
 != SEKI
 ```
 
-Seki требует отдельного positive proof. Ko/incomplete → `UNRESOLVED`.
+`unresolved`, `budget-exhausted`, incomplete attack/defense boundary или отсутствие найденного kill не создают life/seki conclusion.
+
+### Positive seki certificate
+
+`PROVEN_SEKI` в E2-9 имеет отдельный узкий certificate. Он допускается только для пары opposing strings, где одновременно доказано:
+
+1. обе strings имеют **ровно одни и те же две shared liberties**;
+2. exclusive liberties отсутствуют у обеих сторон;
+3. shared-liberty empty boundary замкнут только на эти две liberties;
+4. stone boundary не содержит третьих groups;
+5. каждая shared liberty graph-native adjacent к обеим competing strings;
+6. для **обоих цветов** и **обеих shared liberties** попытка initiation проверяется authoritative `GameEngine` transition;
+7. illegal initiation считается отсутствием legal breach; legal initiation не должна сразу capture opponent;
+8. после legal initiation opponent должен иметь authoritative legal reply на вторую shared liberty, и этот reply должен фактически capture initiating string;
+9. unknown-root simple-ko на initiation/reply прекращает seki authority и возвращает `KO_DEPENDENT`/unresolved boundary.
+
+Только полный набор этих mutual-capture проверок даёт `proven-seki`. Exclusive liberty, open empty boundary, third group, immediate initiating capture, невозможность refutation или иная неполнота возвращают `UNRESOLVED`.
+
+Approach points в E2-9 — только one-wave graph-native candidates around exclusive liberties. Eye summaries переиспользуют E2-7 bounds; incomplete eye-space не усиливает seki authority. Renderer geometry и face coordinates не используются.
+
+### Contract coverage
+
+11 E2-9 tests фиксируют:
+
+- deterministic shared/exclusive liberty accounting;
+- one-wave approach candidates без fate inference;
+- positive closed two-shared-liberty seki с четырьмя authoritative initiation/refutation checks;
+- отказ от seki при exclusive liberty;
+- отказ от positive certificate при third-group boundary;
+- два failed/incomplete kill searches не превращаются в seki;
+- positive semeai kill для side-to-move против opposing one-lib group;
+- role mapping actual side-to-move для обеих target groups;
+- Torus seam shared liberty;
+- Cube face-edge shared liberty;
+- deterministic repeated analysis.
+
+Classifier integration в E2-9 отсутствует.
+
+### E2-9 performance gate
+
+```text
+src/core/endgame/SemeaiSekiProof.benchmark.test.ts
+npm run benchmark:engine2:semeai-seki
+```
+
+Benchmark измеряет graph-native E2-9 structural/seki-boundary analysis отдельно от potentially larger AND/OR kill search (`includeKillProofs=false`): реальные Torus/Cube topologies, 2 warmups + 20 samples, deterministic snapshot assertions. Gross-regression ceilings: `p95 <= 250 ms`, `max <= 1000 ms`.
+
+CI #809 benchmark results:
+
+| Case | Points | Shared | Black exclusive | White exclusive | Black approach | White approach | p95 ms | max ms |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Torus 9×9 | 81 | 1 | 3 | 3 | 7 | 7 | 2.361 | 2.723 |
+| Torus 13×13 | 169 | 1 | 3 | 3 | 7 | 7 | 1.414 | 1.503 |
+| Torus 19×19 | 361 | 1 | 3 | 3 | 7 | 7 | 3.524 | 4.682 |
+| Cube 2×2 | 24 | 2 | 2 | 2 | 4 | 4 | 0.886 | 1.174 |
+| Cube 4×4 | 96 | 2 | 2 | 2 | 5 | 5 | 1.720 | 2.133 |
+| Cube 5×5 | 150 | 2 | 2 | 2 | 5 | 5 | 2.838 | 3.127 |
+| Cube 7×7 | 294 | 2 | 2 | 2 | 5 | 5 | 5.559 | 6.821 |
+
+Worst observed p95 = `5.559 ms`; worst max = `6.821 ms`.
+
+Validation:
+
+```text
+new E2-9 contract tests: 11/11 PASS
+semeai/seki benchmark cases: 7/7 PASS
+full unit/coverage: 606 passed, 77 opt-in benchmark cases skipped
+typecheck:engine2 PASS
+build:engine2 PASS
+```
+
+Code-head CI #808 прошёл normal gate полностью, включая Chromium E2E `72/72 PASS`. Benchmark CI #809 подтвердил unit/coverage, typecheck, build и `7/7` benchmark; его Chromium run получил `71/72` из-за timing-sensitive pre-existing opacity assertion (`1` ожидалось во время stone animation, sampled `0.993086`). E2-9 production semantics по этому unrelated E2E flake не менялись.
+
+Temporary E2-9 benchmark CI step после измерения удаляется перед merge; `benchmark:engine2:semeai-seki` остаётся opt-in и воспроизводимым.
+
+**E2-9 acceptance boundary закрыт. Следующий этап: E2-10 — transpositions + performance optimization.**
+
+---
+
+# 17. Future stages
 
 ## E2-10
 
@@ -993,7 +1091,7 @@ Adversarial corpus + final evaluation.
 
 ---
 
-# 17. CI / validation policy
+# 18. CI / validation policy
 
 Current foundation:
 
@@ -1013,7 +1111,10 @@ Current foundation:
 - connection survival authority is limited to actual Benson/pass-alive after authoritative transition;
 - shared/friendly-shared/oversized/ko/budget eye-space boundaries remain explicit incomplete;
 - tactical augmentation outside already-complete 3/4-lib defender sets remains explicit incomplete;
-- no generic, E2-7 or E2-8 classifier integration.
+- semeai side-to-move kill/survival queries reuse existing proof authority without upgrading incomplete results;
+- seki authority is limited to the explicit closed two-shared-liberty authoritative mutual-capture certificate;
+- failure of both kill searches never implies seki;
+- no generic, E2-7, E2-8 or E2-9 classifier integration.
 
 Scoped typecheck:
 
@@ -1035,7 +1136,7 @@ Benchmarks are opt-in; temporary CI benchmark steps must be removed before merge
 
 ---
 
-# 18. Metrics
+# 19. Metrics
 
 Track false automatic statuses, precision/coverage, median/p95/max nodes/runtime, budget/ko/boundary unresolved counts, root/deep move counts, causal cone size, PV/max depth, implementation complexity, dependency/license surface, maintainability, Cube/Torus graph consistency.
 
@@ -1047,13 +1148,13 @@ cost third
 
 ---
 
-# 19. External references
+# 20. External references
 
 GNU Go / tsumego.js / Darkforest / research solvers / KataGo may be used for architecture ideas, regression, benchmark, differential oracle or diagnostics subject to licenses. Они не являются production proof authority; GPL implementation code не копируется.
 
 ---
 
-# 20. Roadmap
+# 21. Roadmap
 
 ```text
 E2-1   DONE — Graph Core
@@ -1070,12 +1171,12 @@ E2-5   DONE — exact 3-lib move generation + defender completeness + benchmark
 E2-6   DONE — exact 4-lib move generation + defender completeness + benchmark
 E2-7   DONE — exact small eye-space + bounds/vital points + benchmark
 E2-8   DONE — connections / cuts / ladder-net pressure / snapback / sacrifice / preparation + benchmark
-E2-9   NEXT — semeai / seki proof
-E2-10  transpositions + performance optimization
+E2-9   DONE — semeai shared/exclusive/approach analysis + positive seki certificate + benchmark
+E2-10  NEXT — transpositions + performance optimization
 E2-11  adversarial corpus + final evaluation
 ```
 
-E2-4/E2-8 overall acceptance boundary:
+E2-4/E2-9 overall acceptance boundary:
 
 1. attacker OR / defender AND explicit;
 2. every proof node deterministic and budgeted;
@@ -1094,6 +1195,11 @@ E2-4/E2-8 overall acceptance boundary:
 15. connection produces survival authority only after the resulting target is actually Benson/pass-alive;
 16. ladder/net labels encode exact liberty-pressure transitions, not a complete global ladder/net theorem;
 17. tactical augmentation never upgrades an incomplete move set to complete, and unknown-root ko remains fail-closed;
-18. no generic classifier integration before later generic coverage and acceptance gates.
+18. semeai shared/exclusive liberties, approach candidates and eye summaries are evidence only, not fate labels;
+19. semeai kill/survival authority comes only from existing deterministic proof search with actual side-to-move roles;
+20. failure to prove kill for both colors never implies seki;
+21. `proven-seki` requires the explicit closed two-shared-liberty mutual-capture certificate with authoritative initiation/reply legality and captures;
+22. ko, open boundary, exclusive liberty, third-group interaction or failed mutual-capture refutation keeps seki unresolved;
+23. no generic classifier integration before later generic coverage and acceptance gates.
 
 > Engine 2 автоматически ставит `alive`, `dead` или `seki` только там, где может предъявить законченное доказательство. Во всех остальных случаях правильный результат — `UNRESOLVED`.
