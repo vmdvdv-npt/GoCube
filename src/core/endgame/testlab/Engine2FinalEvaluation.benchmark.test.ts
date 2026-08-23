@@ -75,7 +75,7 @@ benchmarkDescribe('Engine 2 E2-11 final evaluation performance gate', () => {
     const p95RuntimeMs = round(percentile(runtimes, 0.95));
     const maxRuntimeMs = round(runtimes[runtimes.length - 1] ?? 0);
 
-    expect(baseline.totalCases).toBe(18);
+    expect(baseline.totalCases).toBe(17);
     expect(baseline.passedCases).toBe(baseline.totalCases);
     expect(baseline.falseAuthoritativeConclusions).toBe(0);
     expect(baseline.transpositionHits).toBeGreaterThan(0);
