@@ -1,8 +1,13 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { EndgameClassification, GroupStatus } from '../core/endgame/EndgameClassifier';
 import type { FinalScore } from '../core/scoring/Scoring';
+import { CubeTopology } from '../core/topology/CubeTopology';
 import type { PointId } from '../core/topology/Topology';
-import type { EndgameGroupPresentation } from '../presentation/EndgameGroupPresentation';
+import type {
+  EndgameGroupPresentation,
+  EndgameGroupRenderState,
+} from '../presentation/EndgameGroupPresentation';
+import { buildEndgameSekiRegions } from '../presentation/EndgameSekiPresentation';
 import type { Cube2DLayout } from '../presentation/cube/Cube2DLayout';
 import {
   CUBE_2D_CAPTURE_FLIGHT_MS,
@@ -40,6 +45,7 @@ type EffectsStyle = CSSProperties & {
 };
 
 type BoardPoint = ReturnType<typeof createCube2DRenderModel>['boards'][number]['points'][number];
+type GroupShape = Pick<EndgameGroupPresentation, 'points' | 'edges'>;
 
 const pointMap = <T extends { readonly pointId: PointId }>(points: readonly T[]) =>
   new Map(points.map((point) => [point.pointId, point]));
@@ -55,7 +61,7 @@ const contourColor = (
 };
 
 const groupShape = (
-  group: EndgameGroupPresentation,
+  group: GroupShape,
   pointsById: ReadonlyMap<PointId, BoardPoint>,
   contentScale: number,
   radius: number,
@@ -130,6 +136,17 @@ export function Cube2DVisualEffects({
     hoveredGroupId,
     capturedStones,
   });
+  const groupStates: readonly EndgameGroupRenderState[] = Object.freeze(
+    endgameGroups.map((group) => {
+      const firstPointId = group.points[0];
+      const status = firstPointId
+        ? effects.pointStatuses.get(firstPointId)?.groupStatus ?? null
+        : null;
+      return Object.freeze({ ...group, status });
+    }),
+  );
+  const sekiRegions = buildEndgameSekiRegions(groupStates, new CubeTopology(renderModel.size));
+  const sekiGroupIds = new Set(sekiRegions.flatMap((region) => region.groupIds));
   const size = renderModel.size;
   const step = CUBE_2D_SVG_SIZE / size;
   const contentScale = cube2DContentScale(size);
@@ -182,9 +199,10 @@ export function Cube2DVisualEffects({
             </g>
 
             <g className="cube-2d-effects__groups">
-              {endgameGroups.map((group, groupIndex) => {
+              {groupStates.map((group, groupIndex) => {
+                if (sekiGroupIds.has(group.id)) return null;
                 if (!group.points.some((pointId) => pointsById.has(pointId))) return null;
-                const status = decisions[group.id] ?? null;
+                const status = group.status;
                 const selected = selectedGroupId === group.id;
                 const hovered = hoveredGroupId === group.id;
                 const color = contourColor(status, group.color);
@@ -214,11 +232,51 @@ export function Cube2DVisualEffects({
                         <feComposite in="outline-color" in2="outline" operator="in" />
                       </filter>
                     </defs>
-                    {status === 'seki' ? (
-                      <g className="cube-2d-seki-mask" style={{ color: '#80878f' }} opacity={0.6}>
-                        {shape}
-                      </g>
-                    ) : null}
+                    <g
+                      className="cube-2d-group-contour__outline-source"
+                      style={{ color: '#ffffff' }}
+                      filter={`url(#${filterId})`}
+                    >
+                      {shape}
+                    </g>
+                  </g>
+                );
+              })}
+
+              {sekiRegions.map((region, regionIndex) => {
+                if (!region.points.some((pointId) => pointsById.has(pointId))) return null;
+                const selected = selectedGroupId !== null && region.groupIds.includes(selectedGroupId);
+                const hovered = hoveredGroupId !== null && region.groupIds.includes(hoveredGroupId);
+                const filterId = `cube-endgame-seki-outline-${board.face}-${regionIndex}`;
+                const outlineRadius = selected ? 1.7 : hovered ? 1.45 : 1.2;
+                const shape = groupShape(region, pointsById, contentScale, contourRadius);
+                return (
+                  <g
+                    key={`seki-region:${region.id}`}
+                    className={`cube-2d-group-contour cube-2d-group-contour--seki${selected ? ' is-selected' : ''}${hovered ? ' is-hovered' : ''}`}
+                    data-endgame-seki-region-id={region.id}
+                    data-endgame-group-ids={region.groupIds.join(' ')}
+                    data-group-status="seki"
+                    pointerEvents="none"
+                  >
+                    <defs>
+                      <filter
+                        id={filterId}
+                        x="-30%"
+                        y="-30%"
+                        width="160%"
+                        height="160%"
+                        colorInterpolationFilters="sRGB"
+                      >
+                        <feMorphology in="SourceAlpha" operator="dilate" radius={outlineRadius} result="dilated" />
+                        <feComposite in="dilated" in2="SourceAlpha" operator="out" result="outline" />
+                        <feFlood floodColor="#80878f" result="outline-color" />
+                        <feComposite in="outline-color" in2="outline" operator="in" />
+                      </filter>
+                    </defs>
+                    <g className="cube-2d-seki-mask" style={{ color: '#80878f' }} opacity={0.6}>
+                      {shape}
+                    </g>
                     <g
                       className="cube-2d-group-contour__outline-source"
                       style={{ color: '#ffffff' }}
