@@ -13,15 +13,6 @@ const startGame = async (page: Page): Promise<void> => {
   await page.getByRole('button', { name: 'Start game' }).click();
 };
 
-const reviewCurrentGroup = async (
-  page: Page,
-  status: 'Alive' | 'Dead' | 'Seki',
-): Promise<void> => {
-  const controls = page.getByRole('group', { name: 'Selected group status' });
-  await expect(controls).toBeVisible();
-  await controls.getByRole('button', { name: status, exact: true }).click();
-};
-
 const passTwice = async (page: Page): Promise<void> => {
   const pass = page.getByRole('button', { name: /^Pass(?: \(1\))?$/ });
   await pass.click();
@@ -30,12 +21,11 @@ const passTwice = async (page: Page): Promise<void> => {
   await pass.click();
 };
 
-test('finished board keeps territory and dead stones visible until Undo', async ({ page }) => {
+test('review shows resolved territory dots and finished board removes dead stones until Undo', async ({ page }) => {
   await startGame(page);
 
-  // Leave White 4,4 on the board with one liberty at 4,5. In the deterministic
-  // assisted-review order it is the fourth unresolved group; marking it Dead
-  // makes the two-point region 4,4 + 4,5 Black territory.
+  // White 4,4 has one liberty at 4,5. Once it is marked Dead and the surrounding
+  // Black group is Alive, the local region becomes unambiguous Black territory.
   for (const logicalPointId of [
     '4,3', '0,0',
     '3,4', '1,0',
@@ -49,11 +39,38 @@ test('finished board keeps territory and dead stones visible until Undo', async 
 
   await passTwice(page);
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
-  await expect(page.getByText('Manual review 0 of 6')).toBeVisible();
+  await expect(page.locator('.endgame-progress')).toContainText('Resolved');
 
-  for (const status of ['Alive', 'Alive', 'Alive', 'Dead', 'Alive', 'Alive'] as const) {
-    await reviewCurrentGroup(page, status);
+  const statuses = page.getByRole('group', { name: 'Selected group status' });
+  const primaryStoneIds = await page
+    .locator('.torus-board__stone[data-copy-role="primary"]')
+    .evaluateAll((nodes) =>
+      [...new Set(nodes.map((node) => node.getAttribute('data-logical-point-id')).filter(Boolean))] as string[],
+    );
+
+  // Resolve every group Alive first, then override the target White group to Dead.
+  // This also exercises the requirement that already-resolved groups stay editable.
+  for (const logicalPointId of primaryStoneIds) {
+    await point(page, logicalPointId).click();
+    await statuses.getByRole('button', { name: 'Alive', exact: true }).click();
   }
+  await point(page, '4,4').click();
+  await statuses.getByRole('button', { name: 'Dead', exact: true }).click();
+
+  const provisionalLibertyDot = page.locator(
+    '.torus-board__territory-dot[data-logical-point-id="4,5"][data-territory-owner="black"]',
+  );
+  const provisionalDeadPointDot = page.locator(
+    '.torus-board__territory-dot[data-logical-point-id="4,4"][data-territory-owner="black"]',
+  );
+  await expect(provisionalLibertyDot).toHaveCount(1);
+  // During review the dead stone stays visible, so its occupied point has no dot yet.
+  await expect(provisionalDeadPointDot).toHaveCount(0);
+  await expect(
+    page.locator('.torus-board__stone[data-logical-point-id="4,4"][data-copy-role="primary"]'),
+  ).toHaveCount(1);
+
+  await page.getByRole('button', { name: 'Finish scoring' }).click();
 
   const resultDialog = page.getByRole('dialog');
   await expect(resultDialog).toBeVisible();
@@ -67,73 +84,31 @@ test('finished board keeps territory and dead stones visible until Undo', async 
   expect(dialogTheme.backgroundColor).toBe('rgb(7, 16, 24)');
   expect(dialogTheme.color).toBe('rgb(238, 243, 247)');
   await expect(page.locator('.result-score-card')).toHaveCount(2);
-  await expect(page.getByRole('button', { name: 'Calculate final score' })).toHaveCount(0);
 
-  const board = page.locator('.torus-board');
   const blackTerritoryAtDeadStone = page.locator(
-    '.torus-board__final-territory-point[data-logical-point-id="4,4"][data-territory-owner="black"]',
+    '.torus-board__territory-dot[data-logical-point-id="4,4"][data-territory-owner="black"]',
   );
   const blackTerritoryAtLiberty = page.locator(
-    '.torus-board__final-territory-point[data-logical-point-id="4,5"][data-territory-owner="black"]',
+    '.torus-board__territory-dot[data-logical-point-id="4,5"][data-territory-owner="black"]',
   );
   const deadWhiteStone = page.locator(
-    '.torus-board__stone[data-logical-point-id="4,4"][data-dead-stone="true"]',
+    '.torus-board__stone[data-logical-point-id="4,4"][data-copy-role="primary"]',
   );
 
-  await expect(board).toHaveAttribute('data-final-territory-visible', 'true');
-  await expect(blackTerritoryAtDeadStone.first()).toHaveAttribute('opacity', '0.2');
-  await expect(blackTerritoryAtLiberty.first()).toHaveAttribute('opacity', '0.2');
-  await expect(deadWhiteStone.first()).toHaveAttribute('opacity', '0.38');
+  await expect(blackTerritoryAtDeadStone).toHaveCount(1);
+  await expect(blackTerritoryAtLiberty).toHaveCount(1);
+  await expect(deadWhiteStone).toHaveCount(0);
 
-  // Closing the result popup is presentation-only: the final-board markings stay.
+  // Closing the result popup is presentation-only: final board markings stay.
   await page.getByRole('button', { name: 'Close game result' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(board).toHaveAttribute('data-final-territory-visible', 'true');
-  await expect(blackTerritoryAtDeadStone).not.toHaveCount(0);
-  await expect(deadWhiteStone).not.toHaveCount(0);
+  await expect(blackTerritoryAtDeadStone).toHaveCount(1);
+  await expect(blackTerritoryAtLiberty).toHaveCount(1);
+  await expect(deadWhiteStone).toHaveCount(0);
 
-  // Duplicate mode now shows only the immediately wrapped row/column. A central
-  // point therefore has one copy until navigation brings it to a visible edge.
-  await page.getByLabel('Показывать дублирующие области').check();
-  expect(
-    await blackTerritoryAtDeadStone.evaluateAll((nodes) =>
-      nodes.every((node) => node.getAttribute('opacity') === '0.2'),
-    ),
-  ).toBe(true);
-  expect(
-    await deadWhiteStone.evaluateAll((nodes) =>
-      nodes.every((node) => node.getAttribute('opacity') === '0.38'),
-    ),
-  ).toBe(true);
-
-  const shiftRight = page.getByRole('button', { name: 'Shift torus view right' });
-  for (let index = 0; index < 4; index += 1) {
-    await shiftRight.click();
-    await expect(board).toHaveAttribute('data-pan-animating', 'true');
-    await expect(blackTerritoryAtDeadStone).not.toHaveCount(0);
-    await expect(deadWhiteStone).not.toHaveCount(0);
-    await expect(board).toHaveAttribute('data-pan-animating', 'false', { timeout: 2_000 });
-  }
-
-  // After four steps logical 4,4 reaches the current left edge. The right-side
-  // one-line strip must now show the synchronized wrapped territory and dead stone.
-  await expect.poll(() => blackTerritoryAtDeadStone.count()).toBeGreaterThan(1);
-  await expect.poll(() => deadWhiteStone.count()).toBeGreaterThan(1);
-  expect(
-    await blackTerritoryAtDeadStone.evaluateAll((nodes) =>
-      nodes.every((node) => node.getAttribute('opacity') === '0.2'),
-    ),
-  ).toBe(true);
-  expect(
-    await deadWhiteStone.evaluateAll((nodes) =>
-      nodes.every((node) => node.getAttribute('opacity') === '0.38'),
-    ),
-  ).toBe(true);
-
-  // Undo of the finishing second Pass restores the pre-finish ViewModel, so no final markings remain.
+  // Undo of the finishing second Pass restores the pre-review board.
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(page.getByText('Black to move')).toBeVisible();
-  await expect(board).toHaveAttribute('data-final-territory-visible', 'false');
-  await expect(page.locator('.torus-board__final-territory-point')).toHaveCount(0);
-  await expect(page.locator('.torus-board__stone[data-dead-stone="true"]')).toHaveCount(0);
+  await expect(page.locator('.torus-board__territory-dot')).toHaveCount(0);
+  await expect(deadWhiteStone).toHaveCount(1);
 });

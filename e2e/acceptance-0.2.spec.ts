@@ -138,33 +138,41 @@ test('0.2 production Cube flow: New Game, seam capture, history, zoom, resume an
 
   const progress = page.locator('.endgame-progress');
   const progressText = (await progress.textContent()) ?? '';
-  const totalMatch = progressText.match(/Manual review 0 of (\d+)/);
+  const totalMatch = progressText.match(/Resolved (\d+) of (\d+)/);
   expect(totalMatch).not.toBeNull();
-  const manualTotal = Number(totalMatch![1]);
-  expect(manualTotal).toBeGreaterThan(1);
+  const initialResolved = Number(totalMatch![1]);
+  const groupTotal = Number(totalMatch![2]);
+  expect(groupTotal).toBeGreaterThan(1);
+  expect(initialResolved).toBeLessThan(groupTotal);
 
   // Acceptance checkpoint: persist a partial assisted review, reload before scoring,
-  // and require Continue to restore the already reviewed group and next selection.
+  // and require Continue to restore the already reviewed decision.
   const statuses = page.getByRole('group', { name: 'Selected group status' });
   await statuses.getByRole('button', { name: 'Alive' }).click();
-  await expect(progress).toContainText(`Manual review 1 of ${manualTotal}`);
+  const partialProgress = (await progress.textContent()) ?? '';
+  expect(partialProgress).toContain(`Resolved ${initialResolved + 1} of ${groupTotal}`);
 
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Continue saved game?' })).toBeVisible();
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
-  await expect(page.locator('.endgame-progress')).toContainText(`Manual review 1 of ${manualTotal}`);
+  await expect(page.locator('.endgame-progress')).toHaveText(partialProgress);
 
-  for (let reviewed = 1; reviewed < manualTotal; reviewed += 1) {
-    await page
-      .getByRole('group', { name: 'Selected group status' })
+  const visibleStonePointIds = await page.locator('.cube-2d-stone').evaluateAll((nodes) =>
+    [...new Set(nodes.map((node) => node.getAttribute('data-logical-point-id')).filter(Boolean))] as string[],
+  );
+  for (const pointId of visibleStonePointIds) {
+    await hit(page, pointId).click();
+    await page.getByRole('group', { name: 'Selected group status' })
       .getByRole('button', { name: 'Alive' })
       .click();
   }
 
+  await expect(page.getByRole('button', { name: 'Finish scoring' })).toBeEnabled();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Finish scoring' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByText('Japanese scoring')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Calculate final score' })).toHaveCount(0);
   await expectSixBoards(page);
 
   await page.getByRole('button', { name: 'Close game result' }).click();

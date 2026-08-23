@@ -64,21 +64,27 @@ jobs:
       - run: npm run build
         if: steps.mode.outputs.mode != 'none'
 
-      - name: Install Chromium
-        if: steps.mode.outputs.mode == 'standard'
-        run: npx playwright install --with-deps chromium
+      - name: Install Playwright browsers
+        if: steps.mode.outputs.mode != 'none'
+        env:
+          CI_MODE: ${{ steps.mode.outputs.mode }}
+        run: |
+          if [[ "$CI_MODE" == "full" ]]; then
+            npx playwright install --with-deps chromium firefox webkit
+          else
+            npx playwright install --with-deps chromium
+          fi
 
-      - name: Run Chromium E2E
-        if: steps.mode.outputs.mode == 'standard'
-        run: npm run test:e2e -- --project=chromium
-
-      - name: Install all Playwright browsers
-        if: steps.mode.outputs.mode == 'full'
-        run: npx playwright install --with-deps chromium firefox webkit
-
-      - name: Run full cross-browser E2E
-        if: steps.mode.outputs.mode == 'full'
-        run: npm run test:e2e
+      - name: Run Playwright E2E
+        if: steps.mode.outputs.mode != 'none'
+        env:
+          CI_MODE: ${{ steps.mode.outputs.mode }}
+        run: |
+          if [[ "$CI_MODE" == "full" ]]; then
+            npm run test:e2e
+          else
+            npm run test:e2e -- --project=chromium
+          fi
 
   release:
     needs: test

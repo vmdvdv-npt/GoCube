@@ -2,6 +2,11 @@
   cursor: pointer;
 }
 
+/* Final territory is rendered by the product Torus renderer as point markers. */
+.torus-board__final-territory {
+  display: none;
+}
+
 .endgame-progress {
   color: #9aa5ae;
   font-size: 11px;
@@ -33,4 +38,26 @@
 .endgame-selection__identity span:last-child {
   color: #87929c;
   font-size: 11px;
+}
+
+.endgame-finish {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgb(208 163 92 / 50%);
+  border-radius: 7px;
+  color: #f2e6cf;
+  background: rgb(208 163 92 / 10%);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.endgame-finish:not(:disabled):hover {
+  border-color: rgb(208 163 92 / 82%);
+  background: rgb(208 163 92 / 16%);
+}
+
+.endgame-finish:disabled {
+  cursor: default;
+  opacity: 0.38;
 }

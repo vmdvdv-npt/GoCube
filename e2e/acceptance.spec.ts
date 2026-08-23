@@ -37,6 +37,12 @@ const waitForPassGuard = async (page: Page): Promise<void> => {
   await expect(pass).toBeEnabled({ timeout: 2200 });
 };
 
+const finishScoring = async (page: Page): Promise<void> => {
+  const finish = page.getByRole('button', { name: 'Finish scoring' });
+  await expect(finish).toBeEnabled();
+  await finish.click();
+};
+
 test('new game exposes every supported 0.1 torus size', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByTestId('new-game-settings-grid')).toBeVisible();
@@ -47,7 +53,7 @@ test('new game exposes every supported 0.1 torus size', async ({ page }) => {
   ]);
 });
 
-test('release acceptance covers capture, Pass/Undo and sequential assisted endgame statuses', async ({ page }) => {
+test('acceptance covers capture, Pass/Undo and editable assisted endgame statuses', async ({ page }) => {
   await startGame(page, { size: '9', rules: 'chinese', komi: '7.5' });
 
   for (const point of ['1,1', '0,1', '5,5', '1,0', '5,6', '2,1', '6,5', '1,2']) {
@@ -91,22 +97,26 @@ test('release acceptance covers capture, Pass/Undo and sequential assisted endga
 
   await page.getByRole('button', { name: 'Pass' }).click();
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
+  await expect(page.locator('.endgame-progress')).toContainText('Resolved');
 
-  const progressText = (await page.locator('.endgame-progress').textContent()) ?? '';
-  const totalMatch = progressText.match(/Manual review 0 of (\d+)/);
-  expect(totalMatch).not.toBeNull();
-  const manualTotal = Number(totalMatch![1]);
-  expect(manualTotal).toBeGreaterThan(0);
+  const stonePointIds = await page
+    .locator('.torus-board__stone[data-copy-role="primary"]')
+    .evaluateAll((nodes) =>
+      [...new Set(nodes.map((node) => node.getAttribute('data-logical-point-id')).filter(Boolean))] as string[],
+    );
+  expect(stonePointIds.length).toBeGreaterThan(0);
 
   const statusSequence = ['Seki', 'Dead', 'Alive'] as const;
-  for (let reviewed = 0; reviewed < manualTotal; reviewed += 1) {
+  for (let index = 0; index < stonePointIds.length; index += 1) {
+    await clickPoint(page, stonePointIds[index]!);
     await page
       .getByRole('group', { name: 'Selected group status' })
-      .getByRole('button', { name: statusSequence[reviewed % statusSequence.length] })
+      .getByRole('button', { name: statusSequence[index % statusSequence.length] })
       .click();
   }
 
-  await expect(page.getByRole('button', { name: 'Calculate final score' })).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await finishScoring(page);
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText('Chinese', { exact: true })).toBeVisible();
@@ -164,12 +174,15 @@ test('Chinese game reaches result, can reopen it, and Undo restores play', async
   await waitForPassGuard(page);
   await page.getByRole('button', { name: 'Pass' }).click();
 
+  await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
+  await expect(page.getByText('There are no stone groups to review.')).toBeVisible();
+  await finishScoring(page);
+
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('heading', { name: 'White wins by 7.5' })).toBeVisible();
   await expect(dialog.getByRole('cell', { name: 'Area subtotal' })).toBeVisible();
   await expect(dialog.getByText('Chinese', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Calculate final score' })).toHaveCount(0);
 
   await dialog.getByRole('button', { name: 'Close game result' }).click();
   await expect(page.getByRole('button', { name: 'Game result' })).toBeVisible();
@@ -192,12 +205,14 @@ test('Japanese scoring completes with the selected board size and komi', async (
   await waitForPassGuard(page);
   await page.getByRole('button', { name: 'Pass' }).click();
 
+  await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
+  await finishScoring(page);
+
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading', { name: 'White wins by 6.5' })).toBeVisible();
   await expect(dialog.getByRole('cell', { name: 'Prisoners' })).toBeVisible();
   await expect(dialog.getByText('13×13', { exact: true })).toBeVisible();
   await expect(dialog.getByText('Japanese', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Calculate final score' })).toHaveCount(0);
 });
 
 test('corrupted local save is discarded without blocking startup', async ({ page }) => {

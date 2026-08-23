@@ -4,6 +4,7 @@ import {
   type CSSProperties,
   type WheelEvent as ReactWheelEvent,
 } from 'react';
+import { finalBoardViewModel } from '../presentation/EndgameTerritoryPresentation';
 import { CUBE_2D_LAYOUT_COLUMNS, CUBE_2D_LAYOUT_ROWS } from '../presentation/cube/Cube2DLayout';
 import {
   CUBE_2D_BASE_CELL_SIZE,
@@ -66,6 +67,7 @@ export interface Cube2DGameProps {
 
 export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
   const g = useCube2DGame(controller);
+  const displayViewModel = finalBoardViewModel(g.vm);
   const layoutCellSize = CUBE_2D_BASE_CELL_SIZE * g.zoom;
   const stageWidth = layoutCellSize * CUBE_2D_LAYOUT_COLUMNS;
   const stageHeight = layoutCellSize * CUBE_2D_LAYOUT_ROWS;
@@ -136,21 +138,21 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
         <div>
           <h2 id="cube-endgame-title">Assisted endgame review</h2>
           <p>
-            Proven groups are already marked. Review the selected unresolved group; the next one is selected automatically.
+            Click any stone to select its whole group. You can change Alive, Dead, or Seki even when the status was proposed automatically.
           </p>
         </div>
         {g.groups.length ? (
           <>
             <div className="endgame-progress" aria-live="polite">
-              Manual review {g.manualReviewed} of {g.manualTotal}
-              {g.automaticClassified > 0 ? ` · ${g.automaticClassified} automatic` : ''}
+              Resolved {g.resolvedCount} of {g.groups.length}
+              {g.automaticClassified > 0 ? ` · ${g.automaticClassified} automatic proposals` : ''}
             </div>
             {g.selected ? (
               <div className="endgame-selection">
                 <div className="endgame-selection__identity">
                   <span className={`stone-chip stone-chip--${g.selected.color}`} aria-hidden="true" />
                   <div>
-                    <strong>Group to review</strong>
+                    <strong>Selected group</strong>
                     <span>
                       {g.selected.points.length} {g.selected.points.length === 1 ? 'stone' : 'stones'}
                     </span>
@@ -171,12 +173,20 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
                 </div>
               </div>
             ) : (
-              <p className="endgame-empty">Automatic analysis resolved every required group.</p>
+              <p className="endgame-empty">Click a stone to review or change its group status.</p>
             )}
           </>
         ) : (
           <p className="endgame-empty">There are no stone groups to review.</p>
         )}
+        <button
+          type="button"
+          className="endgame-finish"
+          disabled={!g.canFinishEndgame}
+          onClick={() => void g.finishEndgame()}
+        >
+          Finish scoring
+        </button>
       </section>
     ) : null;
 
@@ -275,7 +285,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
                 layoutCellSize={layoutCellSize}
                 transition={g.transition ?? undefined}
                 onVerticalAnchorColumnChange={g.moveAnchor}
-                viewModel={g.vm}
+                viewModel={displayViewModel}
                 hoveredPointId={g.hoveredPoint}
                 hoverStatus={g.hoverStatus}
                 showMoveNumbers={g.showMoveNumbers}
@@ -292,6 +302,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
                 layout={g.layout}
                 layoutCellSize={layoutCellSize}
                 finalScore={g.vm.finalScore}
+                provisionalTerritory={g.endgameTerritory}
                 finalClassification={g.finalClassification}
                 endgameGroups={g.groups}
                 decisions={g.decisions}

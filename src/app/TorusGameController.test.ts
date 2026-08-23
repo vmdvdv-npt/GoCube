@@ -9,7 +9,7 @@ const markAllAlive = async (controller: TorusGameController): Promise<void> => {
 };
 
 describe('TorusGameController assisted endgame flow', () => {
-  it('finishes automatically after two consecutive passes when no groups require review', async () => {
+  it('keeps an empty-board review editable until scoring is explicitly finished', async () => {
     const controller = new TorusGameController();
 
     const first = await controller.pass();
@@ -21,11 +21,15 @@ describe('TorusGameController assisted endgame flow', () => {
 
     const second = await controller.pass();
     expect(second.accepted).toBe(true);
-    expect(second.viewModel.phase).toBe('finished');
+    expect(second.viewModel.phase).toBe('endgame');
     expect(second.viewModel.moveNumber).toBe(2);
     expect(second.viewModel.consecutivePasses).toBe(2);
-    expect(second.viewModel.finalScore).not.toBeNull();
+    expect(second.viewModel.finalScore).toBeNull();
     expect(controller.endgameGroups()).toEqual([]);
+
+    const finished = await controller.finishEndgame();
+    expect(finished.viewModel.phase).toBe('finished');
+    expect(finished.viewModel.finalScore).not.toBeNull();
   });
 
   it('exposes deterministic stone groups and their topology edges for assisted review', async () => {

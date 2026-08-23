@@ -11,7 +11,7 @@ const point = (page: Page, logicalPointId: string): Locator =>
     `.torus-board__hit-target[data-logical-point-id="${logicalPointId}"][data-copy-role="primary"]`,
   );
 
-test('assisted endgame selects unresolved groups sequentially and finishes after the last answer', async ({ page }) => {
+test('assisted endgame keeps every logical group editable until explicit scoring finish', async ({ page }) => {
   await startGame(page);
 
   // Black becomes one logical group through the horizontal torus seam.
@@ -23,48 +23,40 @@ test('assisted endgame selects unresolved groups sequentially and finishes after
   await page.getByRole('button', { name: 'Pass' }).click();
 
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
-  await expect(page.getByText('Manual review 0 of 2')).toBeVisible();
+  await expect(page.getByText('Resolved 0 of 2')).toBeVisible();
+  await expect(page.locator('.torus-board__group-contour--unresolved')).toHaveCount(2);
+
+  // Clicking either stone of the seam-connected black group selects the same group.
+  await point(page, '0,4').click();
   await expect(page.locator('.endgame-selection .stone-chip--black')).toHaveCount(1);
-
-  // Hovering either seam stone still highlights the complete logical group.
-  await point(page, '0,4').hover();
-  const preview = page.locator(
-    '.torus-board__endgame-line[data-endgame-status="preview"][data-endgame-temporary="true"]',
-  );
-  await expect(preview).toHaveCount(2);
-  await expect(preview.first()).toHaveAttribute('opacity', '0.42');
-
   const statuses = page.getByRole('group', { name: 'Selected group status' });
   await statuses.getByRole('button', { name: 'Seki', exact: true }).click();
 
-  const blackLines = page.locator('.torus-board__endgame-line[data-endgame-status="seki"]');
-  await expect(blackLines).toHaveCount(2);
-  await expect(blackLines.first()).toHaveAttribute('stroke', '#7a7a7a');
-  await expect(page.getByText('Manual review 1 of 2')).toBeVisible();
-  await expect(page.locator('.endgame-selection .stone-chip--white')).toHaveCount(1);
+  await expect(page.getByText('Resolved 1 of 2')).toBeVisible();
+  await expect(page.locator('.torus-board__group-contour--seki')).toHaveCount(1);
+  await expect(page.locator('.torus-board__seki-mask')).toHaveAttribute('opacity', '0.6');
 
-  // Duplicate regions remain renderer-only and do not duplicate endgame geometry.
-  const cleanLineCount = await blackLines.count();
-  const cleanGeometry = await blackLines.evaluateAll((lines) =>
-    lines.map((line) => [
-      line.getAttribute('x1'),
-      line.getAttribute('y1'),
-      line.getAttribute('x2'),
-      line.getAttribute('y2'),
-    ]),
-  );
+  await point(page, '4,4').click();
+  await expect(page.locator('.endgame-selection .stone-chip--white')).toHaveCount(1);
+  await statuses.getByRole('button', { name: 'Alive', exact: true }).click();
+  await expect(page.getByText('Resolved 2 of 2')).toBeVisible();
+
+  // Resolving the last group no longer ends review. A previously resolved group
+  // remains selectable and can still override its prior/manual/automatic status.
+  const finish = page.getByRole('button', { name: 'Finish scoring' });
+  await expect(finish).toBeEnabled();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await point(page, '8,4').click();
+  await expect(page.locator('.endgame-selection .stone-chip--black')).toHaveCount(1);
+  await statuses.getByRole('button', { name: 'Dead', exact: true }).click();
+  await expect(page.locator('.torus-board__group-contour--dead')).toHaveCount(1);
+  await expect(page.locator('.torus-board__group-contour--seki')).toHaveCount(0);
+
+  // Passive duplicate strips do not duplicate logical endgame contours.
+  const contourCount = await page.locator('.torus-board__group-contour').count();
   await page.getByLabel('Показывать дублирующие области').check();
   await expect(page.locator('.torus-board')).toHaveAttribute('data-duplicate-regions-visible', 'true');
-  await expect(blackLines).toHaveCount(cleanLineCount);
-  const duplicateGeometry = await blackLines.evaluateAll((lines) =>
-    lines.map((line) => [
-      line.getAttribute('x1'),
-      line.getAttribute('y1'),
-      line.getAttribute('x2'),
-      line.getAttribute('y2'),
-    ]),
-  );
-  expect(duplicateGeometry).toEqual(cleanGeometry);
+  await expect(page.locator('.torus-board__group-contour')).toHaveCount(contourCount);
   await expect(
     page.locator('.torus-board__edge-duplicate-stone[data-logical-point-id="8,4"]'),
   ).toHaveCount(1);
@@ -72,9 +64,7 @@ test('assisted endgame selects unresolved groups sequentially and finishes after
     page.locator('.torus-board__edge-duplicate-stone[data-logical-point-id="0,4"]'),
   ).toHaveCount(1);
 
-  // The last required answer completes scoring immediately; there is no extra calculate button.
-  await statuses.getByRole('button', { name: 'Alive', exact: true }).click();
-  await expect(page.getByText('Final result')).toBeVisible();
+  await finish.click();
+  await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Calculate final score' })).toHaveCount(0);
 });
