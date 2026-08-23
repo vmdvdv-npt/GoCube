@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { controlledExpectedGroups } from '../core/endgame/testlab/ControlledEndgameGenerator';
 import { TestCaseReplayService } from '../core/endgame/testlab/TestCaseReplayService';
 import type { GameRepository, SavedGame } from '../core/persistence/GameRepository';
 import {
@@ -83,7 +84,7 @@ describe('GameApplication Test Case / Replay integration', () => {
   it.each([
     { gameMode: 'torus-2d' as const, size: 9 as const, payload: 271828 },
     { gameMode: 'cube-2d' as const, size: 5 as const, payload: 161803 },
-  ])('loads a full legal endgame into a playable session and reaches scoring', async (shape) => {
+  ])('loads a controlled mixed endgame into a playable session and reaches scoring', async (shape) => {
     const settings: NewGameSettings = {
       gameMode: shape.gameMode,
       size: shape.size,
@@ -96,12 +97,17 @@ describe('GameApplication Test Case / Replay integration', () => {
       'synthetic-endgame',
       shape.payload,
     );
-    expect(generated.testCase.loadStrategy).toBe('replay-commands');
-    expect(generated.testCase.scenario).toBe('full-endgame');
+    const expected = controlledExpectedGroups(generated.testCase);
+
+    expect(generated.testCase.loadStrategy).toBe('snapshot');
+    expect(generated.testCase.scenario).toBe('controlled-mixed-endgame');
     expect(generated.testCase.tags).toContain('full-position');
+    expect(expected.some((group) => group.role === 'mandatory-dead' && group.expected === 'dead')).toBe(true);
+    expect(expected.some((group) => group.role === 'control-alive' && group.expected === 'alive')).toBe(true);
+    expect(expected.filter((group) => group.role === 'intentional-unresolved').length).toBeGreaterThanOrEqual(2);
     expect(generated.activeGame.controller.viewModel().phase).toBe('playing');
     await finishAssistedReview(generated.activeGame);
-  });
+  }, 30_000);
 
   it('Test ID loader switches topology and board size encoded by the case', async () => {
     const generatorApp = new GameApplication(new MemoryRepo(), undefined, service());
