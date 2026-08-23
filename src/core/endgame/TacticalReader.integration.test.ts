@@ -6,14 +6,14 @@ import { buildEndgameGraph } from './EndgameGraphCore';
 import { TACTICAL_READER_ALGORITHM } from './TacticalReader';
 
 class GridTopology implements Topology {
-  readonly id = 'tactical-integration-grid-2';
+  readonly id = 'tactical-integration-grid-3';
   private readonly allPoints: readonly PointId[];
   private readonly pointSet: ReadonlySet<PointId>;
 
   constructor() {
     const points: PointId[] = [];
-    for (let y = 0; y < 2; y += 1) {
-      for (let x = 0; x < 2; x += 1) points.push(`${x},${y}`);
+    for (let y = 0; y < 3; y += 1) {
+      for (let x = 0; x < 3; x += 1) points.push(`${x},${y}`);
     }
     this.allPoints = Object.freeze(points);
     this.pointSet = new Set(points);
@@ -35,7 +35,7 @@ class GridTopology implements Topology {
       ]
         .filter(
           ([nextX, nextY]) =>
-            nextX >= 0 && nextY >= 0 && nextX < 2 && nextY < 2,
+            nextX >= 0 && nextY >= 0 && nextX < 3 && nextY < 3,
         )
         .map(([nextX, nextY]) => `${nextX},${nextY}`),
     );
@@ -50,6 +50,8 @@ const makeState = (topology: Topology): GameState => {
   const stones: Readonly<Partial<Record<PointId, PointOccupancy>>> = Object.freeze({
     '0,0': 'white',
     '1,1': 'black',
+    '2,0': 'black',
+    '0,2': 'black',
   });
   const board: Record<PointId, PointOccupancy> = {};
   for (const point of topology.points()) board[point] = stones[point] ?? 'empty';
@@ -64,7 +66,7 @@ const makeState = (topology: Topology): GameState => {
 };
 
 describe('TacticalReader classifier integration', () => {
-  it('promotes only an ultra-short two-liberty forced capture to automatic dead', async () => {
+  it('promotes a bounded two-liberty forced capture to automatic dead', async () => {
     const topology = new GridTopology();
     const state = makeState(topology);
     const graph = buildEndgameGraph(state.board, topology);
