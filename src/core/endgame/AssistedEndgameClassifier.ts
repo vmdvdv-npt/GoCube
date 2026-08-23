@@ -37,7 +37,7 @@ import type { StoneColor } from '../game/types';
 
 const COLORS: readonly StoneColor[] = Object.freeze(['black', 'white']);
 const TACTICAL_CLASSIFIER_MAX_NODES = 16;
-const LOCAL_LIFE_DEATH_CLASSIFIER_MAX_NODES = 512;
+const LOCAL_LIFE_DEATH_CLASSIFIER_MAX_NODES = 256;
 const LOCAL_LIFE_DEATH_CLASSIFIER_MAX_ZONE_POINTS = 24;
 
 type LocalLifeDeathClassifierStatus = 'alive' | 'dead';
@@ -86,9 +86,10 @@ const toLocalLifeDeathClassifierProof = (
  * criterion, adds the narrow Work 5B two-liberty miai connection to a Benson
  * safe group, preserves the sealed single-liberty proof, keeps the Work 4
  * ultra-short two-liberty tactical forced-capture proof, and then runs the
- * Work 6 bounded local life/death proof only for groups that are still
- * unresolved. Seki remains a separate final proof layer. Any result that is
- * budget-, boundary-, cycle-, incomplete-, or ko-dependent stays unresolved.
+ * Work 6 bounded local life/death proof only for a small enclosed candidate
+ * class that is still unresolved. Seki remains a separate final proof layer.
+ * Any result that is budget-, boundary-, cycle-, incomplete-, or ko-dependent
+ * stays unresolved.
  */
 export class AssistedEndgameClassifier implements EndgameClassifier {
   private readonly manual = new ManualEndgameClassifier();
@@ -221,6 +222,24 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
       ) {
         continue;
       }
+
+      // Work 6C deliberately keeps the first production search class narrow.
+      // One-liberty groups already have a sealed proof and two-liberty groups
+      // already belong to the Work 4 tactical layer. The local L&D reader is
+      // therefore used here only for small 3–4 liberty targets whose every
+      // liberty is immediately bounded by a Benson/pass-alive opponent string.
+      // This is only a candidate/performance gate: the reader must still prove
+      // both first-player orders before any automatic status is emitted.
+      if (group.liberties.length < 3 || group.liberties.length > 4) continue;
+      const opponent: StoneColor = group.color === 'black' ? 'white' : 'black';
+      const enclosedBySafeOpponent = group.liberties.every((liberty) =>
+        context.topology.neighbors(liberty).some((neighbor) => {
+          if (context.state.board[neighbor] !== opponent) return false;
+          const owner = graph.stringByPoint.get(neighbor);
+          return owner !== undefined && passAliveGroupKeys.has(owner);
+        }),
+      );
+      if (!enclosedBySafeOpponent) continue;
 
       const localResult = readLocalLifeDeath(group, context.state, context.topology, {
         maxNodes: LOCAL_LIFE_DEATH_CLASSIFIER_MAX_NODES,
