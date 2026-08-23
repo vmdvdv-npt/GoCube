@@ -1,18 +1,22 @@
-import {
-  externalCorpusCaseCount,
-  importExternalCorpusCase,
-} from './ExternalCorpusImporter';
-import {
-  makeTestCaseIdentity,
-  type ReferenceStatus,
-  type TestCasePlanarStone,
-  type TestCaseSourcePosition,
-} from './TestCase';
+export type ReuseSpikeReferenceStatus = 'alive' | 'dead' | 'seki' | 'unknown';
+
+export interface ReuseSpikePlanarStone {
+  readonly row: number;
+  readonly column: number;
+  readonly color: 'black' | 'white';
+}
+
+export interface ReuseSpikeSourcePosition {
+  readonly boardSize: number;
+  readonly currentPlayer: 'black' | 'white';
+  readonly stones: readonly ReuseSpikePlanarStone[];
+  readonly targetCoordinates: readonly Readonly<{ row: number; column: number }>[];
+}
 
 export interface ReuseSpikeCorpusCase {
   readonly id: string;
-  readonly sourceStatus: ReferenceStatus;
-  readonly position: TestCaseSourcePosition;
+  readonly sourceStatus: ReuseSpikeReferenceStatus;
+  readonly position: ReuseSpikeSourcePosition;
   readonly sgf: string;
 }
 
@@ -36,7 +40,7 @@ const sgfPointList = (
 ): string => coordinates.map(({ row, column }) => `[${sgfCoordinate(row, column)}]`).join('');
 
 export const serializeReuseSpikePositionAsSgf = (
-  position: TestCaseSourcePosition,
+  position: ReuseSpikeSourcePosition,
 ): string => {
   const black = position.stones
     .filter(({ color }) => color === 'black')
@@ -61,10 +65,10 @@ export const serializeReuseSpikePositionAsSgf = (
 };
 
 const freezePosition = (
-  currentPlayer: TestCaseSourcePosition['currentPlayer'],
-  stones: readonly TestCasePlanarStone[],
+  currentPlayer: ReuseSpikeSourcePosition['currentPlayer'],
+  stones: readonly ReuseSpikePlanarStone[],
   targetCoordinates: readonly Readonly<{ row: number; column: number }>[],
-): TestCaseSourcePosition =>
+): ReuseSpikeSourcePosition =>
   Object.freeze({
     boardSize: 9,
     currentPlayer,
@@ -74,7 +78,7 @@ const freezePosition = (
     ),
   });
 
-const forcedCapturePosition = (): TestCaseSourcePosition =>
+const forcedCapturePosition = (): ReuseSpikeSourcePosition =>
   freezePosition(
     'white',
     [
@@ -86,8 +90,8 @@ const forcedCapturePosition = (): TestCaseSourcePosition =>
     [{ row: 4, column: 4 }],
   );
 
-const twoEyeAlivePosition = (): TestCaseSourcePosition => {
-  const stones: TestCasePlanarStone[] = [];
+const twoEyeAlivePosition = (): ReuseSpikeSourcePosition => {
+  const stones: ReuseSpikePlanarStone[] = [];
 
   // Connected 3x5 black block with two one-point internal eyes.
   for (let row = 2; row <= 4; row += 1) {
@@ -112,8 +116,8 @@ const twoEyeAlivePosition = (): TestCaseSourcePosition => {
 
 const knownCase = (
   id: string,
-  sourceStatus: Extract<ReferenceStatus, 'alive' | 'dead'>,
-  position: TestCaseSourcePosition,
+  sourceStatus: 'alive' | 'dead',
+  position: ReuseSpikeSourcePosition,
 ): ReuseSpikeCorpusCase =>
   Object.freeze({
     id,
@@ -130,40 +134,8 @@ const WORK1_KNOWN_CASES: readonly ReuseSpikeCorpusCase[] = Object.freeze([
 export const reuseSpikeKnownCaseCount = (): number => WORK1_KNOWN_CASES.length;
 
 /**
- * Returns a stable planar corpus for Work 1 external-solver comparison.
- *
- * The external catalog positions are exported in their original planar form,
- * not embedded into Cube/Torus. Two tiny hand-authored known-answer sanity
- * fixtures are appended so the same run has at least a minimal accuracy signal
- * in addition to performance measurements. Topology-specific comparison happens
- * later through metamorphic tests of the graph-native GoCube engine, not by
- * pretending that conventional SGF can encode Cube/Torus adjacency.
+ * Returns the small independent Work 1 known-answer corpus used by the reuse
+ * spike benchmark. The obsolete interactive external-corpus/Test-ID catalog is
+ * deliberately not part of this automated benchmark corpus.
  */
-export const buildReuseSpikeCorpus = (): readonly ReuseSpikeCorpusCase[] => {
-  const externalCases = Array.from(
-    { length: externalCorpusCaseCount() },
-    (_, payload) => {
-      const imported = importExternalCorpusCase(
-        makeTestCaseIdentity({
-          source: 'corpus',
-          topology: 'torus',
-          size: 19,
-          variant: 0,
-          transform: 0,
-          payload,
-        }),
-      );
-      const diagnostics = imported.diagnostics;
-      const position = diagnostics.sourcePosition;
-
-      return Object.freeze({
-        id: diagnostics.sourceId,
-        sourceStatus: diagnostics.sourceStatus,
-        position,
-        sgf: serializeReuseSpikePositionAsSgf(position),
-      });
-    },
-  );
-
-  return Object.freeze([...externalCases, ...WORK1_KNOWN_CASES]);
-};
+export const buildReuseSpikeCorpus = (): readonly ReuseSpikeCorpusCase[] => WORK1_KNOWN_CASES;
