@@ -28,6 +28,96 @@ const playerLabel = (color: StoneColor): 'B' | 'W' =>
 const solutionExists = (move: string | null | undefined): move is string =>
   typeof move === 'string' && move.length > 0;
 
+export interface ReuseSpikeFirstPlayerRunResult {
+  /** false means the configured node/time budget ended before proof/disproof. */
+  readonly solved: boolean;
+  /** Whether the explicitly supplied first player proved its local objective. */
+  readonly firstPlayerWins?: boolean;
+  readonly koDependent?: boolean;
+  readonly move?: string;
+  readonly nodes?: number;
+  readonly detail?: string;
+}
+
+interface FirstPlayerPair {
+  readonly attacker: ReuseSpikeFirstPlayerRunResult;
+  readonly defender: ReuseSpikeFirstPlayerRunResult;
+}
+
+const summedNodes = (pair: FirstPlayerPair): number | undefined =>
+  pair.attacker.nodes === undefined || pair.defender.nodes === undefined
+    ? undefined
+    : pair.attacker.nodes + pair.defender.nodes;
+
+const combinedDetail = (pair: FirstPlayerPair): string | undefined => {
+  const parts = [
+    pair.attacker.detail ? `attacker-first: ${pair.attacker.detail}` : undefined,
+    pair.defender.detail ? `defender-first: ${pair.defender.detail}` : undefined,
+  ].filter((part): part is string => part !== undefined);
+  return parts.length === 0 ? undefined : parts.join('; ');
+};
+
+/**
+ * Normalize the exact same two questions for every solver:
+ *
+ * 1. can the attacker force its objective when moving first?
+ * 2. can the defender force its objective when moving first?
+ *
+ * This keeps the benchmark independent of each upstream API. Both sides winning
+ * with first move is a critical/unsettled position, not an ambiguous error.
+ */
+const combineFirstPlayerRuns = (pair: FirstPlayerPair): ReuseSpikeSolverResult => {
+  const nodes = summedNodes(pair);
+  const detail = combinedDetail(pair);
+
+  if (pair.attacker.koDependent || pair.defender.koDependent) {
+    return {
+      outcome: 'ko-dependent',
+      ...(nodes === undefined ? {} : { nodes }),
+      ...(detail === undefined ? {} : { detail }),
+    };
+  }
+
+  if (
+    !pair.attacker.solved ||
+    !pair.defender.solved ||
+    pair.attacker.firstPlayerWins === undefined ||
+    pair.defender.firstPlayerWins === undefined
+  ) {
+    return {
+      outcome: 'unknown',
+      ...(nodes === undefined ? {} : { nodes }),
+      ...(detail === undefined ? {} : { detail }),
+    };
+  }
+
+  const attackerWins = pair.attacker.firstPlayerWins;
+  const defenderWins = pair.defender.firstPlayerWins;
+  let outcome: ReuseSpikeTargetOutcome;
+  let move: string | undefined;
+
+  if (attackerWins && defenderWins) {
+    outcome = 'critical';
+  } else if (attackerWins) {
+    outcome = 'target-captured';
+    move = pair.attacker.move;
+  } else if (defenderWins) {
+    outcome = 'target-survives';
+    move = pair.defender.move;
+  } else {
+    // Could be seki, ko semantics the adapter cannot observe, or solver limits.
+    // Never promote "neither side proved" to seki automatically.
+    outcome = 'unknown';
+  }
+
+  return {
+    outcome,
+    ...(nodes === undefined ? {} : { nodes }),
+    ...(move === undefined ? {} : { move }),
+    ...(detail === undefined ? {} : { detail }),
+  };
+};
+
 export interface TsumegoJsSolverLike {
   solve(player: 'B' | 'W'): string | null | undefined;
 }
@@ -36,12 +126,7 @@ export type TsumegoJsSolverFactory = (sgf: string) => TsumegoJsSolverLike;
 
 /**
  * Adapter for d180cf/tsumego.js without importing that package into production.
- * Two fresh solver instances are queried so the benchmark asks the same target-
- * fate question regardless of which color is marked as the target.
- *
- * If both sides (or neither side) report a solution, we keep the result unknown.
- * That includes ko-sensitive/semantic mismatches that cannot be safely collapsed
- * into a GoCube proof status from the public solve() return value alone.
+ * Fresh solver instances answer attacker-first and defender-first independently.
  */
 export const createTsumegoJsReuseSpikeAdapter = (
   revision: string,
@@ -62,37 +147,27 @@ export const createTsumegoJsReuseSpikeAdapter = (
     const attacker = playerLabel(opposite(target));
     const attackerMove = createSolver(problem.sgf).solve(attacker);
     const defenderMove = createSolver(problem.sgf).solve(defender);
-    const attackerWins = solutionExists(attackerMove);
-    const defenderWins = solutionExists(defenderMove);
 
-    if (attackerWins && !defenderWins) {
-      return { outcome: 'target-captured', move: attackerMove };
-    }
-    if (defenderWins && !attackerWins) {
-      return { outcome: 'target-survives', move: defenderMove };
-    }
-
-    return {
-      outcome: 'unknown',
-      detail: attackerWins
-        ? 'attacker and defender both report a solution'
-        : 'neither attacker nor defender reports a solution',
-    };
+    return combineFirstPlayerRuns({
+      attacker: {
+        solved: true,
+        firstPlayerWins: solutionExists(attackerMove),
+        ...(solutionExists(attackerMove) ? { move: attackerMove } : {}),
+      },
+      defender: {
+        solved: true,
+        firstPlayerWins: solutionExists(defenderMove),
+        ...(solutionExists(defenderMove) ? { move: defenderMove } : {}),
+      },
+    });
   },
 });
 
-export interface CameronMartinRunResult {
-  /** false means the configured node/time budget ended before proof/disproof. */
-  readonly solved: boolean;
-  /** Mirrors Puzzle::is_proved() for the side to move when solved. */
-  readonly proved?: boolean;
-  readonly move?: string;
-  readonly nodes?: number;
-  readonly detail?: string;
-}
+export type CameronMartinRunResult = ReuseSpikeFirstPlayerRunResult;
 
 export type CameronMartinRunner = (
   problem: ReuseSpikeCorpusCase,
+  firstPlayer: StoneColor,
 ) => Promise<CameronMartinRunResult>;
 
 /**
@@ -115,43 +190,26 @@ export const createCameronMartinReuseSpikeAdapter = (
       };
     }
 
-    const result = await run(problem);
-    if (!result.solved || result.proved === undefined) {
-      return {
-        outcome: 'unknown',
-        ...(result.nodes === undefined ? {} : { nodes: result.nodes }),
-        ...(result.detail === undefined ? {} : { detail: result.detail }),
-      };
-    }
-
-    const sideToMoveIsTarget = problem.position.currentPlayer === target;
-    const targetSurvives = result.proved === sideToMoveIsTarget;
-    return {
-      outcome: targetSurvives ? 'target-survives' : 'target-captured',
-      ...(result.nodes === undefined ? {} : { nodes: result.nodes }),
-      ...(result.move === undefined ? {} : { move: result.move }),
-      ...(result.detail === undefined ? {} : { detail: result.detail }),
-    };
+    const attacker = opposite(target);
+    return combineFirstPlayerRuns({
+      attacker: await run(problem, attacker),
+      defender: await run(problem, target),
+    });
   },
 });
 
-export interface RelevanceZoneRunResult {
-  readonly winner?: StoneColor;
-  readonly koDependent?: boolean;
-  readonly move?: string;
-  /** RZ result JSON exposes NumSimulations; normalize it as nodes/work units. */
-  readonly nodes?: number;
-  readonly detail?: string;
-}
+export type RelevanceZoneRunResult = ReuseSpikeFirstPlayerRunResult;
 
 export type RelevanceZoneRunner = (
   problem: ReuseSpikeCorpusCase,
+  firstPlayer: StoneColor,
 ) => Promise<RelevanceZoneRunResult>;
 
 /**
  * Adapter boundary for the study-LD-RZ executable. Its repository currently has
  * no declared software license, so only black-box result JSON crosses this
- * boundary; implementation code is not copied into GoCube.
+ * boundary; implementation code is not copied into GoCube. The bridge maps
+ * upstream NumSimulations to nodes/work units before returning this result.
  */
 export const createRelevanceZoneReuseSpikeAdapter = (
   revision: string,
@@ -168,39 +226,24 @@ export const createRelevanceZoneReuseSpikeAdapter = (
       };
     }
 
-    const result = await run(problem);
-    const outcome: ReuseSpikeTargetOutcome = result.koDependent
-      ? 'ko-dependent'
-      : result.winner === undefined
-        ? 'unknown'
-        : result.winner === target
-          ? 'target-survives'
-          : 'target-captured';
-
-    return {
-      outcome,
-      ...(result.nodes === undefined ? {} : { nodes: result.nodes }),
-      ...(result.move === undefined ? {} : { move: result.move }),
-      ...(result.detail === undefined ? {} : { detail: result.detail }),
-    };
+    const attacker = opposite(target);
+    return combineFirstPlayerRuns({
+      attacker: await run(problem, attacker),
+      defender: await run(problem, target),
+    });
   },
 });
 
-export interface DarkforestRunResult {
-  readonly complete: boolean;
-  readonly targetLives?: boolean;
-  readonly move?: string;
-  readonly nodes?: number;
-  readonly detail?: string;
-}
+export type DarkforestRunResult = ReuseSpikeFirstPlayerRunResult;
 
 export type DarkforestRunner = (
   problem: ReuseSpikeCorpusCase,
+  firstPlayer: StoneColor,
 ) => Promise<DarkforestRunResult>;
 
 /**
  * Adapter boundary for Darkforest's BSD-licensed C tsumego search. A tiny native
- * harness may expose search completion, target fate and search count; the old
+ * harness may expose first-player proof/disproof and search count; the old
  * Darkforest Board/Region implementation itself is deliberately not a GoCube
  * dependency.
  */
@@ -211,26 +254,18 @@ export const createDarkforestReuseSpikeAdapter = (
   id: 'darkforest',
   revision,
   async solve(problem): Promise<ReuseSpikeSolverResult> {
-    if (!targetColor(problem)) {
+    const target = targetColor(problem);
+    if (!target) {
       return {
         outcome: 'unsupported',
         detail: 'Darkforest adapter requires marked target stones of one color',
       };
     }
 
-    const result = await run(problem);
-    const outcome: ReuseSpikeTargetOutcome =
-      !result.complete || result.targetLives === undefined
-        ? 'unknown'
-        : result.targetLives
-          ? 'target-survives'
-          : 'target-captured';
-
-    return {
-      outcome,
-      ...(result.nodes === undefined ? {} : { nodes: result.nodes }),
-      ...(result.move === undefined ? {} : { move: result.move }),
-      ...(result.detail === undefined ? {} : { detail: result.detail }),
-    };
+    const attacker = opposite(target);
+    return combineFirstPlayerRuns({
+      attacker: await run(problem, attacker),
+      defender: await run(problem, target),
+    });
   },
 });

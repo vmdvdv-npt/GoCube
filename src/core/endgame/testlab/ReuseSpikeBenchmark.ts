@@ -19,6 +19,7 @@ export type ReuseSpikeCandidateId =
 export type ReuseSpikeTargetOutcome =
   | 'target-survives'
   | 'target-captured'
+  | 'critical'
   | 'seki'
   | 'ko-dependent'
   | 'unknown'

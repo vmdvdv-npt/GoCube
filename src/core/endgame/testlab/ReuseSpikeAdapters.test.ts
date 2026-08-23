@@ -26,7 +26,7 @@ const problem = (
   });
 
 describe('ReuseSpikeAdapters', () => {
-  it('normalizes tsumego.js attacker and defender solutions conservatively', async () => {
+  it('normalizes tsumego.js attacker-first and defender-first solutions', async () => {
     const calls: string[] = [];
     const adapter = createTsumegoJsReuseSpikeAdapter('1.1.0', () => ({
       solve(player) {
@@ -42,7 +42,7 @@ describe('ReuseSpikeAdapters', () => {
     expect(calls).toEqual(['W', 'B']);
   });
 
-  it('does not guess when tsumego.js gives ambiguous answers', async () => {
+  it('classifies both sides winning with first move as critical', async () => {
     const adapter = createTsumegoJsReuseSpikeAdapter('1.1.0', () => ({
       solve(player) {
         return `${player}[]`;
@@ -50,36 +50,44 @@ describe('ReuseSpikeAdapters', () => {
     }));
 
     await expect(adapter.solve(problem())).resolves.toMatchObject({
-      outcome: 'unknown',
-      detail: 'attacker and defender both report a solution',
+      outcome: 'critical',
     });
   });
 
-  it('maps Cameron-Martin proof/disproof relative to target color and side to move', async () => {
-    const attackerAdapter = createCameronMartinReuseSpikeAdapter('fixture', async () => ({
+  it('asks Cameron-Martin the same attacker-first and defender-first questions', async () => {
+    const calls: string[] = [];
+    const adapter = createCameronMartinReuseSpikeAdapter('fixture', async (_input, firstPlayer) => {
+      calls.push(firstPlayer);
+      return firstPlayer === 'white'
+        ? { solved: true, firstPlayerWins: true, nodes: 42, move: 'W[aa]' }
+        : { solved: true, firstPlayerWins: false, nodes: 5 };
+    });
+
+    await expect(adapter.solve(problem('black', 'black'))).resolves.toMatchObject({
+      outcome: 'target-captured',
+      nodes: 47,
+      move: 'W[aa]',
+    });
+    expect(calls).toEqual(['white', 'black']);
+  });
+
+  it('recognizes defender-first proof when attacker-first is disproved', async () => {
+    const adapter = createCameronMartinReuseSpikeAdapter('fixture', async (_input, firstPlayer) => ({
       solved: true,
-      proved: true,
-      nodes: 42,
-    }));
-    const defenderAdapter = createCameronMartinReuseSpikeAdapter('fixture', async () => ({
-      solved: true,
-      proved: true,
+      firstPlayerWins: firstPlayer === 'black',
     }));
 
-    await expect(attackerAdapter.solve(problem('white', 'black'))).resolves.toMatchObject({
-      outcome: 'target-captured',
-      nodes: 42,
-    });
-    await expect(defenderAdapter.solve(problem('black', 'black'))).resolves.toMatchObject({
+    await expect(adapter.solve(problem('white', 'black'))).resolves.toMatchObject({
       outcome: 'target-survives',
     });
   });
 
   it('preserves RZ ko dependence instead of forcing life or death', async () => {
-    const adapter = createRelevanceZoneReuseSpikeAdapter('fixture', async () => ({
-      winner: 'black',
-      koDependent: true,
-      nodes: 123,
+    const adapter = createRelevanceZoneReuseSpikeAdapter('fixture', async (_input, firstPlayer) => ({
+      solved: true,
+      firstPlayerWins: true,
+      koDependent: firstPlayer === 'white',
+      nodes: firstPlayer === 'white' ? 100 : 23,
     }));
 
     await expect(adapter.solve(problem())).resolves.toMatchObject({
@@ -88,16 +96,17 @@ describe('ReuseSpikeAdapters', () => {
     });
   });
 
-  it('maps complete Darkforest target fate and keeps incomplete search unknown', async () => {
-    const complete = createDarkforestReuseSpikeAdapter('fixture', async () => ({
-      complete: true,
-      targetLives: false,
-      nodes: 8,
+  it('keeps incomplete Darkforest proof pairs unknown', async () => {
+    const complete = createDarkforestReuseSpikeAdapter('fixture', async (_input, firstPlayer) => ({
+      solved: true,
+      firstPlayerWins: firstPlayer === 'white',
+      nodes: 4,
     }));
-    const incomplete = createDarkforestReuseSpikeAdapter('fixture', async () => ({
-      complete: false,
-      targetLives: false,
-    }));
+    const incomplete = createDarkforestReuseSpikeAdapter('fixture', async (_input, firstPlayer) =>
+      firstPlayer === 'white'
+        ? { solved: true, firstPlayerWins: true, nodes: 4 }
+        : { solved: false, nodes: 3 },
+    );
 
     await expect(complete.solve(problem())).resolves.toMatchObject({
       outcome: 'target-captured',
@@ -105,7 +114,17 @@ describe('ReuseSpikeAdapters', () => {
     });
     await expect(incomplete.solve(problem())).resolves.toMatchObject({
       outcome: 'unknown',
+      nodes: 7,
     });
+  });
+
+  it('never promotes neither-side proof to seki automatically', async () => {
+    const adapter = createDarkforestReuseSpikeAdapter('fixture', async () => ({
+      solved: true,
+      firstPlayerWins: false,
+    }));
+
+    await expect(adapter.solve(problem())).resolves.toMatchObject({ outcome: 'unknown' });
   });
 
   it('rejects empty marked targets for every adapter', async () => {
@@ -117,8 +136,8 @@ describe('ReuseSpikeAdapters', () => {
     const adapters = [
       createTsumegoJsReuseSpikeAdapter('x', () => ({ solve: () => '' })),
       createCameronMartinReuseSpikeAdapter('x', async () => ({ solved: false })),
-      createRelevanceZoneReuseSpikeAdapter('x', async () => ({})),
-      createDarkforestReuseSpikeAdapter('x', async () => ({ complete: false })),
+      createRelevanceZoneReuseSpikeAdapter('x', async () => ({ solved: false })),
+      createDarkforestReuseSpikeAdapter('x', async () => ({ solved: false })),
     ];
 
     for (const adapter of adapters) {
