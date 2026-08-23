@@ -21,6 +21,7 @@ test('Torus 2D restores a partially completed assisted endgame review after relo
   await expect(page.locator('.endgame-progress')).toHaveText('Resolved 0 of 2');
   await expect(page.locator('.endgame-selection .stone-chip--black')).toHaveCount(1);
 
+  await black.click();
   await page.getByRole('button', { name: 'Alive' }).click();
   await expect(page.locator('.endgame-progress')).toHaveText('Resolved 1 of 2');
   // The group remains selected so the user can immediately change the decision.
@@ -34,6 +35,7 @@ test('Torus 2D restores a partially completed assisted endgame review after relo
   await expect(page.locator('.endgame-progress')).toHaveText('Resolved 1 of 2');
   await expect(page.locator('.endgame-selection .stone-chip--white')).toHaveCount(1);
 
+  await white.click();
   await page.getByRole('button', { name: 'Seki' }).click();
   await expect(page.locator('.endgame-progress')).toHaveText('Resolved 2 of 2');
   await expect(page.getByRole('dialog')).toHaveCount(0);
