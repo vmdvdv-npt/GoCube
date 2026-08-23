@@ -48,6 +48,7 @@ import {
 
 export const SYNTHETIC_ENDGAME_GENERATOR_VERSION = 1 as const;
 export const EXTERNAL_CORPUS_IMPORTER_VERSION = 1 as const;
+export const LIVE_ENDGAME_TEST_CASE_VARIANT = 63 as const;
 
 interface SyntheticScenario {
   readonly variant: number;
@@ -170,10 +171,53 @@ const minimalSyntheticState = (
   return Object.freeze({ state, targetPoints: Object.freeze([first, second]) });
 };
 
+const occupiedPointCount = (state: GameState): number =>
+  Object.values(state.board).filter((occupancy) => occupancy !== 'empty').length;
+
+const generateFullEndgameCase = (
+  identity: TestCaseIdentity,
+  topology: Topology,
+  testId: string,
+): ReplayableTestCase => {
+  const minimumOccupied = Math.max(6, Math.floor(topology.points().length * 0.25));
+
+  for (let attempt = 0; attempt < 64; attempt += 1) {
+    const seed = attempt === 0
+      ? String(identity.payload)
+      : `${String(identity.payload)}:full-endgame:${String(attempt)}`;
+    const generated = generateLiveTestCase({
+      generator: 'endgame',
+      topology: identity.topology,
+      size: identity.size,
+      seed,
+    });
+    if (generated.loadStrategy !== 'replay-commands') continue;
+    if (occupiedPointCount(generated.state) < minimumOccupied) continue;
+
+    return Object.freeze({
+      testId,
+      identity,
+      state: generated.state,
+      loadStrategy: 'replay-commands',
+      commands: generated.commands,
+      targetPoints: Object.freeze([]),
+      scenario: 'full-endgame',
+      tags: Object.freeze(['endgame', 'full-position', 'domain-generated', ...generated.tags]),
+    });
+  }
+
+  throw new Error('Could not generate a full legal endgame position for this Test ID');
+};
+
 const generateSyntheticCase = (identity: TestCaseIdentity): ReplayableTestCase => {
   const topology = createTestCaseTopology(identity);
-  const scenario = syntheticScenario(identity);
   const testId = encodeTestCaseId(identity);
+
+  if (identity.variant === LIVE_ENDGAME_TEST_CASE_VARIANT) {
+    return generateFullEndgameCase(identity, topology, testId);
+  }
+
+  const scenario = syntheticScenario(identity);
 
   if (scenario.request.kind === 'minimal-unresolved') {
     const generated = minimalSyntheticState(topology, identity.payload);
@@ -374,9 +418,7 @@ export class TestCaseReplayService {
       throw new Error(`Generated Test ID payload must be uint32, got ${String(payload)}`);
     }
     const variant = source === 'synthetic-endgame'
-      ? new DeterministicRandom(`synthetic-variant:${topology}:${size}:${payload}`).pick(
-          allowedSyntheticVariants(topology, size),
-        )
+      ? LIVE_ENDGAME_TEST_CASE_VARIANT
       : 0;
     return makeTestCaseIdentity({
       source,
