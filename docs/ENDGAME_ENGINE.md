@@ -1079,11 +1079,105 @@ Temporary E2-9 benchmark CI step после измерения удаляетс�
 
 ---
 
-# 17. Future stages
+# 17. E2-10 — transpositions + performance optimization
 
-## E2-10
+Статус: **DONE / CONTRACT-TESTED / DIFFERENTIALLY VALIDATED / BENCHMARKED / CI PASS / NOT CLASSIFIER-INTEGRATED**.
 
-Transpositions + performance optimization only after baseline deterministic DFS semantics stabilize.
+```text
+src/core/endgame/DeterministicAndOrProofSearch.ts
+transposition policy = node-key-complete-frame-cache-v1
+npm run benchmark:engine2:transpositions
+```
+
+E2-10 оптимизирует уже стабилизированную deterministic DFS semantics E2-4 без добавления новой proof authority. Transposition table создаётся заново для каждого search invocation и индексируется canonical `adapter.nodeKey(node)`.
+
+### Cache soundness boundary
+
+Canonical node key является частью semantic contract adapter-а: одинаковый key обязан означать одинаковое proof-relevant состояние, включая роль, target identity и используемый adapter-ом ko/history context. Existing Go node identity уже включает board signature, attacker/defender role, target color/crucial stones и previous-board signature.
+
+Cache сохраняет только **полностью вычисленные frame results**:
+
+```text
+proven-kill
+proven-survival
+ko-dependent
+unresolved
+```
+
+`budget-exhausted` frame **никогда не memoize-ится**. Поэтому частичный traversal, оборванный budget-ом, не может позднее стать proof authority через cache reuse.
+
+Cache hit выполняется до списания node budget и не увеличивает `exploredNodes`: повторно доказанный semantic node не должен повторно оплачивать тот же search work. Table остаётся bounded текущим search invocation и максимум числом реально budget-charged completed nodes.
+
+Сохраняются без изменений:
+
+- attacker OR / defender AND semantics;
+- move-set completeness (`complete`, certified `proof-safe-pruned`, explicit `incomplete`);
+- stable `moveKey` ordering и duplicate-key rejection;
+- ko/unresolved propagation;
+- principal-variation choice;
+- existential/universal proof boundaries.
+
+Cached frame хранит logical `maxRelativeDepth`; при reuse `maxDepth` пересчитывается относительно текущей глубины, поэтому observability не зависит от того, была ли ветка вычислена повторно или получена из transposition table.
+
+Для differential/performance diagnostics доступен `useTranspositions=false`; production/default path использует transpositions.
+
+Новая observability:
+
+```text
+transpositionsEnabled
+transpositionPolicy
+transpositionHits
+transpositionEntries
+```
+
+### Contract coverage
+
+3 новых E2-10 tests расширили deterministic core suite с 14 до 17 тестов:
+
+- completed semantic transposition сохраняет outcome/reason/PV/maxDepth относительно no-cache baseline и уменьшает charged nodes;
+- cache hit не расходует node budget: fixed budget может завершить тот же proof с reuse, когда повторный traversal baseline уже exhaust-ит budget;
+- `budget-exhausted` partial frame не попадает в transposition table.
+
+### E2-10 performance gate
+
+```text
+src/core/endgame/DeterministicAndOrProofSearch.benchmark.test.ts
+npm run benchmark:engine2:transpositions
+```
+
+Opt-in benchmark использует deterministic converging DAG глубины 15, 2 warmups + 20 samples. No-cache baseline обязан пройти обе сходящиеся ветви на каждом уровне; optimized path должен переиспользовать тот же canonical child. Benchmark одновременно проверяет outcome/reason/PV/maxDepth equality.
+
+CI #818 benchmark result:
+
+| Path | Explored nodes | Hits | Entries | median ms | p95 ms | max ms |
+|---|---:|---:|---:|---:|---:|---:|
+| no-cache baseline | 32767 | 0 | 0 | 13.901 | 15.314 | 17.003 |
+| transposition cache | 15 | 14 | 15 | 0.018 | 0.043 | 0.118 |
+
+Observed p95 speedup на этом synthetic converging workload: **356.14×**. Это performance evidence для duplicate-state reuse, а не обещание такого speedup на произвольной Go position.
+
+Validation:
+
+```text
+new E2-10 contract tests: 3/3 PASS
+DeterministicAndOrProofSearch suite: 17/17 PASS
+transposition benchmark: 1/1 PASS
+full unit/coverage: 609 passed, 78 opt-in benchmark cases skipped
+typecheck:engine2 PASS
+build:engine2 PASS
+Chromium E2E: 72/72 PASS
+lint: 0 errors, 2 pre-existing TestCaseReplayService warnings
+```
+
+Code-head CI #817 прошёл normal gate полностью. Benchmark CI #818 прошёл benchmark и тот же normal gate полностью, включая Chromium `72/72 PASS`. Temporary benchmark CI step после измерения удалён; `benchmark:engine2:transpositions` остаётся opt-in и воспроизводимым.
+
+Classifier integration и existing proof completeness/ko boundaries в E2-10 не расширялись.
+
+**E2-10 acceptance boundary закрыт. Следующий этап: E2-11 — adversarial corpus + final evaluation.**
+
+---
+
+# 18. Future stages
 
 ## E2-11
 
@@ -1091,7 +1185,7 @@ Adversarial corpus + final evaluation.
 
 ---
 
-# 18. CI / validation policy
+# 19. CI / validation policy
 
 Current foundation:
 
@@ -1114,7 +1208,9 @@ Current foundation:
 - semeai side-to-move kill/survival queries reuse existing proof authority without upgrading incomplete results;
 - seki authority is limited to the explicit closed two-shared-liberty authoritative mutual-capture certificate;
 - failure of both kill searches never implies seki;
-- no generic, E2-7, E2-8 or E2-9 classifier integration.
+- deterministic per-search transposition reuse validated against no-cache baseline;
+- incomplete/budget-exhausted work cannot gain proof authority through cache reuse;
+- no generic, E2-7, E2-8, E2-9 or E2-10 classifier integration.
 
 Scoped typecheck:
 
@@ -1136,9 +1232,9 @@ Benchmarks are opt-in; temporary CI benchmark steps must be removed before merge
 
 ---
 
-# 19. Metrics
+# 20. Metrics
 
-Track false automatic statuses, precision/coverage, median/p95/max nodes/runtime, budget/ko/boundary unresolved counts, root/deep move counts, causal cone size, PV/max depth, implementation complexity, dependency/license surface, maintainability, Cube/Torus graph consistency.
+Track false automatic statuses, precision/coverage, median/p95/max nodes/runtime, budget/ko/boundary unresolved counts, root/deep move counts, causal cone size, PV/max depth, transposition hits/entries, implementation complexity, dependency/license surface, maintainability, Cube/Torus graph consistency.
 
 ```text
 precision first
@@ -1148,13 +1244,13 @@ cost third
 
 ---
 
-# 20. External references
+# 21. External references
 
 GNU Go / tsumego.js / Darkforest / research solvers / KataGo may be used for architecture ideas, regression, benchmark, differential oracle or diagnostics subject to licenses. Они не являются production proof authority; GPL implementation code не копируется.
 
 ---
 
-# 21. Roadmap
+# 22. Roadmap
 
 ```text
 E2-1   DONE — Graph Core
@@ -1172,11 +1268,11 @@ E2-6   DONE — exact 4-lib move generation + defender completeness + benchmark
 E2-7   DONE — exact small eye-space + bounds/vital points + benchmark
 E2-8   DONE — connections / cuts / ladder-net pressure / snapback / sacrifice / preparation + benchmark
 E2-9   DONE — semeai shared/exclusive/approach analysis + positive seki certificate + benchmark
-E2-10  NEXT — transpositions + performance optimization
-E2-11  adversarial corpus + final evaluation
+E2-10  DONE — deterministic transposition cache + differential/performance gate
+E2-11  NEXT — adversarial corpus + final evaluation
 ```
 
-E2-4/E2-9 overall acceptance boundary:
+E2-4/E2-10 overall acceptance boundary:
 
 1. attacker OR / defender AND explicit;
 2. every proof node deterministic and budgeted;
@@ -1200,6 +1296,8 @@ E2-4/E2-9 overall acceptance boundary:
 20. failure to prove kill for both colors never implies seki;
 21. `proven-seki` requires the explicit closed two-shared-liberty mutual-capture certificate with authoritative initiation/reply legality and captures;
 22. ko, open boundary, exclusive liberty, third-group interaction or failed mutual-capture refutation keeps seki unresolved;
-23. no generic classifier integration before later generic coverage and acceptance gates.
+23. transposition equality is trusted only through canonical adapter `nodeKey` including all proof-relevant target/role/history state;
+24. only completed non-budget frames may be memoized; cache hits do not spend node budget and cannot upgrade incomplete proof semantics;
+25. no generic classifier integration before later generic coverage and acceptance gates.
 
 > Engine 2 автоматически ставит `alive`, `dead` или `seki` только там, где может предъявить законченное доказательство. Во всех остальных случаях правильный результат — `UNRESOLVED`.

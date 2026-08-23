@@ -1,5 +1,7 @@
 export const DETERMINISTIC_AND_OR_PROOF_SEARCH_ALGORITHM =
   'deterministic-and-or-proof-search-v1';
+export const DETERMINISTIC_AND_OR_TRANSPOSITION_POLICY =
+  'node-key-complete-frame-cache-v1';
 export const DEFAULT_PROOF_SEARCH_NODE_BUDGET = 2048;
 
 export type ProofSearchRole = 'attacker' | 'defender';
@@ -38,6 +40,11 @@ export interface ProofSearchExpansion<Move> {
 }
 
 export interface DeterministicProofSearchAdapter<Node, Move> {
+  /**
+   * Canonical semantic identity for a proof node. E2-10 transposition reuse
+   * requires equal keys to imply equal proof-relevant state, including role,
+   * target identity and any ko/history context used by the adapter.
+   */
   readonly nodeKey: (node: Node) => string;
   readonly role: (node: Node) => ProofSearchRole;
   readonly terminal: (node: Node) => ProofSearchTerminal | null;
@@ -48,6 +55,8 @@ export interface DeterministicProofSearchAdapter<Node, Move> {
 
 export interface DeterministicProofSearchOptions {
   readonly nodeBudget?: number;
+  /** Defaults to true. Disable only for differential/performance diagnostics. */
+  readonly useTranspositions?: boolean;
 }
 
 export interface DeterministicProofSearchResult {
@@ -55,17 +64,26 @@ export interface DeterministicProofSearchResult {
   readonly rootNodeKey: string;
   readonly outcome: ProofSearchOutcome;
   readonly reason: string;
+  /** Nodes charged against the budget. Cache hits are not charged. */
   readonly exploredNodes: number;
   readonly maxDepth: number;
   readonly nodeBudget: number;
   readonly principalVariation: readonly string[];
   readonly proofSafePruningCertificates: readonly string[];
+  readonly transpositionsEnabled: boolean;
+  readonly transpositionPolicy:
+    | typeof DETERMINISTIC_AND_OR_TRANSPOSITION_POLICY
+    | null;
+  readonly transpositionHits: number;
+  readonly transpositionEntries: number;
 }
 
 interface FrameResult {
   readonly outcome: ProofSearchOutcome;
   readonly reason: string;
   readonly principalVariation: readonly string[];
+  /** Maximum logical depth below this frame, including the frame itself. */
+  readonly maxRelativeDepth: number;
 }
 
 interface ChildResult {
@@ -89,6 +107,12 @@ const firstChildPrincipalVariation = (
 ): readonly string[] => {
   const first = children[0];
   return first ? withMove(first.moveKey, first.frame) : Object.freeze([] as string[]);
+};
+
+const maxChildRelativeDepth = (children: readonly ChildResult[]): number => {
+  let max = 0;
+  for (const child of children) max = Math.max(max, child.frame.maxRelativeDepth);
+  return max;
 };
 
 const isProofComplete = (completeness: ProofSearchMoveSetCompleteness): boolean =>
@@ -122,9 +146,11 @@ const incompleteReason = (
  * kill, defender finds a survival), but can never support the opposite
  * universal conclusion.
  *
- * Search is intentionally a plain deterministic DFS. Transpositions and other
- * performance optimizations belong to a later stage and must not change proof
- * semantics.
+ * E2-10 keeps the same stable move ordering and DFS proof semantics while
+ * memoizing completed frames by the adapter's canonical node key. Cache hits
+ * do not consume node budget. Budget-exhausted frames are never memoized, so a
+ * partial search cannot become proof authority through reuse. The table is
+ * per-search and bounded by the number of budget-charged nodes.
  */
 export const searchDeterministicAndOrProof = <Node, Move>(
   root: Node,
@@ -136,16 +162,38 @@ export const searchDeterministicAndOrProof = <Node, Move>(
     throw new Error(`nodeBudget must be a positive integer, got ${nodeBudget}`);
   }
 
+  const useTranspositions = options.useTranspositions ?? true;
   let exploredNodes = 0;
   let maxDepth = 0;
+  let transpositionHits = 0;
   const proofSafePruningCertificates = new Set<string>();
+  const transpositionTable = new Map<string, FrameResult>();
+
+  const remember = (nodeKey: string, frame: FrameResult): FrameResult => {
+    if (useTranspositions && frame.outcome !== 'budget-exhausted') {
+      transpositionTable.set(nodeKey, frame);
+    }
+    return frame;
+  };
 
   const visit = (node: Node, depth: number): FrameResult => {
+    const nodeKey = adapter.nodeKey(node);
+
+    if (useTranspositions) {
+      const cached = transpositionTable.get(nodeKey);
+      if (cached) {
+        transpositionHits += 1;
+        maxDepth = Math.max(maxDepth, depth + cached.maxRelativeDepth - 1);
+        return cached;
+      }
+    }
+
     if (exploredNodes >= nodeBudget) {
       return Object.freeze({
         outcome: 'budget-exhausted' as const,
         reason: 'node-budget-exhausted',
         principalVariation: Object.freeze([] as string[]),
+        maxRelativeDepth: 1,
       });
     }
 
@@ -154,11 +202,15 @@ export const searchDeterministicAndOrProof = <Node, Move>(
 
     const terminal = adapter.terminal(node);
     if (terminal) {
-      return Object.freeze({
-        outcome: terminal.outcome,
-        reason: terminal.reason ?? `terminal-${terminal.outcome}`,
-        principalVariation: Object.freeze([] as string[]),
-      });
+      return remember(
+        nodeKey,
+        Object.freeze({
+          outcome: terminal.outcome,
+          reason: terminal.reason ?? `terminal-${terminal.outcome}`,
+          principalVariation: Object.freeze([] as string[]),
+          maxRelativeDepth: 1,
+        }),
+      );
     }
 
     const role = adapter.role(node);
@@ -175,7 +227,7 @@ export const searchDeterministicAndOrProof = <Node, Move>(
     for (const move of orderedMoves) {
       if (seenMoveKeys.has(move.moveKey)) {
         throw new Error(
-          `Duplicate proof-search move key '${move.moveKey}' at node '${adapter.nodeKey(node)}'`,
+          `Duplicate proof-search move key '${move.moveKey}' at node '${nodeKey}'`,
         );
       }
       seenMoveKeys.add(move.moveKey);
@@ -198,20 +250,30 @@ export const searchDeterministicAndOrProof = <Node, Move>(
         }),
       );
 
+      const maxRelativeDepth = 1 + maxChildRelativeDepth(children);
+
       if (role === 'attacker' && child.outcome === 'proven-kill') {
-        return Object.freeze({
-          outcome: 'proven-kill' as const,
-          reason: 'attacker-winning-branch',
-          principalVariation: withMove(orderedMove.moveKey, child),
-        });
+        return remember(
+          nodeKey,
+          Object.freeze({
+            outcome: 'proven-kill' as const,
+            reason: 'attacker-winning-branch',
+            principalVariation: withMove(orderedMove.moveKey, child),
+            maxRelativeDepth,
+          }),
+        );
       }
 
       if (role === 'defender' && child.outcome === 'proven-survival') {
-        return Object.freeze({
-          outcome: 'proven-survival' as const,
-          reason: 'defender-survival-branch',
-          principalVariation: withMove(orderedMove.moveKey, child),
-        });
+        return remember(
+          nodeKey,
+          Object.freeze({
+            outcome: 'proven-survival' as const,
+            reason: 'defender-survival-branch',
+            principalVariation: withMove(orderedMove.moveKey, child),
+            maxRelativeDepth,
+          }),
+        );
       }
 
       if (child.outcome === 'budget-exhausted') {
@@ -219,49 +281,72 @@ export const searchDeterministicAndOrProof = <Node, Move>(
           outcome: 'budget-exhausted' as const,
           reason: child.reason,
           principalVariation: withMove(orderedMove.moveKey, child),
+          maxRelativeDepth,
         });
       }
     }
 
+    const frameMaxRelativeDepth = 1 + maxChildRelativeDepth(children);
+
     const unresolvedChild = firstChildWithOutcome(children, 'unresolved');
     if (unresolvedChild) {
-      return Object.freeze({
-        outcome: 'unresolved' as const,
-        reason: 'unresolved-child',
-        principalVariation: withMove(unresolvedChild.moveKey, unresolvedChild.frame),
-      });
+      return remember(
+        nodeKey,
+        Object.freeze({
+          outcome: 'unresolved' as const,
+          reason: 'unresolved-child',
+          principalVariation: withMove(unresolvedChild.moveKey, unresolvedChild.frame),
+          maxRelativeDepth: frameMaxRelativeDepth,
+        }),
+      );
     }
 
     const koChild = firstChildWithOutcome(children, 'ko-dependent');
     if (koChild) {
-      return Object.freeze({
-        outcome: 'ko-dependent' as const,
-        reason: 'ko-dependent-child',
-        principalVariation: withMove(koChild.moveKey, koChild.frame),
-      });
+      return remember(
+        nodeKey,
+        Object.freeze({
+          outcome: 'ko-dependent' as const,
+          reason: 'ko-dependent-child',
+          principalVariation: withMove(koChild.moveKey, koChild.frame),
+          maxRelativeDepth: frameMaxRelativeDepth,
+        }),
+      );
     }
 
     if (!isProofComplete(expansion.completeness)) {
-      return Object.freeze({
-        outcome: 'unresolved' as const,
-        reason: incompleteReason(role, expansion.completeness),
-        principalVariation: firstChildPrincipalVariation(children),
-      });
+      return remember(
+        nodeKey,
+        Object.freeze({
+          outcome: 'unresolved' as const,
+          reason: incompleteReason(role, expansion.completeness),
+          principalVariation: firstChildPrincipalVariation(children),
+          maxRelativeDepth: frameMaxRelativeDepth,
+        }),
+      );
     }
 
     if (role === 'attacker') {
-      return Object.freeze({
-        outcome: 'proven-survival' as const,
-        reason: 'all-proof-complete-attacks-proven-survival',
-        principalVariation: firstChildPrincipalVariation(children),
-      });
+      return remember(
+        nodeKey,
+        Object.freeze({
+          outcome: 'proven-survival' as const,
+          reason: 'all-proof-complete-attacks-proven-survival',
+          principalVariation: firstChildPrincipalVariation(children),
+          maxRelativeDepth: frameMaxRelativeDepth,
+        }),
+      );
     }
 
-    return Object.freeze({
-      outcome: 'proven-kill' as const,
-      reason: 'all-proof-complete-defenses-proven-kill',
-      principalVariation: firstChildPrincipalVariation(children),
-    });
+    return remember(
+      nodeKey,
+      Object.freeze({
+        outcome: 'proven-kill' as const,
+        reason: 'all-proof-complete-defenses-proven-kill',
+        principalVariation: firstChildPrincipalVariation(children),
+        maxRelativeDepth: frameMaxRelativeDepth,
+      }),
+    );
   };
 
   const rootNodeKey = adapter.nodeKey(root);
@@ -279,5 +364,11 @@ export const searchDeterministicAndOrProof = <Node, Move>(
     proofSafePruningCertificates: Object.freeze(
       [...proofSafePruningCertificates].sort(compareStrings),
     ),
+    transpositionsEnabled: useTranspositions,
+    transpositionPolicy: useTranspositions
+      ? DETERMINISTIC_AND_OR_TRANSPOSITION_POLICY
+      : null,
+    transpositionHits,
+    transpositionEntries: useTranspositions ? transpositionTable.size : 0,
   });
 };
