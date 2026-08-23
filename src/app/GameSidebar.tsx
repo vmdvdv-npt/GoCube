@@ -1,5 +1,6 @@
 import { useEffect, useMemo, type ReactNode } from 'react';
 import type { GameViewModel } from '../presentation/PresentationModel';
+import { useLiveTestGeneratorControls } from './LiveTestGeneratorContext';
 import { LocalStoragePreferencesStorage } from './persistence/LocalStoragePreferencesStorage';
 
 export interface GameSidebarProps {
@@ -46,6 +47,7 @@ export function GameSidebar({
   feedback = null,
 }: GameSidebarProps) {
   const preferencesStorage = useMemo(() => new LocalStoragePreferencesStorage(), []);
+  const developerGeneration = useLiveTestGeneratorControls();
   const stageLabel =
     viewModel.phase === 'playing'
       ? `${viewModel.currentPlayer === 'black' ? 'Black' : 'White'} to move`
@@ -147,6 +149,66 @@ export function GameSidebar({
       {endgame}
 
       <div className="game-controls">
+        {developerGeneration ? (
+          <section
+            className="live-test-generator-controls"
+            data-testid="live-test-generator-controls"
+            aria-label="Developer test generators"
+          >
+            <strong>Test generators</strong>
+            <div className="live-test-generator-actions">
+              <button
+                type="button"
+                onClick={() => developerGeneration.onGenerate('game-like')}
+                disabled={developerGeneration.busy}
+              >
+                Generate game
+              </button>
+              <button
+                type="button"
+                onClick={() => developerGeneration.onGenerate('endgame')}
+                disabled={developerGeneration.busy}
+              >
+                Generate endgame
+              </button>
+            </div>
+            <p className="live-test-generator-current" aria-live="polite">
+              {developerGeneration.current
+                ? `${developerGeneration.current.generator === 'game-like' ? 'Game-like' : 'Endgame'} · ${developerGeneration.current.topology === 'cube' ? 'Cube' : 'Torus'} · ${developerGeneration.current.size}×${developerGeneration.current.size} · Seed ${developerGeneration.current.seed}`
+                : 'No generated position'}
+            </p>
+            <div className="live-test-generator-replay">
+              <select
+                aria-label="Generator type for replay"
+                value={developerGeneration.selectedGenerator}
+                onChange={(event) =>
+                  developerGeneration.onSelectedGeneratorChange(
+                    event.target.value === 'endgame' ? 'endgame' : 'game-like',
+                  )
+                }
+                disabled={developerGeneration.busy}
+              >
+                <option value="game-like">Game-like</option>
+                <option value="endgame">Endgame</option>
+              </select>
+              <input
+                aria-label="Replay seed"
+                value={developerGeneration.seedInput}
+                onChange={(event) => developerGeneration.onSeedInputChange(event.target.value)}
+                placeholder="Seed"
+                disabled={developerGeneration.busy}
+              />
+              <button
+                type="button"
+                onClick={developerGeneration.onReplay}
+                disabled={developerGeneration.busy || developerGeneration.seedInput.trim().length === 0}
+              >
+                Replay seed
+              </button>
+            </div>
+          </section>
+        ) : null}
+
         <button
           className="pass-control"
           type="button"
