@@ -60,9 +60,9 @@ const COLORS: readonly StoneColor[] = Object.freeze(['black', 'white']);
 const TACTICAL_CLASSIFIER_MAX_NODES = 16;
 const LOCAL_LIFE_DEATH_CLASSIFIER_MAX_NODES = 256;
 const LOCAL_LIFE_DEATH_CLASSIFIER_MAX_ZONE_POINTS = 24;
-const SEMEAI_CLASSIFIER_MAX_NODES = 256;
+const SEMEAI_CLASSIFIER_MAX_NODES = 64;
 const SEMEAI_CLASSIFIER_MAX_ZONE_POINTS = 24;
-const SEMEAI_CLASSIFIER_MAX_TARGET_LIBERTIES = 5;
+const SEMEAI_CLASSIFIER_MAX_TARGET_LIBERTIES = 2;
 
 type LocalLifeDeathClassifierStatus = 'alive' | 'dead';
 
@@ -273,14 +273,8 @@ const shouldRunBoundedSemeai = (
   pair.sharedLiberties.length > 0;
 
 const isBasicSekiCostCandidate = (pair: SemeaiCandidatePair): boolean => {
-  const sharedCount = pair.sharedLiberties.length;
-  if (sharedCount !== 2 && sharedCount !== 4) return false;
-  if (
-    pair.left.liberties.length !== sharedCount ||
-    pair.right.liberties.length !== sharedCount
-  ) {
-    return false;
-  }
+  if (pair.sharedLiberties.length !== 2) return false;
+  if (pair.left.liberties.length !== 2 || pair.right.liberties.length !== 2) return false;
   const shared = new Set(pair.sharedLiberties);
   return (
     pair.left.liberties.every((liberty) => shared.has(liberty)) &&
@@ -378,8 +372,9 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     const tacticalDeadProofs = new Map<string, TacticalDeadProof>();
     for (const group of graph.strings) {
       const tacticalShape =
-        group.liberties.length === 2 ||
-        (group.liberties.length === 1 && group.points.length === 1);
+        group.points.length === 1 &&
+        group.liberties.length >= 1 &&
+        group.liberties.length <= 2;
       if (
         passAliveGroupKeys.has(group.key) ||
         safeConnectionProofs.has(group.key) ||
@@ -396,7 +391,10 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
           .some((neighbor) => context.state.board[neighbor] === opponent),
       );
       if (!contested) continue;
-      const sharedOptions = Object.freeze({ safeGroupPoints, maxNodes: TACTICAL_CLASSIFIER_MAX_NODES });
+      const sharedOptions = Object.freeze({
+        safeGroupPoints,
+        maxNodes: TACTICAL_CLASSIFIER_MAX_NODES,
+      });
       const attackerFirst = readTacticalCapture(group, context.state, context.topology, {
         ...sharedOptions,
         firstPlayer: 'attacker',
@@ -482,7 +480,10 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
       ...semeaiDeadProofs.keys(),
     ]);
     const sekiProofs = new Map<string, AutomaticSekiProof>();
-    for (const candidate of generateSekiCandidates(graph.stringsByKey, resolvedBeforeLegacySeki)) {
+    for (const candidate of generateSekiCandidates(
+      graph.stringsByKey,
+      resolvedBeforeLegacySeki,
+    )) {
       const verification = verifySekiCandidate(candidate, {
         state: context.state,
         topology: context.topology,
@@ -490,7 +491,9 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
         pointOwner: graph.stringByPoint,
       });
       if (!verification.proven) continue;
-      for (const groupKey of candidate.groupKeys) sekiProofs.set(groupKey, verification.evidence);
+      for (const groupKey of candidate.groupKeys) {
+        sekiProofs.set(groupKey, verification.evidence);
+      }
     }
 
     const resolvedBeforeBasicSeki = new Set<string>([
@@ -529,8 +532,12 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
         rightInitiation: summarizeBasicSekiInitiation(result.rightInitiation),
         proofReason: result.proofReason,
       });
-      if (!basicSekiProofs.has(result.leftGroupKey)) basicSekiProofs.set(result.leftGroupKey, evidence);
-      if (!basicSekiProofs.has(result.rightGroupKey)) basicSekiProofs.set(result.rightGroupKey, evidence);
+      if (!basicSekiProofs.has(result.leftGroupKey)) {
+        basicSekiProofs.set(result.leftGroupKey, evidence);
+      }
+      if (!basicSekiProofs.has(result.rightGroupKey)) {
+        basicSekiProofs.set(result.rightGroupKey, evidence);
+      }
     }
 
     return Object.freeze(
