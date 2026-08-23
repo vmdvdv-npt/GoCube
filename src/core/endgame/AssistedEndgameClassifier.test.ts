@@ -76,7 +76,7 @@ describe('AssistedEndgameClassifier automatic alive/dead core', () => {
         status: 'alive',
         source: 'automatic',
         evidence: {
-          algorithm: 'benson-pass-alive-v1',
+          algorithm: 'benson-pass-alive-v2',
           proof: 'two-vital-regions',
         },
       });
@@ -132,7 +132,7 @@ describe('AssistedEndgameClassifier automatic alive/dead core', () => {
       expect(alive).toMatchObject({
         status: 'alive',
         source: 'automatic',
-        evidence: { algorithm: 'benson-pass-alive-v1' },
+        evidence: { algorithm: 'benson-pass-alive-v2' },
       });
     }
   });
