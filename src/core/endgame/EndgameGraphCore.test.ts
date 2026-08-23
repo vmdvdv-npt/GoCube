@@ -197,18 +197,18 @@ describe('EndgameGraphCore', () => {
   });
 
   it('joins an empty region across a Torus seam through Topology.neighbors()', () => {
-    const topology = new TorusTopology(3);
+    const topology = new TorusTopology(9);
     const graph = buildEndgameGraph(
       makeFilledBoard(topology, 'black', {
         '0,0': 'empty',
-        '2,0': 'empty',
+        '8,0': 'empty',
       }),
       topology,
     );
 
     expect(graph.emptyRegions).toHaveLength(1);
-    expect(graph.emptyRegions[0]!.points).toEqual(['0,0', '2,0']);
-    expect(graph.regionByPoint.get('0,0')).toBe(graph.regionByPoint.get('2,0'));
+    expect(graph.emptyRegions[0]!.points).toEqual(['0,0', '8,0']);
+    expect(graph.regionByPoint.get('0,0')).toBe(graph.regionByPoint.get('8,0'));
   });
 
   it('joins a stone string across a Cube face edge through the same graph path', () => {
