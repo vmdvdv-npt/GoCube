@@ -1244,25 +1244,11 @@ Shadow mode не должен создавать вторую user-visible sourc
 
 Текущая рекомендуемая decomposition:
 
-## Work 1 — Technical reuse spike
+## Work 1 — Technical reuse spike — CLOSED 2026-08-23
 
-Сравнить на одинаковом corpus:
+Сравнение `tsumego.js`, Cameron-Martin, Relevance-Zone и Darkforest на одном frozen corpus завершено настолько, насколько это допускают exact pinned upstream artifacts. Результатом считаются не только solver outcomes/time/nodes, но и воспроизводимые `unsupported`, upstream build failure и external runtime prerequisite. Нельзя патчить upstream или менять corpus только ради получения искусственно полной timing table.
 
-- tsumego.js;
-- cameron-martin solver;
-- relevant Relevance-Zone implementation;
-- Darkforest solver where useful.
-
-Результат:
-
-- license matrix;
-- feature matrix;
-- search semantics comparison;
-- topology coupling analysis;
-- performance baseline;
-- decision `adapt / port / rewrite graph-native`.
-
-Текущий статус Work 1 и промежуточные выводы фиксируются в разделе 39. Никакой library не объявлять production foundation до завершения одинакового runtime benchmark и проверки CI.
+Итог Work 1 зафиксирован в разделе 39: **готовой production solver foundation среди четырёх нет; production search shell должен быть graph-native, а permissive upstream code/ideas используются только выборочно**.
 
 ## Work 2 — Endgame Graph Core
 
@@ -1424,18 +1410,19 @@ search did not find kill -> alive
 
 Эти вопросы намеренно **не закреплены** и должны решаться исследованиями/benchmarks:
 
-1. Какая existing solver implementation лучше всего подходит как direct adaptation source? Для Work 1 уже есть preliminary direction в разделе 39, но вопрос остаётся открытым до измеренного benchmark.
-2. Нужен ли production df-pn или DFS + strong relevance/move ordering достаточно?
-3. Какой exact representation использовать для `AnalysisPosition`?
-4. Как formalize `ConflictRegion` и `RelevanceZone` API?
-5. Нужно ли отдельное `EndgameAdjudicationPolicy` или достаточно текущего classifier contract?
-6. Какие raw outcomes хранить: `critical`, `ko-dependent`, multiple proof strengths?
-7. Какой node budget приемлем для browser runtime на 19x19 Torus?
-8. Какие small eye-shapes стоит precompute exhaustively?
-9. Как строго доказывать seki в первом production scope?
-10. Какой minimum coverage required перед acceptance 0.3?
+1. Нужен ли production df-pn или DFS + strong relevance/move ordering достаточно?
+2. Какой exact representation использовать для `AnalysisPosition`?
+3. Как formalize `ConflictRegion` и `RelevanceZone` API?
+4. Нужно ли отдельное `EndgameAdjudicationPolicy` или достаточно текущего classifier contract?
+5. Какие raw outcomes хранить: `critical`, `ko-dependent`, multiple proof strengths?
+6. Какой node budget приемлем для browser runtime на 19x19 Torus?
+7. Какие small eye-shapes стоит precompute exhaustively?
+8. Как строго доказывать seki в первом production scope?
+9. Какой minimum coverage required перед acceptance 0.3?
 
-Каждый ответ должен появляться сначала как tested engineering decision, затем при необходимости переноситься в canonical architecture/roadmap/product document.
+Вопрос о direct external solver foundation закрыт Work 1: **ни один из четырёх сравниваемых solver’ов не должен становиться production foundation целиком**. Search shell строится graph-native поверх project topology/rule semantics; отдельные permissive идеи или code fragments могут переноситься только после локальной проверки пользы.
+
+Каждый оставшийся ответ должен появляться сначала как tested engineering decision, затем при необходимости переноситься в canonical architecture/roadmap/product document.
 
 ---
 
@@ -1490,7 +1477,7 @@ rewrite a permissive implementation around project contracts
 | Движок / библиотека | Что реально можно адаптировать | Почему приоритет | Основной риск |
 |---|---|---|---|
 | **Moka (`millionco/moka`)** | Benson/pass-alive, deterministic structural analysis, dead-candidate/aftermath ideas | Самый прямой production candidate: TypeScript, MIT, близкая decomposition и уже полезная conservative alive logic | Rectangular adjacency надо заменить на project topology; aftermath нельзя превращать в proof без verifier |
-| **`d180cf/tsumego.js`** | Local life/death search, target semantics, transposition table, local pass, ko/repetition handling | Самый прямой permissive search candidate для будущего strict dead/life solver | Standard-grid и enclosed-problem assumptions; open-boundary и topology-neutral port требуют отдельной работы |
+| **`d180cf/tsumego.js`** | Local life/death search ideas, target semantics, transposition table, local pass, ko/repetition handling | Самый прямой permissive search reference для selective port | Runtime spike подтвердил жёсткие conventional-grid/enclosed-problem assumptions: package ограничен размером до 16 и требует safe outer wall; Board целиком не переносить |
 | **`@sabaki/deadstones`** | Monte-Carlo dead-candidate generation и связанные структуры анализа | MIT и непосредственно работает с dead-stone detection; может дать полезный candidate layer | Вероятностная природа: только candidate/priority signal, не automatic proof |
 | **`online-go/score-estimator`** | Dead/score candidate heuristics, practical endgame analysis logic, browser-oriented implementation ideas | MIT, компактный C++/Emscripten код и реальное практическое использование | Heuristic/rectangular semantics; результат должен проходить наш verifier |
 | **`goscorer` (`lightvector/goscorer`)** | Territory/seki/scoring algorithms и fixtures после заданной dead marking | Permissive код и полезная логика для downstream territory/seki verification | Не решает automatic dead сам по себе и не должен заменить topology-neutral scorer целиком |
@@ -1504,7 +1491,7 @@ rewrite a permissive implementation around project contracts
 | **`@sabaki/go-board`** | Group/liberty/board data structures и отдельные utility patterns | MIT и технически переносим, но базовую topology-neutral механику групп GoCube уже имеет; риск дублирования выше пользы |
 | **Sente** | C++/Python board/rules/SGF primitives и отдельные implementation patterns | MIT, но automatic dead/life solver отсутствует, поэтому для 0.3 полезность ограничена |
 | **Fuego** | Search architecture, tactical/board/search utilities и отдельные mature algorithms | BSD-3-Clause, но framework большой и C++-heavy; адаптация отдельных частей возможна, целиком — неоправданно тяжёлая |
-| **DarkforestGo — только `tsumego` subsystem** | Local exhaustive tsumego search, move ordering, region-bound solver structure | BSD и код можно переносить, но весь движок нейросетевой и устаревший; рассматривается только изолированный ненейросетевой tsumego subsystem |
+| **DarkforestGo — только идеи из `tsumego` subsystem** | Local exhaustive-search structure, move ordering, region-bound search ideas | BSD, но exact pinned `tsumego` source не собирается без исправления внутреннего API mismatch и жёстко фиксирован на 19×19; это reference для selective reimplementation, не drop-in subsystem |
 
 ## 38.3. Исключённые из shortlist
 
@@ -1521,27 +1508,39 @@ rewrite a permissive implementation around project contracts
 
 ---
 
-# 39. Work 1 — Technical reuse spike: текущий результат
+# 39. Work 1 — Technical reuse spike: финальный результат
 
-Срез на **2026-08-23**. Work 1 ещё **не завершён**: общий comparison harness и adapters готовы, но одинаковый измеренный runtime benchmark реальных upstream solver revisions ещё не выполнен и CI ветки `engine` не подтверждён.
+Срез на **2026-08-23**. **Work 1 закрыт.** Один deterministic corpus, одна двухсторонняя постановка (`attacker-first` и `defender-first`) и exact upstream identities были реально проверены настолько далеко, насколько это возможно без изменения самих upstream projects или их environment contract.
+
+Ключевое правило закрытия spike: `unsupported`, reproducible upstream build failure и обязательная external runtime dependency являются валидными результатами technical reuse benchmark. Нельзя патчить чужой solver, менять board size, дорисовывать outer wall или подменять build environment только ради того, чтобы получить формально заполненную четырехстороннюю timing table.
 
 ## 39.1. Общий deterministic corpus и benchmark boundary
 
 Для всех кандидатов используется один и тот же planar SGF corpus. Conventional SGF намеренно не пытается кодировать Cube/Torus adjacency: topology-specific correctness будущего production engine проверяется graph/metamorphic tests отдельно.
 
-Текущий Work 1 corpus содержит:
+Frozen Work 1 corpus:
 
-- внешний public-domain `xuanxuan-qijing:1` как независимый problem source; его answer пока `unknown`, поэтому он пригоден для execution/performance, но не для accuracy;
-- `work1:forced-capture` — маленький hand-authored known-answer `dead` sanity case;
-- `work1:two-eye-alive` — hand-authored known-answer `alive` case с connected group и ровно двумя защищёнными internal liberties.
+- `xuanxuan-qijing:1` — 19×19, внешний public-domain problem source, source answer `unknown`;
+- `work1:forced-capture` — 9×9 hand-authored known-answer `dead` sanity case;
+- `work1:two-eye-alive` — 9×9 hand-authored known-answer `alive` sanity case.
 
-Benchmark не преобразует ответ внешнего solver непосредственно в GoCube `PROVEN_ALIVE / PROVEN_DEAD / PROVEN_SEKI`. Это было бы ложным смешением API, потому что upstream tsumego solvers обычно отвечают на локальный вопрос «может ли сторона убить/спасти target».
+Каждый solver проверяется в двух одинаковых постановках:
 
-Общий Work 1 outcome vocabulary:
+```text
+attacker-first
+defender-first
+```
+
+Если обе стороны выигрывают при своём первом ходе, normalized raw fact — `critical`, а не `unknown`. Если ни одна сторона не доказала победу, это **не** становится автоматически `seki`.
+
+External solver result никогда напрямую не повышается до production `PROVEN_ALIVE / PROVEN_DEAD / PROVEN_SEKI`.
+
+Общий Work 1 vocabulary:
 
 ```text
 target-survives
 target-captured
+critical
 seki
 ko-dependent
 unknown
@@ -1549,84 +1548,138 @@ unsupported
 error
 ```
 
-Для accuracy считаются только source labels `alive / dead / seki`. `unresolved`, `unknown`, `unavailable` и `unstable` не являются известным game-theoretic answer и поэтому не могут увеличивать или уменьшать accuracy.
+Для accuracy считаются только source labels `alive / dead / seki`; unknown/unresolved source cases не участвуют в accuracy.
 
-Каждый candidate benchmark выполняется последовательно. Фиксируются минимум:
+## 39.2. Exact execution manifest
 
-- wall-clock elapsed time;
-- optional node/work count, если upstream его предоставляет;
-- move, если upstream его возвращает;
-- normalized target outcome;
-- errors/unsupported без остановки остального corpus.
+Source identity и execution artifact identity фиксируются отдельно. Числа benchmark не считаются воспроизводимыми без обоих уровней identity.
 
-Suite требует присутствия всех четырёх Work 1 candidates и запускает их в фиксированном порядке на одном frozen corpus. Нельзя молча сравнить разные solver sets или разные позиции.
+| Candidate | Exact source | Exact execution boundary |
+|---|---|---|
+| **`tsumego.js`** | `58a079aac928c7bd59dc398d014f1f2b743f692e` | npm `tsumego.js@1.1.0`; SHA-1 `bf82348af36f919d4942a5746eb49506a789b8e3`; SHA-512 `sha512-W/MQDhaMKiM15wd8YRjonXgZm+T1YxZRhavvv0sDPDywEidgDzN8s5Jum/aU0GIruGz5L/GDygn2/TQ34+btcg==` |
+| **Cameron-Martin** | `7408523ae34d9f890eef08d7f39fae683dee1a4e` | source build with pinned `Cargo.lock` blob `bc18b817de7811efa91be5d16ebd95d703948faf`; temporary black-box harness exists only in benchmark checkout and is not vendored into GoCube |
+| **Relevance-Zone** | `be5c678694b3d2326e9924dad4443e0910d52cdc` | source build inside `rockmanray/gorzone@sha256:1d1b6babbd6c5978c14394aad16aeffcff3106eb78574ee8a577bbeec596849f` |
+| **DarkforestGo** | `ef1885ed5004dac8cbea2cbd3644706565af0876` | exact source build attempt of BSD `tsumego` subsystem; no separate published executable artifact exists for this revision |
 
-## 39.2. Adapter / license / topology matrix
+`tsumego.js` особенно требует этого разделения: его опубликованный executable package `1.1.0` не является просто `bin` из pinned source checkout.
 
-| Candidate | License status | Наблюдаемая solver semantics | Topology coupling | Work 1 adapter mode | Preliminary reuse decision |
-|---|---|---|---|---|---|
-| **`d180cf/tsumego.js`** | Apache-2.0 заявлена в package metadata | SGF `MA` target; отдельный `Solver`; kill/save solve для выбранной стороны; transposition table; local pass; ko/repetition concepts | Собственный rectangular `Board`, fixed local move generation и enclosed/thick-wall assumptions | In-process adapter через injected `Solver` factory; attacker и defender проверяются отдельно; ambiguous result остаётся `unknown` | **Selective port/adapt** search semantics, TT/ko/pass ideas. Не использовать его Board как production rules engine |
-| **`cameron-martin/tsumego-solver`** | Явная license отсутствует | Rust `Puzzle`, AND/OR proof-number search, `is_proved/is_disproved`, profiler/node counts | Собственный `GoGame`, board representation и terminal detection | Только black-box runner; repository code не переносится. Upstream CLI имеет `explore`/`generate`, но не даёт удобного batch solve contract | **Reference only** для PNS/decomposition/test methodology, пока license не изменится |
-| **`rlglab/study-LD-RZ`** | Явная software license в repository не найдена | Современный Relevance-Zone solver; JSON problem input; RZS-TT/RZS-PT; output JSON содержит `NumSimulations`, `Time`, solution tree | C/C++ stack, masked rectangular regions, container/CMake/Caffe2 environment | Только black-box result runner; `NumSimulations` нормализуется как work/node metric | **Graph-native rewrite from paper/ideas**. Repository code не копировать без license permission |
-| **DarkforestGo `tsumego`** | BSD-style permissive license | Exhaustive DFS/alpha-beta-like search; `TGCriterion` target player, dead threshold, `Region`, max search count; move ranking; search counter | Старый C `Board` + explicit `Region`, тесно связан с Darkforest board model | Black-box/native runner boundary; можно отдельно изучать permissive implementation | **Selective port/reference** move ordering/search ideas; не делать весь Darkforest dependency |
+RZ также требует двойной identity: pinned Docker image является build environment, но не содержит готового `CGI`; executable строится из pinned source внутри этого image.
 
-## 39.3. Что уже следует из spike до performance numbers
+## 39.3. Реальный runtime / execution result
 
-Ни один из четырёх кандидатов не выглядит безопасной готовой production foundation для Cube/Torus.
+Все результаты ниже получены из одного GoCube corpus; позиции не адаптировались под ограничения конкретного solver.
 
-Причины разные:
+### `tsumego.js`
 
-- Cameron и current RZ implementation отпадают как code-port sources из-за отсутствия явной permissive license;
-- `tsumego.js` и Darkforest лицензионно допустимы, но их board/search implementation построены вокруг conventional rectangular Go и несут собственную rules/topology model;
-- импорт целого чужого Board нарушил бы принцип «не иметь две несогласованные версии правил Go» и усложнил бы Cube/Torus correctness.
+Правильный public runtime bridge — `new Solver(sgf).solve(player)`. SGF `MA[...]` target marker был корректным; первоначальная ошибка вызова low-level `solve(args)` была исправлена до измерения ограничений solver.
 
-Поэтому текущая preliminary direction:
+Результат:
+
+| Case | attacker-first | defender-first |
+|---|---:|---:|
+| `xuanxuan-qijing:1` 19×19 | `unsupported` — upstream max board size 16 | `unsupported` — upstream max board size 16 |
+| `work1:forced-capture` 9×9 | error `There must be a safe outer wall.` — 5.71 ms | same error — 3.24 ms |
+| `work1:two-eye-alive` 9×9 | same error — 2.37 ms | same error — 2.44 ms |
+
+Это не defect общего corpus. Это измеренное подтверждение, что опубликованный solver несёт собственную enclosed/thick-wall problem model и не является generic drop-in life/death engine для GoCube.
+
+### Cameron-Martin
+
+Pinned Rust source успешно собирается с pinned lockfile. Для black-box benchmark использован минимальный временный harness поверх публичных `Puzzle`/profiler APIs; код harness не переносится в GoCube.
+
+Каждая из шести постановок получила одинаковый 10-second solve budget:
+
+| Case | Role | Elapsed | Nodes | Result |
+|---|---|---:|---:|---|
+| `xuanxuan-qijing:1` | attacker-first | 10024 ms | 75,202,693 | no proof |
+| `xuanxuan-qijing:1` | defender-first | 10024 ms | 75,571,977 | no proof |
+| `work1:forced-capture` | attacker-first | 10018 ms | 63,442,461 | no proof |
+| `work1:forced-capture` | defender-first | 10018 ms | 63,641,346 | no proof |
+| `work1:two-eye-alive` | attacker-first | 10015 ms | 45,512,401 | no proof |
+| `work1:two-eye-alive` | defender-first | 10016 ms | 45,453,659 | no proof |
+
+Ни один timeout не превращается в `alive`, `dead` или `seki`. Этот результат показывает, что generic import нашего SGF corpus в его Puzzle semantics без специальной problem preparation не даёт полезной production baseline, а не то, что proof-number search сам по себе плох.
+
+### Relevance-Zone
+
+Для всех трёх cases и обеих ролей были сформированы JSON inputs из того же corpus с явными `masked_sgf_str`, `turn_color`, `winning_color`, black/white crucial stones, search goals, ko rules и region. Использован deterministic benchmark config: один thread, fixed seed, 5-second problem limit.
+
+Exact pinned source внутри exact pinned `rockmanray/gorzone` image компилируется до link stage, после чего reproducibly останавливается на external host dependency: linker не находит `libcuda.so.1`, требуемую `libcaffe2_gpu.so`, и получает unresolved CUDA driver symbols.
+
+Следствие: pinned image — **не self-contained CPU runtime**. Для честного upstream executable benchmark требуется NVIDIA/CUDA host environment. Добавлять fake CUDA stubs, менять build options или патчить source ради CPU CI означало бы уже benchmark модифицированного candidate, поэтому этого не делаем.
+
+### DarkforestGo `tsumego`
+
+Pinned revision жёстко фиксирует `BOARD_SIZE = 19`, поэтому оба 9×9 sanity cases честно `unsupported`.
+
+Для 19×19 case был предпринят exact minimal build BSD `tsumego` path. Он воспроизводимо не собирается без изменения upstream source: `tsumego/solver.c` вызывает старую форму `GetRankedMoves(&s->b, r, -1, &s->m)`, тогда как pinned `rank_move.h` уже требует отдельный `defender` parameter. Корневого CMake target для этого subsystem в revision также нет; исторический `compile.sh` сам `tsumego/solver.c` не собирает.
+
+Следствие: exact pinned revision полезен как permissive implementation/reference source, но **не предоставляет воспроизводимый готовый tsumego executable**, который можно честно включить в одинаковый runtime timing run без нашего исправления upstream.
+
+## 39.4. Почему нет общей four-way timing table
+
+Её отсутствие теперь является результатом spike, а не незавершённой работой:
+
+- `tsumego.js` не принимает общий corpus из-за max-board-size и safe-outer-wall contracts;
+- Cameron реально выполняет все шесть постановок, но упирается в budget без proof;
+- RZ требует GPU/CUDA host dependency поверх pinned image;
+- Darkforest pinned `tsumego` source internally inconsistent и не собирается as-is.
+
+Получить четыре сравнимых `elapsed/nodes` числа можно только если изменить хотя бы один из трех факторов: candidate source, candidate runtime environment или общий corpus/problem semantics. Такое сравнение уже не отвечало бы исходному вопросу Work 1 — «что можно реально взять/адаптировать в GoCube без скрытой подмены правил и assumptions».
+
+Поэтому executable compatibility itself включается в reuse decision.
+
+## 39.5. Финальное reuse decision
+
+Work 1 фиксирует решение:
 
 ```text
 GoCube production search shell = graph-native
-legal moves / captures / repetition = project semantics
-Topology.neighbors(PointId) = adjacency source
 
-reuse externally:
-  algorithm ideas
-  search semantics
-  move ordering
-  transposition/repetition patterns
-  benchmark/oracle behavior
-
-port only isolated permissive pieces when benchmark proves value
+adjacency = Topology.neighbors(PointId)
+legal moves / captures / ko / repetition = project rule semantics
+production Board/rules implementation = project-owned
 ```
 
-Из этого **не следует**, что Work 1 уже выбрал конкретный search algorithm. В частности, решение `AND/OR DFS first` против раннего PNS/df-pn остаётся benchmark-driven.
+По кандидатам:
 
-## 39.4. Реализованные Work 1 commits в `engine`
+- **`tsumego.js` — selective port/adapt:** изучать/переносить отдельно search semantics, transposition-table patterns, pass/ko/repetition ideas там, где они остаются корректны после замены rectangular Board; не подключать его Board/rules как production foundation;
+- **Darkforest — selective reference/port of isolated permissive ideas:** move ordering, region-bound exhaustive-search structure и отдельные mechanics могут быть источником реализации, но pinned subsystem не является drop-in executable или dependency;
+- **Cameron — reference/black-box only:** license не разрешает считать repository code source для переноса; PNS decomposition и methodology остаются research references;
+- **Relevance-Zone — graph-native implementation from publication/ideas:** repository code без license не переносится, а runtime stack слишком тяжёл и environment-coupled для production; relevance-zone algorithm реализуется поверх нашего graph/rules boundary.
 
-Исходная подготовка:
+Ни один чужой `Board`/rules implementation не переносится целиком.
 
-- `34de4e3` — deterministic SGF reuse-spike corpus;
-- `c155e11` — reproducibility tests.
+Work 1 **не доказал преимущество раннего PNS/df-pn над простым AND/OR DFS**: Cameron timing здесь смешан с его собственной problem/board semantics. Поэтому остаётся последовательность раздела 15 — сначала deterministic graph-native AND/OR DFS + TT/memoization, затем strong move ordering/relevance zones, а PNS/df-pn вводить только по project-native benchmarks.
 
-Текущий continuation:
+Три текущих corpus cases достаточны для **reuse/foundation decision**, потому что различия проявились уже на execution contract level. Они недостаточны для будущего выбора search scheduler и performance budgets; расширение known-answer corpus продолжается в последующих Work stages, а не удерживает Work 1 открытым.
 
-- `e865d0d` — общий benchmark contract;
-- `0e16c0f` — benchmark tests;
-- `7374c68` — отделение external target outcome от production proof statuses;
-- `50994b9` — tests новой outcome semantics;
-- `0f31401` — adapters для tsumego.js, Cameron-Martin, Relevance-Zone и Darkforest;
-- `ba3360a` — adapter normalization tests;
-- `64ea455` — два known-answer sanity cases в общем corpus;
-- `ce7d013` — corpus sanity/reproducibility tests;
-- `9335a09` — fixed four-candidate benchmark suite;
-- `ff7f41c` — suite tests.
+## 39.6. Project validation и внешний CI blocker
 
-## 39.5. Что осталось, чтобы закрыть Work 1
+На Work 1 validation PR #143 Engine tree подтверждён стандартным pipeline:
 
-1. Зафиксировать exact upstream revisions/binaries для всех четырёх candidates.
-2. Подключить реальные runtime runners к уже готовым adapters без vendoring нелицензированного кода.
-3. Запустить все четыре candidates на одном corpus и записать measured table: outcome, elapsed time и доступный node/work count.
-4. Расширить known-answer часть corpus, если три sanity cases недостаточны для осмысленного выбора search family.
-5. Разобрать несовпадения не как автоматический GoCube defect, а как semantics/rules/solver limitation investigation.
-6. Запустить project CI/typecheck/tests на итоговом `engine` tree. Прямые commits в `engine` существующий workflow не запускают, поэтому нужен CI-capable PR/check path.
-7. После measured baseline заменить preliminary direction на окончательное `adapt / port / graph-native rewrite` решение и закрыть пункт 1 раздела 36.
+- lint — pass (существующие warnings не блокируют);
+- typecheck — pass;
+- coverage/unit — **519 tests pass**;
+- build — pass.
 
-До выполнения этих пунктов Work 2 не должен зависеть от конкретной внешней solver library как от production foundation.
+Full Playwright на проверенных heads дважды дал **215/216 pass** и один и тот же WebKit failure вне Engine scope: `e2e/torus-pan-animation.spec.ts`, где test ожидает `data-pan-direction="right"`, но получает `"down"` после rapid navigation. Этот Torus UI race не связан с Work 1 files и не исправляется внутри Engine spike.
+
+Поэтому нельзя утверждать «полный project CI зелёный». Корректный статус: **Work 1 Engine checks green; project-wide full CI blocked by independently reproducible non-Engine WebKit Torus failure**.
+
+Временный runtime-probe workflow должен быть удалён после фиксации этих результатов; он не является постоянной project infrastructure.
+
+## 39.7. Closure
+
+Work 1 закрыт со следующими fulfilled outputs:
+
+1. deterministic shared corpus и two-role benchmark semantics;
+2. adapters и normalized external outcomes, отделённые от production proof statuses;
+3. exact source/execution identities для всех четырёх candidates;
+4. реальный execution attempt каждого candidate без vendoring unlicensed code;
+5. measured Cameron timing/nodes и воспроизводимые execution constraints/failures остальных candidates;
+6. license/topology/runtime matrix;
+7. окончательное решение `graph-native production shell + selective permissive reuse/reference`;
+8. подтверждённые lint/typecheck/unit+coverage/build checks, при отдельно зафиксированном unrelated WebKit E2E blocker.
+
+**Work 2 может начинаться.** Он не должен зависеть от внешней solver library как production foundation.
