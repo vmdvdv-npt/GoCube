@@ -24,6 +24,9 @@ type Torus2DEndgameShape = Readonly<{
   points: readonly PointId[];
   edges: readonly Readonly<{ from: PointId; to: PointId }>[];
 }>;
+type AxisDirection = Readonly<{ x: -1 | 0 | 1; y: -1 | 0 | 1 }>;
+
+type Coordinate = Readonly<{ x: number; y: number }>;
 
 const sameViewState = (
   left: Torus2DViewState | null,
@@ -43,6 +46,15 @@ const contourColor = (status: string | null): string => {
   if (status === 'seki') return '#80878f';
   if (status === 'alive') return 'transparent';
   return '#a8e85e';
+};
+
+const axisDirection = (from: Coordinate, to: Coordinate): AxisDirection => {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return { x: Math.sign(dx) as -1 | 0 | 1, y: 0 };
+  }
+  return { x: 0, y: Math.sign(dy) as -1 | 0 | 1 };
 };
 
 export class Torus2DRenderer extends BaseTorus2DRenderer {
@@ -151,6 +163,15 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
     radius: number,
   ): void {
     const document = this.navigationRoot.ownerDocument;
+    const directionsByPoint = new Map<PointId, AxisDirection[]>();
+    const visibleEdges: Array<
+      Readonly<{
+        fromId: PointId;
+        toId: PointId;
+        from: Torus2DScenePoint;
+        to: Torus2DScenePoint;
+      }>
+    > = [];
 
     for (const edge of group.edges) {
       const from = pointsById.get(edge.from);
@@ -159,12 +180,64 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
       const distance = Math.hypot(to.x - from.x, to.y - from.y);
       if (distance > scene.spacing * 1.5) continue;
 
+      const direction = axisDirection(from, to);
+      const fromDirections = directionsByPoint.get(edge.from) ?? [];
+      const toDirections = directionsByPoint.get(edge.to) ?? [];
+      fromDirections.push(direction);
+      toDirections.push({ x: -direction.x as -1 | 0 | 1, y: -direction.y as -1 | 0 | 1 });
+      directionsByPoint.set(edge.from, fromDirections);
+      directionsByPoint.set(edge.to, toDirections);
+      visibleEdges.push({ fromId: edge.from, toId: edge.to, from, to });
+    }
+
+    for (const edge of visibleEdges) {
       const line = document.createElementNS(SVG_NS, 'line');
       setAttributes(line, {
-        x1: String(from.x), y1: String(from.y), x2: String(to.x), y2: String(to.y),
+        x1: String(edge.from.x), y1: String(edge.from.y), x2: String(edge.to.x), y2: String(edge.to.y),
         stroke: 'currentColor', 'stroke-width': String(radius * 2), 'stroke-linecap': 'round',
       });
       target.appendChild(line);
+    }
+
+    const filletSize = radius * 0.42;
+    for (const pointId of group.points) {
+      const point = pointsById.get(pointId);
+      if (!point) continue;
+      const uniqueDirections = Array.from(
+        new Map(
+          (directionsByPoint.get(pointId) ?? []).map((direction) => [
+            `${direction.x},${direction.y}`,
+            direction,
+          ]),
+        ).values(),
+      );
+
+      for (let first = 0; first < uniqueDirections.length; first += 1) {
+        for (let second = first + 1; second < uniqueDirections.length; second += 1) {
+          const a = uniqueDirections[first];
+          const b = uniqueDirections[second];
+          if (!a || !b || a.x * b.x + a.y * b.y !== 0) continue;
+
+          const corner = {
+            x: point.x + (a.x + b.x) * radius,
+            y: point.y + (a.y + b.y) * radius,
+          };
+          const tangentA = {
+            x: corner.x + a.x * filletSize,
+            y: corner.y + a.y * filletSize,
+          };
+          const tangentB = {
+            x: corner.x + b.x * filletSize,
+            y: corner.y + b.y * filletSize,
+          };
+          const fillet = document.createElementNS(SVG_NS, 'path');
+          setAttributes(fillet, {
+            d: `M ${tangentA.x} ${tangentA.y} L ${corner.x} ${corner.y} L ${tangentB.x} ${tangentB.y} Q ${corner.x} ${corner.y} ${tangentA.x} ${tangentA.y} Z`,
+            fill: 'currentColor',
+          });
+          target.appendChild(fillet);
+        }
+      }
     }
 
     for (const pointId of group.points) {
