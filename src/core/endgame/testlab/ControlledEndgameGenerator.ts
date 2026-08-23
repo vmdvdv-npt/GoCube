@@ -157,8 +157,9 @@ const buildControlLayout = (
   const controlColor = oppositeColor(scaffoldColor);
 
   for (let attempt = 0; attempt < 16_384; attempt += 1) {
-    const eyes = random.shuffle(deep).slice(0, 2) as readonly [PointId, PointId];
-    if (eyes.length !== 2) return null;
+    const eyeCandidates = random.shuffle(deep).slice(0, 2);
+    if (eyeCandidates.length !== 2) return null;
+    const eyes = Object.freeze([eyeCandidates[0]!, eyeCandidates[1]!] as const);
 
     const dead: DeadControl[] = [];
     for (let index = 0; index < deadCount; index += 1) {
@@ -170,11 +171,12 @@ const buildControlLayout = (
     const unresolved: UnresolvedControl[] = [];
     for (let index = 0; index < 2; index += 1) {
       const point = random.pick(unresolvedCenters);
-      const liberties = random.shuffle(
+      const libertyCandidates = random.shuffle(
         topology.neighbors(point).filter((neighbor) => deep.includes(neighbor)),
-      ).slice(0, 2) as readonly [PointId, PointId];
-      if (liberties.length !== 2) break;
-      unresolved.push(Object.freeze({ point, liberties: Object.freeze([...liberties]) as readonly [PointId, PointId] }));
+      ).slice(0, 2);
+      if (libertyCandidates.length !== 2) break;
+      const liberties = Object.freeze([libertyCandidates[0]!, libertyCandidates[1]!] as const);
+      unresolved.push(Object.freeze({ point, liberties }));
     }
     if (unresolved.length !== 2) continue;
 
@@ -242,7 +244,7 @@ const buildControlLayout = (
 
     return Object.freeze({
       patch,
-      eyes: Object.freeze([...eyes]) as readonly [PointId, PointId],
+      eyes,
       dead: Object.freeze(dead),
       unresolved: Object.freeze(unresolved),
       scaffoldColor,
