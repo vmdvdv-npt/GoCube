@@ -91,6 +91,7 @@ export interface Cube2DVisualEffectsModel {
 
 export interface Cube2DVisualEffectsInput {
   readonly finalScore: FinalScore | null;
+  readonly provisionalTerritory?: ReadonlyMap<PointId, 'black' | 'white'>;
   readonly finalClassification?: EndgameClassification | null;
   readonly endgameGroups?: readonly EndgameGroupPresentation[];
   readonly decisions?: Readonly<Partial<Record<string, GroupStatus>>>;
@@ -103,8 +104,12 @@ export const createCube2DVisualEffectsModel = (
   input: Cube2DVisualEffectsInput,
 ): Cube2DVisualEffectsModel => {
   const territory = new Map<PointId, 'black' | 'white'>();
-  for (const pointId of input.finalScore?.territoryPoints.black ?? []) territory.set(pointId, 'black');
-  for (const pointId of input.finalScore?.territoryPoints.white ?? []) territory.set(pointId, 'white');
+  if (input.finalScore) {
+    for (const pointId of input.finalScore.territoryPoints.black) territory.set(pointId, 'black');
+    for (const pointId of input.finalScore.territoryPoints.white) territory.set(pointId, 'white');
+  } else {
+    for (const [pointId, owner] of input.provisionalTerritory ?? []) territory.set(pointId, owner);
+  }
 
   const pointStatuses = new Map<PointId, Cube2DPointVisualStatus>();
   const setGroup = (
