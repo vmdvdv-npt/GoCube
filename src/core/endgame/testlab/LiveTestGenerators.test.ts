@@ -48,6 +48,21 @@ const replayThroughEngine = (generated: LiveTestGeneratedCase): GameState => {
   return history.current();
 };
 
+const expectNoZeroLibertyGroups = (generated: LiveTestGeneratedCase): void => {
+  const topology = createLiveTestTopology(generated.spec);
+  const engine = new GameEngine(topology);
+  const visited = new Set<PointId>();
+
+  for (const point of topology.points()) {
+    if (generated.state.board[point] === 'empty' || visited.has(point)) continue;
+    const group = engine.groupAt(generated.state, point);
+    expect(group).not.toBeNull();
+    if (!group) continue;
+    for (const member of group.points) visited.add(member);
+    expect(group.liberties.length).toBeGreaterThan(0);
+  }
+};
+
 const qualitySummary = (
   generated: LiveTestGeneratedCase,
 ): Readonly<{
@@ -105,6 +120,25 @@ const finishWithTwoPasses = (
   return second.state;
 };
 
+const collectEndgameScenarios = (
+  topology: 'torus' | 'cube',
+  size: number,
+  count = 192,
+): ReadonlySet<string> => {
+  const scenarios = new Set<string>();
+  for (let index = 0; index < count; index += 1) {
+    scenarios.add(
+      generateLiveTestCase({
+        generator: 'endgame',
+        topology,
+        size,
+        seed: `scenario-corpus-${String(index)}`,
+      }).scenario,
+    );
+  }
+  return scenarios;
+};
+
 describe('LiveTestGenerators', () => {
   it.each([
     { generator: 'game-like' as const, topology: 'torus' as const, size: 9 },
@@ -117,7 +151,12 @@ describe('LiveTestGenerators', () => {
     const second = replayLiveTestCase(spec);
 
     expect(second).toEqual(first);
-    expect(replayThroughEngine(first)).toEqual(first.state);
+    if (first.loadStrategy === 'replay-commands') {
+      expect(replayThroughEngine(first)).toEqual(first.state);
+    } else {
+      expect(first.commands).toHaveLength(0);
+      expectNoZeroLibertyGroups(first);
+    }
     expect(first.state.phase).toBe('playing');
   });
 
@@ -151,12 +190,59 @@ describe('LiveTestGenerators', () => {
     const generated = generateLiveTestCase({ ...shape, generator: 'game-like' });
     const summary = qualitySummary(generated);
 
+    expect(generated.loadStrategy).toBe('replay-commands');
     expect(summary.stones).toBeGreaterThan(6);
     expect(summary.connectedGroups).toBeGreaterThan(0);
     expect(summary.contactEdges).toBeGreaterThan(0);
     expect(generated.commands.length).toBeGreaterThanOrEqual(summary.stones);
     expect(generated.state.captures.black + generated.state.captures.white + summary.tacticalGroups)
       .toBeGreaterThan(0);
+  });
+
+  it('mixes the required Torus endgame motif families across a deterministic seed corpus', () => {
+    const scenarios = collectEndgameScenarios('torus', 9);
+    expect([...scenarios]).toEqual(expect.arrayContaining([
+      'legal-tactical',
+      'two-eyes-alive',
+      'single-eye',
+      'false-eye',
+      'atari',
+      'shared-liberties-seki',
+      'ambiguous-contact',
+      'torus-seam-single-eye',
+      'torus-seam-false-eye',
+      'torus-seam-shared-liberties',
+    ]));
+  });
+
+  it('mixes Cube edge/corner and local life/death motifs across a deterministic seed corpus', () => {
+    const scenarios = collectEndgameScenarios('cube', 5);
+    expect([...scenarios]).toEqual(expect.arrayContaining([
+      'legal-tactical',
+      'two-eyes-alive',
+      'single-eye',
+      'false-eye',
+      'atari',
+      'shared-liberties-seki',
+      'ambiguous-contact',
+      'cube-edge-false-eye',
+      'cube-edge-shared-liberties',
+      'cube-corner-single-eye',
+      'cube-corner-shared-liberties',
+    ]));
+  });
+
+  it('falls back to legal tactical generation on tiny Cube sizes where curated 3x3 motifs do not fit', () => {
+    const generated = generateLiveTestCase({
+      generator: 'endgame',
+      topology: 'cube',
+      size: 2,
+      seed: 'tiny-cube',
+    });
+
+    expect(generated.loadStrategy).toBe('replay-commands');
+    expect(generated.scenario).toBe('legal-tactical');
+    expect(replayThroughEngine(generated)).toEqual(generated.state);
   });
 
   it.each([
