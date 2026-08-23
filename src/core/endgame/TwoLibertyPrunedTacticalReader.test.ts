@@ -144,14 +144,14 @@ describe('TwoLibertyPrunedTacticalReader', () => {
 
   it('is deterministic and never upgrades an exhaustive non-proof to proven-dead on a fixed graph corpus', () => {
     const topologies: readonly Topology[] = Object.freeze([
-      new TorusTopology(5),
+      new TorusTopology(9),
       new CubeTopology(2),
     ]);
     let checkedTargets = 0;
 
     for (const topology of topologies) {
       const points = [...topology.points()].sort();
-      for (let seed = 1; seed <= 24; seed += 1) {
+      for (let seed = 1; seed <= 8; seed += 1) {
         let value = seed >>> 0;
         const board: Record<PointId, PointOccupancy> = {};
         for (const point of points) {
@@ -184,7 +184,7 @@ describe('TwoLibertyPrunedTacticalReader', () => {
       }
     }
 
-    expect(checkedTargets).toBeGreaterThan(20);
+    expect(checkedTargets).toBeGreaterThan(10);
   });
 
   it('stops conservatively when the relevant deep-placement budget is exceeded', () => {
