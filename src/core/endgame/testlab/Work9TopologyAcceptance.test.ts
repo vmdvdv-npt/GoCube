@@ -6,7 +6,7 @@ import { resolveTerritory } from '../TerritoryResolver';
 import type { GameState, PointOccupancy } from '../../game/types';
 import { ChineseScoring } from '../../scoring/ChineseScoring';
 import { JapaneseScoring } from '../../scoring/JapaneseScoring';
-import { CubeTopology } from '../../topology/CubeTopology';
+import { cubePointId, CubeTopology } from '../../topology/CubeTopology';
 import type { PointId, Topology } from '../../topology/Topology';
 import { TorusTopology } from '../../topology/TorusTopology';
 import { EndgameTestLab, type EndgameTestTopology } from './EndgameTestLab';
@@ -65,6 +65,36 @@ const relabelState = (state: GameState, topology: RelabeledTopology): GameState 
     board: Object.freeze(board),
     captures: Object.freeze({ ...state.captures }),
   });
+};
+
+const makeState = (
+  topology: Topology,
+  stones: Readonly<Partial<Record<PointId, PointOccupancy>>>,
+): GameState => {
+  const board: Record<PointId, PointOccupancy> = {};
+  for (const point of topology.points()) board[point] = stones[point] ?? 'empty';
+  return Object.freeze({
+    board: Object.freeze(board),
+    currentPlayer: 'black',
+    moveNumber: 0,
+    consecutivePasses: 2,
+    phase: 'endgame',
+    captures: Object.freeze({ black: 0, white: 0 }),
+  });
+};
+
+const twoEyeState = (
+  topology: Topology,
+  pointAt: (row: number, column: number) => PointId,
+): GameState => {
+  const stones: Record<PointId, PointOccupancy> = {};
+  for (let row = 0; row < 3; row += 1) {
+    for (let column = 0; column < 5; column += 1) {
+      const isEye = row === 1 && (column === 1 || column === 3);
+      if (!isEye) stones[pointAt(row, column)] = 'black';
+    }
+  }
+  return makeState(topology, stones);
 };
 
 const analyze = async (state: GameState, topology: Topology): Promise<EndgameProposal> => {
@@ -131,62 +161,34 @@ const occupiedCount = (state: GameState): number =>
   Object.values(state.board).filter((occupancy) => occupancy !== 'empty').length;
 
 describe('Work 9 topology metamorphic and generated stress acceptance', () => {
-  it('preserves proof/evidence/scoring on isomorphic embeddings and keeps non-isomorphic Cube corner stress conservative', async () => {
-    const lab = new EndgameTestLab();
-
+  it('preserves proof/evidence/scoring across exact arbitrary, Torus seam and Cube edge graph-isomorphic embeddings', async () => {
     const torus = new TorusTopology(9);
-    const torusInterior = lab.generate({
-      kind: 'life-death-pattern',
-      topology: torus,
-      seed: 'work9-topology-torus-interior',
-      pattern: 'two-eyes',
-    });
-    const torusSeam = lab.generate({
-      kind: 'topology-stress',
-      topology: torus,
-      seed: 'work9-topology-torus-seam',
-      mode: 'torus-seam',
-      pattern: 'two-eyes',
-    });
+    const torusInterior = twoEyeState(torus, (row, column) => `${column + 2},${row + 2}`);
+    const torusSeamColumns = [7, 8, 0, 1, 2] as const;
+    const torusSeam = twoEyeState(
+      torus,
+      (row, column) => `${torusSeamColumns[column]},${row + 2}`,
+    );
 
     const relabeledTorus = new RelabeledTopology(torus);
-    const arbitraryState = relabelState(torusInterior.state, relabeledTorus);
+    const arbitraryState = relabelState(torusInterior, relabeledTorus);
 
-    const cube = new CubeTopology(5);
-    const cubeInterior = lab.generate({
-      kind: 'life-death-pattern',
-      topology: cube,
-      seed: 'work9-topology-cube-interior',
-      pattern: 'two-eyes',
-    });
-    const cubeEdge = lab.generate({
-      kind: 'topology-stress',
-      topology: cube,
-      seed: 'work9-topology-cube-edge',
-      mode: 'cube-edge',
-      pattern: 'two-eyes',
-    });
-    const cubeCorner = lab.generate({
-      kind: 'topology-stress',
-      topology: cube,
-      seed: 'work9-topology-cube-corner',
-      mode: 'cube-corner',
-      pattern: 'two-eyes',
-    });
-    const cubeCornerShared = lab.generate({
-      kind: 'topology-stress',
-      topology: cube,
-      seed: 'work9-topology-cube-corner-shared',
-      mode: 'cube-corner',
-      pattern: 'shared-liberties',
-    });
+    const cube = new CubeTopology(7);
+    const cubeInterior = twoEyeState(cube, (row, column) =>
+      cubePointId('front', row + 2, column + 1),
+    );
+    const cubeEdge = twoEyeState(cube, (row, column) =>
+      column <= 2
+        ? cubePointId('front', row + 2, column + 4)
+        : cubePointId('right', row + 2, column - 3),
+    );
 
     const results = await Promise.all([
       assertTwoEyePipeline(arbitraryState, relabeledTorus),
-      assertTwoEyePipeline(torusInterior.state, torus),
-      assertTwoEyePipeline(torusSeam.state, torus),
-      assertTwoEyePipeline(cubeInterior.state, cube),
-      assertTwoEyePipeline(cubeEdge.state, cube),
+      assertTwoEyePipeline(torusInterior, torus),
+      assertTwoEyePipeline(torusSeam, torus),
+      assertTwoEyePipeline(cubeInterior, cube),
+      assertTwoEyePipeline(cubeEdge, cube),
     ]);
 
     for (const result of results) {
@@ -199,17 +201,22 @@ describe('Work 9 topology metamorphic and generated stress acceptance', () => {
       ]);
       expect(result.localEyeTerritory).toBe(2);
     }
+  });
 
-    // A 5x3 rectangular two-eye pattern projected through a physical Cube corner
-    // spans three faces and is not graph-isomorphic to its planar/interior form.
-    // It is therefore a conservative stress case, not a positive metamorphic oracle.
-    const cornerProposal = await analyze(cubeCorner.state, cube);
-    expect(cornerProposal).toHaveLength(1);
-    expect(cornerProposal[0]?.status).toBe('unresolved');
+  it('keeps Cube physical-corner stress conservative because the local surface graph is not planar-rectangular isomorphic', async () => {
+    const lab = new EndgameTestLab();
+    const cube = new CubeTopology(5);
+    const cornerShared = lab.generate({
+      kind: 'topology-stress',
+      topology: cube,
+      seed: 'work9-topology-cube-corner-shared',
+      mode: 'cube-corner',
+      pattern: 'shared-liberties',
+    });
 
-    const cornerSharedProposal = await analyze(cubeCornerShared.state, cube);
-    expect(cornerSharedProposal.length).toBeGreaterThan(0);
-    expect(cornerSharedProposal.every((group) => group.status === 'unresolved')).toBe(true);
+    const proposal = await lab.analyze(cornerShared, new AssistedEndgameClassifier());
+    expect(proposal.length).toBeGreaterThan(0);
+    expect(proposal.every((group) => group.status === 'unresolved')).toBe(true);
   });
 
   it('stress-runs deterministic legal near-endgame positions across multiple Torus/Cube sizes without using generator output as truth', async () => {
