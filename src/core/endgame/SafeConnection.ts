@@ -36,6 +36,12 @@ export type SafeConnectionResult =
       readonly reason: RelevanceZoneReason;
     }>;
 
+type SafeConnectionCandidate = Readonly<{
+  safeGroupKey: string;
+  safeGroup: EndgameStoneString;
+  connectors: readonly PointId[];
+}>;
+
 const opponentOf = (color: StoneColor): StoneColor =>
   color === 'black' ? 'white' : 'black';
 
@@ -109,35 +115,35 @@ export const proveSafeConnectionToBenson = (
 
   const zoneBoundary = new Set(zone.boundarySafeGroupKeys);
   const zonePoints = new Set(zone.points);
-  const candidates = graph.possibleConnections
-    .filter((candidate) => candidate.groups.includes(currentTarget.key))
-    .map((candidate) => {
-      const safeGroupKey = candidate.groups.find((groupKey) => groupKey !== currentTarget.key);
-      const safeGroup = safeGroupKey ? graph.stringsByKey.get(safeGroupKey) : undefined;
-      if (
-        !safeGroupKey ||
-        !safeGroup ||
-        safeGroup.color !== currentTarget.color ||
-        !zoneBoundary.has(safeGroupKey) ||
-        !bensonProofs.has(safeGroupKey)
-      ) {
-        return null;
-      }
-      const connectors = candidate.sharedLiberties.filter((point) => zonePoints.has(point));
-      return Object.freeze({ safeGroupKey, safeGroup, connectors });
-    })
-    .filter(
-      (
-        candidate,
-      ): candidate is Readonly<{
-        safeGroupKey: string;
-        safeGroup: EndgameStoneString;
-        connectors: readonly PointId[];
-      }> => candidate !== null,
-    )
-    .sort((left, right) =>
-      left.safeGroupKey < right.safeGroupKey ? -1 : left.safeGroupKey > right.safeGroupKey ? 1 : 0,
+  const candidates: SafeConnectionCandidate[] = [];
+  for (const connection of graph.possibleConnections) {
+    if (!connection.groups.includes(currentTarget.key)) continue;
+
+    const safeGroupKey = connection.groups.find((groupKey) => groupKey !== currentTarget.key);
+    const safeGroup = safeGroupKey ? graph.stringsByKey.get(safeGroupKey) : undefined;
+    if (
+      !safeGroupKey ||
+      !safeGroup ||
+      safeGroup.color !== currentTarget.color ||
+      !zoneBoundary.has(safeGroupKey) ||
+      !bensonProofs.has(safeGroupKey)
+    ) {
+      continue;
+    }
+
+    candidates.push(
+      Object.freeze({
+        safeGroupKey,
+        safeGroup,
+        connectors: Object.freeze(
+          connection.sharedLiberties.filter((point) => zonePoints.has(point)),
+        ),
+      }),
     );
+  }
+  candidates.sort((left, right) =>
+    left.safeGroupKey < right.safeGroupKey ? -1 : left.safeGroupKey > right.safeGroupKey ? 1 : 0,
+  );
 
   if (candidates.length === 0) {
     return Object.freeze({ outcome: 'not-proven', reason: 'no-benson-connection-candidate' });
