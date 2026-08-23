@@ -67,18 +67,22 @@ jobs:
         run: |
           set -euo pipefail
           pattern='LiveTest|LiveTestGenerator|generateLiveTestCase|replayLiveTestCase|GameLikeGenerator|EndgameGenerator|Generate Game|Generate Endgame|Generate Corpus|Test ID|TestCase|TestCaseReplayService|ReplayableTestCase|TestCaseIdentity|encodeTestCaseId|decodeTestCaseId|ControlledEndgame|controlled-mixed-endgame|game-like-background|ExternalCorpus|xuanxuan|LIVE_ENDGAME_TEST_CASE_VARIANT|CONTROLLED_ENDGAME_TEST_CASE_VARIANT|VITE_ENABLE_LIVE_TEST_GENERATORS|LocalAnalysisClient|lab:local-ai'
-          echo 'Checking runtime/source/config paths for obsolete Test Case concepts...'
-          if rg -n --hidden "$pattern" src e2e tools package.json vite.config.ts playwright.config.ts; then
+          echo 'Checking tracked runtime/source/config paths for obsolete Test Case concepts...'
+          set +e
+          git grep -nE "$pattern" -- . ':!docs/**' ':!.github/workflows/ci.yml'
+          audit_status=$?
+          set -e
+          if [[ $audit_status -eq 0 ]]; then
             echo 'Obsolete Test Case runtime/config reference remains.' >&2
             exit 1
           fi
-          if rg -n --hidden -g '!workflows/ci.yml' "$pattern" .github; then
-            echo 'Obsolete Test Case CI/config reference remains.' >&2
-            exit 1
+          if [[ $audit_status -ne 1 ]]; then
+            echo "git grep audit failed with status $audit_status." >&2
+            exit "$audit_status"
           fi
-          echo 'Runtime/source/config dead-code audit: zero matches.'
+          echo 'Tracked runtime/source/config dead-code audit: zero matches.'
           echo 'Repository documentation matches (informational only):'
-          rg -n "$pattern" docs || true
+          git grep -nE "$pattern" -- docs || true
           test -f src/core/endgame/testlab/Engine2AdversarialCorpus.ts
           test -f src/core/endgame/testlab/Engine2AdversarialCorpus.test.ts
           test -f src/core/endgame/testlab/Engine2FinalEvaluation.benchmark.test.ts
