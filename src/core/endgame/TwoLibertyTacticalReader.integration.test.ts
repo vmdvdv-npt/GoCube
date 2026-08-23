@@ -39,7 +39,7 @@ const readTarget = (
 };
 
 describe('TwoLibertyTacticalReader topology integration', () => {
-  it('proves the same fully surrounded two-liberty kill across a Torus seam and a Cube edge', () => {
+  it('keeps the same conservative counter-capture result across a Torus seam and a Cube edge', () => {
     const cube = new CubeTopology(5);
     const cubeTarget = 'front:0:2';
     const cases: readonly Readonly<{
@@ -72,11 +72,16 @@ describe('TwoLibertyTacticalReader topology integration', () => {
 
       expect(result?.algorithm, name).toBe('two-liberty-exhaustive-reader-v2');
       expect(result?.attackPoints, name).toEqual([...liberties].sort());
-      expect(result?.attackerFirst.result, name).toBe('forced-kill');
-      expect(result?.defenderFirst.result, name).toBe('forced-kill');
+
+      // Every other logical point is one connected black group. Its only
+      // liberties are the target's two liberties, so after Black fills one,
+      // White can use the other to counter-capture that attacker group. The
+      // reader must see that graph-native resource across both seam types and
+      // must not manufacture a false dead proof from visual geometry.
+      expect(result?.attackerFirst.result, name).toBe('unresolved');
+      expect(result?.defenderFirst.result, name).toBe('unresolved');
       expect(result?.defenderFirst.examinedPlacements, name).toBe(2);
-      expect(result?.defenderFirst.legalPlacements, name).toBe(2);
-      expect(result?.outcome, name).toBe('proven-dead');
+      expect(result?.outcome, name).toBe('unresolved');
     }
   });
 
