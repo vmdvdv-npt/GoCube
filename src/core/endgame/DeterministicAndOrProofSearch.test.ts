@@ -3,6 +3,7 @@ import {
   DETERMINISTIC_AND_OR_PROOF_SEARCH_ALGORITHM,
   searchDeterministicAndOrProof,
   type DeterministicProofSearchAdapter,
+  type ProofSearchExpansion,
   type ProofSearchMoveSetCompleteness,
   type ProofSearchRole,
   type ProofSearchTerminal,
@@ -29,17 +30,17 @@ const terminal = (
   });
 
 const adapter: DeterministicProofSearchAdapter<ToyNode, ToyMove> = Object.freeze({
-  nodeKey: (node) => node.key,
-  role: (node) => node.role,
-  terminal: (node) => node.terminal ?? null,
-  expand: (node) =>
+  nodeKey: (node: ToyNode): string => node.key,
+  role: (node: ToyNode): ProofSearchRole => node.role,
+  terminal: (node: ToyNode): ProofSearchTerminal | null => node.terminal ?? null,
+  expand: (node: ToyNode): ProofSearchExpansion<ToyMove> =>
     Object.freeze({
       moves: node.moves ?? Object.freeze([] as ToyMove[]),
       completeness:
         node.completeness ?? Object.freeze({ kind: 'complete' as const }),
     }),
-  apply: (_node, move) => move.child,
-  moveKey: (move) => move.key,
+  apply: (_node: ToyNode, move: ToyMove): ToyNode => move.child,
+  moveKey: (move: ToyMove): string => move.key,
 });
 
 const move = (key: string, child: ToyNode): ToyMove => Object.freeze({ key, child });
