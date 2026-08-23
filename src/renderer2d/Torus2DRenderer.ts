@@ -1,16 +1,16 @@
 export * from './Torus2DRendererBase';
 
+import type { PointId } from '../core/topology/Topology';
 import type { GameViewModel } from '../presentation/PresentationModel';
 import {
   Torus2DRenderer as BaseTorus2DRenderer,
   buildTorus2DEndgameSegments,
   buildTorus2DScene,
   endgameGroupFromTorusViewBoxPosition,
-  endgameLineStyle,
-  TORUS_ENDGAME_LINE_WIDTH_PX,
   type Torus2DEndgameOverlay,
   type Torus2DEndgameSegment,
   type Torus2DScene,
+  type Torus2DScenePoint,
   type Torus2DSize,
   type Torus2DViewState,
 } from './Torus2DRendererBase';
@@ -33,6 +33,16 @@ const setAttributes = (
   }
 };
 
+const contourColor = (
+  status: string | null,
+  groupColor: 'black' | 'white',
+): string => {
+  if (status === 'dead') return '#e52b2b';
+  if (status === 'seki') return '#80878f';
+  if (status === 'alive') return groupColor === 'black' ? '#111111' : '#ffffff';
+  return '#a8e85e';
+};
+
 /**
  * Product-level Torus adapter.
  *
@@ -51,6 +61,7 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
   private duplicateRegionsVisibleState = false;
   private renderedDuplicateRegionsVisible = false;
   private overlayState: Torus2DEndgameOverlay | null = null;
+  private territoryState: ReadonlyMap<PointId, 'black' | 'white'> | null = null;
   private overlaySegments: readonly Torus2DEndgameSegment[] = EMPTY_ENDGAME_SEGMENTS;
 
   constructor(
@@ -74,6 +85,13 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
     this.renderEndgameOverlay();
   }
 
+  setEndgameTerritory(
+    territory: ReadonlyMap<PointId, 'black' | 'white'> | null,
+  ): void {
+    this.territoryState = territory;
+    this.renderEndgameOverlay();
+  }
+
   override render(viewModel: GameViewModel): void {
     const currentViewState = this.viewState();
     const coreSceneIsCurrent =
@@ -82,6 +100,7 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
       this.renderedDuplicateRegionsVisible === this.duplicateRegionsVisibleState;
 
     if (coreSceneIsCurrent) {
+      this.renderEndgameOverlay();
       return;
     }
 
@@ -96,6 +115,7 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
       this.duplicateRegionsVisibleState,
     );
     this.refreshEndgameSegments();
+    this.renderEndgameOverlay();
   }
 
   override endgameGroupFromClientPosition(x: number, y: number): string | null {
@@ -121,48 +141,177 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
         : EMPTY_ENDGAME_SEGMENTS;
   }
 
+  private appendGroupShape(
+    target: SVGGElement,
+    scene: Torus2DScene,
+    pointsById: ReadonlyMap<PointId, Torus2DScenePoint>,
+    group: Torus2DEndgameOverlay['groups'][number],
+    radius: number,
+  ): void {
+    const document = this.navigationRoot.ownerDocument;
+
+    for (const edge of group.edges) {
+      const from = pointsById.get(edge.from);
+      const to = pointsById.get(edge.to);
+      if (!from || !to) continue;
+      const distance = Math.hypot(to.x - from.x, to.y - from.y);
+      // Topological seam neighbors live at opposite visible edges; do not draw
+      // one long connector across the center of the current torus viewport.
+      if (distance > scene.spacing * 1.5) continue;
+
+      const line = document.createElementNS(SVG_NS, 'line');
+      setAttributes(line, {
+        x1: String(from.x),
+        y1: String(from.y),
+        x2: String(to.x),
+        y2: String(to.y),
+        stroke: 'currentColor',
+        'stroke-width': String(radius * 2),
+        'stroke-linecap': 'round',
+      });
+      target.appendChild(line);
+    }
+
+    for (const pointId of group.points) {
+      const point = pointsById.get(pointId);
+      if (!point) continue;
+      const circle = document.createElementNS(SVG_NS, 'circle');
+      setAttributes(circle, {
+        cx: String(point.x),
+        cy: String(point.y),
+        r: String(radius),
+        fill: 'currentColor',
+      });
+      target.appendChild(circle);
+    }
+  }
+
   private renderEndgameOverlay(): void {
-    if (!this.latestScene) return;
+    const scene = this.latestScene;
+    if (!scene) return;
     if (this.navigationRoot.getAttribute('data-pan-animating') === 'true') return;
     if (typeof this.navigationRoot.querySelector !== 'function') return;
 
     this.navigationRoot.querySelector('.torus-board__endgame-lines')?.remove();
-    if (this.overlaySegments.length === 0) return;
+    this.navigationRoot.querySelector('.torus-board__endgame-overlay')?.remove();
+
+    const overlay = this.overlayState;
+    const territory = this.territoryState;
+    if ((!overlay || overlay.groups.length === 0) && (!territory || territory.size === 0)) return;
 
     const document = this.navigationRoot.ownerDocument;
-    const endgameLines = document.createElementNS(SVG_NS, 'g');
-    endgameLines.setAttribute('class', 'torus-board__endgame-lines');
+    const root = document.createElementNS(SVG_NS, 'g');
+    root.setAttribute('class', 'torus-board__endgame-overlay');
+    root.setAttribute('pointer-events', 'none');
 
-    for (const segment of this.overlaySegments) {
-      const style = endgameLineStyle(
-        segment.status,
-        segment.groupColor,
-        segment.temporary,
-      );
-      const line = document.createElementNS(SVG_NS, 'line');
-      const attributes: Record<string, string> = {
-        x1: String(segment.x1),
-        y1: String(segment.y1),
-        x2: String(segment.x2),
-        y2: String(segment.y2),
-        stroke: style.stroke,
-        'stroke-width': String(TORUS_ENDGAME_LINE_WIDTH_PX),
-        'stroke-linecap': 'butt',
-        'vector-effect': 'non-scaling-stroke',
-        'pointer-events': 'none',
-        opacity: String(style.opacity),
-        'data-endgame-group-id': segment.groupId,
-        'data-endgame-status': segment.status ?? 'preview',
-        'data-endgame-temporary': segment.temporary ? 'true' : 'false',
-        class: 'torus-board__endgame-line',
-      };
-      if (style.strokeDasharray) {
-        attributes['stroke-dasharray'] = style.strokeDasharray;
+    const pointsById = new Map<PointId, Torus2DScenePoint>(
+      scene.points.map((point) => [point.logicalPointId, point]),
+    );
+
+    if (territory && territory.size > 0) {
+      const territoryLayer = document.createElementNS(SVG_NS, 'g');
+      territoryLayer.setAttribute('class', 'torus-board__endgame-territory');
+      const dotRadius = Math.max(4, scene.spacing * 0.115);
+      for (const [pointId, owner] of territory) {
+        const point = pointsById.get(pointId);
+        if (!point) continue;
+        const dot = document.createElementNS(SVG_NS, 'circle');
+        setAttributes(dot, {
+          cx: String(point.x),
+          cy: String(point.y),
+          r: String(dotRadius),
+          fill: owner === 'black' ? '#111111' : '#ffffff',
+          stroke: owner === 'white' ? 'rgb(40 40 40 / 36%)' : 'none',
+          'stroke-width': owner === 'white' ? '1' : '0',
+          'data-logical-point-id': pointId,
+          'data-territory-owner': owner,
+          class: `torus-board__territory-dot torus-board__territory-dot--${owner}`,
+        });
+        territoryLayer.appendChild(dot);
       }
-      setAttributes(line, attributes);
-      endgameLines.appendChild(line);
+      root.appendChild(territoryLayer);
     }
 
-    this.navigationRoot.appendChild(endgameLines);
+    if (overlay) {
+      const defs = document.createElementNS(SVG_NS, 'defs');
+      const groupsLayer = document.createElementNS(SVG_NS, 'g');
+      groupsLayer.setAttribute('class', 'torus-board__endgame-contours');
+      const shapeRadius = scene.stoneRadius * 1.12;
+
+      overlay.groups.forEach((group, index) => {
+        const status = group.status === 'unknown' ? null : group.status;
+        const selected = overlay.selectedGroupId === group.id;
+        const hovered = overlay.hoveredGroupId === group.id;
+        const color = contourColor(status, group.color);
+        const filterId = `torus-endgame-outline-${index}`;
+        const outlineRadius = selected ? 5.2 : hovered ? 4.4 : 3.7;
+
+        const filter = document.createElementNS(SVG_NS, 'filter');
+        setAttributes(filter, {
+          id: filterId,
+          x: '-30%',
+          y: '-30%',
+          width: '160%',
+          height: '160%',
+          'color-interpolation-filters': 'sRGB',
+        });
+        const morphology = document.createElementNS(SVG_NS, 'feMorphology');
+        setAttributes(morphology, {
+          in: 'SourceAlpha',
+          operator: 'dilate',
+          radius: String(outlineRadius),
+          result: 'dilated',
+        });
+        const subtract = document.createElementNS(SVG_NS, 'feComposite');
+        setAttributes(subtract, {
+          in: 'dilated',
+          in2: 'SourceAlpha',
+          operator: 'out',
+          result: 'outline',
+        });
+        const flood = document.createElementNS(SVG_NS, 'feFlood');
+        setAttributes(flood, { 'flood-color': color, result: 'outline-color' });
+        const colorize = document.createElementNS(SVG_NS, 'feComposite');
+        setAttributes(colorize, {
+          in: 'outline-color',
+          in2: 'outline',
+          operator: 'in',
+        });
+        filter.append(morphology, subtract, flood, colorize);
+        defs.appendChild(filter);
+
+        const groupLayer = document.createElementNS(SVG_NS, 'g');
+        setAttributes(groupLayer, {
+          class: `torus-board__group-contour torus-board__group-contour--${status ?? 'unresolved'}`,
+          'data-endgame-group-id': group.id,
+          'data-endgame-status': status ?? 'unresolved',
+        });
+
+        if (status === 'seki') {
+          const mask = document.createElementNS(SVG_NS, 'g');
+          setAttributes(mask, {
+            class: 'torus-board__seki-mask',
+            style: 'color:#80878f',
+            opacity: '0.6',
+          });
+          this.appendGroupShape(mask, scene, pointsById, group, shapeRadius);
+          groupLayer.appendChild(mask);
+        }
+
+        const outlineSource = document.createElementNS(SVG_NS, 'g');
+        setAttributes(outlineSource, {
+          class: 'torus-board__group-contour-source',
+          style: 'color:#ffffff',
+          filter: `url(#${filterId})`,
+        });
+        this.appendGroupShape(outlineSource, scene, pointsById, group, shapeRadius);
+        groupLayer.appendChild(outlineSource);
+        groupsLayer.appendChild(groupLayer);
+      });
+
+      root.append(defs, groupsLayer);
+    }
+
+    this.navigationRoot.appendChild(root);
   }
 }
