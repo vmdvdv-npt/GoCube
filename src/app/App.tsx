@@ -1,7 +1,5 @@
 import './new-game.css';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { externalCorpusCaseCount } from '../core/endgame/testlab/ExternalCorpusImporter';
-import type { ReplayableTestCase, TestCaseSource } from '../core/endgame/testlab/TestCase';
 import type { RuleSet } from '../core/game/types';
 import { TORUS_SIZES } from '../core/topology/TorusTopology';
 import { CUBE_UI_SIZES } from './CubeGameConfig';
@@ -11,14 +9,8 @@ import {
   type ActiveGame,
   type GameMode,
   type GameSize,
-  type NewGameSettings,
   type SavedGameSummary,
-  type TestCaseActiveGame,
 } from './GameApplication';
-import {
-  LiveTestGeneratorProvider,
-  type LiveTestGeneratorControls,
-} from './LiveTestGeneratorContext';
 import { LocalStoragePreferencesStorage } from './persistence/LocalStoragePreferencesStorage';
 import {
   DEFAULT_USER_PREFERENCES,
@@ -38,10 +30,6 @@ type TopologyPreviewTransition = Readonly<{
 }>;
 
 const DEFAULT_KOMI = 7.5;
-const LIVE_TEST_CONTROLS_ENABLED =
-  import.meta.env.DEV || import.meta.env.VITE_ENABLE_LIVE_TEST_GENERATORS === '1';
-let fallbackRandomCounter = 0;
-
 const sizesForMode = (mode: GameMode): readonly GameSize[] =>
   mode === 'cube-2d' ? CUBE_UI_SIZES : TORUS_SIZES;
 
@@ -76,27 +64,6 @@ const topologyPreviewAlt = (mode: GameMode): string =>
 
 const normalizeKomi = (value: number): number => Math.floor(value) + 0.5;
 
-const randomUint32 = (): number => {
-  if (typeof globalThis.crypto?.getRandomValues === 'function') {
-    const words = new Uint32Array(1);
-    globalThis.crypto.getRandomValues(words);
-    return words[0] ?? 0;
-  }
-
-  fallbackRandomCounter += 1;
-  return (Date.now() + fallbackRandomCounter) >>> 0;
-};
-
-const settingsForActiveGame = (activeGame: ActiveGame): NewGameSettings => {
-  const view = activeGame.controller.viewModel();
-  return Object.freeze({
-    gameMode: activeGame.gameMode,
-    size: activeGame.controller.size as GameSize,
-    ruleSet: view.ruleSet,
-    komi: view.komi,
-  });
-};
-
 export function App() {
   const application = useMemo(() => new GameApplication(), []);
   const preferencesStorage = useMemo(() => new LocalStoragePreferencesStorage(), []);
@@ -115,10 +82,6 @@ export function App() {
   const [ruleSet, setRuleSet] = useState<RuleSet>('japanese');
   const [komi, setKomi] = useState(String(DEFAULT_KOMI));
   const [error, setError] = useState<string | null>(null);
-  const [currentTestCase, setCurrentTestCase] = useState<ReplayableTestCase | null>(null);
-  const [testIdInput, setTestIdInput] = useState('');
-  const [testCaseBusy, setTestCaseBusy] = useState(false);
-  const [testCaseFeedback, setTestCaseFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,13 +111,6 @@ export function App() {
     };
   }, [application, preferencesStorage]);
 
-  const resetTestCaseState = (): void => {
-    setCurrentTestCase(null);
-    setTestIdInput('');
-    setTestCaseFeedback(null);
-    setTestCaseBusy(false);
-  };
-
   const continueSavedGame = async (): Promise<void> => {
     setScreen('loading');
     setError(null);
@@ -165,7 +121,6 @@ export function App() {
       return;
     }
 
-    resetTestCaseState();
     setActiveGame(restored);
     setGameInstanceKey((current) => current + 1);
     setScreen('game');
@@ -176,8 +131,7 @@ export function App() {
     try {
       await application.discardSavedGame();
       const nextGameMode = preferredGameMode(preferences);
-      resetTestCaseState();
-      setActiveGame(null);
+        setActiveGame(null);
       setSavedGame(null);
       setConfirmNewGame(false);
       topologyPreviewTargetRef.current = nextGameMode;
@@ -256,8 +210,7 @@ export function App() {
         setError('Game started, but preferences could not be saved.');
       }
 
-      resetTestCaseState();
-      setActiveGame(next);
+        setActiveGame(next);
       setGameInstanceKey((current) => current + 1);
       setScreen('game');
     } catch (caught) {
@@ -265,110 +218,9 @@ export function App() {
     }
   };
 
-  const applyTestCase = (loaded: TestCaseActiveGame): void => {
-    setActiveGame(loaded.activeGame);
-    setCurrentTestCase(loaded.testCase);
-    setTestIdInput(loaded.testCase.testId);
-    setGameInstanceKey((current) => current + 1);
-    const diagnostics = loaded.testCase.diagnostics;
-    setTestCaseFeedback(
-      diagnostics?.attention
-        ? diagnostics.attentionReason ?? 'This differential case requires review.'
-        : diagnostics
-          ? 'Source / KataGo / Cube Go diagnostics have no detected mismatch.'
-          : `${loaded.testCase.scenario} loaded.`,
-    );
-  };
-
-  const generateTestCase = async (
-    source: Exclude<TestCaseSource, 'corpus'>,
-  ): Promise<void> => {
-    if (!activeGame || testCaseBusy) return;
-    setTestCaseBusy(true);
-    setTestCaseFeedback(null);
-    try {
-      applyTestCase(
-        await application.createGeneratedTestCase(
-          settingsForActiveGame(activeGame),
-          source,
-          randomUint32(),
-        ),
-      );
-    } catch (caught) {
-      setTestCaseFeedback(
-        caught instanceof Error ? caught.message : 'Could not generate test case.',
-      );
-    } finally {
-      setTestCaseBusy(false);
-    }
-  };
-
-  const generateCorpusTestCase = async (): Promise<void> => {
-    if (!activeGame || testCaseBusy) return;
-    setTestCaseBusy(true);
-    setTestCaseFeedback(null);
-    try {
-      const catalogCount = externalCorpusCaseCount();
-      if (catalogCount < 1) throw new Error('No eligible external corpus cases are installed.');
-      const catalogIndex = randomUint32() % catalogCount;
-      const transformCount = activeGame.gameMode === 'cube-2d' ? 48 : 8;
-      const transform = randomUint32() % transformCount;
-      applyTestCase(
-        await application.createCorpusTestCase(
-          settingsForActiveGame(activeGame),
-          catalogIndex,
-          transform,
-        ),
-      );
-    } catch (caught) {
-      setTestCaseFeedback(
-        caught instanceof Error ? caught.message : 'Could not load an AI-verified corpus case.',
-      );
-    } finally {
-      setTestCaseBusy(false);
-    }
-  };
-
-  const loadTestId = async (): Promise<void> => {
-    if (!activeGame || testCaseBusy) return;
-    const normalized = testIdInput.trim();
-    if (normalized.length === 0) return;
-    setTestCaseBusy(true);
-    setTestCaseFeedback(null);
-    try {
-      const view = activeGame.controller.viewModel();
-      applyTestCase(
-        await application.loadTestCaseById(normalized, {
-          ruleSet: view.ruleSet,
-          komi: view.komi,
-        }),
-      );
-    } catch (caught) {
-      setTestCaseFeedback(caught instanceof Error ? caught.message : 'Could not load Test ID.');
-    } finally {
-      setTestCaseBusy(false);
-    }
-  };
-
-  const liveTestControls: LiveTestGeneratorControls | null =
-    LIVE_TEST_CONTROLS_ENABLED && screen === 'game' && activeGame
-      ? Object.freeze({
-          current: currentTestCase,
-          testIdInput,
-          busy: testCaseBusy,
-          feedback: testCaseFeedback,
-          onTestIdInputChange: setTestIdInput,
-          onGenerateGame: () => void generateTestCase('game-like'),
-          onGenerateEndgame: () => void generateTestCase('synthetic-endgame'),
-          onGenerateCorpus: () => void generateCorpusTestCase(),
-          onLoadTestId: () => void loadTestId(),
-        })
-      : null;
-
   const sizes = sizesForMode(gameMode);
 
   return (
-    <LiveTestGeneratorProvider value={liveTestControls}>
       <main className={`app-shell${screen === 'game' ? ' app-shell--game' : ''}`}>
         {screen !== 'game' ? (
           <header className="app-header">
@@ -565,6 +417,5 @@ export function App() {
 
         {error ? <p className="game-feedback">{error}</p> : null}
       </main>
-    </LiveTestGeneratorProvider>
   );
 }

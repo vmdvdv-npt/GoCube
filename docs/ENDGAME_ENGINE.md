@@ -3689,3 +3689,16 @@ Work 8 теперь закрыт как последовательность:
 - performance gate deterministic и algorithmic, без wall-clock correctness threshold.
 
 **TerritoryResolver Work 8 track завершён. Work 7D остаётся отдельным classifier hardening/integration scope; Work 9 остаётся отдельным massive acceptance / shadow-comparison scope.**
+
+---
+
+# 55. Cleanup checkpoint — interactive Test Case / Test ID lab removed
+
+Срез на **2026-08-24**. Старый пользовательский runtime Test Case / Test ID subsystem удалён из линии `engine`.
+
+Удалены interactive `Generate Game`, `Generate Endgame`, `Generate Corpus`, Test ID input/load/current ID, Test Case feedback/diagnostics, live generator, controlled generated-endgame runtime, obsolete external-corpus runtime и legacy Test ID replay/compatibility. Dedicated UI/TestCase unit tests и E2E удалены вместе с feature; скрытого compatibility adapter или replacement generator не оставлено.
+
+Production proof semantics, gameplay, persistence, Endgame Review и Chinese/Japanese scoring этим cleanup не менялись. Automated correctness infrastructure сохранена отдельно: `Work9Acceptance.ts`, `Work9Acceptance.test.ts`, `Work9TopologyAcceptance.test.ts`, `EndgameHardening`, differential/oracle utilities и deterministic test-only generators/fixtures продолжают выполнять proof/hardening/shadow acceptance задачи и не являются пользовательским Test Case runtime.
+
+Новый neutral position generator в этот cleanup **не входит** и остаётся отдельной будущей задачей.
+
