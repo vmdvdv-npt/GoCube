@@ -1,12 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { AlphaZeroGeneratedGame, AlphaZeroGeneratedMove } from './AlphaZeroGateway';
 import { DeveloperReplayCompatibilityError, DeveloperReplaySession } from './DeveloperReplaySession';
 
-const game = (moves: readonly AlphaZeroGeneratedMove[], size = 3): AlphaZeroGeneratedGame => Object.freeze({
+const game = (
+  moves: readonly AlphaZeroGeneratedMove[],
+  size = 3,
+  ruleSet: 'chinese' | 'japanese' = 'chinese',
+): AlphaZeroGeneratedGame => Object.freeze({
   protocolVersion: 1,
   topology: 'cube',
   size,
-  ruleSet: 'chinese',
+  ruleSet,
   komi: 7.5,
   blackCheckpoint: 'checkpoint-a',
   whiteCheckpoint: 'checkpoint-a',
@@ -64,6 +68,42 @@ describe('DeveloperReplaySession', () => {
     const replay = new DeveloperReplaySession(game([pass(1, 'black'), pass(2, 'white')]));
     await replay.jumpToEnd();
     expect(replay.controller.viewModel().phase).toBe('endgame');
+  });
+
+  it('independently scores a fully resolved Japanese endgame without mutating replay phase', async () => {
+    const replay = new DeveloperReplaySession(
+      game([pass(1, 'black'), pass(2, 'white')], 3, 'japanese'),
+    );
+    const listener = vi.fn();
+    replay.setFinalScoreListener(listener);
+
+    await replay.jumpToEnd();
+
+    const score = replay.diagnosticScore();
+    expect(score).not.toBeNull();
+    expect(score?.ruleSet).toBe('japanese');
+    expect(score?.black).toBe(0);
+    expect(score?.white).toBe(7.5);
+    expect(score?.winner).toBe('white');
+    expect(replay.controller.viewModel().phase).toBe('endgame');
+    expect(listener).toHaveBeenLastCalledWith(score);
+  });
+
+  it('keeps the independent GoCube score unavailable while groups remain unresolved', async () => {
+    const replay = new DeveloperReplaySession(
+      game([
+        place(1, 'black', 'front:1:1'),
+        pass(2, 'white'),
+        pass(3, 'black'),
+      ], 3, 'japanese'),
+    );
+
+    await replay.jumpToEnd();
+
+    expect(replay.controller.viewModel().phase).toBe('endgame');
+    if (replay.controller.nextUnresolvedEndgameGroupId() !== null) {
+      expect(replay.diagnosticScore()).toBeNull();
+    }
   });
 
   it('validates captures against GoCube authoritative captures', async () => {
