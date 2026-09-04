@@ -28,6 +28,58 @@ type ExternalReplayAction = Readonly<{
   result: Cube2DGameActionResult;
 }>;
 
+type DevelopmentSettings = Readonly<{
+  blackCheckpointId?: string;
+  whiteCheckpointId?: string;
+  mctsSimulations?: number;
+}>;
+
+const DEVELOPMENT_SETTINGS_KEY = 'gocube.development.alphazero.v1';
+
+const readDevelopmentSettings = (): DevelopmentSettings => {
+  try {
+    const raw = window.localStorage.getItem(DEVELOPMENT_SETTINGS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      ...(typeof parsed.blackCheckpointId === 'string'
+        ? { blackCheckpointId: parsed.blackCheckpointId }
+        : {}),
+      ...(typeof parsed.whiteCheckpointId === 'string'
+        ? { whiteCheckpointId: parsed.whiteCheckpointId }
+        : {}),
+      ...(Number.isSafeInteger(parsed.mctsSimulations) && Number(parsed.mctsSimulations) >= 1
+        ? { mctsSimulations: Number(parsed.mctsSimulations) }
+        : {}),
+    };
+  } catch {
+    return {};
+  }
+};
+
+const persistDevelopmentSettings = (patch: DevelopmentSettings): void => {
+  try {
+    const current = readDevelopmentSettings();
+    window.localStorage.setItem(
+      DEVELOPMENT_SETTINGS_KEY,
+      JSON.stringify({ ...current, ...patch }),
+    );
+  } catch {
+    // Development preferences are convenience only; storage failures must not block replay.
+  }
+};
+
+const latestCubeCheckpoint = (
+  checkpoints: readonly AlphaZeroCheckpointDescriptor[],
+): AlphaZeroCheckpointDescriptor | undefined => {
+  let latest: AlphaZeroCheckpointDescriptor | undefined;
+  for (const checkpoint of checkpoints) {
+    if (checkpoint.topology !== 'cube') continue;
+    if (!latest || checkpoint.iteration > latest.iteration) latest = checkpoint;
+  }
+  return latest;
+};
+
 const checkpointLabel = (checkpoint: AlphaZeroCheckpointDescriptor): string =>
   `${checkpoint.runName} · iter ${checkpoint.iteration} · ${checkpoint.topology} ${checkpoint.size}×${checkpoint.size}`;
 
@@ -62,18 +114,29 @@ const generatedGameCompatibilityError = (
 
 const errorMessage = (error: unknown): string => {
   if (error instanceof DeveloperReplayCompatibilityError) return error.message;
-  if (error instanceof AlphaZeroGatewayError) return error.message;
+  if (error instanceof AlphaZeroGatewayError) {
+    if (error.message.includes('generation_busy')) {
+      return 'AlphaZero is already generating another game. Wait for it to finish, or restart ./dev to cancel the old generation.';
+    }
+    return error.message;
+  }
   return error instanceof Error ? error.message : 'Development operation failed.';
 };
 
 export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: DevelopmentWorkspaceProps) {
   const gateway = useMemo(() => providedGateway ?? new HttpAlphaZeroClient(), [providedGateway]);
+  const initialSettingsRef = useRef<DevelopmentSettings | undefined>(undefined);
+  if (initialSettingsRef.current === undefined) {
+    initialSettingsRef.current = readDevelopmentSettings();
+  }
+  const initialSettings = initialSettingsRef.current;
+
   const [connection, setConnection] = useState<ConnectionState>('checking');
   const [serviceLabel, setServiceLabel] = useState('Checking AlphaZero…');
   const [checkpoints, setCheckpoints] = useState<readonly AlphaZeroCheckpointDescriptor[]>([]);
-  const [blackCheckpointId, setBlackCheckpointId] = useState('');
-  const [whiteCheckpointId, setWhiteCheckpointId] = useState('');
-  const [mctsSimulations, setMctsSimulations] = useState(100);
+  const [blackCheckpointId, setBlackCheckpointId] = useState(initialSettings.blackCheckpointId ?? '');
+  const [whiteCheckpointId, setWhiteCheckpointId] = useState(initialSettings.whiteCheckpointId ?? '');
+  const [mctsSimulations, setMctsSimulations] = useState(initialSettings.mctsSimulations ?? 100);
   const [generating, setGenerating] = useState(false);
   const [replay, setReplay] = useState<DeveloperReplaySession | null>(null);
   const [position, setPosition] = useState(0);
@@ -105,14 +168,21 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
       setConnection('available');
       setServiceLabel(`${health.service} ${health.version} · protocol v${health.protocolVersion}`);
       setCheckpoints(availableCheckpoints);
-      const firstCube = availableCheckpoints.find((checkpoint) => checkpoint.topology === 'cube');
-      const fallback = firstCube ?? availableCheckpoints[0];
+      const fallback = latestCubeCheckpoint(availableCheckpoints) ?? availableCheckpoints[0];
       if (fallback) {
         setBlackCheckpointId((current) =>
-          availableCheckpoints.some((checkpoint) => checkpoint.id === current) ? current : fallback.id,
+          availableCheckpoints.some(
+            (checkpoint) => checkpoint.id === current && checkpoint.topology === 'cube',
+          )
+            ? current
+            : fallback.id,
         );
         setWhiteCheckpointId((current) =>
-          availableCheckpoints.some((checkpoint) => checkpoint.id === current) ? current : fallback.id,
+          availableCheckpoints.some(
+            (checkpoint) => checkpoint.id === current && checkpoint.topology === 'cube',
+          )
+            ? current
+            : fallback.id,
         );
       } else {
         setBlackCheckpointId('');
@@ -261,7 +331,11 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
               <select
                 value={blackCheckpointId}
                 disabled={connection !== 'available' || generating}
-                onChange={(event) => setBlackCheckpointId(event.target.value)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setBlackCheckpointId(value);
+                  persistDevelopmentSettings({ blackCheckpointId: value });
+                }}
               >
                 <option value="">Select checkpoint</option>
                 {checkpoints.map((checkpoint) => (
@@ -275,7 +349,11 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
               <select
                 value={whiteCheckpointId}
                 disabled={connection !== 'available' || generating}
-                onChange={(event) => setWhiteCheckpointId(event.target.value)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setWhiteCheckpointId(value);
+                  persistDevelopmentSettings({ whiteCheckpointId: value });
+                }}
               >
                 <option value="">Select checkpoint</option>
                 {checkpoints.map((checkpoint) => (
@@ -292,7 +370,13 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
                 step={1}
                 value={mctsSimulations}
                 disabled={generating}
-                onChange={(event) => setMctsSimulations(Number(event.target.value))}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  setMctsSimulations(value);
+                  if (Number.isSafeInteger(value) && value >= 1) {
+                    persistDevelopmentSettings({ mctsSimulations: value });
+                  }
+                }}
               />
             </label>
 
