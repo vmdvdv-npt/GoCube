@@ -4,16 +4,16 @@ import {
   CubeTopology,
   type CubeSize,
 } from '../../core/topology/CubeTopology';
-import { CUBE_2D_CENTER, createCube2DLayout } from './Cube2DLayout';
+import { CUBE_2D_CENTER, createCube2DLayout, type Cube2DLayoutCell } from './Cube2DLayout';
 import {
   createCube2DViewState,
   navigateCube2DViewState,
   setCube2DVerticalAnchorColumn,
-  type Cube2DNavigationDirection,
 } from './Cube2DNavigation';
 import { CubeOrientation } from './CubeOrientation';
 
 const CUBE_VIEW_CONTRACT_SIZES = [2, 3, 4, 5, 6, 7, 8, 10] as const satisfies readonly CubeSize[];
+const ANCHOR_COLUMNS = [0, 1, 2, 3] as const;
 
 const allOrientations = (): readonly CubeOrientation[] => {
   const queue = [new CubeOrientation()];
@@ -30,20 +30,15 @@ const allOrientations = (): readonly CubeOrientation[] => {
   return [...result.values()];
 };
 
-const moveOrientation = (
-  orientation: CubeOrientation,
-  direction: Cube2DNavigationDirection,
-): CubeOrientation => {
-  switch (direction) {
-    case 'left':
-      return orientation.moveLeft();
-    case 'right':
-      return orientation.moveRight();
-    case 'up':
-      return orientation.moveUp();
-    case 'down':
-      return orientation.moveDown();
-  }
+const expectSameVisibleBoard = (
+  actual: Cube2DLayoutCell | null,
+  expected: Cube2DLayoutCell | null,
+): void => {
+  expect(actual).not.toBeNull();
+  expect(expected).not.toBeNull();
+  expect(actual?.face).toBe(expected?.face);
+  expect(actual?.rotation).toBe(expected?.rotation);
+  expect(actual?.pointIds).toEqual(expected?.pointIds);
 };
 
 describe('Cube 2D navigation and view state', () => {
@@ -54,58 +49,100 @@ describe('Cube 2D navigation and view state', () => {
     expect(state.verticalAnchorColumn).toBe(1);
   });
 
-  it('routes left/right/up/down through CubeOrientation for all 24 orientations', () => {
+  it('routes horizontal navigation through CubeOrientation for all orientations and anchors', () => {
     const orientations = allOrientations();
     expect(orientations).toHaveLength(24);
 
     for (const orientation of orientations) {
-      for (const direction of ['left', 'right', 'up', 'down'] as const) {
-        const state = createCube2DViewState(orientation, 3);
-        const moved = navigateCube2DViewState(state, direction);
-        const expected = moveOrientation(orientation, direction);
+      for (const anchor of ANCHOR_COLUMNS) {
+        for (const direction of ['left', 'right'] as const) {
+          const state = createCube2DViewState(orientation, anchor);
+          const moved = navigateCube2DViewState(state, direction);
+          const expected = direction === 'left' ? orientation.moveLeft() : orientation.moveRight();
 
-        expect(moved.orientation.equals(expected)).toBe(true);
-        expect(moved.orientation.centerFace).toBe(expected.centerFace);
-        expect(moved.verticalAnchorColumn).toBe(3);
+          expect(moved.orientation.equals(expected)).toBe(true);
+          expect(moved.orientation.centerFace).toBe(expected.centerFace);
+          expect(moved.verticalAnchorColumn).toBe(anchor);
+        }
+      }
+    }
+  });
+
+  it('preserves the established column-1 vertical navigation behavior', () => {
+    for (const orientation of allOrientations()) {
+      const initial = createCube2DViewState(orientation, 1);
+
+      expect(navigateCube2DViewState(initial, 'up').orientation.equals(orientation.moveUp())).toBe(true);
+      expect(navigateCube2DViewState(initial, 'down').orientation.equals(orientation.moveDown())).toBe(true);
+    }
+  });
+
+  it('shifts TOP, middle and BOTTOM consistently in every selected anchor column', () => {
+    for (const orientation of allOrientations()) {
+      for (const anchor of ANCHOR_COLUMNS) {
+        const initial = createCube2DViewState(orientation, anchor);
+        const before = createCube2DLayout(initial.orientation, 4, anchor);
+        const beforeTop = before.rows[0][anchor];
+        const beforeMiddle = before.rows[1][anchor];
+        const beforeBottom = before.rows[2][anchor];
+
+        const movedUp = navigateCube2DViewState(initial, 'up');
+        const afterUp = createCube2DLayout(movedUp.orientation, 4, anchor);
+        expect(movedUp.verticalAnchorColumn).toBe(anchor);
+        expectSameVisibleBoard(afterUp.rows[1][anchor], beforeTop);
+        expectSameVisibleBoard(afterUp.rows[2][anchor], beforeMiddle);
+
+        const movedDown = navigateCube2DViewState(initial, 'down');
+        const afterDown = createCube2DLayout(movedDown.orientation, 4, anchor);
+        expect(movedDown.verticalAnchorColumn).toBe(anchor);
+        expectSameVisibleBoard(afterDown.rows[1][anchor], beforeBottom);
+        expectSameVisibleBoard(afterDown.rows[0][anchor], beforeMiddle);
       }
     }
   });
 
   it('returns to the exact initial orientation after four horizontal moves', () => {
     for (const orientation of allOrientations()) {
-      for (const direction of ['left', 'right'] as const) {
-        let state = createCube2DViewState(orientation, 2);
-        for (let step = 0; step < 4; step += 1) {
-          state = navigateCube2DViewState(state, direction);
-        }
+      for (const anchor of ANCHOR_COLUMNS) {
+        for (const direction of ['left', 'right'] as const) {
+          let state = createCube2DViewState(orientation, anchor);
+          for (let step = 0; step < 4; step += 1) {
+            state = navigateCube2DViewState(state, direction);
+          }
 
-        expect(state.orientation.equals(orientation)).toBe(true);
-        expect(state.verticalAnchorColumn).toBe(2);
+          expect(state.orientation.equals(orientation)).toBe(true);
+          expect(state.verticalAnchorColumn).toBe(anchor);
+        }
       }
     }
   });
 
-  it('keeps vertical navigation reversible and four-step cyclic from every orientation', () => {
+  it('keeps vertical navigation reversible and four-step cyclic for every anchor', () => {
     for (const orientation of allOrientations()) {
-      const initial = createCube2DViewState(orientation);
-      const upThenDown = navigateCube2DViewState(
-        navigateCube2DViewState(initial, 'up'),
-        'down',
-      );
-      const downThenUp = navigateCube2DViewState(
-        navigateCube2DViewState(initial, 'down'),
-        'up',
-      );
+      for (const anchor of ANCHOR_COLUMNS) {
+        const initial = createCube2DViewState(orientation, anchor);
+        const upThenDown = navigateCube2DViewState(
+          navigateCube2DViewState(initial, 'up'),
+          'down',
+        );
+        const downThenUp = navigateCube2DViewState(
+          navigateCube2DViewState(initial, 'down'),
+          'up',
+        );
 
-      expect(upThenDown.orientation.equals(orientation)).toBe(true);
-      expect(downThenUp.orientation.equals(orientation)).toBe(true);
+        expect(upThenDown.orientation.equals(orientation)).toBe(true);
+        expect(downThenUp.orientation.equals(orientation)).toBe(true);
+        expect(upThenDown.verticalAnchorColumn).toBe(anchor);
+        expect(downThenUp.verticalAnchorColumn).toBe(anchor);
 
-      for (const direction of ['up', 'down'] as const) {
-        let state = initial;
-        for (let step = 0; step < 4; step += 1) {
-          state = navigateCube2DViewState(state, direction);
+        for (const direction of ['up', 'down'] as const) {
+          let state = initial;
+          for (let step = 0; step < 4; step += 1) {
+            state = navigateCube2DViewState(state, direction);
+          }
+          expect(state.orientation.equals(orientation)).toBe(true);
+          expect(state.verticalAnchorColumn).toBe(anchor);
         }
-        expect(state.orientation.equals(orientation)).toBe(true);
       }
     }
   });
@@ -114,7 +151,7 @@ describe('Cube 2D navigation and view state', () => {
     const orientation = new CubeOrientation().moveRight().moveUp();
     const initial = createCube2DViewState(orientation);
 
-    for (const column of [0, 1, 2, 3] as const) {
+    for (const column of ANCHOR_COLUMNS) {
       const moved = setCube2DVerticalAnchorColumn(initial, column);
       expect(moved.verticalAnchorColumn).toBe(column);
       expect(moved.orientation).toBe(orientation);
@@ -131,7 +168,7 @@ describe('Cube 2D navigation and view state', () => {
       const topology = new CubeTopology(size);
 
       for (const orientation of orientations) {
-        for (const anchor of [0, 1, 2, 3] as const) {
+        for (const anchor of ANCHOR_COLUMNS) {
           const initial = createCube2DViewState(orientation, anchor);
           const states = [
             initial,
@@ -168,7 +205,7 @@ describe('Cube 2D navigation and view state', () => {
     const topFace = orientation.neighbors.top;
     const bottomFace = orientation.neighbors.bottom;
 
-    for (const anchor of [0, 1, 2, 3] as const) {
+    for (const anchor of ANCHOR_COLUMNS) {
       const state = setCube2DVerticalAnchorColumn(initial, anchor);
       const layout = createCube2DLayout(state.orientation, 4, state.verticalAnchorColumn);
       const top = layout.rows[0][anchor];
