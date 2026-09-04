@@ -1,13 +1,13 @@
-import { useEffect, useMemo, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { GameViewModel } from '../presentation/PresentationModel';
-import { LocalStoragePreferencesStorage } from './persistence/LocalStoragePreferencesStorage';
 
 export interface GameSidebarProps {
   readonly size: number;
   readonly viewModel: GameViewModel;
   readonly showMoveNumbers: boolean;
   readonly onShowMoveNumbersChange: (visible: boolean) => void;
-  readonly showDuplicateRegions: boolean;
+  /** Legacy renderer plumbing retained for caller compatibility; not exposed by the main UI. */
+  readonly showDuplicateRegions?: boolean;
   readonly onShowDuplicateRegionsChange?: (visible: boolean) => void;
   readonly duplicateRegionsDisabled?: boolean;
   readonly passDisabled: boolean;
@@ -29,9 +29,6 @@ export function GameSidebar({
   viewModel,
   showMoveNumbers,
   onShowMoveNumbersChange,
-  showDuplicateRegions,
-  onShowDuplicateRegionsChange,
-  duplicateRegionsDisabled = false,
   passDisabled,
   canRedo,
   canUndo,
@@ -45,49 +42,12 @@ export function GameSidebar({
   endgame = null,
   feedback = null,
 }: GameSidebarProps) {
-  const preferencesStorage = useMemo(() => new LocalStoragePreferencesStorage(), []);
   const stageLabel =
     viewModel.phase === 'playing'
       ? `${viewModel.currentPlayer === 'black' ? 'Black' : 'White'} to move`
       : viewModel.phase === 'endgame'
         ? 'Classify groups'
         : 'Game finished';
-
-  useEffect(() => {
-    if (duplicateRegionsDisabled || !onShowDuplicateRegionsChange) return;
-
-    let cancelled = false;
-    void preferencesStorage.loadPreferences().then((preferences) => {
-      if (!cancelled) {
-        onShowDuplicateRegionsChange(preferences.showTorusDuplicateRegions);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    duplicateRegionsDisabled,
-    onShowDuplicateRegionsChange,
-    preferencesStorage,
-  ]);
-
-  const handleDuplicateRegionsChange = (visible: boolean): void => {
-    onShowDuplicateRegionsChange?.(visible);
-    void preferencesStorage
-      .loadPreferences()
-      .then((current) =>
-        preferencesStorage.savePreferences(
-          Object.freeze({
-            ...current,
-            showTorusDuplicateRegions: visible,
-          }),
-        ),
-      )
-      .catch(() => {
-        // A preference write failure must not block or revert the active game view.
-      });
-  };
 
   return (
     <>
@@ -124,23 +84,13 @@ export function GameSidebar({
       </div>
 
       <div className="torus-duplicates-control" role="group" aria-label="Board display options">
-        {!duplicateRegionsDisabled ? (
-          <label>
-            <input
-              type="checkbox"
-              checked={showDuplicateRegions}
-              onChange={(event) => handleDuplicateRegionsChange(event.target.checked)}
-            />
-            Показывать дублирующие области
-          </label>
-        ) : null}
         <label>
           <input
             type="checkbox"
             checked={showMoveNumbers}
             onChange={(event) => onShowMoveNumbersChange(event.target.checked)}
           />
-          Номера ходов
+          Show move number
         </label>
       </div>
 
