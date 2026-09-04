@@ -37,7 +37,7 @@ const edgeMarginInGridSteps = async (page: Page): Promise<number> =>
   });
 
 for (const size of ['9', '13', '19'] as const) {
-  test(`${size}x${size} keeps its normal edge margin and reserves room for one duplicate strip`, async ({
+  test(`${size}x${size} keeps its normal edge margin without duplicate-region UI`, async ({
     page,
   }) => {
     await startGame(page, size);
@@ -45,21 +45,13 @@ for (const size of ['9', '13', '19'] as const) {
     await expect.poll(() => edgeMarginInGridSteps(page)).toBeGreaterThan(0.72);
     await expect.poll(() => edgeMarginInGridSteps(page)).toBeLessThan(0.88);
 
-    await page.getByLabel('Показывать дублирующие области').check();
-    await expect(page.locator('.torus-board')).toHaveAttribute(
-      'data-duplicate-regions-visible',
-      'true',
-    );
-
-    // Duplicate mode deliberately reserves the former wooden margin for a single
-    // renderer-only wrapped strip. The playable hit geometry itself stays size×size.
+    const board = page.locator('.torus-board');
+    await expect(board).toHaveAttribute('data-duplicate-regions-visible', 'false');
+    await expect(page.getByText(/duplicate regions/i)).toHaveCount(0);
     await expect(page.locator('.torus-board__hit-target[data-copy-role="primary"]')).toHaveCount(
       Number(size) ** 2,
     );
     await expect(page.locator('.torus-board__hit-target[data-copy-role="duplicate"]')).toHaveCount(0);
-    await expect(page.locator('.torus-board__edge-duplicate-band')).toHaveCount(4);
-    await expect(page.locator('.torus-board__edge-duplicate-grid-line')).toHaveCount(
-      Number(size) * 4 + 4,
-    );
+    await expect(page.locator('.torus-board__edge-duplicate-band')).toHaveCount(0);
   });
 }
