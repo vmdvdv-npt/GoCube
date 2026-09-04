@@ -38,6 +38,15 @@ const requiredString = (
   return value;
 };
 
+const optionalString = (
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+  context: string,
+): string | undefined => {
+  if (!Object.prototype.hasOwnProperty.call(record, key)) return undefined;
+  return requiredString(record, key, context);
+};
+
 const finiteNumber = (
   record: Readonly<Record<string, unknown>>,
   key: string,
@@ -62,6 +71,16 @@ const safeInteger = (
   }
   return value;
 };
+
+const optionalSafeInteger = (
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+  context: string,
+  fallback = 0,
+): number =>
+  Object.prototype.hasOwnProperty.call(record, key)
+    ? safeInteger(record, key, context)
+    : fallback;
 
 const protocolVersion = (record: Readonly<Record<string, unknown>>, context: string): 1 => {
   const version = safeInteger(record, 'protocolVersion', context, 1);
@@ -269,18 +288,47 @@ const parseMove = (
   });
 };
 
+/**
+ * Parse a scored result. Japanese V2 may intentionally return `noResult: true`
+ * with `score: null`; that terminal is valid protocol data but must not be
+ * presented as a draw or used as a scored result.
+ */
 const parseGeneratedResult = (
   value: unknown,
   context: string,
-): AlphaZeroGeneratedGameResult => {
+): AlphaZeroGeneratedGameResult | null => {
   const record = asRecord(value, context);
+  const fallbackCount = safeInteger(record, 'fallbackCount', context);
+  const unresolvedCount = optionalSafeInteger(record, 'unresolvedCount', context);
+  const cleanupMoveCount = optionalSafeInteger(record, 'cleanupMoveCount', context);
+  const adjudicatorId = optionalString(record, 'adjudicatorId', context);
+  const noResult = record.noResult === true;
+
+  if (Object.prototype.hasOwnProperty.call(record, 'noResult') && typeof record.noResult !== 'boolean') {
+    return protocolError(`${context}.noResult must be a boolean when present.`);
+  }
+
+  if (noResult) {
+    if (record.score !== null && record.score !== undefined) {
+      return protocolError(`${context}.score must be null for a no-result terminal.`);
+    }
+    if (unresolvedCount < 1) {
+      return protocolError(`${context}.unresolvedCount must be >= 1 for a no-result terminal.`);
+    }
+    return null;
+  }
+
   const scoreRecord = asRecord(record.score, `${context}.score`);
   const margin = finiteNumber(scoreRecord, 'margin', `${context}.score`);
   if (margin < 0) return protocolError(`${context}.score.margin must be >= 0.`);
 
   return Object.freeze({
     winner: winnerValue(record, 'winner', context),
-    fallbackCount: safeInteger(record, 'fallbackCount', context),
+    ...(adjudicatorId === undefined ? {} : { adjudicatorId }),
+    fallbackCount,
+    unresolvedCount,
+    cleanupMoveCount,
+    noResult: false as const,
     score: Object.freeze({
       ruleSet: ruleSetValue(scoreRecord, 'ruleSet', `${context}.score`),
       black: finiteNumber(scoreRecord, 'black', `${context}.score`),
@@ -305,9 +353,15 @@ export const parseAlphaZeroGeneratedGame = (value: unknown): AlphaZeroGeneratedG
   const moves = rawMoves.map((move, index) =>
     parseMove(move, index + 1, topology, `generatedGame.moves[${index}]`),
   );
-  const result = Object.prototype.hasOwnProperty.call(record, 'result')
+  const hasResult = Object.prototype.hasOwnProperty.call(record, 'result');
+  const result = hasResult
     ? parseGeneratedResult(record.result, 'generatedGame.result')
     : undefined;
+  const rawTerminal = Object.prototype.hasOwnProperty.call(record, 'terminal')
+    ? record.terminal
+    : hasResult && result === null
+      ? record.result
+      : undefined;
 
   const game: AlphaZeroGeneratedGame = {
     protocolVersion: protocolVersion(record, 'generatedGame'),
@@ -319,8 +373,8 @@ export const parseAlphaZeroGeneratedGame = (value: unknown): AlphaZeroGeneratedG
     whiteCheckpoint: requiredString(record, 'whiteCheckpoint', 'generatedGame'),
     mctsSimulations: safeInteger(record, 'mctsSimulations', 'generatedGame', 1),
     moves: Object.freeze(moves),
-    ...(Object.prototype.hasOwnProperty.call(record, 'terminal') ? { terminal: record.terminal } : {}),
-    ...(result === undefined ? {} : { result }),
+    ...(rawTerminal === undefined ? {} : { terminal: rawTerminal }),
+    ...(result === undefined || result === null ? {} : { result }),
   };
   return Object.freeze(game);
 };
