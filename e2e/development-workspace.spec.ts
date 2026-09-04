@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 type GeneratedMove = Readonly<Record<string, unknown>>;
+type GeneratedResult = Readonly<Record<string, unknown>>;
 
 const checkpoint = {
   id: 'cube4-current',
@@ -23,7 +24,24 @@ const normalMoves: readonly GeneratedMove[] = [
   { moveNumber: 8, color: 'white', action: { type: 'pass' } },
 ];
 
-const routeAlphaZero = async (page: Page, moves: readonly GeneratedMove[]) => {
+const normalResult: GeneratedResult = {
+  winner: 'white',
+  fallbackCount: 3,
+  score: {
+    ruleSet: 'chinese',
+    black: 5,
+    white: 8.5,
+    komi: 7.5,
+    winner: 'white',
+    margin: 3.5,
+  },
+};
+
+const routeAlphaZero = async (
+  page: Page,
+  moves: readonly GeneratedMove[],
+  result: GeneratedResult = normalResult,
+) => {
   await page.route('http://127.0.0.1:8765/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -82,6 +100,7 @@ const routeAlphaZero = async (page: Page, moves: readonly GeneratedMove[]) => {
             black: { checkpointId: checkpoint.id },
             white: { checkpointId: checkpoint.id },
             moves,
+            result,
           },
         }),
       });
@@ -120,6 +139,26 @@ test('Development Workspace replays generated Cube game without changing normal 
   await expect(page.locator('.cube-2d-board')).toHaveCount(6);
   await expect(page.getByText('0 / 8', { exact: true })).toBeVisible();
 
+  const replayControls = page.getByRole('region', { name: 'Replay controls' });
+  await expect(replayControls).toHaveCSS('position', 'fixed');
+  await expect(replayControls).toHaveCSS('display', 'flex');
+
+  const alphaResult = page.locator('.development-result-card').filter({ hasText: 'AlphaZero result' });
+  await expect(alphaResult).toContainText('WinnerWhite');
+  await expect(alphaResult).toContainText('ScoreB 5 · W 8.5');
+  await expect(alphaResult).toContainText('Margin3.5');
+  await expect(alphaResult).toContainText('fallbackCount3');
+  const goCubeResult = page.locator('.development-result-card').filter({ hasText: 'GoCube result' });
+  await expect(goCubeResult).toContainText('Pending endgame review');
+
+  await expect
+    .poll(() =>
+      page.locator('.cube-2d-anchor-slot').first().evaluate((element) =>
+        getComputedStyle(element).backgroundColor,
+      ),
+    )
+    .toBe('rgba(0, 0, 0, 0)');
+
   await page.getByRole('button', { name: 'Next move' }).click();
   await expect(stone(page, 'front:0:0')).toHaveCount(1);
   await expect(page.getByText('1 / 8', { exact: true })).toBeVisible();
@@ -154,6 +193,40 @@ test('Development Workspace replays generated Cube game without changing normal 
   await page.getByRole('button', { name: 'Back to GoCube' }).click();
   await expect(stone(page, 'front:2:2')).toHaveCount(1);
   expect(await localStorageSnapshot(page)).toEqual(savedBefore);
+});
+
+test('Development replay explicitly flags AlphaZero and GoCube result mismatch', async ({ page }) => {
+  await routeAlphaZero(
+    page,
+    [
+      { moveNumber: 1, color: 'black', action: { type: 'pass' } },
+      { moveNumber: 2, color: 'white', action: { type: 'pass' } },
+    ],
+    {
+      winner: 'black',
+      fallbackCount: 0,
+      score: {
+        ruleSet: 'chinese',
+        black: 8,
+        white: 7.5,
+        komi: 7.5,
+        winner: 'black',
+        margin: 0.5,
+      },
+    },
+  );
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Development', exact: true }).click();
+  await page.getByRole('button', { name: 'Generate game' }).click();
+  await page.getByRole('button', { name: 'Replay end' }).click();
+  await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
+  await page.getByRole('button', { name: 'Finish scoring' }).click();
+
+  const goCubeResult = page.locator('.development-result-card').filter({ hasText: 'GoCube result' });
+  await expect(goCubeResult).toContainText('WinnerWhite');
+  await expect(goCubeResult).toContainText('ScoreB 0 · W 7.5');
+  await expect(page.getByText('Results differ', { exact: true })).toBeVisible();
 });
 
 test('Development replay stops and diagnoses an illegal AlphaZero move', async ({ page }) => {
