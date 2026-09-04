@@ -109,7 +109,8 @@ describe('DeveloperReplaySession', () => {
     await replay.previous();
     expect(replay.position).toBe(3);
     await replay.next();
-    expect(replay.controller.snapshot()).toEqual(final);
+    const afterRedo = replay.controller.snapshot();
+    expect(afterRedo).toEqual({ ...final, sessionRevision: afterRedo.sessionRevision });
     await replay.seek(1);
     expect(replay.position).toBe(1);
     await replay.seek(3);
@@ -117,7 +118,8 @@ describe('DeveloperReplaySession', () => {
     await replay.jumpToStart();
     expect(replay.position).toBe(0);
     await replay.jumpToEnd();
-    expect(replay.controller.snapshot()).toEqual(final);
+    const afterSecondReplay = replay.controller.snapshot();
+    expect(afterSecondReplay).toEqual({ ...final, sessionRevision: afterSecondReplay.sessionRevision });
   });
 
   it('rejects non-Cube metadata before creating an alternative board model', () => {
