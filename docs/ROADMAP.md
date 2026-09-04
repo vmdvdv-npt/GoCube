@@ -45,6 +45,21 @@
 
 Активная разрабатываемая версия — **0.3 Automatic/Assisted alive-dead-seki**. Checkpoints **0.3.01 Library/Reuse Review и contract alignment**, **0.3.02 Deterministic Endgame Test Infrastructure**, **0.3.03 Differential Oracle Infrastructure**, **0.3.04 Automatic Alive core**, **0.3.05 Automatic Dead core**, **0.3.06 Obvious/Proven Seki**, **0.3.07 Assisted Review Integration** и **0.3.08 Stress / Differential Hardening** завершены. Следующий активный checkpoint — **0.3 integration / regression acceptance**.
 
+Независимо от нумерованной release-sequence, перед дальнейшим AlphaZero training выполняется первый обязательный этап постоянной cross-version development infrastructure: **Developer Workspace foundation + AlphaZero game replay**. Он не меняет границы уже принятых 0.1/0.2 и не перенумеровывает 0.3/0.5.
+
+---
+
+# Cross-version Development Infrastructure
+
+Development Workspace является постоянной инфраструктурой разработки, которая развивается рядом с нумерованными пользовательскими версиями и не считается отдельной пользовательской release-version.
+
+Нормативный порядок AlphaZero-интеграции начинается с:
+
+1. **Developer Workspace foundation + AlphaZero game replay** — подключить текущие AlphaZero checkpoints и реальный replay через существующий GoCube gameplay/rendering path до продолжения обучения;
+2. последующие AlphaZero diagnostics/training integrations планируются только после того, как первый этап даёт визуальный и compatibility feedback loop.
+
+Конкретный UX Development Workspace определяет `docs/GAME_CUBE_GO.md`, а application/infrastructure boundaries — `docs/ARCHITECTURE.md`.
+
 ---
 
 # Версия 0.1 — Torus 2D
@@ -149,7 +164,7 @@
 - test-only differential/oracle validation infrastructure для применимых позиций;
 - regression/fixture/property/stress coverage endgame-classification для обеих topology.
 
-Интерактивный пользовательский/developer Test Case/Test Lab runtime, Test ID, live/corpus generators, replay старых generated IDs и локальный AI/KataGo bridge не входят в текущий scope 0.3.
+Внутренний пользовательский/developer Test Case/Test Lab runtime, Test ID, live/corpus generators, replay старых generator IDs и локальный KataGo bridge не входят в scope 0.3. Это ограничение не запрещает отдельный постоянный cross-version Development Workspace и AlphaZero game replay, введённые соответствующим infrastructure stage выше.
 
 Cube 3D в 0.3 не входит. Cube-партии по-прежнему стартуют и играются в Cube 2D; Torus остаётся 2D.
 
@@ -172,7 +187,7 @@ Cube 3D в 0.3 не входит. Cube-партии по-прежнему ста
 3. **0.3.03 — Differential Oracle Infrastructure**
    - подключить независимые test-only reference/oracle abstractions для тех классов позиций, где сравнение корректно;
    - differential checks не входят в production correctness chain;
-   - интерактивный Local AI/KataGo bridge и внешний corpus runtime не являются частью текущей архитектуры приложения.
+   - интерактивный Local KataGo bridge и внешний corpus runtime не являются частью classifier architecture.
 
 4. **0.3.04 — Automatic Alive core**
    - сначала реализовать консервативное доказуемое определение живых/pass-alive групп;
@@ -210,7 +225,7 @@ Cube 3D в 0.3 не входит. Cube-партии по-прежнему ста
 - нет известных случаев, где classifier автоматически присваивает недоказанный/ошибочный статус в acceptance fixtures;
 - всё, что classifier не может доказать, остаётся `unresolved` и полностью разрешается ручным fallback;
 - test-only generated/fixed fixtures и stress/differential checks воспроизводимы по seed;
-- production gameplay и final scoring не содержат Test Case/Test ID/generator/corpus/local-AI runtime path;
+- authoritative production gameplay и final scoring не зависят от Test Case/Test ID/generator/corpus/KataGo tooling или внешнего AlphaZero service; наличие отдельного Development Workspace не меняет этот invariant;
 - assisted flow не создаёт расхождений в итоговом scoring относительно того же полного набора resolved statuses;
 - полный regression/acceptance gate версии проходит.
 
@@ -300,4 +315,4 @@ Online Multiplayer начинается только после стабилиз
 
 При составлении задачи на конкретную версию или checkpoint в scope включаются только функции, уже введённые этой версией или более ранними версиями, плюс техническая работа текущего checkpoint.
 
-Наличие будущего поведения в `docs/GAME_CUBE_GO.md` или будущего архитектурного контракта в `docs/ARCHITECTURE.md` не означает разрешение реализовывать его раньше версии, указанной в этом roadmap.
+Наличие будущего поведения в `docs/GAME_CUBE_GO.md` или будущего архитектурного контракта в `docs/ARCHITECTURE.md` не означает разрешение реализовывать его раньше версии, указанной в этом roadmap. Постоянная cross-version development infrastructure, явно указанная выше, не считается пользовательским feature scope нумерованной версии и может развиваться между release checkpoints.
