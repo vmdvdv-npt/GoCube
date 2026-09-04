@@ -1270,22 +1270,142 @@ Transition короткий и мягкий; физически точная fol
 - одновременно хорошо читаются central hole, top, inner и outer surfaces;
 - zoom возвращается к стандартному значению Torus 3D.
 
-# 42. Developer-only live test generators
+# 42. Development Workspace
 
-Во время developer/UAT-проверок общая левая панель из раздела 12 может показывать компактный блок генерации тестовых позиций. Это временный developer-only UI и он не является обязательной частью финального production gameplay.
+`Development` — постоянная developer capability основного приложения. Это отдельный screen, а не временный Test Case/Test Lab overlay.
 
-Когда блок включён:
+## 42.1. Entry и возврат
 
-- `Generate game` создаёт для текущих topology и board size новую воспроизводимую game-like позицию с автоматически созданным seed;
-- `Generate endgame` создаёт для текущих topology и board size новую воспроизводимую endgame-oriented позицию с автоматически созданным seed;
-- рядом показывается текущая identity generated case: generator type, topology, board size и seed;
-- пользователь может выбрать generator type, ввести seed и нажать `Replay seed`, чтобы точно повторно открыть case с этой комбинацией параметров;
-- одинаковые generator type + topology + board size + seed должны приводить к одной и той же позиции;
-- разные generator types используют один и тот же способ задания/replay seed с точки зрения пользователя;
-- controls одинаково доступны для Cube и Torus и находятся в существующей общей панели, без отдельного test sidebar.
+- В основном интерфейсе доступна кнопка `Development`.
+- Нажатие открывает отдельный `Development Workspace`.
+- Workspace не уничтожает и не заменяет обычную сохранённую пользовательскую партию.
+- Для выхода используется `Back to GoCube`.
+- После возврата обычный application lifecycle продолжается с тем же сохранённым game state, который существовал до входа в Development Workspace.
 
-После `Generate game` создаётся обычная активная партия: пользователь может поставить дополнительные stones, использовать Pass, Undo/Redo и завершить партию стандартным способом.
+## 42.2. AlphaZero connection и generation
 
-После `Generate endgame` также создаётся обычная активная партия, но позиция ориентирована на немедленную визуальную проверку финального классификатора; типовой ручной сценарий — `Pass → Pass → Assisted Review`.
+В AlphaZero area показываются:
 
-Production UI должен иметь возможность полностью скрыть этот developer block. Скрытие/удаление presentation controls не меняет обычное gameplay behavior.
+- connection status локального AlphaZero service;
+- topology;
+- size;
+- `Black checkpoint`;
+- `White checkpoint`;
+- `MCTS simulations`;
+- `Generate game`.
+
+Если AlphaZero service недоступен:
+
+- Workspace остаётся открытым и работоспособным;
+- показывается понятное состояние `AlphaZero unavailable`;
+- доступен повторный connection check;
+- обычная игра GoCube продолжает работать независимо от этого состояния.
+
+Checkpoint выбирается по стабильной identity, а не по отображаемому filesystem path.
+
+Разрешён self-play: один и тот же checkpoint можно выбрать за Black и White.
+
+Generation разрешена только для совместимых Black/White checkpoints. Topology, size, rules и komi должны совпадать; при несовместимости `Generate game` недоступна и показывается понятная причина.
+
+Во время generation:
+
+- второй generation параллельно не запускается;
+- отображается состояние выполнения;
+- transport/service error показывается как developer diagnostic и не приводит к падению приложения.
+
+## 42.3. Replay area
+
+После успешной generation партия открывается на настоящем существующем игровом представлении GoCube.
+
+Для Cube используется штатный Cube 2D renderer и его обычные:
+
+- faces;
+- stones;
+- captures;
+- navigation;
+- zoom/pan;
+- presentation;
+- endgame UI.
+
+Отдельная схематическая developer board не используется.
+
+Generated game не должна изменяться от navigation/zoom/pan и не должна иметь вторую альтернативную visual board model.
+
+## 42.4. Replay controls
+
+Обязательные controls:
+
+- переход в начало;
+- предыдущий ход;
+- `Play / Pause`;
+- следующий ход;
+- переход в конец;
+- slider по номеру хода;
+- текущая позиция вида `37 / 126`;
+- скорости `1×`, `5×`, `10×`.
+
+Другие speed presets не показываются.
+
+Default speed — `1×`.
+
+`Previous`, `Next`, slider и jump controls автоматически переводят replay в `Pause`.
+
+Replay выполняется строго последовательно: следующий generated move визуально/логически не начинается до завершения authoritative обработки предыдущего.
+
+## 42.5. Animation behavior
+
+Development replay использует штатный presentation animation mode, а не внешнее отключение CSS через Playwright или другой test harness.
+
+- `1×` — `normal`: обычные stone/capture/presentation animations включены;
+- `5×` — `disabled`: replay выполняется без gameplay animations;
+- `10×` — `disabled`;
+- slider seek и большие jumps по history выполняются без animations независимо от выбранной скорости.
+
+Переключение `1× ↔ 5× ↔ 10×` допускается во время текущего replay и не перезапускает партию.
+
+Animation mode не должен менять logical state, captures, очередь хода, history или результат replay.
+
+## 42.6. Compatibility diagnostics
+
+Development Workspace используется как compatibility feedback loop между AlphaZero и GoCube.
+
+Если generated move не может быть принят GoCube, replay немедленно:
+
+- останавливается;
+- переходит в `Pause`;
+- не пытается применять следующие moves;
+- показывает diagnostic error.
+
+Diagnostic содержит минимум:
+
+- move number;
+- expected player/color;
+- action / canonical `PointId` для placement;
+- rejection или mismatch reason.
+
+Если color generated move не совпадает с текущим player GoCube, применяется то же stop/pause behavior.
+
+Если topology, size, rules или komi generated game не соответствуют developer game, replay не начинается.
+
+Если AlphaZero передал captured points и они не совпадают с фактическим GoCube capture result, replay останавливается как compatibility failure.
+
+## 42.7. Seeking и history
+
+Replay navigation не хранит отдельную board occupancy.
+
+- `Previous` возвращает предыдущую реальную history position.
+- `Next` возвращает уже существующую future position либо применяет следующий generated move, если пользователь достиг прежнего forward frontier.
+- Slider может перемещаться назад и вперёд по generated move sequence.
+- Переход в начало/конец использует ту же replay history semantics.
+- Seeking не изменяет generated move list.
+
+## 42.8. Endgame в developer replay
+
+Если generated game заканчивается двумя последовательными Pass, GoCube штатно переходит в обычный assisted/manual endgame flow.
+
+- Existing assisted classifier не обходится.
+- Alive/dead/seki annotations и controls остаются теми же, что в обычной Cube 2D партии.
+- Workspace не завершает manual/assisted review автоматически только ради replay.
+- `Finish scoring` остаётся явным действием по обычным правилам endgame review.
+
+Таким образом уже первая версия Development Workspace пригодна для визуального исследования endgame и сравнения AlphaZero sequence с существующим поведением GoCube.

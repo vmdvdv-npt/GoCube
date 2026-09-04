@@ -4,6 +4,7 @@ import {
   type CSSProperties,
   type WheelEvent as ReactWheelEvent,
 } from 'react';
+import type { AnimationMode } from '../presentation/AnimationMode';
 import { finalBoardViewModel } from '../presentation/EndgameTerritoryPresentation';
 import { CUBE_2D_LAYOUT_COLUMNS, CUBE_2D_LAYOUT_ROWS } from '../presentation/cube/Cube2DLayout';
 import {
@@ -15,7 +16,7 @@ import { Cube2DGameController } from './Cube2DGameController';
 import { Cube2DVisualEffects } from './Cube2DVisualEffects';
 import { GameResultDialog } from './GameResultDialog';
 import { GameSidebar } from './GameSidebar';
-import { CUBE_ENDGAME_STATUSES, cubeEndgameStatusLabel, useCube2DGame } from './useCube2DGame';
+import { CUBE_ENDGAME_STATUSES, cubeEndgameStatusLabel, useCube2DGame, type Cube2DExternalAction } from './useCube2DGame';
 import { useDragPan, type DragPanOffset } from './useDragPan';
 import './manual-endgame.css';
 import './cube2d-preview.css';
@@ -63,10 +64,21 @@ const recenteredPanForZoomOut = (
 export interface Cube2DGameProps {
   readonly controller: Cube2DGameController;
   readonly onRequestNewGame: () => void;
+  readonly gameplayReadOnly?: boolean;
+  readonly newGameDisabled?: boolean;
+  readonly animationMode?: AnimationMode;
+  readonly externalAction?: Cube2DExternalAction | null;
 }
 
-export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
-  const g = useCube2DGame(controller);
+export function Cube2DGame({
+  controller,
+  onRequestNewGame,
+  gameplayReadOnly = false,
+  newGameDisabled = false,
+  animationMode = 'normal',
+  externalAction = null,
+}: Cube2DGameProps) {
+  const g = useCube2DGame(controller, { gameplayReadOnly, animationMode, externalAction });
   const displayViewModel = finalBoardViewModel(g.vm);
   const layoutCellSize = CUBE_2D_BASE_CELL_SIZE * g.zoom;
   const stageWidth = layoutCellSize * CUBE_2D_LAYOUT_COLUMNS;
@@ -83,7 +95,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
         '--cube-2d-navigation-from-x': `${
           (g.transition.fromLayout.verticalAnchorColumn - g.view.verticalAnchorColumn) * layoutCellSize
         }px`,
-        animationDuration: `${CUBE_2D_TRANSITION_MS}ms`,
+        animationDuration: `${animationMode === 'disabled' ? 0 : CUBE_2D_TRANSITION_MS}ms`,
       }
     : {};
 
@@ -191,7 +203,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
     ) : null;
 
   return (
-    <section className="torus-game cube-2d-game" aria-label="Cube 2D game">
+    <section className="torus-game cube-2d-game" aria-label="Cube 2D game" data-animation-mode={animationMode}>
       <GameSidebar
         size={controller.size}
         viewModel={g.vm}
@@ -199,15 +211,22 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
         onShowMoveNumbersChange={g.setShowMoveNumbers}
         showDuplicateRegions={false}
         duplicateRegionsDisabled
-        passDisabled={g.vm.phase !== 'playing' || g.passGuarded || Boolean(g.transition) || g.captureAnimating}
-        canRedo={!g.transition && !g.captureAnimating && controller.canRedo()}
-        canUndo={!g.transition && !g.captureAnimating && controller.canUndo()}
+        passDisabled={
+          gameplayReadOnly ||
+          g.vm.phase !== 'playing' ||
+          g.passGuarded ||
+          Boolean(g.transition) ||
+          g.captureAnimating
+        }
+        canRedo={!gameplayReadOnly && !g.transition && !g.captureAnimating && controller.canRedo()}
+        canUndo={!gameplayReadOnly && !g.transition && !g.captureAnimating && controller.canUndo()}
         onPass={() => void g.pass()}
         onRedo={() => void g.run(() => controller.redo())}
         onUndo={() => void g.run(() => controller.undo())}
         gameResultAvailable={Boolean(g.result && !g.resultOpen)}
         onOpenGameResult={() => g.setResultOpen(true)}
         onRequestNewGame={onRequestNewGame}
+        newGameDisabled={newGameDisabled}
         endgame={endgamePanel}
         feedback={g.feedback}
       />
@@ -293,6 +312,7 @@ export function Cube2DGame({ controller, onRequestNewGame }: Cube2DGameProps) {
                   Boolean(g.transition) ||
                   g.captureAnimating ||
                   g.vm.phase === 'finished' ||
+                  (gameplayReadOnly && g.vm.phase === 'playing') ||
                   dragPan.dragging
                 }
                 onPointHover={g.hover}

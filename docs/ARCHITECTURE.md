@@ -49,9 +49,14 @@
 26. Частичный ручной/assisted endgame review хранится как отдельный session-level `EndgameReviewState`; он не маскируется под уже завершённую `EndgameClassification`.
 27. Межпартийные пользовательские preferences отделены от сохранения текущей партии и от `ViewState` конкретной сессии.
 28. Autosave имеет монотонную revision и упорядоченную запись: более старый async save не может перезаписать более новое состояние.
-29. Production-classifier, final scoring и runtime UI не зависят от внешнего oracle, сети или developer-only verification tooling; differential/oracle adapters являются только test infrastructure.
+29. Обычный production gameplay, production-classifier и final scoring не зависят от внешнего oracle, сети или developer-only AI services; Development Workspace может использовать внешние AI/oracle services для diagnostics, но они не становятся correctness dependency обычной игры.
 30. Внешний oracle никогда не превращает вероятностную или эвристическую оценку в authoritative automatic status без внутренней project-defined proof/verification boundary.
-31. Test-position generators существуют только как test infrastructure: legal sequences строятся через `GameEngine`/эквивалентную domain boundary, synthetic pattern fixtures изолированы от runtime, а пользовательского Test Case/Test ID/replay API нет.
+31. Test-position generators существуют только как test infrastructure: legal sequences строятся через `GameEngine`/эквивалентную domain boundary, synthetic pattern fixtures изолированы от runtime, а пользовательского Test Case/Test ID API для этой test infrastructure нет. Отдельный постоянный Development Workspace не публикует эти generators и работает через собственные application/infrastructure contracts.
+32. `Development Workspace` является разрешённой постоянной application/developer capability и остаётся внешним по отношению к доменному ядру.
+33. AlphaZero не является authoritative владельцем `GameState`: он предоставляет игровые действия и diagnostic data, а каждый replayed action повторно принимается или отклоняется настоящим `GameSession → GameEngine`.
+34. Developer replay использует отдельную ephemeral `GameSession`/controller без обычного autosave; он не записывает и не перезаписывает сохранённую пользовательскую партию `current`.
+35. AlphaZero transport data является недоверенным внешним input и проходит runtime validation до создания developer session или применения move.
+36. Presentation layer имеет явный animation mode `normal | disabled`; режим анимации не читается `GameEngine`/`GameState` и не меняет domain result.
 
 Стрелка `A → B` в этом документе означает: `A` использует контракт `B` или передаёт ему данные/команду. Она не означает наследование.
 
@@ -76,6 +81,14 @@
 Для endgame:
 
 `GameSession → EndgameClassifier → EndgameReviewState → EndgameClassification → ScoringStrategy → FinalScore`
+
+Постоянный Development Workspace использует отдельный внешний путь:
+
+`Development UI → AlphaZeroGateway → localhost AlphaZero service`
+
+Полученный AlphaZero move возвращается в обычный authoritative gameplay path:
+
+`AlphaZero generated move → DeveloperReplaySession → GameSession → GameEngine → GameState → Presentation/Renderer`
 
 Отдельный test-only verification path не входит в runtime/application graph:
 
@@ -264,7 +277,8 @@ UI не должен знать, local или remote execution использу�
 - React/DOM/SVG/Canvas/Three.js;
 - `EndgameClassifier`;
 - `ScoringStrategy`;
-- `NetworkTransport`.
+- `NetworkTransport`;
+- `AlphaZeroGateway`, HTTP, Python, PyTorch или AlphaZero service.
 
 # 7. State boundaries
 
@@ -344,7 +358,8 @@ Cross-game preferences не входят в `GameSessionSnapshot`.
 - Cube 2D presentation layout state, включая выбранное положение vertical pair;
 - Torus visual offset;
 - session-local display state;
-- transition/interaction state, если он нужен Renderer.
+- transition/interaction state, если он нужен Renderer;
+- presentation animation mode `normal | disabled`.
 
 `ViewState` не читается `GameEngine`, `ScoringStrategy`, `EndgameClassifier` или Simple Ko logic и не является частью игровой history timeline.
 
@@ -754,6 +769,8 @@ Animation layer принимает `DomainEvents`/`ViewEvents` и создаёт
 - animation не определяет логический порядок captures;
 - временная блокировка input является presentation/session coordination, а не domain rule;
 - renderer-only copies не превращаются в отдельные доменные объекты из-за анимации;
+- presentation/view boundary поддерживает `AnimationMode = normal | disabled`, который может отключить presentation-level transitions/effects без изменения domain state;
+- переключение animation mode не пересоздаёт `GameSession`, не меняет `History` и не требует replay game заново;
 - точные направления, длительности, easing и visual appearance находятся только в `GAME_CUBE_GO.md`.
 
 # 16. GameStorage, autosave и PreferencesStorage
@@ -835,6 +852,43 @@ UI не должен обращаться к WebSocket/HTTP напрямую д�
 
 Login, matchmaking, lobby, reconnect, spectators и cloud sync остаются infrastructure/application функциями и не проникают в `GameEngine`.
 
+## 17.1. Development Workspace и AlphaZero boundary
+
+`Development Workspace` — постоянная application/developer capability, а не второй игровой движок и не test-generator runtime.
+
+AlphaZero подключается через typed contract `AlphaZeroGateway`. UI и replay orchestration зависят от этого contract и не знают `fetch()`, transport URL, Python, PyTorch или filesystem path checkpoints. Первая transport implementation — `HttpAlphaZeroClient`, работающая с отдельным локальным Python service из `gocube-alphazero`.
+
+Default base URL — `http://127.0.0.1:8765`; конкретный base URL задаётся через Vite/application config boundary. Отсутствие сервиса является допустимым состоянием Development Workspace и не влияет на запуск или correctness обычной игры.
+
+V1 gateway поддерживает минимум:
+
+- `health()`;
+- `listCheckpoints()`;
+- `generateGame()`.
+
+Transport использует versioned JSON contract с `protocolVersion: 1`. Checkpoint descriptor содержит stable id и game compatibility metadata; UI не получает filesystem path как identity. Сервис конвертирует собственный AlphaZero action index в канонический GoCube `PointId` до отправки move через transport.
+
+Внешний JSON валидируется до использования: protocol version, required fields, finite numbers, topology, size, rules, komi, checkpoint metadata, move numbering, color/action variants, canonical `PointId` и optional captured points. Unchecked type assertion не заменяет runtime validation.
+
+`AlphaZeroGateway` предоставляет generated action sequence и diagnostics, но не `GameState` authority. Запрещено передавать готовую board occupancy в Renderer или напрямую мутировать `GameState` по данным AlphaZero.
+
+`DeveloperReplaySession` создаёт обычный controller/`GameSession` без persistence config. Такая ephemeral session использует тот же `GameEngine`, `Topology`, `AssistedEndgameClassifier`, scoring и History, что обычная локальная партия, но не имеет права писать в `CURRENT_GAME_ID = "current"` или запускать normal autosave.
+
+Каждый generated move проходит строго последовательно:
+
+1. проверить metadata созданной developer game и expected current player;
+2. для placement отправить canonical `PointId` через controller → `GameSession.execute(PlaceStone)`; для Pass использовать штатный Pass command;
+3. дождаться authoritative result;
+4. остановить replay при rejection;
+5. если transport передал captured points, сравнить их с authoritative captured result;
+6. только после успешной проверки перейти к следующему generated move.
+
+Backward/forward seeking использует session History: назад — Undo, вперёд по существующему redo-future — Redo, а новый forward frontier — следующий generated action. Отдельная board model для replay не создаётся.
+
+Compatibility failure является application diagnostic и содержит достаточный context для локализации расхождения: move number, expected color/current player, action/PointId и rejection/mismatch reason. После failure replay прекращает forward execution, но приложение и обычная сохранённая партия остаются работоспособными.
+
+Future методы вроде position analysis, policy/value и best move добавляются на `AlphaZeroGateway`/соседних developer contracts без переноса AI dependencies в domain core.
+
 # 18. Основные потоки данных
 
 ## 18.1. Допустимый ход
@@ -908,6 +962,18 @@ Renderer не реконструирует историю самостоятел
 5. `GameState`, `History`, `SimpleKoContext` и stone positions не меняются.
 
 Пустой slot не создаёт `PointId` и не проходит через `PlaceStone`/`GameEngine`.
+
+## 18.7. AlphaZero developer replay
+
+1. Development UI получает validated generated game через `AlphaZeroGateway`.
+2. `DeveloperReplaySession` проверяет generated metadata и создаёт ephemeral обычную game session с теми же topology/size/rules/komi.
+3. Generated move color сверяется с `GameState.currentPlayer`.
+4. Placement или Pass выполняется через обычный controller/`GameSession` path.
+5. `GameEngine` заново применяет все rules, captures, suicide, Simple Ko, turn order и phase transitions.
+6. При accepted action presentation получает обычный `GameViewModel`, и existing Renderer показывает то же состояние, что в обычной партии.
+7. При rejection/color/capture mismatch replay останавливается и создаёт compatibility diagnostic; следующие moves не применяются.
+8. Два последовательных Pass естественно приводят в обычный assisted endgame flow; Development Workspace не обходит classifier и не завершает scoring автоматически.
+9. Ни один шаг developer replay не записывает обычный saved game.
 
 # 19. Testing architecture
 
@@ -1067,7 +1133,7 @@ Seed любого найденного дефекта сохраняется; п
 
 Legal simulation и synthetic fixture construction — разные test boundaries. Synthetic builder может создавать позицию напрямую только внутри test infrastructure и обязан валидировать point ids/occupancy/group assumptions; такой API не доступен production gameplay и не заменяет `GameEngine`.
 
-Все генераторы обязаны поддерживать stable seed. Дефектный случай воспроизводится внутри автоматических tests по `generator kind + topology + size + seed + generator version/options`; runtime Test ID/replay API для этого не существует.
+Все generators обязаны поддерживать stable seed. Дефектный случай воспроизводится внутри автоматических tests по `generator kind + topology + size + seed + generator version/options`; runtime Test ID API для внутренней generator infrastructure не вводится. Это не ограничивает отдельный Development Workspace, который replay-ит внешнюю AlphaZero move sequence через обычную `GameSession`.
 
 ## 19.9. Fixture format
 
@@ -1106,7 +1172,19 @@ Fixture может содержать:
 - Cube presentation slot/view-intent mapping;
 - Torus passive-copy → source `PointId` mapping.
 
-Debug renderer не является пользовательской функцией и не определяет correctness. Он не предоставляет Test Case generation, Test ID, corpus loading или replay API.
+Debug renderer сам по себе не является пользовательской функцией и не определяет correctness. Он не публикует внутренние Test Case generators, Test ID или corpus loading API. Постоянный Development Workspace является отдельной application capability и может использовать этот или обычный production Renderer через разрешённые presentation contracts.
+
+## 19.11. Development Workspace / AlphaZero tests
+
+AlphaZero client/protocol coverage проверяет как минимум: valid health, unavailable service, malformed JSON, unsupported protocol, checkpoint validation, generated game validation и malformed moves.
+
+`DeveloperReplaySession` coverage проверяет обычные placements, Pass, captures, expected-color mismatch, illegal generated move, optional captured mismatch, Undo/Redo-based Previous/Next, seek backward/forward, jump to start/end и deterministic reach of final move.
+
+Presentation coverage проверяет, что изменение replay speed не меняет domain state, `1×` использует normal animation mode, а `5×`/`10×` — disabled; seek/jump выполняется без animation независимо от выбранной скорости.
+
+Isolation coverage обязана доказывать, что opening/using/exiting Development Workspace не удаляет и не меняет saved game `current`, а developer replay не вызывает обычный autosave.
+
+E2E использует mocked AlphaZero transport и реальный GoCube application path/Renderer. CI не требует реально запущенного Python AlphaZero service. Отдельный E2E проверяет compatibility failure и отсутствие application crash.
 
 # 20. Library / Reuse Policy
 
@@ -1158,7 +1236,7 @@ Library/Reuse Review является техническим gate. `ROADMAP.md` 
 
 Если нет, библиотека остаётся oracle/reference и не должна протаскивать rectangular coordinates внутрь domain core.
 
-Любой внешний engine/oracle при сравнении repetition behavior на проектных fixtures настраивается/интерпретируется только в соответствии с текущим `SimpleKoPolicy`; наличие у внешней библиотеки superko options не делает их частью архитектуры проекта.
+Любой внешний engine/oracle при сравнении repetition behavior на project fixtures настраивается/интерпретируется только в соответствии с текущим `SimpleKoPolicy`; наличие у внешней библиотеки superko options не делает их частью архитектуры проекта.
 
 `@sabaki/sgf` допустим также как parser/source для test-only импорта стандартных SGF, из которых извлекаются локальные patterns/fixtures. SGF не становится пользовательским game export/import и не определяет Cube/Torus topology.
 
@@ -1184,7 +1262,7 @@ KataGo может использоваться вне runtime как сильн�
 
 KataGo не считается понимающим Torus/Cube глобально. Его результат может применяться только к позиции/локальному neighbourhood, для которого adapter доказал эквивалентность обычной square grid, и никогда не становится authoritative status без project verifier.
 
-В репозитории/runtime нет browser-to-KataGo bridge, `LocalAnalysisClient`, live corpus diagnostics или пользовательского/developer Test Case UI. KataGo не входит в browser production bundle и не требуется для final scoring или обычной игры.
+В репозитории/runtime нет browser-to-KataGo bridge, `LocalAnalysisClient`, live corpus diagnostics или пользовательского/developer Test Case UI. KataGo не входит в browser production bundle и не требуется для final scoring или обычной игры. Это ограничение относится к KataGo/oracle path и не отменяет отдельно определённый AlphaZero Development Workspace boundary из §17.1.
 
 ### 20.4.3. `goscorer` — **oracle/reference**
 
@@ -1356,7 +1434,7 @@ Oracle disagreement не означает автоматически bug GoCube.
 
 Для Torus небольшие neighbourhoods обычно planar-grid compatible, пока область не обходит torus и не встречает сама себя. Для Cube многие области внутри face и через одно обычное edge также совместимы, но neighbourhood около physical cube corner может содержать трёхциклы и должен отклоняться как non-planar-standard-Go case.
 
-Этот adapter не является runtime feature и не предоставляет browser/local-AI transport. Конкретный внешний oracle подключается только внутри test tooling через узкий `DifferentialOracleAdapter` или эквивалент.
+Этот adapter не является runtime feature и не предоставляет browser/local-KataGo transport. Конкретный внешний oracle подключается только внутри test tooling через узкий `DifferentialOracleAdapter` или эквивалент. Отдельный AlphaZero Development Workspace использует другой application contract и не расширяет эту oracle boundary.
 
 ## 20.11. Фиксация reuse decision
 
@@ -1377,10 +1455,14 @@ Oracle disagreement не означает автоматически bug GoCube.
 - запускать scoring на partial/incomplete endgame review;
 - выдавать unresolved classifier result за окончательный `EndgameClassification`;
 - считать probabilistic AI/oracle confidence доказательством alive/dead/seki без project verifier;
-- делать внешний oracle обязательной production dependency;
+- делать внешний oracle или AlphaZero обязательной production dependency;
+- считать AlphaZero authoritative владельцем `GameState` или принимать от него готовую board occupancy вместо generated actions;
+- рисовать AlphaZero board напрямую в Renderer или мутировать `GameState` в обход `GameSession → GameEngine`;
+- помещать HTTP/fetch/Python/PyTorch/AlphaZero dependencies в `core/game`, `core/topology`, `core/scoring` или `core/endgame`;
+- сохранять developer replay в `CURRENT_GAME_ID` или использовать обычный autosave для ephemeral developer session;
 - считать любой Cube/Torus neighbourhood эквивалентным центру обычной Go board без проверки square-grid embedding;
 - генерировать «legal game» путём прямой случайной записи occupancy в обход `GameEngine`;
-- публиковать test-only generator/fixture machinery как пользовательский runtime Test Case/Test ID/replay API;
+- публиковать test-only generator/fixture machinery как пользовательский runtime Test Case/Test ID API;
 - читать browser storage из `GameEngine`;
 - давать `GameEngine` объект `History` вместо минимального `SimpleKoContext`;
 - держать `SuperkoPolicy`, selectable repetition policy или скрытый superko branch «на будущее»;
@@ -1393,6 +1475,7 @@ Oracle disagreement не означает автоматически bug GoCube.
 - хранить cross-game preferences только внутри текущего `GameSessionSnapshot`;
 - очищать product-approved preferences вместе с `GameStorage.clear()`;
 - хранить ViewState в rule history как игровое действие;
+- давать animation mode влиять на domain transition или authoritative state;
 - вызывать Three.js из `Topology`;
 - делать Renderer владельцем captures/currentPlayer/history/endgame decisions;
 - делать animation callback источником фактического хода;
@@ -1424,8 +1507,12 @@ Oracle disagreement не означает автоматически bug GoCube.
 16. Не дублируется ли нормативное правило между архитектурой, roadmap и product requirements?
 17. Если используется oracle/AI, доказано ли, что он только diagnostic/candidate либо его результат проходит явную project verification boundary?
 18. Если standard-Go oracle применяется к Cube/Torus, доказана ли применимость конкретного planar neighbourhood вместо предположения по degree=4?
-19. Можно ли полностью запустить production gameplay/scoring без внешних oracle и test-only tooling?
+19. Можно ли полностью запустить production gameplay/scoring без внешних oracle, AlphaZero и test-only tooling?
 20. Любой generated legal-game fixture действительно прошёл domain rules, а synthetic fixture остаётся изолированным test-only path?
+21. Если AlphaZero используется в Development Workspace, каждый ли generated move повторно проходит authoritative `GameSession → GameEngine`?
+22. Developer session действительно ephemeral и доказано ли, что она не пишет normal saved game?
+23. Transport DTO runtime-валидирован до использования и использует canonical `PointId`, а не внешний action index?
+24. Можно ли заменить HTTP transport другой реализацией `AlphaZeroGateway` без изменения replay/domain core?
 
 Если ответ показывает нарушение границы, сначала исправляется architecture/adapter contract, затем реализуется функция.
 
@@ -1447,11 +1534,13 @@ Oracle disagreement не означает автоматически bug GoCube.
 - только полный `EndgameClassification` передаётся в `ScoringStrategy`;
 - `ScoringStrategy` создаёт `FinalScore`;
 - seeded generators и independent oracle adapters помогают тестировать core только внутри test infrastructure и не становятся частью authoritative gameplay/runtime UI;
-- ordered autosave с `sessionRevision` сохраняет session envelope через `GameStorage`;
+- Development Workspace отдельно получает external AlphaZero actions через `AlphaZeroGateway`, создаёт ephemeral replay session и отправляет каждый move назад через обычный controller/`GameSession`/`GameEngine`;
+- AlphaZero не владеет board state, а compatibility disagreement останавливает replay и становится diagnostic;
+- ordered autosave с `sessionRevision` сохраняет обычный session envelope через `GameStorage`, тогда как developer replay не подключён к normal autosave;
 - `PreferencesStorage` отдельно хранит только product-approved cross-game preferences;
-- `PresentationModel` строит данные для показа;
+- `PresentationModel` строит данные для показа и управляет presentation animation mode независимо от domain state;
 - Renderer отображает их, переводит game points в `PointId`, а presentation-only controls — в `ViewIntent`;
 - Animation визуализирует события, не меняя правила;
 - `NetworkTransport` в будущем только переносит commands/state через внешний authority boundary.
 
-Главный критерий качества архитектуры: новая topology, новый Renderer, новый storage backend, новый classifier proof helper, новый oracle adapter или будущий network adapter должны добавляться на своей границе и не требовать переписывать уже проверенное независимое domain core без реальной необходимости.
+Главный критерий качества архитектуры: новая topology, новый Renderer, новый storage backend, новый classifier proof helper, новый oracle adapter, новый AlphaZero transport или будущий network adapter должны добавляться на своей границе и не требовать переписывать уже проверенное независимое domain core без реальной необходимости.
