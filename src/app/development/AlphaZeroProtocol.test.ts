@@ -57,7 +57,7 @@ describe('AlphaZero protocol V1', () => {
     }).moves).toHaveLength(2);
   });
 
-  it('parses terminal result diagnostics when present', () => {
+  it('parses legacy scored terminal diagnostics with V2-safe defaults', () => {
     const game = parseAlphaZeroGeneratedGame({
       ...generatedGameBase,
       moves: [],
@@ -78,6 +78,9 @@ describe('AlphaZero protocol V1', () => {
     expect(game.result).toEqual({
       winner: 'white',
       fallbackCount: 4,
+      unresolvedCount: 0,
+      cleanupMoveCount: 0,
+      noResult: false,
       score: {
         ruleSet: 'chinese',
         black: 20,
@@ -87,6 +90,59 @@ describe('AlphaZero protocol V1', () => {
         margin: 4.5,
       },
     });
+  });
+
+  it('parses Japanese V2 scored diagnostics', () => {
+    const game = parseAlphaZeroGeneratedGame({
+      ...generatedGameBase,
+      ruleSet: 'japanese',
+      moves: [],
+      result: {
+        winner: 'black',
+        adjudicatorId: 'gocube-japanese-cleanup-v2',
+        fallbackCount: 0,
+        unresolvedCount: 0,
+        cleanupMoveCount: 11,
+        noResult: false,
+        score: {
+          ruleSet: 'japanese',
+          black: 18,
+          white: 16.5,
+          komi: 7.5,
+          winner: 'black',
+          margin: 1.5,
+        },
+      },
+    });
+
+    expect(game.result).toMatchObject({
+      adjudicatorId: 'gocube-japanese-cleanup-v2',
+      cleanupMoveCount: 11,
+      unresolvedCount: 0,
+      noResult: false,
+      score: { ruleSet: 'japanese', winner: 'black' },
+    });
+  });
+
+  it('accepts Japanese V2 no-result without fabricating a scored draw', () => {
+    const rawResult = {
+      winner: 'draw',
+      adjudicatorId: 'gocube-japanese-cleanup-v2',
+      fallbackCount: 0,
+      unresolvedCount: 2,
+      cleanupMoveCount: 14,
+      noResult: true,
+      score: null,
+    };
+    const game = parseAlphaZeroGeneratedGame({
+      ...generatedGameBase,
+      ruleSet: 'japanese',
+      moves: [],
+      result: rawResult,
+    });
+
+    expect(game.result).toBeUndefined();
+    expect(game.terminal).toEqual(rawResult);
   });
 
   it('rejects malformed terminal result diagnostics', () => {
@@ -107,6 +163,14 @@ describe('AlphaZero protocol V1', () => {
         },
       },
     })).toThrow(/fallbackCount/i);
+
+    expect(() => parseAlphaZeroGeneratedGame({
+      ...generatedGameBase,
+      moves: [],
+      result: {
+        winner: 'draw', fallbackCount: 0, unresolvedCount: 0, noResult: true, score: null,
+      },
+    })).toThrow(/unresolvedCount/i);
   });
 
   it('rejects malformed moves, invalid PointIds, and skipped numbering', () => {
