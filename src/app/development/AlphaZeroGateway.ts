@@ -1,4 +1,5 @@
 import type { RuleSet, StoneColor } from '../../core/game/types';
+import type { ScoreWinner } from '../../core/scoring/Scoring';
 import type { PointId } from '../../core/topology/Topology';
 
 export const ALPHAZERO_PROTOCOL_VERSION = 1 as const;
@@ -40,6 +41,21 @@ export interface AlphaZeroGeneratedMove {
   readonly captured?: readonly PointId[];
 }
 
+export interface AlphaZeroGeneratedScore {
+  readonly ruleSet: RuleSet;
+  readonly black: number;
+  readonly white: number;
+  readonly komi: number;
+  readonly winner: ScoreWinner;
+  readonly margin: number;
+}
+
+export interface AlphaZeroGeneratedGameResult {
+  readonly winner: ScoreWinner;
+  readonly fallbackCount: number;
+  readonly score: AlphaZeroGeneratedScore;
+}
+
 export interface AlphaZeroGeneratedGame {
   readonly protocolVersion: typeof ALPHAZERO_PROTOCOL_VERSION;
   readonly topology: AlphaZeroTopology;
@@ -51,7 +67,7 @@ export interface AlphaZeroGeneratedGame {
   readonly mctsSimulations: number;
   readonly moves: readonly AlphaZeroGeneratedMove[];
   readonly terminal?: unknown;
-  readonly result?: unknown;
+  readonly result?: AlphaZeroGeneratedGameResult;
 }
 
 export interface AlphaZeroGenerateGameRequest {
