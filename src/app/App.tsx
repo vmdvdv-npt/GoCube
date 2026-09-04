@@ -4,6 +4,7 @@ import type { RuleSet } from '../core/game/types';
 import { TORUS_SIZES } from '../core/topology/TorusTopology';
 import { CUBE_UI_SIZES } from './CubeGameConfig';
 import { Cube2DGame } from './Cube2DGame';
+import { DevelopmentWorkspace } from './development/DevelopmentWorkspace';
 import {
   GameApplication,
   type ActiveGame,
@@ -20,7 +21,8 @@ import { TorusGame } from './TorusGame';
 
 declare const __BUILD_PR__: string;
 
-type AppScreen = 'loading' | 'resume' | 'settings' | 'game';
+type AppScreen = 'loading' | 'resume' | 'settings' | 'game' | 'development';
+type DevelopmentReturnScreen = Exclude<AppScreen, 'loading' | 'development'>;
 type TopologyPreviewDirection = 'left' | 'right';
 type TopologyPreviewTransition = Readonly<{
   id: number;
@@ -70,6 +72,7 @@ export function App() {
   const preferencesStorage = useMemo(() => new LocalStoragePreferencesStorage(), []);
   const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_USER_PREFERENCES);
   const [screen, setScreen] = useState<AppScreen>('loading');
+  const developmentReturnScreenRef = useRef<DevelopmentReturnScreen>('settings');
   const [savedGame, setSavedGame] = useState<SavedGameSummary | null>(null);
   const [activeGame, setActiveGame] = useState<ActiveGame | null>(null);
   const [gameInstanceKey, setGameInstanceKey] = useState(0);
@@ -219,16 +222,44 @@ export function App() {
     }
   };
 
+  const openDevelopment = (): void => {
+    if (screen === 'resume' || screen === 'settings' || screen === 'game') {
+      developmentReturnScreenRef.current = screen;
+      setConfirmNewGame(false);
+      setScreen('development');
+    }
+  };
+
+  const closeDevelopment = (): void => {
+    const target = developmentReturnScreenRef.current;
+    if (target === 'game' && !activeGame) {
+      setScreen(savedGame ? 'resume' : 'settings');
+      return;
+    }
+    if (target === 'resume' && !savedGame) {
+      setScreen('settings');
+      return;
+    }
+    setScreen(target);
+  };
+
   const sizes = sizesForMode(gameMode);
+  const gameShell = screen === 'game' || screen === 'development';
 
   return (
-    <main className={`app-shell${screen === 'game' ? ' app-shell--game' : ''}`}>
-      {screen !== 'game' ? (
+    <main className={`app-shell${gameShell ? ' app-shell--game' : ''}`}>
+      {screen !== 'game' && screen !== 'development' ? (
         <header className="app-header">
           <p className="app-kicker">Game Cube Go · 0.2.0 · {__BUILD_PR__}</p>
           <h1>GoCube</h1>
           <p>Two surface modes · local save/load · Chinese and Japanese scoring.</p>
         </header>
+      ) : null}
+
+      {screen !== 'loading' && screen !== 'development' ? (
+        <button type="button" className="development-entry" onClick={openDevelopment}>
+          Development
+        </button>
       ) : null}
 
       {screen === 'loading' ? <p className="startup-status">Loading local game…</p> : null}
@@ -392,6 +423,10 @@ export function App() {
           controller={activeGame.controller}
           onRequestNewGame={() => setConfirmNewGame(true)}
         />
+      ) : null}
+
+      {screen === 'development' ? (
+        <DevelopmentWorkspace onBack={closeDevelopment} />
       ) : null}
 
       {confirmNewGame ? (
