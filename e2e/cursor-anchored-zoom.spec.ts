@@ -36,7 +36,7 @@ test('Cube wheel zoom works on black playfield space and keeps the pointer as th
   const viewportBox = await requiredBox(viewport);
   const anchor = {
     x: viewportBox.x + viewportBox.width - 24,
-    y: viewportBox.y + 24,
+    y: viewportBox.y + 80,
   };
 
   const target = await page.evaluate(({ x, y }) => {
@@ -209,7 +209,7 @@ test('Torus wheel zoom works on black playfield space, anchors to the pointer, a
   const sidebarBox = await requiredBox(sidebar);
   const anchor = {
     x: gameBox.x + gameBox.width - 24,
-    y: gameBox.y + 24,
+    y: gameBox.y + 80,
   };
 
   expect(anchor.x).toBeGreaterThan(shellBox.x + shellBox.width);
