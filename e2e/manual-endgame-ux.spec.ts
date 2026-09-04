@@ -62,17 +62,13 @@ test('assisted endgame keeps every logical group editable until explicit scoring
   await expect(page.locator('.torus-board__group-contour--dead')).toHaveCount(1);
   await expect(page.locator('.torus-board__group-contour--seki')).toHaveCount(0);
 
-  // Passive duplicate strips do not duplicate logical endgame contours.
+  // Main-game endgame rendering remains canonical and never leaks duplicate-region UI.
   const contourCount = await page.locator('.torus-board__group-contour').count();
-  await page.getByLabel('Показывать дублирующие области').check();
-  await expect(page.locator('.torus-board')).toHaveAttribute('data-duplicate-regions-visible', 'true');
+  await expect(page.getByText(/duplicate regions/i)).toHaveCount(0);
+  await expect(page.getByText('Показывать дублирующие области')).toHaveCount(0);
+  await expect(page.locator('.torus-board')).toHaveAttribute('data-duplicate-regions-visible', 'false');
+  await expect(page.locator('.torus-board__edge-duplicates')).toHaveCount(0);
   await expect(page.locator('.torus-board__group-contour')).toHaveCount(contourCount);
-  await expect(
-    page.locator('.torus-board__edge-duplicate-stone[data-logical-point-id="8,4"]'),
-  ).toHaveCount(1);
-  await expect(
-    page.locator('.torus-board__edge-duplicate-stone[data-logical-point-id="0,4"]'),
-  ).toHaveCount(1);
 
   await finish.click();
   await expect(page.getByRole('dialog')).toBeVisible();
