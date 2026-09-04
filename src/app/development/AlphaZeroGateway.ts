@@ -50,9 +50,14 @@ export interface AlphaZeroGeneratedScore {
   readonly margin: number;
 }
 
+/** A scored result only. V2 no-result terminals are retained under `terminal`. */
 export interface AlphaZeroGeneratedGameResult {
   readonly winner: ScoreWinner;
+  readonly adjudicatorId?: string;
   readonly fallbackCount: number;
+  readonly unresolvedCount: number;
+  readonly cleanupMoveCount: number;
+  readonly noResult: false;
   readonly score: AlphaZeroGeneratedScore;
 }
 
@@ -66,7 +71,9 @@ export interface AlphaZeroGeneratedGame {
   readonly whiteCheckpoint: string;
   readonly mctsSimulations: number;
   readonly moves: readonly AlphaZeroGeneratedMove[];
+  /** Raw terminal/no-result diagnostics retained for developer inspection. */
   readonly terminal?: unknown;
+  /** Present only when AlphaZero produced a valid scored training result. */
   readonly result?: AlphaZeroGeneratedGameResult;
 }
 

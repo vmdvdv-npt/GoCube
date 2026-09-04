@@ -1,4 +1,7 @@
+import type { EndgameClassification } from '../../core/endgame/EndgameClassifier';
 import type { StoneColor } from '../../core/game/types';
+import { ChineseScoring } from '../../core/scoring/ChineseScoring';
+import { JapaneseScoring } from '../../core/scoring/JapaneseScoring';
 import type { FinalScore } from '../../core/scoring/Scoring';
 import type { PointId } from '../../core/topology/Topology';
 import {
@@ -70,6 +73,7 @@ export class DeveloperReplaySession {
   private appliedMoves = 0;
   private forwardFrontier = 0;
   private inFlight = false;
+  private finalScoreListener: FinalScoreListener | null = null;
 
   constructor(game: AlphaZeroGeneratedGame) {
     if (game.topology !== 'cube') {
@@ -89,7 +93,48 @@ export class DeveloperReplaySession {
   }
 
   setFinalScoreListener(listener: FinalScoreListener | null): void {
-    this.developmentController.setFinalScoreListener(listener);
+    this.finalScoreListener = listener;
+    this.developmentController.setFinalScoreListener(
+      listener
+        ? (score) => listener(score ?? this.diagnosticScore())
+        : null,
+    );
+  }
+
+  /**
+   * Independently score the replay with GoCube's own assisted classifier.
+   * This never imports AlphaZero's cleanup classification. If GoCube still has
+   * unresolved groups, the diagnostic intentionally remains null.
+   */
+  diagnosticScore(): FinalScore | null {
+    const viewModel = this.controller.viewModel();
+    if (viewModel.finalScore) return viewModel.finalScore;
+    if (viewModel.phase !== 'endgame') return null;
+    if (this.controller.nextUnresolvedEndgameGroupId() !== null) return null;
+
+    const decisions = this.controller.endgameDecisions();
+    const classification: EndgameClassification = Object.freeze(
+      this.controller.endgameGroups().map((group) => {
+        const status = decisions[group.id];
+        if (!status) {
+          throw new Error(`GoCube diagnostic classification is missing group ${group.id}.`);
+        }
+        return Object.freeze({
+          points: Object.freeze([...group.points]),
+          status,
+          source: 'automatic' as const,
+        });
+      }),
+    );
+
+    const snapshot = this.controller.snapshot();
+    const state = snapshot.history[snapshot.history.length - 1];
+    if (!state || state.phase !== 'endgame') return null;
+
+    const scorer = this.game.ruleSet === 'chinese'
+      ? new ChineseScoring(this.controller.topology)
+      : new JapaneseScoring(this.controller.topology);
+    return scorer.score(state, classification, this.game.komi);
   }
 
   get position(): number {
@@ -120,6 +165,7 @@ export class DeveloperReplaySession {
         throw new Error(`Developer replay Undo failed: ${String(result.reason ?? 'unknown reason')}`);
       }
       this.appliedMoves -= 1;
+      this.notifyDiagnosticScore();
       return result;
     });
   }
@@ -146,6 +192,7 @@ export class DeveloperReplaySession {
       while (this.appliedMoves < targetMove) {
         result = await this.nextInternal();
       }
+      this.notifyDiagnosticScore();
       return result;
     });
   }
@@ -170,6 +217,7 @@ export class DeveloperReplaySession {
         throw new Error(`Developer replay Redo failed: ${String(redone.reason ?? 'unknown reason')}`);
       }
       this.appliedMoves += 1;
+      this.notifyDiagnosticScore();
       return redone;
     }
 
@@ -178,6 +226,7 @@ export class DeveloperReplaySession {
     const result = await this.applyGeneratedMove(move);
     this.appliedMoves += 1;
     this.forwardFrontier = Math.max(this.forwardFrontier, this.appliedMoves);
+    this.notifyDiagnosticScore();
     return result;
   }
 
@@ -216,6 +265,10 @@ export class DeveloperReplaySession {
     }
 
     return result;
+  }
+
+  private notifyDiagnosticScore(): void {
+    this.finalScoreListener?.(this.diagnosticScore());
   }
 
   private assertMetadataMatchesController(): void {
