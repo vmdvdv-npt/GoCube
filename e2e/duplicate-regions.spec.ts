@@ -59,7 +59,9 @@ test('duplicate torus regions are one-line dashed visual-only edge strips', asyn
   );
   await expect(primaryStone00).toHaveCount(1);
   await expect(primaryStone00).not.toHaveAttribute('opacity', '0.5');
-  expect(await primaryStone00.evaluate((element) => getComputedStyle(element).opacity)).toBe('1');
+  await expect
+    .poll(() => primaryStone00.evaluate((element) => getComputedStyle(element).opacity))
+    .toBe('1');
 
   const layerOrder = await board.evaluate((svg) => {
     const children = Array.from(svg.children);
