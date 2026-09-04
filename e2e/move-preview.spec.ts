@@ -1,12 +1,8 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
-const point = (
-  page: Page,
-  logicalPointId: string,
-  copyRole: 'primary' | 'duplicate' = 'primary',
-): Locator =>
+const point = (page: Page, logicalPointId: string): Locator =>
   page.locator(
-    `.torus-board__hit-target[data-logical-point-id="${logicalPointId}"][data-copy-role="${copyRole}"]`,
+    `.torus-board__hit-target[data-logical-point-id="${logicalPointId}"][data-copy-role="primary"]`,
   ).first();
 
 const startGame = async (page: Page): Promise<void> => {
@@ -15,7 +11,7 @@ const startGame = async (page: Page): Promise<void> => {
   await page.getByRole('button', { name: 'Start game' }).click();
 };
 
-test('legal hover uses a 50% stone, occupied has no preview, and duplicates stay synchronized', async ({ page }) => {
+test('legal hover uses a 50% stone and occupied points have no preview', async ({ page }) => {
   await startGame(page);
 
   await point(page, '0,0').hover();
@@ -28,13 +24,11 @@ test('legal hover uses a 50% stone, occupied has no preview, and duplicates stay
   await expect(page.locator('.torus-board__preview-stone')).toHaveCount(0);
   await expect(page.locator('.torus-board__forbidden-marker')).toHaveCount(0);
 
-  await page.getByLabel('Показывать дублирующие области').check();
   await point(page, '1,1').hover();
   previews = page.locator('.torus-board__preview-stone[data-logical-point-id="1,1"]');
-  const visibleCopies = await page.locator(
-    '.torus-board__hit-target[data-logical-point-id="1,1"]',
-  ).count();
-  await expect(previews).toHaveCount(visibleCopies);
+  await expect(previews).toHaveCount(1);
+  await expect(page.locator('.torus-board')).toHaveAttribute('data-duplicate-regions-visible', 'false');
+  await expect(page.locator('.torus-board__edge-duplicates')).toHaveCount(0);
 });
 
 test('suicide hover replaces the stone preview with one opaque red marker', async ({ page }) => {
