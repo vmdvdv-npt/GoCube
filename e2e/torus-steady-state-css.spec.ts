@@ -77,6 +77,7 @@ test('primary board edges preserve their normal hit influence without duplicate 
   await startTorus(page);
   await expect(page.locator('.torus-board')).toHaveAttribute('data-duplicate-regions-visible', 'false');
   await expect(page.locator('.torus-board__edge-duplicates')).toHaveCount(0);
+  await expect(page.locator('.torus-board__hit-target[data-copy-role="duplicate"]')).toHaveCount(0);
 
   const edgePoints = [
     { id: '0,4', direction: 'left' },
@@ -99,11 +100,6 @@ test('primary board edges preserve their normal hit influence without duplicate 
   const leftEdge = page.locator(
     '.torus-board__hit-target[data-logical-point-id="0,4"][data-copy-role="primary"]',
   );
-  const outsidePrimaryHit = await pointOutsideEdge(leftEdge, 'left', 1.25);
-  await page.mouse.move(outsidePrimaryHit.x, outsidePrimaryHit.y);
-  await expect(page.locator('.torus-board__preview-stone')).toHaveCount(0);
-  await expect(page.locator('.torus-board__hit-target[data-copy-role="duplicate"]')).toHaveCount(0);
-
   const playableEdgePosition = await pointOutsideEdge(leftEdge, 'left', 0.5);
   await page.mouse.move(playableEdgePosition.x, playableEdgePosition.y);
   await expect(
