@@ -14,10 +14,25 @@ Do not use this README, release records, issues, PR descriptions, old tasks, or 
 
 ## Development
 
+Install JavaScript dependencies once:
+
 ```bash
 npm ci
+```
+
+For ordinary GoCube-only development:
+
+```bash
 npm run dev
 ```
+
+For the local GoCube + AlphaZero Development Workspace, keep `GoCube/` and `gocube-alphazero/` as sibling directories and run from the GoCube checkout:
+
+```bash
+./dev
+```
+
+The unified launcher starts/reuses the local AlphaZero Protocol V1 service, waits until it is ready, then starts GoCube on port 5173 and opens it in the browser. `Ctrl+C` stops the AlphaZero process started by that launcher. An alternate AlphaZero checkout can be supplied with `GOCUBE_ALPHAZERO_DIR=/path/to/gocube-alphazero ./dev`.
 
 Validation:
 

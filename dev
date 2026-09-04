@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PARENT="$(dirname -- "$ROOT")"
+ALPHAZERO_ROOT="${GOCUBE_ALPHAZERO_DIR:-$PARENT/gocube-alphazero}"
+ALPHAZERO_LAUNCHER="$ALPHAZERO_ROOT/dev-gocube"
+ALPHAZERO_PYTHON="$ALPHAZERO_ROOT/.venv/bin/python"
+ALPHAZERO_URL="http://127.0.0.1:8765"
+ALPHAZERO_PID=""
+
+fail() {
+  echo "GoCube dev launcher: $*" >&2
+  exit 1
+}
+
+[[ -d "$ALPHAZERO_ROOT" ]] || fail "sibling AlphaZero repository not found at $ALPHAZERO_ROOT"
+[[ -x "$ALPHAZERO_LAUNCHER" ]] || fail "missing executable $ALPHAZERO_LAUNCHER (pull the latest gocube-alphazero main)"
+[[ -x "$ALPHAZERO_PYTHON" ]] || fail "missing executable $ALPHAZERO_PYTHON"
+command -v npm >/dev/null 2>&1 || fail "npm is not available on PATH"
+
+service_healthy() {
+  "$ALPHAZERO_PYTHON" - "$ALPHAZERO_URL" <<'PY' >/dev/null 2>&1
+import json
+import sys
+from urllib.request import urlopen
+
+try:
+    with urlopen(f"{sys.argv[1]}/v1/health", timeout=0.4) as response:
+        payload = json.load(response)
+except Exception:
+    raise SystemExit(1)
+
+raise SystemExit(
+    0
+    if payload.get("protocolVersion") == 1 and payload.get("status") == "ok"
+    else 1
+)
+PY
+}
+
+cleanup() {
+  local exit_code=$?
+  trap - EXIT
+  if [[ -n "$ALPHAZERO_PID" ]] && kill -0 "$ALPHAZERO_PID" 2>/dev/null; then
+    echo "GoCube dev launcher: stopping AlphaZero service..."
+    kill "$ALPHAZERO_PID" 2>/dev/null || true
+    wait "$ALPHAZERO_PID" 2>/dev/null || true
+  fi
+  exit "$exit_code"
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+if service_healthy; then
+  echo "GoCube dev launcher: reusing AlphaZero service at $ALPHAZERO_URL"
+else
+  echo "GoCube dev launcher: starting AlphaZero from $ALPHAZERO_ROOT"
+  (
+    cd "$ALPHAZERO_ROOT"
+    exec "$ALPHAZERO_LAUNCHER"
+  ) &
+  ALPHAZERO_PID=$!
+
+  ready=false
+  for _ in {1..150}; do
+    if service_healthy; then
+      ready=true
+      break
+    fi
+    if ! kill -0 "$ALPHAZERO_PID" 2>/dev/null; then
+      if wait "$ALPHAZERO_PID"; then
+        status=0
+      else
+        status=$?
+      fi
+      ALPHAZERO_PID=""
+      fail "AlphaZero service exited before becoming ready (status $status)"
+    fi
+    sleep 0.1
+  done
+
+  [[ "$ready" == true ]] || fail "AlphaZero service did not become ready at $ALPHAZERO_URL"
+  echo "GoCube dev launcher: AlphaZero ready"
+fi
+
+cd "$ROOT"
+echo "GoCube dev launcher: starting GoCube at http://127.0.0.1:5173"
+echo "GoCube dev launcher: Ctrl+C stops this development session"
+npm run dev -- --host 127.0.0.1 --port 5173 --strictPort --open
