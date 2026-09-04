@@ -38,15 +38,20 @@ const routeAlphaZero = async (page: Page, moves: readonly GeneratedMove[]) => {
       await route.fulfill({ status: 204, headers });
       return;
     }
-    if (url.pathname === '/health') {
+    if (url.pathname === '/v1/health') {
       await route.fulfill({
         status: 200,
         headers,
-        body: JSON.stringify({ protocolVersion: 1, service: 'gocube-alphazero', version: 'test' }),
+        body: JSON.stringify({
+          protocolVersion: 1,
+          status: 'ok',
+          service: 'gocube-alphazero',
+          device: 'test',
+        }),
       });
       return;
     }
-    if (url.pathname === '/checkpoints') {
+    if (url.pathname === '/v1/checkpoints') {
       await route.fulfill({
         status: 200,
         headers,
@@ -54,27 +59,30 @@ const routeAlphaZero = async (page: Page, moves: readonly GeneratedMove[]) => {
       });
       return;
     }
-    if (url.pathname === '/games/generate') {
+    if (url.pathname === '/v1/games') {
       const requestBody = request.postDataJSON() as Record<string, unknown>;
       expect(requestBody).toMatchObject({
         protocolVersion: 1,
         blackCheckpointId: checkpoint.id,
         whiteCheckpointId: checkpoint.id,
-        mctsSimulations: 100,
+        mctsSims: 100,
       });
       await route.fulfill({
         status: 200,
         headers,
         body: JSON.stringify({
           protocolVersion: 1,
-          topology: checkpoint.topology,
-          size: checkpoint.size,
-          ruleSet: checkpoint.ruleSet,
-          komi: checkpoint.komi,
-          blackCheckpoint: checkpoint.id,
-          whiteCheckpoint: checkpoint.id,
-          mctsSimulations: 100,
-          moves,
+          game: {
+            topology: checkpoint.topology,
+            size: checkpoint.size,
+            ruleSet: checkpoint.ruleSet,
+            komi: checkpoint.komi,
+            terminalAdjudicator: 'gocube-conservative-area-v1',
+            mctsSims: 100,
+            black: { checkpointId: checkpoint.id },
+            white: { checkpointId: checkpoint.id },
+            moves,
+          },
         }),
       });
       return;
