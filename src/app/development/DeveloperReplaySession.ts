@@ -1,7 +1,9 @@
 import type { StoneColor } from '../../core/game/types';
+import type { FinalScore } from '../../core/scoring/Scoring';
 import type { PointId } from '../../core/topology/Topology';
 import {
   Cube2DGameController,
+  type Cube2DEndgameDecisions,
   type Cube2DGameActionResult,
 } from '../Cube2DGameController';
 import type {
@@ -27,6 +29,25 @@ const samePointSet = (left: readonly PointId[], right: readonly PointId[]): bool
   return left.every((point) => rightSet.has(point));
 };
 
+type FinalScoreListener = (score: FinalScore | null) => void;
+
+class DeveloperCube2DGameController extends Cube2DGameController {
+  private finalScoreListener: FinalScoreListener | null = null;
+
+  setFinalScoreListener(listener: FinalScoreListener | null): void {
+    this.finalScoreListener = listener;
+    listener?.(this.viewModel().finalScore ?? null);
+  }
+
+  override async finishEndgame(
+    decisions?: Cube2DEndgameDecisions,
+  ): Promise<Cube2DGameActionResult> {
+    const result = await super.finishEndgame(decisions);
+    this.finalScoreListener?.(result.viewModel.finalScore ?? null);
+    return result;
+  }
+}
+
 export class DeveloperReplayCompatibilityError extends Error {
   constructor(
     readonly moveNumber: number,
@@ -45,6 +66,7 @@ export class DeveloperReplaySession {
   readonly controller: Cube2DGameController;
   readonly game: AlphaZeroGeneratedGame;
 
+  private readonly developmentController: DeveloperCube2DGameController;
   private appliedMoves = 0;
   private forwardFrontier = 0;
   private inFlight = false;
@@ -57,12 +79,17 @@ export class DeveloperReplaySession {
     }
 
     this.game = game;
-    this.controller = new Cube2DGameController({
+    this.developmentController = new DeveloperCube2DGameController({
       size: game.size,
       ruleSet: game.ruleSet,
       komi: game.komi,
     });
+    this.controller = this.developmentController;
     this.assertMetadataMatchesController();
+  }
+
+  setFinalScoreListener(listener: FinalScoreListener | null): void {
+    this.developmentController.setFinalScoreListener(listener);
   }
 
   get position(): number {
