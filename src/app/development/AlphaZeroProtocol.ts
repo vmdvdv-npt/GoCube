@@ -1,4 +1,5 @@
 import type { RuleSet, StoneColor } from '../../core/game/types';
+import type { ScoreWinner } from '../../core/scoring/Scoring';
 import { CubeTopology, isValidCubeSize } from '../../core/topology/CubeTopology';
 import type { PointId, Topology } from '../../core/topology/Topology';
 import { TORUS_SIZES, TorusTopology, type TorusSize } from '../../core/topology/TorusTopology';
@@ -8,6 +9,7 @@ import {
   type AlphaZeroAction,
   type AlphaZeroCheckpointDescriptor,
   type AlphaZeroGeneratedGame,
+  type AlphaZeroGeneratedGameResult,
   type AlphaZeroGeneratedMove,
   type AlphaZeroHealth,
   type AlphaZeroTopology,
@@ -103,6 +105,18 @@ const colorValue = (
   const value = record[key];
   if (value !== 'black' && value !== 'white') {
     return protocolError(`${context}.${key} must be "black" or "white".`);
+  }
+  return value;
+};
+
+const winnerValue = (
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+  context: string,
+): ScoreWinner => {
+  const value = record[key];
+  if (value !== 'black' && value !== 'white' && value !== 'draw') {
+    return protocolError(`${context}.${key} must be "black", "white", or "draw".`);
   }
   return value;
 };
@@ -255,6 +269,29 @@ const parseMove = (
   });
 };
 
+const parseGeneratedResult = (
+  value: unknown,
+  context: string,
+): AlphaZeroGeneratedGameResult => {
+  const record = asRecord(value, context);
+  const scoreRecord = asRecord(record.score, `${context}.score`);
+  const margin = finiteNumber(scoreRecord, 'margin', `${context}.score`);
+  if (margin < 0) return protocolError(`${context}.score.margin must be >= 0.`);
+
+  return Object.freeze({
+    winner: winnerValue(record, 'winner', context),
+    fallbackCount: safeInteger(record, 'fallbackCount', context),
+    score: Object.freeze({
+      ruleSet: ruleSetValue(scoreRecord, 'ruleSet', `${context}.score`),
+      black: finiteNumber(scoreRecord, 'black', `${context}.score`),
+      white: finiteNumber(scoreRecord, 'white', `${context}.score`),
+      komi: normalizedKomi(scoreRecord, 'komi', `${context}.score`),
+      winner: winnerValue(scoreRecord, 'winner', `${context}.score`),
+      margin,
+    }),
+  });
+};
+
 export const parseAlphaZeroGeneratedGame = (value: unknown): AlphaZeroGeneratedGame => {
   const record = asRecord(value, 'generatedGame');
   const topologyName = topologyValue(record, 'topology', 'generatedGame');
@@ -268,6 +305,9 @@ export const parseAlphaZeroGeneratedGame = (value: unknown): AlphaZeroGeneratedG
   const moves = rawMoves.map((move, index) =>
     parseMove(move, index + 1, topology, `generatedGame.moves[${index}]`),
   );
+  const result = Object.prototype.hasOwnProperty.call(record, 'result')
+    ? parseGeneratedResult(record.result, 'generatedGame.result')
+    : undefined;
 
   const game: AlphaZeroGeneratedGame = {
     protocolVersion: protocolVersion(record, 'generatedGame'),
@@ -280,7 +320,7 @@ export const parseAlphaZeroGeneratedGame = (value: unknown): AlphaZeroGeneratedG
     mctsSimulations: safeInteger(record, 'mctsSimulations', 'generatedGame', 1),
     moves: Object.freeze(moves),
     ...(Object.prototype.hasOwnProperty.call(record, 'terminal') ? { terminal: record.terminal } : {}),
-    ...(Object.prototype.hasOwnProperty.call(record, 'result') ? { result: record.result } : {}),
+    ...(result === undefined ? {} : { result }),
   };
   return Object.freeze(game);
 };
