@@ -7,6 +7,7 @@ ALPHAZERO_ROOT="${GOCUBE_ALPHAZERO_DIR:-$PARENT/gocube-alphazero}"
 ALPHAZERO_LAUNCHER="$ALPHAZERO_ROOT/dev-gocube"
 ALPHAZERO_PYTHON="$ALPHAZERO_ROOT/.venv/bin/python"
 ALPHAZERO_URL="http://127.0.0.1:8765"
+GOCUBE_URL="http://127.0.0.1:5173"
 ALPHAZERO_PID=""
 
 fail() {
@@ -37,6 +38,19 @@ raise SystemExit(
     else 1
 )
 PY
+}
+
+open_browser() {
+  local url="$1"
+  if command -v wslview >/dev/null 2>&1; then
+    wslview "$url" >/dev/null 2>&1 || true
+    return
+  fi
+  if command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$url" >/dev/null 2>&1 || true
+    return
+  fi
+  echo "GoCube dev launcher: browser opener unavailable; open $url manually" >&2
 }
 
 cleanup() {
@@ -87,6 +101,10 @@ else
 fi
 
 cd "$ROOT"
-echo "GoCube dev launcher: starting GoCube at http://127.0.0.1:5173"
+echo "GoCube dev launcher: starting GoCube at $GOCUBE_URL"
 echo "GoCube dev launcher: Ctrl+C stops this development session"
-npm run dev -- --host 127.0.0.1 --port 5173 --strictPort --open
+(
+  sleep 0.8
+  open_browser "$GOCUBE_URL"
+) &
+npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
