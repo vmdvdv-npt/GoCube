@@ -28,6 +28,56 @@ const configuredBaseUrl = (): string => {
 
 const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, '');
 
+const transportRecord = (
+  value: unknown,
+  context: string,
+): Readonly<Record<string, unknown>> => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new AlphaZeroGatewayError(`${context} must be an object.`, 'protocol');
+  }
+  return value as Readonly<Record<string, unknown>>;
+};
+
+const normalizeHealthResponse = (value: unknown): unknown => {
+  const record = transportRecord(value, 'health');
+  if (record.status !== 'ok') {
+    throw new AlphaZeroGatewayError('AlphaZero health.status must be "ok".', 'protocol');
+  }
+  if (typeof record.device !== 'string' || record.device.trim().length === 0) {
+    throw new AlphaZeroGatewayError('AlphaZero health.device must be a non-empty string.', 'protocol');
+  }
+
+  // The GoCube gateway predates the service's `device` health field and exposes
+  // this display slot as `version`. Preserve the gateway contract while validating
+  // the real Protocol V1 payload at the transport boundary.
+  return {
+    protocolVersion: record.protocolVersion,
+    service: record.service,
+    version: record.device,
+  };
+};
+
+const normalizeGeneratedGameResponse = (value: unknown): unknown => {
+  const envelope = transportRecord(value, 'generatedGameEnvelope');
+  const game = transportRecord(envelope.game, 'generatedGameEnvelope.game');
+  const black = transportRecord(game.black, 'generatedGameEnvelope.game.black');
+  const white = transportRecord(game.white, 'generatedGameEnvelope.game.white');
+
+  return {
+    protocolVersion: envelope.protocolVersion,
+    topology: game.topology,
+    size: game.size,
+    ruleSet: game.ruleSet,
+    komi: game.komi,
+    blackCheckpoint: black.checkpointId,
+    whiteCheckpoint: white.checkpointId,
+    mctsSimulations: game.mctsSims,
+    moves: game.moves,
+    ...(Object.prototype.hasOwnProperty.call(game, 'terminal') ? { terminal: game.terminal } : {}),
+    ...(Object.prototype.hasOwnProperty.call(game, 'result') ? { result: game.result } : {}),
+  };
+};
+
 export class HttpAlphaZeroClient implements AlphaZeroGateway {
   private readonly baseUrl: string;
   private readonly fetcher: AlphaZeroFetch;
@@ -38,25 +88,27 @@ export class HttpAlphaZeroClient implements AlphaZeroGateway {
   }
 
   async health(): Promise<AlphaZeroHealth> {
-    return parseAlphaZeroHealth(await this.request('/health'));
+    return parseAlphaZeroHealth(normalizeHealthResponse(await this.request('/v1/health')));
   }
 
   async listCheckpoints(): Promise<readonly AlphaZeroCheckpointDescriptor[]> {
-    return parseAlphaZeroCheckpointList(await this.request('/checkpoints'));
+    return parseAlphaZeroCheckpointList(await this.request('/v1/checkpoints'));
   }
 
   async generateGame(request: AlphaZeroGenerateGameRequest): Promise<AlphaZeroGeneratedGame> {
     return parseAlphaZeroGeneratedGame(
-      await this.request('/games/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          protocolVersion: ALPHAZERO_PROTOCOL_VERSION,
-          blackCheckpointId: request.blackCheckpointId,
-          whiteCheckpointId: request.whiteCheckpointId,
-          mctsSimulations: request.mctsSimulations,
+      normalizeGeneratedGameResponse(
+        await this.request('/v1/games', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            protocolVersion: ALPHAZERO_PROTOCOL_VERSION,
+            blackCheckpointId: request.blackCheckpointId,
+            whiteCheckpointId: request.whiteCheckpointId,
+            mctsSims: request.mctsSimulations,
+          }),
         }),
-      }),
+      ),
     );
   }
 
