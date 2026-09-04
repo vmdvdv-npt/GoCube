@@ -53,6 +53,7 @@ const expectShift = async (
   expect(snapshot.piecesTransform).toBe(snapshot.gridTransform);
   expect(snapshot.gridOpacity).toBeNull();
   expect(snapshot.piecesOpacity).toBeNull();
+  // The renderer creates temporary wrapped copies only while the pan animation is active.
   expect(snapshot.stoneCopies).toBeGreaterThan(1);
 
   const board = page.locator('.torus-board');
@@ -60,6 +61,7 @@ const expectShift = async (
   await expect(board).toHaveAttribute('data-navigation-busy', 'false');
   await expect(board).toHaveAttribute('data-view-offset-x', String(expectedOffsetX));
   await expect(board).toHaveAttribute('data-view-offset-y', String(expectedOffsetY));
+  await expect(board).toHaveAttribute('data-duplicate-regions-visible', 'false');
 };
 
 test('Torus 2D arrows physically slide grid and stones with seamless wrap', async ({ page }) => {
@@ -70,12 +72,7 @@ test('Torus 2D arrows physically slide grid and stones with seamless wrap', asyn
   );
   await firstPoint.click();
   await expect(page.getByText('White to move')).toBeVisible();
-
-  await page.getByLabel('Показывать дублирующие области').check();
-  await expect(page.locator('.torus-board')).toHaveAttribute(
-    'data-duplicate-regions-visible',
-    'true',
-  );
+  await expect(page.locator('.torus-board__edge-duplicates')).toHaveCount(0);
 
   await expectShift(page, 'right', 1, 0);
   await expectShift(page, 'left', 0, 0);
@@ -112,8 +109,9 @@ test('rapid Torus navigation ignores extra arrows and keeps sidebar actions avai
   await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Redo' })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'New game', exact: true })).toBeEnabled();
-  await expect(page.getByLabel('Номера ходов')).toBeEnabled();
-  await expect(page.getByLabel('Показывать дублирующие области')).toBeEnabled();
+  await expect(page.getByLabel('Show move number')).toBeEnabled();
+  await expect(page.getByText(/duplicate regions/i)).toHaveCount(0);
+  await expect(page.getByText('Показывать дублирующие области')).toHaveCount(0);
 
   await expect(board).toHaveAttribute('data-pan-animating', 'false', { timeout: 2_000 });
   await expect(board).toHaveAttribute('data-view-offset-x', '1');
