@@ -36,16 +36,21 @@ export function ReplayControls({
       <div className="developer-replay-controls__transport">
         <button type="button" aria-label="Replay start" disabled={disabled || position === 0} onClick={onJumpStart}>|←</button>
         <button type="button" aria-label="Previous move" disabled={disabled || position === 0} onClick={onPrevious}>←</button>
-        <button type="button" aria-label={playing ? 'Pause replay' : 'Play replay'} disabled={disabled || total === 0} onClick={onTogglePlay}>
+        <button
+          type="button"
+          className="developer-replay-controls__play"
+          aria-label={playing ? 'Pause replay' : 'Play replay'}
+          disabled={disabled || total === 0}
+          onClick={onTogglePlay}
+        >
           {playing ? 'Pause' : 'Play'}
         </button>
         <button type="button" aria-label="Next move" disabled={disabled || position >= total} onClick={onNext}>→</button>
         <button type="button" aria-label="Replay end" disabled={disabled || position >= total} onClick={onJumpEnd}>→|</button>
-        <output className="developer-replay-controls__position" aria-live="polite">{position} / {total}</output>
       </div>
 
-      <label className="developer-replay-controls__slider">
-        Replay position
+      <label className="developer-replay-controls__timeline">
+        <span>Replay position</span>
         <input
           type="range"
           min={0}
@@ -56,6 +61,8 @@ export function ReplayControls({
           onChange={(event) => onSeek(Number(event.target.value))}
         />
       </label>
+
+      <output className="developer-replay-controls__position" aria-live="polite">{position} / {total}</output>
 
       <div className="developer-replay-controls__speeds" role="group" aria-label="Replay speed">
         {SPEEDS.map((candidate) => (

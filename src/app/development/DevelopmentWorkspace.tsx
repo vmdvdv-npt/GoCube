@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { FinalScore, ScoreWinner } from '../../core/scoring/Scoring';
 import type { AnimationMode } from '../../presentation/AnimationMode';
 import { Cube2DGame } from '../Cube2DGame';
 import type { Cube2DGameActionResult } from '../Cube2DGameController';
@@ -6,6 +7,7 @@ import {
   type AlphaZeroCheckpointDescriptor,
   type AlphaZeroGateway,
   type AlphaZeroGeneratedGame,
+  type AlphaZeroGeneratedGameResult,
   AlphaZeroGatewayError,
 } from './AlphaZeroGateway';
 import {
@@ -123,6 +125,18 @@ const errorMessage = (error: unknown): string => {
   return error instanceof Error ? error.message : 'Development operation failed.';
 };
 
+const winnerLabel = (winner: ScoreWinner): string =>
+  winner === 'draw' ? 'Draw' : winner === 'black' ? 'Black' : 'White';
+
+const scoresDiffer = (
+  alphaZero: AlphaZeroGeneratedGameResult,
+  goCube: FinalScore,
+): boolean =>
+  alphaZero.winner !== goCube.winner ||
+  alphaZero.score.black !== goCube.black ||
+  alphaZero.score.white !== goCube.white ||
+  alphaZero.score.margin !== goCube.margin;
+
 export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: DevelopmentWorkspaceProps) {
   const gateway = useMemo(() => providedGateway ?? new HttpAlphaZeroClient(), [providedGateway]);
   const initialSettingsRef = useRef<DevelopmentSettings | undefined>(undefined);
@@ -139,6 +153,8 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
   const [mctsSimulations, setMctsSimulations] = useState(initialSettings.mctsSimulations ?? 100);
   const [generating, setGenerating] = useState(false);
   const [replay, setReplay] = useState<DeveloperReplaySession | null>(null);
+  const [alphaZeroResult, setAlphaZeroResult] = useState<AlphaZeroGeneratedGameResult | null>(null);
+  const [goCubeScore, setGoCubeScore] = useState<FinalScore | null>(null);
   const [position, setPosition] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<ReplaySpeed>(1);
@@ -157,6 +173,9 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
     [checkpoints, whiteCheckpointId],
   );
   const compatibilityError = checkpointCompatibilityError(blackCheckpoint, whiteCheckpoint);
+  const resultMismatch = alphaZeroResult && goCubeScore
+    ? scoresDiffer(alphaZeroResult, goCubeScore)
+    : null;
 
   const checkConnection = async (): Promise<void> => {
     setConnection('checking');
@@ -204,6 +223,15 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gateway]);
 
+  useEffect(() => {
+    if (!replay) {
+      setGoCubeScore(null);
+      return;
+    }
+    replay.setFinalScoreListener((score) => setGoCubeScore(score));
+    return () => replay.setFinalScoreListener(null);
+  }, [replay]);
+
   const publishAction = (session: DeveloperReplaySession, result: Cube2DGameActionResult): void => {
     actionSequenceRef.current += 1;
     setExternalAction(Object.freeze({ sequence: actionSequenceRef.current, result }));
@@ -247,6 +275,8 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
     setPlaying(false);
     setDiagnostic(null);
     setReplay(null);
+    setAlphaZeroResult(null);
+    setGoCubeScore(null);
     setPosition(0);
     setExternalAction(null);
     try {
@@ -263,6 +293,7 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
       );
       if (metadataError) throw new Error(metadataError);
       const session = new DeveloperReplaySession(game);
+      setAlphaZeroResult(game.result ?? null);
       setReplay(session);
       setPosition(0);
       actionSequenceRef.current += 1;
@@ -310,131 +341,184 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
     <main className="development-workspace" aria-label="Development Workspace">
       <header className="development-workspace__topbar">
         <div>
+          <p className="development-workspace__kicker">Developer tools</p>
           <h1>Development Workspace</h1>
         </div>
         <button type="button" onClick={onBack}>Back to GoCube</button>
       </header>
 
-      <div className="development-workspace__configuration">
-        <section className="development-alpha-zero" aria-labelledby="development-alpha-zero-title">
-          <h2 id="development-alpha-zero-title">AlphaZero</h2>
-          <div className="development-alpha-zero__status">
-            <span aria-live="polite">{serviceLabel}</span>
-            <button type="button" disabled={connection === 'checking' || generating} onClick={() => void checkConnection()}>
-              Retry connection
-            </button>
-          </div>
+      <div className="development-workspace__content">
+        <aside className="development-workspace__sidebar">
+          <section className="development-alpha-zero" aria-labelledby="development-alpha-zero-title">
+            <div className="development-alpha-zero__heading">
+              <h2 id="development-alpha-zero-title">AlphaZero</h2>
+              <span className={`development-alpha-zero__connection development-alpha-zero__connection--${connection}`}>
+                {connection === 'available' ? 'Connected' : connection === 'checking' ? 'Checking' : 'Offline'}
+              </span>
+            </div>
 
-          <div className="development-alpha-zero__grid">
-            <label>
-              Black checkpoint
-              <select
-                value={blackCheckpointId}
-                disabled={connection !== 'available' || generating}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setBlackCheckpointId(value);
-                  persistDevelopmentSettings({ blackCheckpointId: value });
-                }}
+            <div className="development-alpha-zero__status">
+              <span aria-live="polite">{serviceLabel}</span>
+              <button type="button" disabled={connection === 'checking' || generating} onClick={() => void checkConnection()}>
+                Retry
+              </button>
+            </div>
+
+            <div className="development-alpha-zero__grid">
+              <label>
+                Black checkpoint
+                <select
+                  value={blackCheckpointId}
+                  disabled={connection !== 'available' || generating}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setBlackCheckpointId(value);
+                    persistDevelopmentSettings({ blackCheckpointId: value });
+                  }}
+                >
+                  <option value="">Select checkpoint</option>
+                  {checkpoints.map((checkpoint) => (
+                    <option value={checkpoint.id} key={checkpoint.id}>{checkpointLabel(checkpoint)}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                White checkpoint
+                <select
+                  value={whiteCheckpointId}
+                  disabled={connection !== 'available' || generating}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setWhiteCheckpointId(value);
+                    persistDevelopmentSettings({ whiteCheckpointId: value });
+                  }}
+                >
+                  <option value="">Select checkpoint</option>
+                  {checkpoints.map((checkpoint) => (
+                    <option value={checkpoint.id} key={checkpoint.id}>{checkpointLabel(checkpoint)}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                MCTS simulations
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={mctsSimulations}
+                  disabled={generating}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    setMctsSimulations(value);
+                    if (Number.isSafeInteger(value) && value >= 1) {
+                      persistDevelopmentSettings({ mctsSimulations: value });
+                    }
+                  }}
+                />
+              </label>
+
+              <p className="development-alpha-zero__metadata">
+                {blackCheckpoint
+                  ? `${blackCheckpoint.topology} · ${blackCheckpoint.size}×${blackCheckpoint.size} · ${blackCheckpoint.ruleSet} · komi ${blackCheckpoint.komi}`
+                  : 'Topology and size follow the selected checkpoints.'}
+              </p>
+
+              {compatibilityError && connection === 'available' ? (
+                <p className="development-alpha-zero__error">{compatibilityError}</p>
+              ) : null}
+
+              <button
+                type="button"
+                className="development-alpha-zero__generate"
+                disabled={connection !== 'available' || generating || Boolean(compatibilityError)}
+                onClick={() => void generate()}
               >
-                <option value="">Select checkpoint</option>
-                {checkpoints.map((checkpoint) => (
-                  <option value={checkpoint.id} key={checkpoint.id}>{checkpointLabel(checkpoint)}</option>
-                ))}
-              </select>
-            </label>
+                {generating ? 'Generating…' : 'Generate game'}
+              </button>
+            </div>
+          </section>
 
-            <label>
-              White checkpoint
-              <select
-                value={whiteCheckpointId}
-                disabled={connection !== 'available' || generating}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setWhiteCheckpointId(value);
-                  persistDevelopmentSettings({ whiteCheckpointId: value });
-                }}
-              >
-                <option value="">Select checkpoint</option>
-                {checkpoints.map((checkpoint) => (
-                  <option value={checkpoint.id} key={checkpoint.id}>{checkpointLabel(checkpoint)}</option>
-                ))}
-              </select>
-            </label>
+          {replay ? (
+            <section className="development-result-comparison" aria-labelledby="development-result-comparison-title">
+              <div className="development-result-comparison__heading">
+                <h3 id="development-result-comparison-title">Result comparison</h3>
+                {resultMismatch !== null ? (
+                  <span
+                    className={resultMismatch ? 'is-mismatch' : 'is-match'}
+                    role="status"
+                  >
+                    {resultMismatch ? 'Results differ' : 'Match'}
+                  </span>
+                ) : null}
+              </div>
 
-            <label>
-              MCTS simulations
-              <input
-                type="number"
-                min={1}
-                step={1}
-                value={mctsSimulations}
-                disabled={generating}
-                onChange={(event) => {
-                  const value = Number(event.target.value);
-                  setMctsSimulations(value);
-                  if (Number.isSafeInteger(value) && value >= 1) {
-                    persistDevelopmentSettings({ mctsSimulations: value });
-                  }
-                }}
-              />
-            </label>
+              <article className="development-result-card">
+                <h4>AlphaZero result</h4>
+                {alphaZeroResult ? (
+                  <dl>
+                    <div><dt>Winner</dt><dd>{winnerLabel(alphaZeroResult.winner)}</dd></div>
+                    <div><dt>Score</dt><dd>B {alphaZeroResult.score.black} · W {alphaZeroResult.score.white}</dd></div>
+                    <div><dt>Margin</dt><dd>{alphaZeroResult.score.margin}</dd></div>
+                    <div><dt>fallbackCount</dt><dd>{alphaZeroResult.fallbackCount}</dd></div>
+                  </dl>
+                ) : (
+                  <p>Result diagnostics are not present in this AlphaZero response.</p>
+                )}
+              </article>
 
-            <p className="development-alpha-zero__metadata">
-              {blackCheckpoint
-                ? `${blackCheckpoint.topology} · ${blackCheckpoint.size}×${blackCheckpoint.size} · ${blackCheckpoint.ruleSet} · komi ${blackCheckpoint.komi}`
-                : 'Topology and size follow the selected checkpoints.'}
-            </p>
+              <article className="development-result-card">
+                <h4>GoCube result</h4>
+                {goCubeScore ? (
+                  <dl>
+                    <div><dt>Winner</dt><dd>{winnerLabel(goCubeScore.winner)}</dd></div>
+                    <div><dt>Score</dt><dd>B {goCubeScore.black} · W {goCubeScore.white}</dd></div>
+                  </dl>
+                ) : (
+                  <p>Pending endgame review. Finish scoring in GoCube to compare final results.</p>
+                )}
+              </article>
+            </section>
+          ) : null}
 
-            {compatibilityError && connection === 'available' ? (
-              <p className="development-alpha-zero__error">{compatibilityError}</p>
-            ) : null}
+          {diagnostic ? (
+            <p className="development-workspace__diagnostic" role="alert">{diagnostic}</p>
+          ) : null}
+        </aside>
 
-            <button
-              type="button"
-              className="development-alpha-zero__generate"
-              disabled={connection !== 'available' || generating || Boolean(compatibilityError)}
-              onClick={() => void generate()}
-            >
-              {generating ? 'Generating…' : 'Generate game'}
-            </button>
-          </div>
+        <section className="development-workspace__game" aria-label="Generated game replay">
+          {replay ? (
+            <Cube2DGame
+              controller={replay.controller}
+              onRequestNewGame={() => undefined}
+              gameplayReadOnly
+              newGameDisabled
+              animationMode={animationMode}
+              externalAction={externalAction}
+            />
+          ) : (
+            <div className="development-workspace__empty-board">
+              <p>Generate a Cube game to replay it on the GoCube renderer.</p>
+            </div>
+          )}
         </section>
-
-        <ReplayControls
-          position={position}
-          total={replay?.totalMoves ?? 0}
-          playing={playing}
-          speed={speed}
-          disabled={!replay || replayBusy}
-          onJumpStart={() => void runReplayOperation((session) => session.jumpToStart(), { pause: true, disableAnimation: true })}
-          onPrevious={() => void runReplayOperation((session) => session.previous(), { pause: true, disableAnimation: true })}
-          onTogglePlay={() => setPlaying((current) => !current)}
-          onNext={() => void runReplayOperation((session) => session.next(), { pause: true, disableAnimation: true })}
-          onJumpEnd={() => void runReplayOperation((session) => session.jumpToEnd(), { pause: true, disableAnimation: true })}
-          onSeek={(target) => void runReplayOperation((session) => session.seek(target), { pause: true, disableAnimation: true })}
-          onSpeedChange={setSpeed}
-        />
       </div>
 
-      {diagnostic ? (
-        <p className="development-workspace__diagnostic" role="alert">{diagnostic}</p>
-      ) : null}
-
-      <section className="development-workspace__game" aria-label="Generated game replay">
-        {replay ? (
-          <Cube2DGame
-            controller={replay.controller}
-            onRequestNewGame={() => undefined}
-            gameplayReadOnly
-            newGameDisabled
-            animationMode={animationMode}
-            externalAction={externalAction}
-          />
-        ) : (
-          <p className="startup-status">Generate a Cube game to replay it on the GoCube renderer.</p>
-        )}
-      </section>
+      <ReplayControls
+        position={position}
+        total={replay?.totalMoves ?? 0}
+        playing={playing}
+        speed={speed}
+        disabled={!replay || replayBusy}
+        onJumpStart={() => void runReplayOperation((session) => session.jumpToStart(), { pause: true, disableAnimation: true })}
+        onPrevious={() => void runReplayOperation((session) => session.previous(), { pause: true, disableAnimation: true })}
+        onTogglePlay={() => setPlaying((current) => !current)}
+        onNext={() => void runReplayOperation((session) => session.next(), { pause: true, disableAnimation: true })}
+        onJumpEnd={() => void runReplayOperation((session) => session.jumpToEnd(), { pause: true, disableAnimation: true })}
+        onSeek={(target) => void runReplayOperation((session) => session.seek(target), { pause: true, disableAnimation: true })}
+        onSpeedChange={setSpeed}
+      />
     </main>
   );
 }

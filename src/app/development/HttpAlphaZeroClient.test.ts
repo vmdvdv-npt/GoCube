@@ -79,7 +79,18 @@ describe('HttpAlphaZeroClient', () => {
             black: { checkpointId: 'c1' },
             white: { checkpointId: 'c1' },
             moves: [{ moveNumber: 1, color: 'black', action: { type: 'pass' }, captured: [] }],
-            result: { winner: 'black' },
+            result: {
+              winner: 'black',
+              fallbackCount: 2,
+              score: {
+                ruleSet: 'chinese',
+                black: 8,
+                white: 7.5,
+                komi: 7.5,
+                winner: 'black',
+                margin: 0.5,
+              },
+            },
           },
         });
       },
@@ -101,6 +112,11 @@ describe('HttpAlphaZeroClient', () => {
       blackCheckpoint: 'c1',
       whiteCheckpoint: 'c1',
       mctsSimulations: 42,
+      result: {
+        winner: 'black',
+        fallbackCount: 2,
+        score: { black: 8, white: 7.5, margin: 0.5 },
+      },
     });
     expect(game.moves[0]?.action).toEqual({ type: 'pass' });
   });

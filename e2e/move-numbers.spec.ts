@@ -31,7 +31,7 @@ test('last stone keeps a contrast dot while move numbers preserve pass gaps', as
   await expect(marker(page, '1,0')).toHaveCount(1);
   await expect(marker(page, '1,0')).toHaveAttribute('fill', '#111111');
 
-  const toggle = page.getByLabel('Номера ходов');
+  const toggle = page.getByLabel('Show move number');
   await expect(toggle).not.toBeChecked();
   await toggle.check();
   await expect(toggle).toBeChecked();
@@ -55,22 +55,20 @@ test('last stone keeps a contrast dot while move numbers preserve pass gaps', as
   await expect(moveNumber(page, '1,0')).toHaveCount(0);
 });
 
-test('annotations are synchronized to duplicate copies and survive smooth pan', async ({ page }) => {
+test('move annotations survive smooth torus pan without duplicate-region UI', async ({ page }) => {
   await startGame(page);
   await point(page, '0,0').click();
   await point(page, '1,0').click();
-  await page.getByLabel('Номера ходов').check();
-  await page.getByLabel('Показывать дублирующие области').check();
+  await page.getByLabel('Show move number').check();
 
-  const stoneCopies = page.locator('.torus-board__stone[data-logical-point-id="1,0"]');
-  await expect(marker(page, '1,0')).toHaveCount(await stoneCopies.count());
-
-  const numberedStoneCopies = page.locator('.torus-board__stone[data-logical-point-id="0,0"]');
-  await expect(moveNumber(page, '0,0')).toHaveCount(await numberedStoneCopies.count());
+  await expect(moveNumber(page, '0,0')).toHaveText('1');
+  await expect(marker(page, '1,0')).toHaveCount(1);
+  await expect(page.getByText(/duplicate regions/i)).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Shift torus view right' }).click();
   await expect(page.locator('.torus-board')).toHaveAttribute('data-pan-animating', 'true');
   await expect(marker(page, '1,0')).not.toHaveCount(0);
   await expect(page.locator('.torus-board')).toHaveAttribute('data-pan-animating', 'false');
+  await expect(moveNumber(page, '0,0')).not.toHaveCount(0);
   await expect(marker(page, '1,0')).not.toHaveCount(0);
 });

@@ -71,13 +71,13 @@ test('Japanese rules stat has no stale capture-stone decoration', async ({ page 
   expect(style.flexDirection).toBe('row');
 });
 
-test('duplicate strips preserve the normal hit influence of all four primary board edges', async ({
+test('primary board edges preserve their normal hit influence without duplicate strips', async ({
   page,
 }) => {
   await startTorus(page);
-  await page.getByLabel('Показывать дублирующие области').check();
-  await expect(page.locator('.torus-board')).toHaveAttribute('data-duplicate-regions-visible', 'true');
-  await expect(page.locator('.torus-board__edge-duplicates')).toHaveCount(1);
+  await expect(page.locator('.torus-board')).toHaveAttribute('data-duplicate-regions-visible', 'false');
+  await expect(page.locator('.torus-board__edge-duplicates')).toHaveCount(0);
+  await expect(page.locator('.torus-board__hit-target[data-copy-role="duplicate"]')).toHaveCount(0);
 
   const edgePoints = [
     { id: '0,4', direction: 'left' },
@@ -97,16 +97,9 @@ test('duplicate strips preserve the normal hit influence of all four primary boa
     ).toHaveCount(1);
   }
 
-  // The decorative strip itself remains non-interactive beyond the primary edge
-  // point's normal circular hit radius.
   const leftEdge = page.locator(
     '.torus-board__hit-target[data-logical-point-id="0,4"][data-copy-role="primary"]',
   );
-  const outsidePrimaryHit = await pointOutsideEdge(leftEdge, 'left', 1.25);
-  await page.mouse.move(outsidePrimaryHit.x, outsidePrimaryHit.y);
-  await expect(page.locator('.torus-board__preview-stone')).toHaveCount(0);
-  await expect(page.locator('.torus-board__hit-target[data-copy-role="duplicate"]')).toHaveCount(0);
-
   const playableEdgePosition = await pointOutsideEdge(leftEdge, 'left', 0.5);
   await page.mouse.move(playableEdgePosition.x, playableEdgePosition.y);
   await expect(

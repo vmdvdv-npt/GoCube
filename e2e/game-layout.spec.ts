@@ -16,7 +16,8 @@ test('game screen uses compact statistics and uniform history controls', async (
   await expect(page.getByText(/^Passes \d+$/)).toHaveCount(0);
   await expect(page.getByText('Japanese rules')).toBeVisible();
   await expect(page.getByText('Komi 7.5')).toBeVisible();
-  await expect(page.getByLabel('Показывать дублирующие области')).toBeVisible();
+  await expect(page.getByLabel('Show move number')).toBeVisible();
+  await expect(page.getByText(/duplicate regions/i)).toHaveCount(0);
 
   const standardStatStyle = await page.getByText('9×9').evaluate((element) => ({
     color: getComputedStyle(element).color,
@@ -26,17 +27,9 @@ test('game screen uses compact statistics and uniform history controls', async (
     color: getComputedStyle(element).color,
     fontSize: getComputedStyle(element).fontSize,
   }));
-  const moveNumbersLabelStyle = await page
-    .locator('.torus-duplicates-control label')
-    .nth(1)
-    .evaluate((element) => ({
-      color: getComputedStyle(element, '::after').color,
-      fontSize: getComputedStyle(element, '::after').fontSize,
-    }));
 
   expect(standardStatStyle).toEqual({ color: 'rgb(154, 154, 154)', fontSize: '13px' });
   expect(rulesStyle).toEqual(standardStatStyle);
-  expect(moveNumbersLabelStyle).toEqual(standardStatStyle);
 
   const blackCaptureStat = page.locator('.capture-stat--black');
   const blackCaptureStone = page.locator('.capture-stat--black .capture-stat__stone');

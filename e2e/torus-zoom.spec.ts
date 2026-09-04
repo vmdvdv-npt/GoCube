@@ -11,22 +11,21 @@ const start19x19Game = async (page: Page): Promise<void> => {
 const zoomValue = async (page: Page): Promise<number> =>
   Number(await page.locator('.torus-board').getAttribute('data-view-zoom'));
 
-test('Torus 2D wheel zoom is smooth, bounded and survives duplicate-region rendering', async ({
+test('Torus 2D wheel zoom is smooth and bounded without duplicate-region UI', async ({
   page,
 }) => {
   await start19x19Game(page);
 
   const board = page.locator('.torus-board');
   await expect(board).toHaveAttribute('data-view-zoom', '1.000');
+  await expect(board).toHaveAttribute('data-duplicate-regions-visible', 'false');
+  await expect(page.locator('.torus-board__edge-duplicates')).toHaveCount(0);
 
   await board.hover();
   await page.mouse.wheel(0, -500);
   await expect.poll(() => zoomValue(page)).toBeGreaterThan(1);
   const zoomedIn = await zoomValue(page);
-
-  await page.getByLabel('Показывать дублирующие области').check();
-  await expect(board).toHaveAttribute('data-duplicate-regions-visible', 'true');
-  await expect.poll(() => zoomValue(page)).toBeCloseTo(zoomedIn, 3);
+  expect(zoomedIn).toBeGreaterThan(1);
 
   const centerPoint = page.locator(
     '.torus-board__hit-target[data-logical-point-id="9,9"][data-copy-role="primary"]',
@@ -41,8 +40,6 @@ test('Torus 2D wheel zoom is smooth, bounded and survives duplicate-region rende
 
   for (let step = 0; step < 12; step += 1) await page.mouse.wheel(0, 500);
   await expect(board).toHaveAttribute('data-view-zoom', '0.700');
-
-  await page.getByLabel('Показывать дублирующие области').uncheck();
   await expect(board).toHaveAttribute('data-duplicate-regions-visible', 'false');
-  await expect(board).toHaveAttribute('data-view-zoom', '0.700');
+  await expect(page.locator('.torus-board__edge-duplicates')).toHaveCount(0);
 });
