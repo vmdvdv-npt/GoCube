@@ -76,6 +76,26 @@ describe('strict production dynamic seki', () => {
     expect(result.reason).toBeNull();
   });
 
+  it('can prove mutual restraint beyond the static closed-two-liberty shape', async () => {
+    const topology = new GraphTopology('dynamic-seki-external-leaf', [
+      ['L', 's1'], ['R', 's1'], ['L', 's2'], ['R', 's2'], ['s1', 'e'], ['OUT1', 'OUT2'],
+    ]);
+    const state = makeState(topology, { L: 'black', R: 'white' });
+    const result = await analyzeDynamicSeki(
+      targetAt(state, topology, 'L'),
+      targetAt(state, topology, 'R'),
+      state,
+      topology,
+    );
+
+    expect(result.certifiedZone).toContain('e');
+    expect(result.leftInitiation.moves.map((move) => move.point)).toContain('e');
+    expect(result.rightInitiation.moves.map((move) => move.point)).toContain('e');
+    expect(result.leftInitiation.outcome).toBe('all-local-initiations-lose');
+    expect(result.rightInitiation.outcome).toBe('all-local-initiations-lose');
+    expect(result.outcome).toBe('seki');
+  });
+
   it('does not turn absence of a stable winner into seki', async () => {
     const topology = new GraphTopology('winning-initiation', [['L', 's'], ['R', 's'], ['OUT1', 'OUT2']]);
     const state = makeState(topology, { L: 'black', R: 'white' });
