@@ -51,6 +51,14 @@ const deadFixture = () => {
   return Object.freeze({ topology, state: stateFor(topology, { t: 'white', B: 'black' }) });
 };
 
+const openFixture = () => {
+  const topology = new GraphTopology('final-proof-open-progress', [
+    ['t', 'a'], ['t', 'b'], ['t', 'c'], ['t', 'd'],
+    ['a', 'x'], ['b', 'x'], ['c', 'x'], ['d', 'x'],
+  ]);
+  return Object.freeze({ topology, state: stateFor(topology, { t: 'white' }) });
+};
+
 describe('FinalProofSearch scheduler', () => {
   it('resolves a forced death at the cheapest proof tier and stores auditable evidence', async () => {
     const { topology, state } = deadFixture();
@@ -103,12 +111,48 @@ describe('FinalProofSearch scheduler', () => {
     expect(snapshots).toEqual([...snapshots].sort((a, b) => a - b));
   });
 
+  it('counts unresolved groups as completed only after no proof tier can revisit them', async () => {
+    const { topology, state } = openFixture();
+    const [context, proposal] = contextAndProposal(topology, state);
+    const snapshots: Array<Readonly<{ tier: string; completed: number; total: number }>> = [];
+    const result = await runFinalProofSearch(context, proposal, {
+      onProgress: (progress) => snapshots.push(Object.freeze({
+        tier: progress.currentTierName,
+        completed: progress.groupsCompleted,
+        total: progress.groupsTotal,
+      })),
+    });
+
+    expect(result.proposal.every((group) => group.status === 'unresolved')).toBe(true);
+    expect(snapshots.filter((snapshot) => snapshot.tier !== 'finalizing').every((snapshot) => snapshot.completed === 0)).toBe(true);
+    const finalizing = snapshots.filter((snapshot) => snapshot.tier === 'finalizing');
+    expect(finalizing.length).toBeGreaterThan(0);
+    expect(finalizing.at(-1)?.completed).toBe(finalizing.at(-1)?.total);
+    expect(result.diagnostics.groupsCompleted).toBe(result.diagnostics.groupsTotal);
+  });
+
+  it('applies the hard deadline to graph/preparation work and fails closed before dynamic proofs', async () => {
+    const { topology, state } = deadFixture();
+    const [context, proposal] = contextAndProposal(topology, state);
+    let tick = 0;
+    const result = await runFinalProofSearch(context, proposal, {
+      budget: {
+        softWallClockMilliseconds: 1,
+        hardWallClockMilliseconds: 2,
+      },
+      now: () => tick++,
+      yieldControl: async () => Promise.resolve(),
+    });
+
+    expect(result.proposal).toEqual(proposal);
+    expect(result.diagnostics.stopReason).toBe('hard-time-budget');
+    expect(result.diagnostics.deadlineReachedAt).not.toBeNull();
+    expect(result.diagnostics.attempts).toBe(0);
+    expect(result.diagnostics.resolvedAutomatically).toBe(0);
+  });
+
   it('fails closed when locality covers the whole graph and the target is outside the tactical gate', async () => {
-    const topology = new GraphTopology('final-proof-open', [
-      ['t', 'a'], ['t', 'b'], ['t', 'c'], ['t', 'd'],
-      ['a', 'x'], ['b', 'x'], ['c', 'x'], ['d', 'x'],
-    ]);
-    const state = stateFor(topology, { t: 'white' });
+    const { topology, state } = openFixture();
     const [context, proposal] = contextAndProposal(topology, state);
     const result = await runFinalProofSearch(context, proposal);
     expect(result.proposal[0]?.status).toBe('unresolved');
