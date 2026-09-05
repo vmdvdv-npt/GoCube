@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { FinalProofSearchProgress } from '../core/endgame/FinalProofSearch';
 import type { FinalProofSearchProgressSource } from '../core/endgame/FinalProofSearchRunController';
 import type { GameViewModel } from '../presentation/PresentationModel';
+import { useFinalAnalysisProgressSource } from './FinalAnalysisProgressContext';
 
 export interface GameSidebarProps {
   readonly size: number;
@@ -46,15 +47,17 @@ export function GameSidebar({
   feedback = null,
   finalAnalysisProgressSource,
 }: GameSidebarProps) {
+  const contextualProgressSource = useFinalAnalysisProgressSource();
+  const progressSource = finalAnalysisProgressSource ?? contextualProgressSource;
   const [finalAnalysisProgress, setFinalAnalysisProgress] = useState<FinalProofSearchProgress | null>(
-    () => finalAnalysisProgressSource?.current() ?? null,
+    () => progressSource?.current() ?? null,
   );
 
   useEffect(() => {
-    setFinalAnalysisProgress(finalAnalysisProgressSource?.current() ?? null);
-    if (!finalAnalysisProgressSource) return undefined;
-    return finalAnalysisProgressSource.subscribe(setFinalAnalysisProgress);
-  }, [finalAnalysisProgressSource]);
+    setFinalAnalysisProgress(progressSource?.current() ?? null);
+    if (!progressSource) return undefined;
+    return progressSource.subscribe(setFinalAnalysisProgress);
+  }, [progressSource]);
 
   const stageLabel = finalAnalysisProgress
     ? 'Analyzing final position…'
