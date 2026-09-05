@@ -27,46 +27,62 @@ export interface PassAliveTerritoryResult {
   readonly regions: readonly PassAliveTerritoryRegion[];
 }
 
+export interface PassAliveTerritoryOptions {
+  readonly shouldStop?: () => boolean;
+}
+
 const compareStrings = (left: string, right: string): number =>
   left < right ? -1 : left > right ? 1 : 0;
 
 /**
  * Marks only KataGo's unconditional pass-alive territory from
  * Board::calculateAreaForPla, not safeBigTerritories/unsafeBigTerritories.
- *
- * A non-color region is owned when it has at most one point not adjacent to
- * the owner, every owner chain on its boundary survived Benson, and the owner
- * has at least one stone on the board.
+ * If the shared analysis deadline fires, only already completed region facts are
+ * returned; no interrupted region can become territory evidence.
  */
 export const buildPassAliveTerritory = (
   graph: EndgameStaticGraph,
   blackBenson: BensonPassAliveResult,
   whiteBenson: BensonPassAliveResult,
+  options: PassAliveTerritoryOptions = {},
 ): PassAliveTerritoryResult => {
+  const shouldStop = options.shouldStop ?? (() => false);
   const ownerByPoint = new Map<PointId, StoneColor>();
   const regions: PassAliveTerritoryRegion[] = [];
 
   const analyzeColor = (benson: BensonPassAliveResult): void => {
+    if (shouldStop()) return;
     const color = benson.color;
     const aliveGroupKeys = new Set(benson.aliveGroups.keys());
     const atLeastOneStone = graph.strings.some((group) => group.color === color);
     if (!atLeastOneStone) return;
 
     for (const region of benson.regions) {
+      if (shouldStop()) return;
       const bordersNonPassAlive = region.boundaryGroups.some(
         (groupKey) => !aliveGroupKeys.has(groupKey),
       );
       if (region.internalSpacesMax2 > 1 || bordersNonPassAlive) continue;
 
+      // Stage the assignments first so interruption cannot leave a half-written
+      // territory region in ownerByPoint.
+      const assignments: PointId[] = [];
+      let interrupted = false;
       for (const point of region.points) {
+        if (shouldStop()) {
+          interrupted = true;
+          break;
+        }
         const existing = ownerByPoint.get(point);
         if (existing && existing !== color) {
           throw new Error(
             `Pass-alive territory conflict at ${point}: ${existing} vs ${color}`,
           );
         }
-        ownerByPoint.set(point, color);
+        assignments.push(point);
       }
+      if (interrupted) return;
+      for (const point of assignments) ownerByPoint.set(point, color);
 
       regions.push(
         Object.freeze({
