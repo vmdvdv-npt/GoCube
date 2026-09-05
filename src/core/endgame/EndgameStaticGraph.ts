@@ -45,6 +45,30 @@ const occupancyAt = (board: BoardOccupancy, point: PointId): StoneColor | 'empty
   return occupancy;
 };
 
+/**
+ * Endgame boards are immutable snapshots. Cache only fully constructed graphs by
+ * the exact board+topology object pair; interrupted builds are never published.
+ * Weak keys ensure old search/session snapshots remain collectible.
+ */
+const graphCache = new WeakMap<object, WeakMap<object, EndgameStaticGraph>>();
+
+const cachedGraph = (board: BoardOccupancy, topology: Topology): EndgameStaticGraph | null =>
+  graphCache.get(board as object)?.get(topology as object) ?? null;
+
+const cacheGraph = (
+  board: BoardOccupancy,
+  topology: Topology,
+  graph: EndgameStaticGraph,
+): EndgameStaticGraph => {
+  let byTopology = graphCache.get(board as object);
+  if (!byTopology) {
+    byTopology = new WeakMap<object, EndgameStaticGraph>();
+    graphCache.set(board as object, byTopology);
+  }
+  byTopology.set(topology as object, graph);
+  return graph;
+};
+
 export const buildEndgameStaticGraph = (
   board: BoardOccupancy,
   topology: Topology,
@@ -56,6 +80,9 @@ export const buildEndgameStaticGraph = (
   };
 
   checkpoint();
+  const previous = cachedGraph(board, topology);
+  if (previous) return previous;
+
   const points = [...topology.points()].sort(compareEndgamePointIds);
   const visitedStones = new Set<PointId>();
   const strings: EndgameStoneString[] = [];
@@ -160,12 +187,16 @@ export const buildEndgameStaticGraph = (
   emptyRegions.sort((left, right) => compareStrings(left.key, right.key));
   checkpoint();
 
-  return Object.freeze({
-    strings: Object.freeze(strings),
-    stringsByKey,
-    stringByPoint,
-    emptyRegions: Object.freeze(emptyRegions),
-  });
+  return cacheGraph(
+    board,
+    topology,
+    Object.freeze({
+      strings: Object.freeze(strings),
+      stringsByKey,
+      stringByPoint,
+      emptyRegions: Object.freeze(emptyRegions),
+    }),
+  );
 };
 
 export const tryBuildEndgameStaticGraph = (
