@@ -4,7 +4,10 @@ import type { GameState, PointOccupancy, StoneColor } from '../game/types';
 import { CubeTopology } from '../topology/CubeTopology';
 import type { PointId, Topology } from '../topology/Topology';
 import { TorusTopology } from '../topology/TorusTopology';
-import { AssistedEndgameClassifier } from './AssistedEndgameClassifier';
+import {
+  AssistedEndgameClassifier,
+  analyzeFinalGroupJudge,
+} from './AssistedEndgameClassifier';
 import { EndgameTestLab } from './testlab/EndgameTestLab';
 
 const makeState = (
@@ -45,11 +48,11 @@ const collectStoneGroups = (
 };
 
 const analyzeState = async (topology: Topology, state: GameState) =>
-  new AssistedEndgameClassifier().analyze({
+  (await analyzeFinalGroupJudge({
     state,
     topology,
     groups: collectStoneGroups(topology, state),
-  });
+  })).proposal;
 
 const proposalForColor = (
   result: Awaited<ReturnType<typeof analyzeState>>,
@@ -57,10 +60,9 @@ const proposalForColor = (
   color: StoneColor,
 ) => result.find((proposal) => state.board[proposal.points[0]!] === color);
 
-describe('AssistedEndgameClassifier automatic alive/dead core', () => {
+describe('AssistedEndgameClassifier static automatic alive/dead core', () => {
   it('proves the deterministic two-eye fixture alive on Torus and Cube', async () => {
     const lab = new EndgameTestLab();
-    const classifier = new AssistedEndgameClassifier();
 
     for (const topology of [new TorusTopology(9), new CubeTopology(5)]) {
       const fixture = lab.generate({
@@ -69,7 +71,11 @@ describe('AssistedEndgameClassifier automatic alive/dead core', () => {
         seed: '0.3.04-two-eyes',
         pattern: 'two-eyes',
       });
-      const result = await lab.analyze(fixture, classifier);
+      const result = (await analyzeFinalGroupJudge({
+        state: fixture.state,
+        topology,
+        groups: fixture.groups,
+      })).proposal;
 
       expect(result).toHaveLength(1);
       expect(result[0]).toMatchObject({
@@ -137,9 +143,8 @@ describe('AssistedEndgameClassifier automatic alive/dead core', () => {
     }
   });
 
-  it('keeps one-eye, false-eye and seki-like fixtures unresolved on both topologies', async () => {
+  it('keeps one-eye, false-eye and seki-like fixtures unresolved in the cheap static stage', async () => {
     const lab = new EndgameTestLab();
-    const classifier = new AssistedEndgameClassifier();
 
     for (const topology of [new TorusTopology(9), new CubeTopology(5)]) {
       const fixtures = [
@@ -164,16 +169,19 @@ describe('AssistedEndgameClassifier automatic alive/dead core', () => {
       ];
 
       for (const fixture of fixtures) {
-        const result = await lab.analyze(fixture, classifier);
+        const result = (await analyzeFinalGroupJudge({
+          state: fixture.state,
+          topology,
+          groups: fixture.groups,
+        })).proposal;
         expect(result.length).toBeGreaterThan(0);
         expect(result.every((proposal) => proposal.status === 'unresolved')).toBe(true);
       }
     }
   });
 
-  it('keeps an atari candidate unresolved when filling its liberty can escape', async () => {
+  it('keeps an atari candidate unresolved in the static stage when filling its liberty can escape', async () => {
     const lab = new EndgameTestLab();
-    const classifier = new AssistedEndgameClassifier();
 
     for (const topology of [new TorusTopology(9), new CubeTopology(5)]) {
       const fixture = lab.generate({
@@ -182,7 +190,11 @@ describe('AssistedEndgameClassifier automatic alive/dead core', () => {
         seed: '0.3.05-open-atari',
         pattern: 'atari-group',
       });
-      const result = await lab.analyze(fixture, classifier);
+      const result = (await analyzeFinalGroupJudge({
+        state: fixture.state,
+        topology,
+        groups: fixture.groups,
+      })).proposal;
       const target = result.find(
         (proposal) => fixture.state.board[proposal.points[0]!] === 'black',
       );
