@@ -31,30 +31,59 @@ const quantile = (values: readonly number[], q: number): number => {
 describe('Final Proof Search representative benchmark', () => {
   it('measures Cube/Torus small+large, many-group and local-fight cases', async () => {
     const lab = new EndgameTestLab();
-    const fixtures = [
-      lab.generate({ kind: 'endgame-position', topology: new CubeTopology(4), seed: 'final-proof-bench:cube4', maxMoves: 48 }),
-      lab.generate({ kind: 'endgame-position', topology: new CubeTopology(7), seed: 'final-proof-bench:cube7', maxMoves: 96 }),
-      lab.generate({ kind: 'endgame-position', topology: new TorusTopology(9), seed: 'final-proof-bench:torus9', maxMoves: 72 }),
-      lab.generate({ kind: 'endgame-position', topology: new TorusTopology(19), seed: 'final-proof-bench:torus19', maxMoves: 120 }),
-      lab.generate({ kind: 'endgame-position', topology: new TorusTopology(9), seed: 'final-proof-bench:many-groups', maxMoves: 120 }),
-      lab.generate({ kind: 'life-death-pattern', topology: new CubeTopology(5), seed: 'final-proof-bench:local-fight', pattern: 'atari-group' }),
+    const cube4 = new CubeTopology(4);
+    const cube7 = new CubeTopology(7);
+    const torus9Small = new TorusTopology(9);
+    const torus19 = new TorusTopology(19);
+    const torus9Many = new TorusTopology(9);
+    const cube5Fight = new CubeTopology(5);
+    const cases = [
+      {
+        label: 'cube-4-small',
+        topology: cube4,
+        fixture: lab.generate({ kind: 'endgame-position', topology: cube4, seed: 'final-proof-bench:cube4', maxMoves: 48 }),
+      },
+      {
+        label: 'cube-7-larger',
+        topology: cube7,
+        fixture: lab.generate({ kind: 'endgame-position', topology: cube7, seed: 'final-proof-bench:cube7', maxMoves: 96 }),
+      },
+      {
+        label: 'torus-9-small',
+        topology: torus9Small,
+        fixture: lab.generate({ kind: 'endgame-position', topology: torus9Small, seed: 'final-proof-bench:torus9', maxMoves: 72 }),
+      },
+      {
+        label: 'torus-19-larger',
+        topology: torus19,
+        fixture: lab.generate({ kind: 'endgame-position', topology: torus19, seed: 'final-proof-bench:torus19', maxMoves: 120 }),
+      },
+      {
+        label: 'torus-9-many-groups',
+        topology: torus9Many,
+        fixture: lab.generate({ kind: 'endgame-position', topology: torus9Many, seed: 'final-proof-bench:many-groups', maxMoves: 120 }),
+      },
+      {
+        label: 'cube-5-local-fight',
+        topology: cube5Fight,
+        fixture: lab.generate({ kind: 'life-death-pattern', topology: cube5Fight, seed: 'final-proof-bench:local-fight', pattern: 'atari-group' }),
+      },
     ] as const;
-    const labels = ['cube-4-small', 'cube-7-larger', 'torus-9-small', 'torus-19-larger', 'torus-9-many-groups', 'cube-5-local-fight'] as const;
     const rows: Array<Record<string, number | string>> = [];
 
-    for (let index = 0; index < fixtures.length; index += 1) {
-      const fixture = fixtures[index]!;
+    for (const benchmarkCase of cases) {
+      const { fixture, topology } = benchmarkCase;
       const context = Object.freeze({
         state: fixture.state,
-        topology: fixture.topology,
-        groups: collectStoneGroups(fixture.topology, fixture.state),
+        topology,
+        groups: collectStoneGroups(topology, fixture.state),
       });
       const staticAnalysis = await analyzeFinalGroupJudge(context);
       const final = await runFinalProofSearch(context, staticAnalysis.proposal);
       const staticResolved = staticAnalysis.proposal.filter((group) => group.status !== 'unresolved').length;
       const totalMs = staticAnalysis.diagnostics.totalAnalysisMilliseconds + final.diagnostics.elapsedMilliseconds;
       rows.push({
-        case: labels[index]!,
+        case: benchmarkCase.label,
         groups: staticAnalysis.diagnostics.groupCount,
         staticMs: Number(staticAnalysis.diagnostics.totalAnalysisMilliseconds.toFixed(2)),
         proofMs: Number(final.diagnostics.elapsedMilliseconds.toFixed(2)),
