@@ -29,7 +29,7 @@ const quantile = (values: readonly number[], q: number): number => {
 };
 
 describe('Final Proof Search representative benchmark', () => {
-  it('measures Cube/Torus small+large, many-group and local-fight cases', async () => {
+  it('measures automatic-resolution gain, proof tiers, failures and runtime on representative Cube/Torus cases', async () => {
     const lab = new EndgameTestLab();
     const cube4 = new CubeTopology(4);
     const cube7 = new CubeTopology(7);
@@ -81,46 +81,85 @@ describe('Final Proof Search representative benchmark', () => {
       const staticAnalysis = await analyzeFinalGroupJudge(context);
       const final = await runFinalProofSearch(context, staticAnalysis.proposal);
       const staticResolvedGroups = staticAnalysis.proposal.filter((group) => group.status !== 'unresolved');
-      const proofResolvedGroups = final.proposal.filter((group) => group.evidence?.algorithm === 'final-proof-search-v1');
+      const finalResolvedGroups = final.proposal.filter((group) => group.status !== 'unresolved');
+      const dynamicProofGroups = final.proposal.filter((group) => group.evidence?.algorithm === 'final-proof-search-v2');
       const staticResolved = staticResolvedGroups.length;
-      const tacticalResolved = proofResolvedGroups.filter((group) => group.evidence?.reader === 'tactical-forced-capture-v1').length;
-      const localResolved = proofResolvedGroups.filter((group) => group.evidence?.reader === 'local-life-death-v2').length;
+      const finalResolved = finalResolvedGroups.length;
+      const dynamicResolved = finalResolved - staticResolved;
       const staticAlive = staticResolvedGroups.filter((group) => group.status === 'alive').length;
       const staticDead = staticResolvedGroups.filter((group) => group.status === 'dead').length;
       const staticSeki = staticResolvedGroups.filter((group) => group.status === 'seki').length;
       const totalMs = staticAnalysis.diagnostics.totalAnalysisMilliseconds + final.diagnostics.elapsedMilliseconds;
+      const diagnostics = final.diagnostics;
+
+      expect(dynamicProofGroups).toHaveLength(diagnostics.resolvedAutomatically);
+      expect(dynamicResolved).toBe(diagnostics.resolvedAutomatically);
+      expect(
+        diagnostics.resolvedByTier.tactical +
+        diagnostics.resolvedByTier.localLifeDeath +
+        diagnostics.resolvedByTier.semeai +
+        diagnostics.resolvedByTier.seki,
+      ).toBe(diagnostics.resolvedAutomatically);
+
       rows.push({
         case: benchmarkCase.label,
         groups: staticAnalysis.diagnostics.groupCount,
         staticMs: Number(staticAnalysis.diagnostics.totalAnalysisMilliseconds.toFixed(2)),
-        proofMs: Number(final.diagnostics.elapsedMilliseconds.toFixed(2)),
+        proofMs: Number(diagnostics.elapsedMilliseconds.toFixed(2)),
         totalMs: Number(totalMs.toFixed(2)),
         staticResolved,
+        finalResolved,
+        dynamicResolved,
         staticAlive,
         staticDead,
         staticSeki,
-        proofResolved: final.diagnostics.resolvedAutomatically,
-        tacticalResolved,
-        localResolved,
-        nodes: final.diagnostics.exploredNodes,
-        unresolvedBudget: final.diagnostics.outcomes.unresolvedBudget,
-        unresolvedBoundary: final.diagnostics.outcomes.unresolvedBoundary,
-        koDependent: final.diagnostics.outcomes.koDependent,
-        unresolvedOther: final.diagnostics.outcomes.unresolvedOther,
-        stopReason: final.diagnostics.stopReason,
+        tacticalResolved: diagnostics.resolvedByTier.tactical,
+        localLifeDeathResolved: diagnostics.resolvedByTier.localLifeDeath,
+        semeaiResolved: diagnostics.resolvedByTier.semeai,
+        dynamicSekiResolved: diagnostics.resolvedByTier.seki,
+        tacticalNodes: diagnostics.nodesByTier.tactical,
+        localLifeDeathNodes: diagnostics.nodesByTier.localLifeDeath,
+        semeaiNodes: diagnostics.nodesByTier.semeai,
+        dynamicSekiNodes: diagnostics.nodesByTier.seki,
+        totalNodes: diagnostics.exploredNodes,
+        unresolvedBudget: diagnostics.outcomes.unresolvedBudget,
+        unresolvedBoundary: diagnostics.outcomes.unresolvedBoundary,
+        koDependent: diagnostics.outcomes.koDependent,
+        unresolvedCycle: diagnostics.outcomes.unresolvedCycle,
+        unresolvedIncomplete: diagnostics.outcomes.unresolvedIncomplete,
+        unresolvedOther: diagnostics.outcomes.unresolvedOther,
+        zoneTooLarge: diagnostics.diagnosticFailures.zoneTooLarge,
+        zoneOpenBoundary: diagnostics.diagnosticFailures.zoneOpenBoundary,
+        zoneWholeTopology: diagnostics.diagnosticFailures.zoneWholeTopology,
+        targetIdentityUncertain: diagnostics.diagnosticFailures.targetIdentityUncertain,
+        noUsefulLocalCandidate: diagnostics.diagnosticFailures.noUsefulLocalCandidate,
+        maxCooperativeSliceMs: Number(diagnostics.maxObservedCooperativeSliceMilliseconds.toFixed(2)),
+        stopReason: diagnostics.stopReason,
       });
       expect(totalMs).toBeLessThan(6_000);
     }
 
     const totals = rows.map((row) => Number(row.totalMs));
+    const totalStaticResolved = rows.reduce((sum, row) => sum + Number(row.staticResolved), 0);
+    const totalFinalResolved = rows.reduce((sum, row) => sum + Number(row.finalResolved), 0);
     const summary = {
       p50Ms: Number(quantile(totals, 0.5).toFixed(2)),
       p95Ms: Number(quantile(totals, 0.95).toFixed(2)),
       worstMs: Number(Math.max(...totals).toFixed(2)),
+      staticResolved: totalStaticResolved,
+      finalResolved: totalFinalResolved,
+      automaticResolutionGain: totalFinalResolved - totalStaticResolved,
+      resolvedByTier: {
+        tactical: rows.reduce((sum, row) => sum + Number(row.tacticalResolved), 0),
+        localLifeDeath: rows.reduce((sum, row) => sum + Number(row.localLifeDeathResolved), 0),
+        semeai: rows.reduce((sum, row) => sum + Number(row.semeaiResolved), 0),
+        dynamicSeki: rows.reduce((sum, row) => sum + Number(row.dynamicSekiResolved), 0),
+      },
       productionBudget: DEFAULT_FINAL_PROOF_SEARCH_BUDGET,
       rows,
     };
     console.info(`[final-proof-benchmark] ${JSON.stringify(summary)}`);
+    expect(summary.finalResolved).toBeGreaterThanOrEqual(summary.staticResolved);
     expect(summary.worstMs).toBeLessThan(6_000);
   }, 45_000);
 });
