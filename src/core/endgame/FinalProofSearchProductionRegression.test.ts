@@ -89,11 +89,17 @@ const stableRace = (prefix = '') => {
   const p = (value: string) => `${prefix}${value}`;
   const topology = new GraphTopology(`${prefix}stable-race`, [
     [p('L'), p('R')],
-    [p('L'), p('l1')], [p('L'), p('l2')], [p('L'), p('l3')],
-    [p('R'), p('r1')], [p('R'), p('r2')],
+    [p('L'), p('s')], [p('R'), p('s')],
+    [p('s'), p('B')], [p('B'), p('b')],
+    [p('L'), p('l')], [p('l'), p('W')], [p('W'), p('w')],
     [p('OUT1'), p('OUT2')],
   ]);
-  const state = makeState(topology, { [p('L')]: 'black', [p('R')]: 'white' });
+  const state = makeState(topology, {
+    [p('L')]: 'black',
+    [p('R')]: 'white',
+    [p('B')]: 'black',
+    [p('W')]: 'white',
+  });
   return Object.freeze({ topology, state, left: p('L'), right: p('R') });
 };
 
@@ -105,7 +111,12 @@ const proposalAt = (
 describe('production Final Proof Search regression corpus', () => {
   it('integrates bounded semeai into AssistedEndgameClassifier and marks the proved loser dead', async () => {
     const { topology, state, left, right } = stableRace();
-    const result = await proofFocusedClassifier().analyze(contextFor(topology, state));
+    const context = contextFor(topology, state);
+    const staticProposal = (await analyzeFinalGroupJudge(context)).proposal;
+    expect(proposalAt(staticProposal, left)?.status).toBe('unresolved');
+    expect(proposalAt(staticProposal, right)?.status).toBe('unresolved');
+
+    const result = await proofFocusedClassifier().analyze(context);
     const leftResult = proposalAt(result, left);
     const rightResult = proposalAt(result, right);
 
