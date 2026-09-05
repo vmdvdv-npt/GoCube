@@ -3,6 +3,7 @@ import type {
   EndgameClassifier,
   EndgameProposal,
   EndgameProposalStatus,
+  FinalProofSearchProgressListener,
   GroupStatus,
 } from '../endgame/EndgameClassifier';
 import {
@@ -11,6 +12,7 @@ import {
   endgameGroupId,
 } from '../endgame/EndgameGroupIdentity';
 import {
+  applyEndgameProposal,
   cloneEndgameReviewState,
   createEndgameReviewState,
   effectiveEndgameStatus,
@@ -248,6 +250,7 @@ export class GameSession {
   private currentFinalScore: FinalScore | null = null;
   private currentEndgameClassification: EndgameClassification | null = null;
   private currentEndgameReview: EndgameReviewState | null = null;
+  private finalEndgameAnalysisCompleted = false;
   private readonly futureMetadata: HistoryMetadata[] = [];
   private sessionRevision = 0;
   private readonly saveCoordinator: OrderedGameSaveCoordinator<GameSessionSnapshot> | null;
@@ -376,16 +379,51 @@ export class GameSession {
     await this.persist();
   }
 
-  async finishEndgameReview(): Promise<void> {
+  async finishEndgameReview(
+    onProgress?: FinalProofSearchProgressListener,
+  ): Promise<void> {
     const state = this.history.current();
     if (state.phase !== 'endgame' || !this.currentEndgameReview) {
       throw new Error('No endgame review is active');
     }
 
-    const classification = resolveEndgameClassification(this.currentEndgameReview);
-    if (!classification) {
-      throw new Error('Missing manual endgame decision for one or more unresolved groups');
+    const finalAnalyzer = this.config.endgameClassifier.analyzeFinal;
+    if (finalAnalyzer && !this.finalEndgameAnalysisCompleted) {
+      const groups = this.groupsForClassification(state);
+      const currentProposal = Object.freeze(
+        this.currentEndgameReview.groups.map((group) =>
+          Object.freeze({
+            points: group.points,
+            status: group.proposal.status,
+            ...(group.proposal.evidence
+              ? { evidence: group.proposal.evidence }
+              : {}),
+          }),
+        ),
+      );
+      const proposal = await finalAnalyzer.call(
+        this.config.endgameClassifier,
+        Object.freeze({
+          state,
+          topology: this.engine.logicalTopology(),
+          groups,
+          simpleKoContext: this.history.simpleKoContext(),
+          proposal: currentProposal,
+        }),
+        onProgress,
+      );
+
+      if (this.history.current() !== state || state.phase !== 'endgame') {
+        throw new Error('Endgame state changed while final proof analysis was pending');
+      }
+      this.assertProposalMatchesGroups(groups, proposal);
+      this.currentEndgameReview = applyEndgameProposal(this.currentEndgameReview, proposal);
+      this.finalEndgameAnalysisCompleted = true;
+      await this.persist();
     }
+
+    const classification = resolveEndgameClassification(this.currentEndgameReview);
+    if (!classification) return;
     await this.completeEndgame(state, classification);
   }
 
@@ -473,6 +511,7 @@ export class GameSession {
     this.currentEndgameReview = null;
     this.currentEndgameClassification = null;
     this.currentFinalScore = null;
+    this.finalEndgameAnalysisCompleted = false;
     await this.persist();
     return Object.freeze({
       ok: true,
@@ -498,6 +537,7 @@ export class GameSession {
     this.futureMetadata.length = 0;
     this.currentEndgameClassification = null;
     this.currentFinalScore = null;
+    this.finalEndgameAnalysisCompleted = false;
 
     if (state.phase !== 'endgame') {
       this.currentEndgameReview = null;
@@ -543,6 +583,7 @@ export class GameSession {
     this.currentEndgameReview = null;
     this.currentFinalScore = null;
     this.currentEndgameClassification = null;
+    this.finalEndgameAnalysisCompleted = false;
     await this.persist();
     return Object.freeze({
       ok: true,
@@ -568,6 +609,7 @@ export class GameSession {
       metadata?.endgameClassification,
     );
     this.currentFinalScore = cloneFinalScore(metadata?.finalScore ?? null);
+    this.finalEndgameAnalysisCompleted = false;
     await this.persist();
     return Object.freeze({
       ok: true,
@@ -583,6 +625,7 @@ export class GameSession {
         state,
         topology: this.engine.logicalTopology(),
         groups,
+        simpleKoContext: this.history.simpleKoContext(),
       }),
     );
 
@@ -592,6 +635,7 @@ export class GameSession {
 
     this.assertProposalMatchesGroups(groups, proposal);
     this.currentEndgameReview = createEndgameReviewState(proposal);
+    this.finalEndgameAnalysisCompleted = false;
   }
 
   private async completeEndgame(
@@ -616,6 +660,7 @@ export class GameSession {
     this.currentEndgameReview = null;
     this.currentEndgameClassification = cloneEndgameClassification(classification);
     this.currentFinalScore = finalScore;
+    this.finalEndgameAnalysisCompleted = true;
     await this.persist();
   }
 
