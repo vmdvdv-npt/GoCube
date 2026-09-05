@@ -110,4 +110,24 @@ describe('FinalProofSearch scheduler', () => {
     expect(result.proposal[0]?.status).toBe('unresolved');
     expect(result.diagnostics.outcomes.unresolvedBoundary).toBe(1);
   });
+
+  it('refuses proof search when the supplied group context is incomplete', async () => {
+    const { topology, state } = deadFixture();
+    const [context, proposal] = contextAndProposal(topology, state);
+    expect(context.groups.length).toBeGreaterThan(1);
+    const incompleteContext: EndgameAnalysisContext = Object.freeze({
+      ...context,
+      groups: Object.freeze(context.groups.slice(0, -1)),
+    });
+
+    const result = await runFinalProofSearch(incompleteContext, proposal, {
+      budget: { tierNodeBudgets: [300], maxGlobalNodes: 2_000 },
+    });
+
+    expect(result.proposal).toEqual(proposal);
+    expect(result.diagnostics.stopReason).toBe('incomplete-context');
+    expect(result.diagnostics.attempts).toBe(0);
+    expect(result.diagnostics.exploredNodes).toBe(0);
+    expect(result.diagnostics.resolvedAutomatically).toBe(0);
+  });
 });
