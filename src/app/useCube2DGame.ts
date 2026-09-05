@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { GroupStatus } from '../core/endgame/EndgameClassifier';
+import type {
+  FinalProofSearchProgress,
+  GroupStatus,
+} from '../core/endgame/EndgameClassifier';
 import type { PointId } from '../core/topology/Topology';
 import type { AnimationMode } from '../presentation/AnimationMode';
 import { endgameGroupForPoint } from '../presentation/EndgameGroupPresentation';
@@ -26,6 +29,18 @@ export const cubeEndgameStatusLabel = (status: GroupStatus) => status === 'alive
 export const CUBE_ZOOM_MIN = 0.78;
 export const CUBE_ZOOM_MAX = 4.05;
 const clampZoom = (value: number) => Math.min(CUBE_ZOOM_MAX, Math.max(CUBE_ZOOM_MIN, value));
+
+const finalAnalysisProgressLabel = (progress: FinalProofSearchProgress): string => {
+  if (progress.phase === 'complete') {
+    return progress.remainingUnresolved > 0
+      ? `Final analysis complete · ${progress.remainingUnresolved} unresolved`
+      : 'Final analysis complete';
+  }
+  const regions = progress.totalRegions > 0
+    ? `${progress.completedRegions}/${progress.totalRegions} regions`
+    : 'preparing';
+  return `Analyzing final position… ${regions} · tier ${Math.max(1, progress.tier)} · ${progress.nodesExplored} nodes`;
+};
 
 export interface Cube2DExternalAction {
   readonly sequence: number;
@@ -58,6 +73,7 @@ export function useCube2DGame(
   const [showMoveNumbers, setShowMoveNumbers] = useState(false);
   const [passGuarded, setPassGuarded] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [finalAnalysisComplete, setFinalAnalysisComplete] = useState(false);
   const [zoom, setZoomState] = useState(1);
   const [capturedEffects, setCapturedEffects] = useState<readonly CapturedStoneEffect[]>([]);
   const inFlight = useRef(false);
@@ -74,7 +90,7 @@ export function useCube2DGame(
     const next = controller.viewModel();
     setVm(next); setView(createCube2DViewState()); setTransition(null); setHoveredPoint(null); setHoverStatus(null); setHoveredGroup(null);
     setGroups(next.phase === 'endgame' ? controller.endgameGroups() : []); setDecisionsState(next.phase === 'endgame' ? controller.endgameDecisions() : {}); setSelectedGroup(next.phase === 'endgame' ? controller.nextUnresolvedEndgameGroupId() : null); setResultOpen(next.phase === 'finished');
-    setPassGuarded(false); setFeedback(null); setZoomState(1); setCapturedEffects([]); lastExternalActionSequence.current = null;
+    setPassGuarded(false); setFeedback(null); setFinalAnalysisComplete(false); setZoomState(1); setCapturedEffects([]); lastExternalActionSequence.current = null;
     if (captureTimer.current !== null) {
       window.clearTimeout(captureTimer.current);
       captureTimer.current = null;
@@ -225,8 +241,37 @@ export function useCube2DGame(
     }
   };
   const finishEndgame = async () => {
-    if (vm.phase !== 'endgame' || controller.nextUnresolvedEndgameGroupId() !== null) return;
-    await run(() => controller.finishEndgame());
+    if (
+      inFlight.current ||
+      vm.phase !== 'endgame' ||
+      (finalAnalysisComplete && controller.nextUnresolvedEndgameGroupId() !== null)
+    ) {
+      return;
+    }
+
+    inFlight.current = true;
+    setFeedback('Analyzing final position…');
+    try {
+      const action = await controller.finishEndgame(undefined, (progress) => {
+        setFeedback(finalAnalysisProgressLabel(progress));
+      });
+      apply(action);
+      if (action.viewModel.phase === 'endgame') {
+        setFinalAnalysisComplete(true);
+        const remaining = controller.endgameGroups().filter(
+          (group) => !controller.endgameDecisions()[group.id],
+        ).length;
+        setFeedback(
+          remaining > 0
+            ? `Final analysis complete · ${remaining} groups need manual review`
+            : 'Final analysis complete',
+        );
+      }
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : 'Final analysis could not be completed.');
+    } finally {
+      inFlight.current = false;
+    }
   };
   const setZoom = (next: number) => {
     const clamped = clampZoom(next);
@@ -239,6 +284,9 @@ export function useCube2DGame(
   const manualReviewed = manualGroupIds.filter((groupId) => Boolean(decisions[groupId])).length;
   const resolvedCount = groups.filter((group) => Boolean(decisions[group.id])).length;
   const endgameTerritory = vm.phase === 'endgame' ? controller.endgameTerritory() : new Map();
-  const canFinishEndgame = vm.phase === 'endgame' && controller.nextUnresolvedEndgameGroupId() === null;
+  const canFinishEndgame =
+    vm.phase === 'endgame' &&
+    !inFlight.current &&
+    (!finalAnalysisComplete || controller.nextUnresolvedEndgameGroupId() === null);
   return { vm, view, layout, transition, hoveredPoint, hoverStatus, hoveredGroup, groups, decisions, setDecision, selectedGroup, selected, resultOpen, setResultOpen, showMoveNumbers, setShowMoveNumbers, passGuarded, feedback, zoom, setZoom, capturedEffects, captureAnimating, navigate, moveAnchor, hover, activate, run, pass, finishEndgame, canFinishEndgame, endgameTerritory, resolvedCount, manualReviewed, manualTotal: manualGroupIds.length, automaticClassified: Math.max(0, groups.length - manualGroupIds.length), result: vm.phase === 'finished' ? controller.resultModel() : null, finalClassification: vm.phase === 'finished' ? controller.snapshot().endgameClassification : null } as const;
 }
