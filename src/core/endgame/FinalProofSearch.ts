@@ -65,6 +65,29 @@ export interface FinalProofSearchOptions {
   readonly now?: () => number;
 }
 
+export type FinalProofSearchProgressListener = (
+  progress: FinalProofSearchProgress | null,
+) => void;
+
+let activeProgress: FinalProofSearchProgress | null = null;
+const progressListeners = new Set<FinalProofSearchProgressListener>();
+
+export const currentFinalProofSearchProgress = (): FinalProofSearchProgress | null =>
+  activeProgress;
+
+export const subscribeFinalProofSearchProgress = (
+  listener: FinalProofSearchProgressListener,
+): (() => void) => {
+  progressListeners.add(listener);
+  listener(activeProgress);
+  return () => progressListeners.delete(listener);
+};
+
+const publishProgress = (progress: FinalProofSearchProgress | null): void => {
+  activeProgress = progress;
+  for (const listener of progressListeners) listener(progress);
+};
+
 interface Candidate {
   readonly proposalIndex: number;
   readonly group: EndgameStoneString;
@@ -76,6 +99,9 @@ const nowMilliseconds = (): number =>
   typeof performance !== 'undefined' && typeof performance.now === 'function'
     ? performance.now()
     : Date.now();
+
+const yieldToEventLoop = (): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, 0));
 
 const resolvedBudget = (partial: Partial<FinalProofSearchBudget> | undefined): FinalProofSearchBudget => {
   const merged = {
@@ -152,11 +178,11 @@ const candidateOrder = (left: Candidate, right: Candidate): number =>
   left.group.points.length - right.group.points.length ||
   (left.group.key < right.group.key ? -1 : left.group.key > right.group.key ? 1 : 0);
 
-export const runFinalProofSearch = (
+export const runFinalProofSearch = async (
   context: EndgameAnalysisContext,
   staticProposal: EndgameProposal,
   options: FinalProofSearchOptions = {},
-): FinalProofSearchResult => {
+): Promise<FinalProofSearchResult> => {
   const budget = resolvedBudget(options.budget);
   const now = options.now ?? nowMilliseconds;
   const started = now();
@@ -200,77 +226,90 @@ export const runFinalProofSearch = (
     exploredNodes,
     elapsedMilliseconds: Math.max(0, now() - started),
   });
-  const emit = (): void => options.onProgress?.(progress());
+  const emit = (): void => {
+    const snapshot = progress();
+    options.onProgress?.(snapshot);
+    publishProgress(snapshot);
+  };
+
   emit();
+  await yieldToEventLoop();
 
-  outer: for (let tierIndex = 0; tierIndex < budget.tierNodeBudgets.length; tierIndex += 1) {
-    currentTier = tierIndex + 1;
-    const requestedNodes = budget.tierNodeBudgets[tierIndex]!;
+  try {
+    outer: for (let tierIndex = 0; tierIndex < budget.tierNodeBudgets.length; tierIndex += 1) {
+      currentTier = tierIndex + 1;
+      const requestedNodes = budget.tierNodeBudgets[tierIndex]!;
 
-    for (const candidate of candidates) {
-      if (resolvedKeys.has(candidate.group.key)) continue;
-      const elapsed = now() - started;
-      if (elapsed >= budget.hardWallClockMilliseconds) { stopReason = 'hard-time-budget'; break outer; }
-      if (tierIndex > 0 && elapsed >= budget.softWallClockMilliseconds) { stopReason = 'soft-time-budget'; break outer; }
-      const remainingNodes = budget.maxGlobalNodes - exploredNodes;
-      if (remainingNodes < 2) { stopReason = 'global-node-budget'; break outer; }
+      for (const candidate of candidates) {
+        if (resolvedKeys.has(candidate.group.key)) continue;
+        const elapsed = now() - started;
+        if (elapsed >= budget.hardWallClockMilliseconds) { stopReason = 'hard-time-budget'; break outer; }
+        if (tierIndex > 0 && elapsed >= budget.softWallClockMilliseconds) { stopReason = 'soft-time-budget'; break outer; }
+        const remainingNodes = budget.maxGlobalNodes - exploredNodes;
+        if (remainingNodes < 2) { stopReason = 'global-node-budget'; break outer; }
 
-      currentGroupKey = candidate.group.key;
-      if (!candidate.boundaryKnown) {
-        lastUnknown.set(candidate.group.key, 'boundary');
-        completedGroups += tierIndex === 0 ? 1 : 0;
-        emit();
-        continue;
-      }
+        currentGroupKey = candidate.group.key;
+        if (!candidate.boundaryKnown) {
+          lastUnknown.set(candidate.group.key, 'boundary');
+          completedGroups += tierIndex === 0 ? 1 : 0;
+          emit();
+          await yieldToEventLoop();
+          continue;
+        }
 
-      const nodeBudget = Math.max(1, Math.min(requestedNodes, Math.floor(remainingNodes / 2)));
-      const result = readLocalLifeDeath(candidate.group, context.state, context.topology, {
-        maxNodes: nodeBudget,
-        maxZonePoints: budget.maxZonePoints,
-      });
-      attempts += 1;
-      exploredNodes += totalNodes(result);
-      if (tierIndex === 0) completedGroups += 1;
-
-      if (result.outcome === 'proved-dead' || result.outcome === 'proved-alive') {
-        const status = result.outcome === 'proved-dead' ? 'dead' as const : 'alive' as const;
-        output[candidate.proposalIndex] = Object.freeze({
-          points: staticProposal[candidate.proposalIndex]!.points,
-          status,
-          source: 'automatic' as const,
-          evidence: evidenceFor(result, currentTier, nodeBudget),
+        const nodeBudget = Math.max(1, Math.min(requestedNodes, Math.floor(remainingNodes / 2)));
+        const result = readLocalLifeDeath(candidate.group, context.state, context.topology, {
+          maxNodes: nodeBudget,
+          maxZonePoints: budget.maxZonePoints,
         });
-        resolvedKeys.add(candidate.group.key);
-        resolvedAutomatically += 1;
-        lastUnknown.delete(candidate.group.key);
-      } else {
-        lastUnknown.set(candidate.group.key, unresolvedKind(result));
-      }
-      emit();
-    }
-  }
+        attempts += 1;
+        exploredNodes += totalNodes(result);
+        if (tierIndex === 0) completedGroups += 1;
 
-  currentGroupKey = null;
-  const counts = { alive: 0, dead: 0, unresolvedBudget: 0, unresolvedBoundary: 0, koDependent: 0, unresolvedOther: 0 };
-  for (const candidate of candidates) {
-    const final = output[candidate.proposalIndex]!;
-    if (final.status === 'alive') counts.alive += 1;
-    else if (final.status === 'dead') counts.dead += 1;
-    else {
-      const kind = lastUnknown.get(candidate.group.key) ?? (stopReason === 'global-node-budget' || stopReason === 'soft-time-budget' || stopReason === 'hard-time-budget' ? 'budget' : 'other');
-      if (kind === 'budget') counts.unresolvedBudget += 1;
-      else if (kind === 'boundary') counts.unresolvedBoundary += 1;
-      else if (kind === 'ko') counts.koDependent += 1;
-      else counts.unresolvedOther += 1;
+        if (result.outcome === 'proved-dead' || result.outcome === 'proved-alive') {
+          const status = result.outcome === 'proved-dead' ? 'dead' as const : 'alive' as const;
+          output[candidate.proposalIndex] = Object.freeze({
+            points: staticProposal[candidate.proposalIndex]!.points,
+            status,
+            source: 'automatic' as const,
+            evidence: evidenceFor(result, currentTier, nodeBudget),
+          });
+          resolvedKeys.add(candidate.group.key);
+          resolvedAutomatically += 1;
+          lastUnknown.delete(candidate.group.key);
+        } else {
+          lastUnknown.set(candidate.group.key, unresolvedKind(result));
+        }
+        emit();
+        await yieldToEventLoop();
+      }
     }
+
+    currentGroupKey = null;
+    const counts = { alive: 0, dead: 0, unresolvedBudget: 0, unresolvedBoundary: 0, koDependent: 0, unresolvedOther: 0 };
+    for (const candidate of candidates) {
+      const final = output[candidate.proposalIndex]!;
+      if (final.status === 'alive') counts.alive += 1;
+      else if (final.status === 'dead') counts.dead += 1;
+      else {
+        const kind = lastUnknown.get(candidate.group.key) ?? (stopReason === 'global-node-budget' || stopReason === 'soft-time-budget' || stopReason === 'hard-time-budget' ? 'budget' : 'other');
+        if (kind === 'budget') counts.unresolvedBudget += 1;
+        else if (kind === 'boundary') counts.unresolvedBoundary += 1;
+        else if (kind === 'ko') counts.koDependent += 1;
+        else counts.unresolvedOther += 1;
+      }
+    }
+    const diagnostics: FinalProofSearchDiagnostics = Object.freeze({
+      ...progress(),
+      stopReason,
+      attempts,
+      outcomes: Object.freeze(counts),
+    });
+    options.onProgress?.(diagnostics);
+    publishProgress(diagnostics);
+    await yieldToEventLoop();
+    return Object.freeze({ proposal: Object.freeze(output), diagnostics });
+  } finally {
+    publishProgress(null);
   }
-  const finalProgress = progress();
-  const diagnostics: FinalProofSearchDiagnostics = Object.freeze({
-    ...finalProgress,
-    stopReason,
-    attempts,
-    outcomes: Object.freeze(counts),
-  });
-  options.onProgress?.(diagnostics);
-  return Object.freeze({ proposal: Object.freeze(output), diagnostics });
 };
