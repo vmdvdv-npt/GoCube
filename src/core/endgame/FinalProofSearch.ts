@@ -551,16 +551,14 @@ export const runFinalProofSearch = async (
   const hardStopped = (): boolean => control.shouldStop();
   const softStopped = (): boolean => control.now() >= softDeadline;
   const remainingNodes = (): number => Math.max(0, budget.maxGlobalNodes - exploredNodes);
-  const remainingUnresolved = (): number => candidates.length === 0
-    ? totalStaticUnresolved
-    : candidates.filter((candidate) => output[candidate.proposalIndex]?.status === 'unresolved').length;
+  const remainingUnresolved = (): number => output.filter((group) => group.status === 'unresolved').length;
 
   const progress = (): FinalProofSearchProgress => Object.freeze({
     algorithm: FINAL_PROOF_SEARCH_ALGORITHM,
     analysisId,
-    groupsTotal: candidates.length || totalStaticUnresolved,
+    groupsTotal: totalStaticUnresolved,
     groupsCompleted: completedKeys.size,
-    groupsPending: Math.max(0, (candidates.length || totalStaticUnresolved) - completedKeys.size),
+    groupsPending: Math.max(0, totalStaticUnresolved - completedKeys.size),
     currentGroup,
     currentTier,
     currentTierName,
@@ -568,7 +566,7 @@ export const runFinalProofSearch = async (
     currentTierBudget,
     exploredNodes,
     elapsedMilliseconds: Math.max(0, control.now() - started),
-    totalUnresolvedGroups: candidates.length || totalStaticUnresolved,
+    totalUnresolvedGroups: totalStaticUnresolved,
     completedGroups: completedKeys.size,
     resolvedAutomatically,
     remainingUnresolved: remainingUnresolved(),
