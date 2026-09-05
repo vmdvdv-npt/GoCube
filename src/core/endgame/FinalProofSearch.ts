@@ -186,6 +186,7 @@ export const runFinalProofSearch = async (
   const budget = resolvedBudget(options.budget);
   const now = options.now ?? nowMilliseconds;
   const started = now();
+  const hardDeadlineReached = (): boolean => now() - started >= budget.hardWallClockMilliseconds;
   const graph = buildEndgameStaticGraph(context.state.board, context.topology);
   const output: EndgameGroupProposal[] = staticProposal.map((group) => group);
   const candidates: Candidate[] = [];
@@ -261,6 +262,7 @@ export const runFinalProofSearch = async (
         const result = readLocalLifeDeath(candidate.group, context.state, context.topology, {
           maxNodes: nodeBudget,
           maxZonePoints: budget.maxZonePoints,
+          shouldStop: hardDeadlineReached,
         });
         attempts += 1;
         exploredNodes += totalNodes(result);
@@ -281,6 +283,10 @@ export const runFinalProofSearch = async (
           lastUnknown.set(candidate.group.key, unresolvedKind(result));
         }
         emit();
+        if (hardDeadlineReached()) {
+          stopReason = 'hard-time-budget';
+          break outer;
+        }
         await yieldToEventLoop();
       }
     }
