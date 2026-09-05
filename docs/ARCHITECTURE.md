@@ -690,7 +690,7 @@ Default production safety envelope:
 - hard wall-clock budget: `4500 ms`;
 - global node budget: `60,000`;
 - maximum certified `RelevanceZone`: `96` logical points;
-- tactical budget: `300` nodes на каждый first-player order, targets до `3` liberties;
+- tactical budget: `300` nodes на каждый first-player order; scheduler запускает этот tier только для targets до `3` liberties, а сам reader остаётся fail-closed и покрыт regression cases вплоть до `4` liberties;
 - local life/death tiers: `300 → 1500 → 6000` nodes на каждый first-player order;
 - full-board tactical defender enumeration допускается только для topology до `128` logical points; на большем graph этот tier пропускается/fails closed и остаются certified local proof paths и manual fallback.
 
