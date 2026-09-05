@@ -1,10 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import {
-  currentFinalProofSearchProgress,
-  subscribeFinalProofSearchProgress,
-  type FinalProofSearchProgress,
-} from '../core/endgame/FinalProofSearch';
+import type { FinalProofSearchProgress } from '../core/endgame/FinalProofSearch';
+import type { FinalProofSearchProgressSource } from '../core/endgame/FinalProofSearchRunController';
 import type { GameViewModel } from '../presentation/PresentationModel';
+import { useFinalAnalysisProgressSource } from './FinalAnalysisProgressContext';
 
 export interface GameSidebarProps {
   readonly size: number;
@@ -27,6 +25,7 @@ export interface GameSidebarProps {
   readonly newGameDisabled?: boolean;
   readonly endgame?: ReactNode;
   readonly feedback?: string | null;
+  readonly finalAnalysisProgressSource?: FinalProofSearchProgressSource;
 }
 
 export function GameSidebar({
@@ -46,16 +45,19 @@ export function GameSidebar({
   newGameDisabled = false,
   endgame = null,
   feedback = null,
+  finalAnalysisProgressSource,
 }: GameSidebarProps) {
-  const [finalAnalysisProgress, setFinalAnalysisProgress] =
-    useState<FinalProofSearchProgress | null>(() => currentFinalProofSearchProgress());
+  const contextualProgressSource = useFinalAnalysisProgressSource();
+  const progressSource = finalAnalysisProgressSource ?? contextualProgressSource;
+  const [finalAnalysisProgress, setFinalAnalysisProgress] = useState<FinalProofSearchProgress | null>(
+    () => progressSource?.current() ?? null,
+  );
 
   useEffect(() => {
-    const unsubscribe = subscribeFinalProofSearchProgress(setFinalAnalysisProgress);
-    return () => {
-      unsubscribe();
-    };
-  }, []);
+    setFinalAnalysisProgress(progressSource?.current() ?? null);
+    if (!progressSource) return undefined;
+    return progressSource.subscribe(setFinalAnalysisProgress);
+  }, [progressSource]);
 
   const stageLabel = finalAnalysisProgress
     ? 'Analyzing final position…'
@@ -66,8 +68,8 @@ export function GameSidebar({
         : 'Game finished';
 
   const analysisDetail = finalAnalysisProgress
-    ? finalAnalysisProgress.totalUnresolvedGroups > 0
-      ? `Checked ${finalAnalysisProgress.completedGroups} of ${finalAnalysisProgress.totalUnresolvedGroups} unresolved groups · tier ${Math.max(1, finalAnalysisProgress.currentTier)} · ${finalAnalysisProgress.exploredNodes.toLocaleString()} nodes`
+    ? finalAnalysisProgress.groupsTotal > 0
+      ? `Analyzed ${finalAnalysisProgress.groupsCompleted} of ${finalAnalysisProgress.groupsTotal} groups · ${finalAnalysisProgress.currentTierName.replaceAll('-', ' ')} · ${finalAnalysisProgress.exploredNodes.toLocaleString()} nodes`
       : 'Static proofs resolved the position; final verification is completing.'
     : null;
 
@@ -76,27 +78,18 @@ export function GameSidebar({
       <div className="game-summary" aria-live="polite">
         <div className="turn-indicator">
           {viewModel.phase === 'playing' && !finalAnalysisProgress ? (
-            <span
-              className={`stone-chip stone-chip--${viewModel.currentPlayer}`}
-              aria-hidden="true"
-            />
+            <span className={`stone-chip stone-chip--${viewModel.currentPlayer}`} aria-hidden="true" />
           ) : null}
           <strong>{stageLabel}</strong>
         </div>
         <div className="game-statistics">
           <span>{size}×{size}</span>
           <span>Move {viewModel.moveNumber}</span>
-          <span
-            className="capture-stat capture-stat--black"
-            aria-label={`Black stones captured: ${viewModel.captures.white}`}
-          >
+          <span className="capture-stat capture-stat--black" aria-label={`Black stones captured: ${viewModel.captures.white}`}>
             <i className="capture-stat__stone capture-stat__stone--black" aria-hidden="true" />
             <strong className="capture-stat__count">{viewModel.captures.white}</strong>
           </span>
-          <span
-            className="capture-stat capture-stat--white"
-            aria-label={`White stones captured: ${viewModel.captures.black}`}
-          >
+          <span className="capture-stat capture-stat--white" aria-label={`White stones captured: ${viewModel.captures.black}`}>
             <i className="capture-stat__stone capture-stat__stone--white" aria-hidden="true" />
             <strong className="capture-stat__count">{viewModel.captures.black}</strong>
           </span>
@@ -107,11 +100,7 @@ export function GameSidebar({
 
       <div className="torus-duplicates-control" role="group" aria-label="Board display options">
         <label>
-          <input
-            type="checkbox"
-            checked={showMoveNumbers}
-            onChange={(event) => onShowMoveNumbersChange(event.target.checked)}
-          />
+          <input type="checkbox" checked={showMoveNumbers} onChange={(event) => onShowMoveNumbersChange(event.target.checked)} />
           Show move number
         </label>
       </div>
@@ -125,33 +114,17 @@ export function GameSidebar({
       {endgame}
 
       <div className="game-controls">
-        <button
-          className="pass-control"
-          type="button"
-          onClick={onPass}
-          disabled={passDisabled || Boolean(finalAnalysisProgress)}
-        >
+        <button className="pass-control" type="button" onClick={onPass} disabled={passDisabled || Boolean(finalAnalysisProgress)}>
           {viewModel.phase === 'playing' && viewModel.consecutivePasses === 1 ? 'Pass (1)' : 'Pass'}
         </button>
         <div className="history-controls" role="group" aria-label="Move history controls">
-          <button type="button" onClick={onRedo} disabled={!canRedo || Boolean(finalAnalysisProgress)}>
-            Redo
-          </button>
-          <button type="button" onClick={onUndo} disabled={!canUndo || Boolean(finalAnalysisProgress)}>
-            Undo
-          </button>
+          <button type="button" onClick={onRedo} disabled={!canRedo || Boolean(finalAnalysisProgress)}>Redo</button>
+          <button type="button" onClick={onUndo} disabled={!canUndo || Boolean(finalAnalysisProgress)}>Undo</button>
         </div>
         {gameResultAvailable ? (
-          <button className="game-result-control" type="button" onClick={onOpenGameResult}>
-            Game result
-          </button>
+          <button className="game-result-control" type="button" onClick={onOpenGameResult}>Game result</button>
         ) : null}
-        <button
-          className="new-game-control"
-          type="button"
-          onClick={onRequestNewGame}
-          disabled={newGameDisabled || Boolean(finalAnalysisProgress)}
-        >
+        <button className="new-game-control" type="button" onClick={onRequestNewGame} disabled={newGameDisabled || Boolean(finalAnalysisProgress)}>
           New game
         </button>
       </div>

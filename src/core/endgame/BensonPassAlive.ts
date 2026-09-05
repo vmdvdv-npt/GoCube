@@ -26,6 +26,17 @@ export interface BensonPassAliveResult {
   readonly iterations: number;
 }
 
+export interface BensonPassAliveOptions {
+  readonly shouldStop?: () => boolean;
+}
+
+export class BensonPassAliveInterrupted extends Error {
+  constructor() {
+    super('Benson/pass-alive proof interrupted');
+    this.name = 'BensonPassAliveInterrupted';
+  }
+}
+
 const compareStrings = (left: string, right: string): number =>
   left < right ? -1 : left > right ? 1 : 0;
 
@@ -40,6 +51,43 @@ const occupancyAt = (board: BoardOccupancy, point: PointId): StoneColor | 'empty
 const opponentOf = (color: StoneColor): StoneColor =>
   color === 'black' ? 'white' : 'black';
 
+const checkerFor = (options: BensonPassAliveOptions): (() => void) => {
+  const shouldStop = options.shouldStop ?? (() => false);
+  return () => {
+    if (shouldStop()) throw new BensonPassAliveInterrupted();
+  };
+};
+
+type BensonColorCache = Partial<Record<StoneColor, BensonPassAliveResult>>;
+const bensonCache = new WeakMap<object, WeakMap<object, BensonColorCache>>();
+
+const cachedBenson = (
+  board: BoardOccupancy,
+  topology: Topology,
+  color: StoneColor,
+): BensonPassAliveResult | null =>
+  bensonCache.get(board as object)?.get(topology as object)?.[color] ?? null;
+
+const cacheBenson = (
+  board: BoardOccupancy,
+  topology: Topology,
+  color: StoneColor,
+  result: BensonPassAliveResult,
+): BensonPassAliveResult => {
+  let byTopology = bensonCache.get(board as object);
+  if (!byTopology) {
+    byTopology = new WeakMap<object, BensonColorCache>();
+    bensonCache.set(board as object, byTopology);
+  }
+  let byColor = byTopology.get(topology as object);
+  if (!byColor) {
+    byColor = {};
+    byTopology.set(topology as object, byColor);
+  }
+  byColor[color] = result;
+  return result;
+};
+
 /**
  * KataGo Rules v3 / Board::calculateAreaForPla compatible region construction
  * for GoCube's suicide-illegal rules: maximal non-color regions include empty
@@ -50,13 +98,17 @@ export const buildBensonColorRegions = (
   topology: Topology,
   graph: EndgameStaticGraph,
   color: StoneColor,
+  options: BensonPassAliveOptions = {},
 ): readonly BensonColorRegion[] => {
+  const checkpoint = checkerFor(options);
+  checkpoint();
   const points = [...topology.points()].sort(compareEndgamePointIds);
   const visited = new Set<PointId>();
   const regions: BensonColorRegion[] = [];
   const opponent = opponentOf(color);
 
   for (const start of points) {
+    checkpoint();
     if (visited.has(start) || occupancyAt(board, start) !== 'empty') continue;
 
     const pending: PointId[] = [start];
@@ -67,6 +119,7 @@ export const buildBensonColorRegions = (
     let internalSpacesMax2: 0 | 1 | 2 = 0;
 
     while (pending.length > 0) {
+      checkpoint();
       const point = pending.pop()!;
       if (visited.has(point)) continue;
       const occupancy = occupancyAt(board, point);
@@ -80,6 +133,7 @@ export const buildBensonColorRegions = (
       let adjacentToFriendly = false;
 
       for (const neighbor of topology.neighbors(point)) {
+        checkpoint();
         const neighborOccupancy = occupancyAt(board, neighbor);
         if (neighborOccupancy === color) {
           adjacentToFriendly = true;
@@ -99,8 +153,6 @@ export const buildBensonColorRegions = (
         internalSpacesMax2 = (internalSpacesMax2 + 1) as 1 | 2;
       }
 
-      // GoCube disallows suicide, matching KataGo's false
-      // isMultiStoneSuicideLegal branch: only empty points filter vitality.
       if (occupancy !== 'empty') continue;
 
       if (vitalGroups === null) {
@@ -128,6 +180,7 @@ export const buildBensonColorRegions = (
   }
 
   regions.sort((left, right) => compareStrings(left.key, right.key));
+  checkpoint();
   return Object.freeze(regions);
 };
 
@@ -136,8 +189,14 @@ export const proveBensonPassAlive = (
   topology: Topology,
   graph: EndgameStaticGraph,
   color: StoneColor,
+  options: BensonPassAliveOptions = {},
 ): BensonPassAliveResult => {
-  const regions = buildBensonColorRegions(board, topology, graph, color);
+  const checkpoint = checkerFor(options);
+  checkpoint();
+  const previous = cachedBenson(board, topology, color);
+  if (previous) return previous;
+
+  const regions = buildBensonColorRegions(board, topology, graph, color, options);
   const regionsByKey = new Map(regions.map((region) => [region.key, region] as const));
   const remainingGroups = new Set(
     graph.strings.filter((group) => group.color === color).map((group) => group.key),
@@ -146,12 +205,15 @@ export const proveBensonPassAlive = (
   let iterations = 0;
 
   while (true) {
+    checkpoint();
     iterations += 1;
     const groupsToRemove: string[] = [];
 
     for (const groupKey of remainingGroups) {
+      checkpoint();
       let vitalRegionCount = 0;
       for (const regionKey of remainingRegions) {
+        checkpoint();
         const region = regionsByKey.get(regionKey);
         if (!region) throw new Error(`Missing Benson region: ${regionKey}`);
         if (region.vitalGroups.includes(groupKey)) vitalRegionCount += 1;
@@ -165,6 +227,7 @@ export const proveBensonPassAlive = (
     for (const groupKey of removedGroups) remainingGroups.delete(groupKey);
 
     for (const regionKey of remainingRegions) {
+      checkpoint();
       const region = regionsByKey.get(regionKey);
       if (!region) throw new Error(`Missing Benson region: ${regionKey}`);
       if (region.boundaryGroups.some((groupKey) => removedGroups.has(groupKey))) {
@@ -175,6 +238,7 @@ export const proveBensonPassAlive = (
 
   const aliveGroups = new Map<string, readonly BensonColorRegion[]>();
   for (const groupKey of [...remainingGroups].sort(compareStrings)) {
+    checkpoint();
     const vitalRegions = [...remainingRegions]
       .map((regionKey) => regionsByKey.get(regionKey)!)
       .filter((region) => region.vitalGroups.includes(groupKey))
@@ -185,10 +249,26 @@ export const proveBensonPassAlive = (
     }
   }
 
-  return Object.freeze({
+  checkpoint();
+  return cacheBenson(
+    board,
+    topology,
     color,
-    regions,
-    aliveGroups,
-    iterations,
-  });
+    Object.freeze({ color, regions, aliveGroups, iterations }),
+  );
+};
+
+export const tryProveBensonPassAlive = (
+  board: BoardOccupancy,
+  topology: Topology,
+  graph: EndgameStaticGraph,
+  color: StoneColor,
+  options: BensonPassAliveOptions = {},
+): BensonPassAliveResult | null => {
+  try {
+    return proveBensonPassAlive(board, topology, graph, color, options);
+  } catch (error) {
+    if (error instanceof BensonPassAliveInterrupted) return null;
+    throw error;
+  }
 };

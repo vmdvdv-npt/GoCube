@@ -50,15 +50,10 @@ const recenteredPanForZoomOut = (
   if (currentZoom <= CUBE_2D_HOME_ZOOM || nextZoom <= CUBE_2D_HOME_ZOOM) {
     return Object.freeze({ x: 0, y: 0 });
   }
-
   const currentDistanceFromHome = currentZoom - CUBE_2D_HOME_ZOOM;
   const nextDistanceFromHome = nextZoom - CUBE_2D_HOME_ZOOM;
   const homeProgress = nextDistanceFromHome / currentDistanceFromHome;
-
-  return Object.freeze({
-    x: currentPan.x * homeProgress,
-    y: currentPan.y * homeProgress,
-  });
+  return Object.freeze({ x: currentPan.x * homeProgress, y: currentPan.y * homeProgress });
 };
 
 export interface Cube2DGameProps {
@@ -86,15 +81,12 @@ export function Cube2DGame({
   const navigationWidth = stageWidth + CUBE_2D_NAVIGATION_INSET * 2;
   const navigationHeight = stageHeight + CUBE_2D_NAVIGATION_INSET * 2;
   const sideRowCenterY = CUBE_2D_NAVIGATION_INSET + layoutCellSize * 1.5;
-  const verticalPairCenterX =
-    CUBE_2D_NAVIGATION_INSET + layoutCellSize * (g.view.verticalAnchorColumn + 0.5);
+  const verticalPairCenterX = CUBE_2D_NAVIGATION_INSET + layoutCellSize * (g.view.verticalAnchorColumn + 0.5);
   const navigationDisabled = Boolean(g.transition) || g.captureAnimating;
   const verticalPairIsMoving = g.transition?.direction === 'anchor';
   const verticalArrowMotionStyle: Cube2DNavigationArrowStyle = verticalPairIsMoving
     ? {
-        '--cube-2d-navigation-from-x': `${
-          (g.transition.fromLayout.verticalAnchorColumn - g.view.verticalAnchorColumn) * layoutCellSize
-        }px`,
+        '--cube-2d-navigation-from-x': `${(g.transition.fromLayout.verticalAnchorColumn - g.view.verticalAnchorColumn) * layoutCellSize}px`,
         animationDuration: `${animationMode === 'disabled' ? 0 : CUBE_2D_TRANSITION_MS}ms`,
       }
     : {};
@@ -117,12 +109,9 @@ export function Cube2DGame({
 
   const handleWheel = (event: ReactWheelEvent<HTMLDivElement>): void => {
     event.preventDefault();
-
     const currentZoom = zoomRef.current;
     const currentPan = panOffsetRef.current;
-    const nextZoom = g.setZoom(
-      currentZoom - wheelDeltaPixels(event) * CUBE_2D_ZOOM_WHEEL_SENSITIVITY,
-    );
+    const nextZoom = g.setZoom(currentZoom - wheelDeltaPixels(event) * CUBE_2D_ZOOM_WHEEL_SENSITIVITY);
     if (nextZoom === currentZoom) return;
 
     let nextPan: DragPanOffset;
@@ -138,69 +127,58 @@ export function Cube2DGame({
         y: currentPan.y + (event.clientY - sceneCenterY) * (1 - ratio),
       });
     }
-
     zoomRef.current = nextZoom;
     panOffsetRef.current = nextPan;
     dragPan.setOffset(nextPan);
   };
 
-  const endgamePanel =
-    g.vm.phase === 'endgame' ? (
-      <section className="endgame-panel" aria-labelledby="cube-endgame-title">
-        <div>
-          <h2 id="cube-endgame-title">Assisted endgame review</h2>
-          <p>
-            Click any stone to select its whole group. You can change Alive, Dead, or Seki even when the status was proposed automatically.
-          </p>
-        </div>
-        {g.groups.length ? (
-          <>
-            <div className="endgame-progress" aria-live="polite">
-              Resolved {g.resolvedCount} of {g.groups.length}
-              {g.automaticClassified > 0 ? ` · ${g.automaticClassified} automatic proposals` : ''}
-            </div>
-            {g.selected ? (
-              <div className="endgame-selection">
-                <div className="endgame-selection__identity">
-                  <span className={`stone-chip stone-chip--${g.selected.color}`} aria-hidden="true" />
-                  <div>
-                    <strong>Selected group</strong>
-                    <span>
-                      {g.selected.points.length} {g.selected.points.length === 1 ? 'stone' : 'stones'}
-                    </span>
-                  </div>
-                </div>
-                <div className="endgame-statuses" role="group" aria-label="Selected group status">
-                  {CUBE_ENDGAME_STATUSES.map((status) => (
-                    <button
-                      type="button"
-                      key={status}
-                      className={g.decisions[g.selected!.id] === status ? 'is-selected' : undefined}
-                      aria-pressed={g.decisions[g.selected!.id] === status}
-                      onClick={() => void g.setDecision(g.selected!.id, status)}
-                    >
-                      {cubeEndgameStatusLabel(status)}
-                    </button>
-                  ))}
+  const endgamePanel = g.vm.phase === 'endgame' ? (
+    <section className="endgame-panel" aria-labelledby="cube-endgame-title">
+      <div>
+        <h2 id="cube-endgame-title">Assisted endgame review</h2>
+        <p>Click any stone to select its whole group. You can change Alive, Dead, or Seki even when the status was proposed automatically.</p>
+      </div>
+      {g.groups.length ? (
+        <>
+          <div className="endgame-progress" aria-live="polite">
+            Resolved {g.resolvedCount} of {g.groups.length}
+            {g.automaticClassified > 0 ? ` · ${g.automaticClassified} automatic proposals` : ''}
+          </div>
+          {g.selected ? (
+            <div className="endgame-selection">
+              <div className="endgame-selection__identity">
+                <span className={`stone-chip stone-chip--${g.selected.color}`} aria-hidden="true" />
+                <div>
+                  <strong>Selected group</strong>
+                  <span>{g.selected.points.length} {g.selected.points.length === 1 ? 'stone' : 'stones'}</span>
                 </div>
               </div>
-            ) : (
-              <p className="endgame-empty">Click a stone to review or change its group status.</p>
-            )}
-          </>
-        ) : (
-          <p className="endgame-empty">There are no stone groups to review.</p>
-        )}
-        <button
-          type="button"
-          className="endgame-finish"
-          disabled={!g.canFinishEndgame}
-          onClick={() => void g.finishEndgame()}
-        >
-          Finish scoring
-        </button>
-      </section>
-    ) : null;
+              <div className="endgame-statuses" role="group" aria-label="Selected group status">
+                {CUBE_ENDGAME_STATUSES.map((status) => (
+                  <button
+                    type="button"
+                    key={status}
+                    className={g.decisions[g.selected!.id] === status ? 'is-selected' : undefined}
+                    aria-pressed={g.decisions[g.selected!.id] === status}
+                    onClick={() => void g.setDecision(g.selected!.id, status)}
+                  >
+                    {cubeEndgameStatusLabel(status)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="endgame-empty">Click a stone to review or change its group status.</p>
+          )}
+        </>
+      ) : (
+        <p className="endgame-empty">There are no stone groups to review.</p>
+      )}
+      <button type="button" className="endgame-finish" disabled={!g.canFinishEndgame} onClick={() => void g.finishEndgame()}>
+        Finish scoring
+      </button>
+    </section>
+  ) : null;
 
   return (
     <section className="torus-game cube-2d-game" aria-label="Cube 2D game" data-animation-mode={animationMode}>
@@ -211,13 +189,7 @@ export function Cube2DGame({
         onShowMoveNumbersChange={g.setShowMoveNumbers}
         showDuplicateRegions={false}
         duplicateRegionsDisabled
-        passDisabled={
-          gameplayReadOnly ||
-          g.vm.phase !== 'playing' ||
-          g.passGuarded ||
-          Boolean(g.transition) ||
-          g.captureAnimating
-        }
+        passDisabled={gameplayReadOnly || g.vm.phase !== 'playing' || g.passGuarded || Boolean(g.transition) || g.captureAnimating}
         canRedo={!gameplayReadOnly && !g.transition && !g.captureAnimating && controller.canRedo()}
         canUndo={!gameplayReadOnly && !g.transition && !g.captureAnimating && controller.canUndo()}
         onPass={() => void g.pass()}
@@ -229,6 +201,7 @@ export function Cube2DGame({
         newGameDisabled={newGameDisabled}
         endgame={endgamePanel}
         feedback={g.feedback}
+        finalAnalysisProgressSource={controller.finalAnalysisProgressSource()}
       />
 
       <div className="cube-2d-game__board-shell" aria-label="Cube 2D view">
@@ -260,9 +233,7 @@ export function Cube2DGame({
             }}
           >
             <button
-              className={`torus-pan torus-pan--up cube-2d-game__navigation-arrow${
-                verticalPairIsMoving ? ' cube-2d-game__navigation-arrow--anchor-moving' : ''
-              }`}
+              className={`torus-pan torus-pan--up cube-2d-game__navigation-arrow${verticalPairIsMoving ? ' cube-2d-game__navigation-arrow--anchor-moving' : ''}`}
               type="button"
               aria-label="Move cube up"
               disabled={navigationDisabled}
@@ -272,22 +243,15 @@ export function Cube2DGame({
                 top: 0,
               }}
               onClick={() => g.navigate('up')}
-            >
-              ↑
-            </button>
+            >↑</button>
             <button
               className="torus-pan torus-pan--left cube-2d-game__navigation-arrow"
               type="button"
               aria-label="Move cube left"
               disabled={navigationDisabled}
-              style={{
-                left: 0,
-                top: `${sideRowCenterY - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px`,
-              }}
+              style={{ left: 0, top: `${sideRowCenterY - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px` }}
               onClick={() => g.navigate('left')}
-            >
-              ←
-            </button>
+            >←</button>
 
             <div
               className="cube-2d-stage cube-2d-game__stage"
@@ -308,13 +272,7 @@ export function Cube2DGame({
                 hoveredPointId={g.hoveredPoint}
                 hoverStatus={g.hoverStatus}
                 showMoveNumbers={g.showMoveNumbers}
-                inputDisabled={
-                  Boolean(g.transition) ||
-                  g.captureAnimating ||
-                  g.vm.phase === 'finished' ||
-                  (gameplayReadOnly && g.vm.phase === 'playing') ||
-                  dragPan.dragging
-                }
+                inputDisabled={Boolean(g.transition) || g.captureAnimating || g.vm.phase === 'finished' || (gameplayReadOnly && g.vm.phase === 'playing') || dragPan.dragging}
                 onPointHover={g.hover}
                 onPointActivate={(point) => void g.activate(point)}
               />
@@ -337,18 +295,11 @@ export function Cube2DGame({
               type="button"
               aria-label="Move cube right"
               disabled={navigationDisabled}
-              style={{
-                left: `${CUBE_2D_NAVIGATION_INSET + stageWidth + CUBE_2D_NAVIGATION_GAP}px`,
-                top: `${sideRowCenterY - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px`,
-              }}
+              style={{ left: `${CUBE_2D_NAVIGATION_INSET + stageWidth + CUBE_2D_NAVIGATION_GAP}px`, top: `${sideRowCenterY - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px` }}
               onClick={() => g.navigate('right')}
-            >
-              →
-            </button>
+            >→</button>
             <button
-              className={`torus-pan torus-pan--down cube-2d-game__navigation-arrow${
-                verticalPairIsMoving ? ' cube-2d-game__navigation-arrow--anchor-moving' : ''
-              }`}
+              className={`torus-pan torus-pan--down cube-2d-game__navigation-arrow${verticalPairIsMoving ? ' cube-2d-game__navigation-arrow--anchor-moving' : ''}`}
               type="button"
               aria-label="Move cube down"
               disabled={navigationDisabled}
@@ -358,16 +309,12 @@ export function Cube2DGame({
                 top: `${CUBE_2D_NAVIGATION_INSET + stageHeight + CUBE_2D_NAVIGATION_GAP}px`,
               }}
               onClick={() => g.navigate('down')}
-            >
-              ↓
-            </button>
+            >↓</button>
           </div>
         </div>
       </div>
 
-      {g.result && g.resultOpen ? (
-        <GameResultDialog result={g.result} onClose={() => g.setResultOpen(false)} />
-      ) : null}
+      {g.result && g.resultOpen ? <GameResultDialog result={g.result} onClose={() => g.setResultOpen(false)} /> : null}
     </section>
   );
 }

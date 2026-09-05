@@ -641,12 +641,12 @@ Scoring получает уже полностью разрешённую `Endga
 - Torus/Cube-specific знания допускаются только в topology/adapter/proof helper, а не отдельными scoring engines;
 - false automatic resolution считается более тяжёлым дефектом, чем лишний `unresolved`.
 
-Текущий strict seki verifier `closed-mutual-two-liberties-seki-v1` автоматически подтверждает только замкнутую mutual-life пару:
+Статический strict seki verifier `closed-mutual-two-liberties-seki-v1` автоматически подтверждает замкнутую mutual-life пару:
 
 - две противоположные logical groups имеют ровно две одинаковые shared liberties;
-- каждая shared liberty соприкасается только с этими двумя groups и, возможно, со второй shared liberty; третья group или дополнительный empty neighbour разрушает proof;
+- каждая shared liberty соприкасается только с этими двумя groups и, возможно, со второй shared liberty; третья group или дополнительный empty neighbour разрушает этот статический proof;
 - при таком замкнутом boundary первый ход любой стороны в одну shared liberty оставляет обеим группам только вторую, где ответ соперника захватывает инициирующую группу; критерий симметричен по цвету и использует только `Topology.neighbors(PointId)`;
-- любая seki-like форма вне этого критерия остаётся `unresolved`; topology-specific расположение не создаёт отдельного shortcut к automatic `seki`.
+- seki-like форма вне этого статического критерия не получает automatic `seki` от данного verifier: она остаётся `unresolved` для следующего proof layer и может быть автоматически resolved только отдельным завершённым dynamic-seki proof из §12.5; отсутствие такого proof оставляет её `unresolved`.
 
 Минимальная стратегия reuse для production core:
 
@@ -660,11 +660,12 @@ Scoring получает уже полностью разрешённую `Endga
 
 Production proof path остаётся topology-neutral и использует только authoritative logical board, `Topology` и существующий `GameEngine` для legal transitions. Отдельного Cube/Torus life-death engine, второго scorer или renderer-specific search path нет.
 
-Proof layers выполняются от дешёвых к дорогим:
+Proof layers выполняются от дешёвых к дорогим и fail-closed переходят дальше только когда предыдущий слой не доказал статус:
 
 1. tactical forced-capture reader для low-liberty groups;
-2. построение bounded/certified `RelevanceZone`;
-3. локальный AND/OR life-and-death search внутри этой зоны с возрастающими node budgets.
+2. bounded/certified `RelevanceZone` и локальный AND/OR life-and-death search внутри этой зоны с возрастающими node budgets;
+3. bounded semeai search для пары противостоящих groups/conflict region с проверкой обоих порядков первого локального хода;
+4. strict dynamic-seki proof, который присваивает `seki` только когда для обеих сторон доказано, что каждый допустимый локальный initiation проигрывает самому initiator; unresolved/неполный semeai сам по себе никогда не считается seki.
 
 Automatic `dead` требует доказательства forced capture при обоих порядках первого локального хода: attacker-first и defender-first. Для kill proof defender/AND node обязан закрыть все legal continuations, необходимые для доказательства. Неполная enumeration не может считаться победой. Attacker/OR node может использовать selective candidate generation только потому, что найденная полностью доказанная ветка достаточна для kill, а отсутствие такой ветки возвращает `unknown`, а не survival.
 
@@ -672,6 +673,7 @@ Automatic `dead` требует доказательства forced capture пр
 
 - ko-dependent line;
 - открытая или несертифицированная locality boundary;
+- first-player-dependent результат, если конкретный automatic status требует стабильности относительно первого хода;
 - cycle;
 - depth, node или wall-clock exhaustion;
 - неполная enumeration/branch;
@@ -680,9 +682,15 @@ Automatic `dead` требует доказательства forced capture пр
 
 `FinalProofSearch` обязан отказаться от automatic proof search целиком, если переданный group context или proposal не покрывает **ровно** все logical stone groups authoritative final board. Partial context не допускается как основание для статуса.
 
+Один production analysis run имеет request/session-scoped ownership и один absolute hard deadline, отсчитываемый от начала финального анализа. Этот deadline охватывает static graph/Benson preprocessing, candidate/relevance preparation, scheduler и все dynamic proof tiers; начинать новый wall-clock budget после preprocessing или для каждого tier запрещено. Soft budget может ограничивать дальнейшее расширение scheduler, но hard deadline останавливает весь run fail-closed.
+
+Долгие вычисления выполняются cooperative slices с checkpoints, которые проверяют cancellation/deadline и возвращают управление browser event loop. Cooperative yielding не меняет proof semantics: после resume search продолжает тот же immutable proof state, а прерывание/cancellation даёт только incomplete/unresolved outcome.
+
 Поиск работает на производных immutable search states. Он не мутирует authoritative final `GameState`, capture counters, move number, phase, history или final board position. Search evidence/diagnostics могут прикрепляться к `EndgameProposal` как renderer-independent metadata; `ScoringStrategy` эти evidence не читает и получает только итоговый resolved classification после review.
 
-Progress (`current group`, tier, explored nodes, elapsed time и т. п.) является только observable diagnostic/presentation signal. Он не является confidence score, не меняет proof semantics и не становится вторым источником session/domain state.
+Завершённые deterministic static facts могут memoize-иться только как optimization по identity immutable board snapshot + соответствующей topology identity. В cache допускаются только полностью завершённые static graph/Benson results; interrupted, cancelled, deadline-exhausted или частично вычисленные facts не кешируются. Cache не является владельцем session/domain state и его наличие/отсутствие не может менять proof result.
+
+Progress (`current group`, tier, explored nodes, elapsed time, `groupsCompleted` и т. п.) является только observable diagnostic/presentation signal и принадлежит конкретному analysis run/session context. Каждый run имеет отдельный identity (`analysisId` или эквивалент); replaced/cancelled/stale run не имеет права публиковать progress или result поверх более нового run. Глобальный mutable singleton progress между партиями/analysis runs не допускается. `groupsCompleted` увеличивается только после завершения scheduler-обработки конкретной group и фиксации её итогового outcome для данного run; простое начало, посещение или запуск tier не считается completed group. Progress не является confidence score, не меняет proof semantics и не становится вторым источником session/domain state.
 
 Default production safety envelope:
 
@@ -692,6 +700,9 @@ Default production safety envelope:
 - maximum certified `RelevanceZone`: `96` logical points;
 - tactical budget: `300` nodes на каждый first-player order; scheduler запускает этот tier только для targets до `3` liberties, а сам reader остаётся fail-closed и покрыт regression cases вплоть до `4` liberties;
 - local life/death tiers: `300 → 1500 → 6000` nodes на каждый first-player order;
+- bounded semeai budget: `3000` nodes;
+- dynamic-seki budget: `1500` nodes;
+- cooperative scheduling quantum: `8 ms`;
 - full-board tactical defender enumeration допускается только для topology до `128` logical points; на большем graph этот tier пропускается/fails closed и остаются certified local proof paths и manual fallback.
 
 Исчерпание любого budget уменьшает только automatic coverage и никогда не ослабляет требования доказательства. Benchmark measurements являются regression/operational evidence конкретного CI run и не заменяют эти correctness invariants.
@@ -1136,7 +1147,14 @@ Storage adapter должен заменяться без изменения `Gam
 - Final Proof Search forced-resolution cases и conservative fallback при open boundary, ko, depth/node/deadline exhaustion или другом incomplete outcome;
 - fail-closed поведение при incomplete group/proposal context;
 - tactical regressions для low-liberty capture, multi-step capture, ladder, net, snapback и counter-capture defense;
+- production semeai regressions для stable winner, first-player-dependent race, restoring/simple ko и cases, где победитель независимо получает другой корректный proof status;
+- dynamic-seki regressions, включая формы вне статического `closed-mutual-two-liberties-seki-v1`, с обязательной проверкой every-legal-local-initiation proof и запретом трактовать unresolved semeai как seki;
 - topology-metamorphic эквивалентность применимых proof cases для Torus interior/wrap seam и Cube same-face/face-edge/multi-face groups;
+- request-scoped progress/isolation: параллельные sessions/runs не видят progress друг друга, а replaced/stale run не публикует progress/result поверх нового run;
+- `groupsCompleted` отражает реально завершённые scheduler groups, включая finalized unresolved outcomes, но не просто начатые/посещённые groups;
+- absolute deadline применяется уже к preprocessing/static graph/Benson и ко всем последующим tiers;
+- completion-only memoization сохраняет proof-equivalence, а interrupted/incomplete static computations не становятся reusable cached facts;
+- browser semantic responsiveness E2E проверяет фактическое продвижение event loop (`requestAnimationFrame` и timer callbacks) во время видимого final analysis, а не только наличие cooperative API в коде;
 - benchmark/regression checks operational runtime envelope отдельно от correctness assertions: превышение budget не имеет права превращаться в guessed status.
 
 ## 19.7. Renderer contract tests
@@ -1502,9 +1520,15 @@ Oracle disagreement не означает автоматически bug GoCube.
 - запускать scoring на partial/incomplete endgame review;
 - выдавать unresolved classifier result за окончательный `EndgameClassification`;
 - считать probabilistic AI/oracle confidence доказательством alive/dead/seki без project verifier;
-- трактовать отсутствие Benson/pass-alive proof, exhaustion budget или incomplete Final Proof Search branch как `dead`/`alive`;
+- трактовать отсутствие Benson/pass-alive proof, exhaustion budget или incomplete Final Proof Search branch как `dead`/`alive`/`seki`;
 - использовать неполную defender enumeration как доказательство forced kill;
+- трактовать first-player-dependent или incomplete semeai как automatic stable winner/seki;
 - запускать неограниченную full-board tactical defender enumeration на больших topology вместо bounded/fail-closed path;
+- начинать hard wall-clock budget Final Proof Search только после preprocessing или выдавать каждому tier независимый новый hard deadline;
+- хранить progress Final Proof Search в глобальном mutable singleton, общем для разных sessions/runs;
+- позволять replaced/cancelled/stale analysis run публиковать progress или result поверх более нового run;
+- считать начатую/посещённую group завершённой в `groupsCompleted` до завершения scheduler-обработки;
+- кешировать interrupted/cancelled/incomplete static graph/Benson computation как завершённый reusable proof fact;
 - делать внешний oracle или AlphaZero обязательной production dependency;
 - считать AlphaZero authoritative владельцем `GameState` или принимать от него готовую board occupancy вместо generated actions;
 - рисовать AlphaZero board напрямую в Renderer или мутировать `GameState` в обход `GameSession → GameEngine`;
@@ -1580,7 +1604,7 @@ Oracle disagreement не означает автоматически bug GoCube.
 - `History` владеет past/current/redo snapshots;
 - `EndgameClassifier` создаёт proposal, который может содержать unresolved groups;
 - deterministic structural proof решает только доказуемые statuses, а heuristic/oracle остаётся candidate/diagnostic без verifier;
-- bounded Final Proof Search может дополнительно resolve unresolved groups только через fail-closed tactical/local proofs и никогда не превращает exhaustion/unknown в status;
+- request-scoped cooperative Final Proof Search может дополнительно resolve unresolved groups только через fail-closed tactical, local life/death, bounded semeai и strict dynamic-seki proofs; один absolute deadline охватывает весь run, а exhaustion/cancellation/unknown никогда не превращается в status;
 - `EndgameReviewState` хранит partial/ручные решения до полного resolution;
 - только полный `EndgameClassification` передаётся в `ScoringStrategy`;
 - `ScoringStrategy` создаёт `FinalScore`;

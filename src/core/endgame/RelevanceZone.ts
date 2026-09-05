@@ -1,20 +1,29 @@
 import type { BoardOccupancy } from '../game/types';
 import type { PointId, Topology } from '../topology/Topology';
-import { proveBensonPassAlive } from './BensonPassAlive';
-import { buildEndgameStaticGraph, type EndgameStoneString } from './EndgameStaticGraph';
+import { tryProveBensonPassAlive } from './BensonPassAlive';
+import {
+  buildEndgameStaticGraph,
+  tryBuildEndgameStaticGraph,
+  type EndgameStaticGraph,
+  type EndgameStoneString,
+} from './EndgameStaticGraph';
 import { compareEndgamePointIds } from './EndgameGroupIdentity';
 
-export const RELEVANCE_ZONE_ALGORITHM = 'relevance-zone-v2';
+export const RELEVANCE_ZONE_ALGORITHM = 'relevance-zone-v3';
 
 export type RelevanceZoneOutcome = 'bounded' | 'unknown-boundary';
 export type RelevanceZoneReason =
   | 'bounded-closure'
   | 'target-mismatch'
   | 'max-points-exceeded'
-  | 'localisation-covers-whole-board';
+  | 'localisation-covers-whole-board'
+  | 'interrupted';
 
 export interface RelevanceZoneOptions {
   readonly maxPoints?: number;
+  readonly graph?: EndgameStaticGraph;
+  readonly safeGroupKeys?: ReadonlySet<string>;
+  readonly shouldStop?: () => boolean;
 }
 
 export interface RelevanceZoneResult {
@@ -34,16 +43,19 @@ const compareStrings = (left: string, right: string): number => left < right ? -
 const freezeSortedPoints = (points: Iterable<PointId>): readonly PointId[] => Object.freeze([...points].sort(compareEndgamePointIds));
 const freezeSortedStrings = (values: Iterable<string>): readonly string[] => Object.freeze([...values].sort(compareStrings));
 
-const collectBensonSafeGroupKeys = (
+/** Compute the pass-alive separator set once and reuse it across candidate zones. */
+export const collectBensonSafeGroupKeys = (
   board: BoardOccupancy,
   topology: Topology,
-): ReadonlySet<string> => {
-  const graph = buildEndgameStaticGraph(board, topology);
+  graph: EndgameStaticGraph = buildEndgameStaticGraph(board, topology),
+  shouldStop: () => boolean = () => false,
+): ReadonlySet<string> | null => {
   const safe = new Set<string>();
   for (const color of ['black', 'white'] as const) {
-    for (const groupKey of proveBensonPassAlive(board, topology, graph, color).aliveGroups.keys()) {
-      safe.add(groupKey);
-    }
+    if (shouldStop()) return null;
+    const proof = tryProveBensonPassAlive(board, topology, graph, color, { shouldStop });
+    if (!proof) return null;
+    for (const groupKey of proof.aliveGroups.keys()) safe.add(groupKey);
   }
   return safe;
 };
@@ -92,10 +104,11 @@ const makeResult = (
 };
 
 /**
- * Conservative topology-neutral dependency closure ported from the frozen
- * Endgame Engine. Benson/pass-alive strings are certified separators. If the
- * dependency closure becomes global or exceeds the cap, locality is not proved
- * and the caller must fail closed.
+ * Topology-neutral dependency closure. Benson/pass-alive strings are certified
+ * separators and are recorded as boundary facts rather than copied wholesale
+ * into the local zone. This is a strict improvement over v2: a large proven-
+ * alive wall no longer consumes the local point budget, while no artificial
+ * radius or inaccessible outside area is introduced.
  */
 export const buildRelevanceZone = (
   target: EndgameStoneString,
@@ -107,8 +120,18 @@ export const buildRelevanceZone = (
   if (!Number.isInteger(maxPoints) || maxPoints < 1) {
     throw new Error(`Relevance zone maxPoints must be a positive integer: ${maxPoints}`);
   }
+  const shouldStop = options.shouldStop ?? (() => false);
 
-  const graph = buildEndgameStaticGraph(board, topology);
+  const emptyPoints = new Set<PointId>();
+  const emptyStrings = new Set<string>();
+  const emptyRegions = new Set<string>();
+  const emptyBoundary = new Set<string>();
+  const interrupted = (): RelevanceZoneResult =>
+    makeResult(board, topology, target.key, 'unknown-boundary', 'interrupted', emptyPoints, emptyStrings, emptyRegions, emptyBoundary);
+
+  if (shouldStop()) return interrupted();
+  const graph = options.graph ?? tryBuildEndgameStaticGraph(board, topology, { shouldStop });
+  if (!graph) return interrupted();
   const currentTarget = graph.stringsByKey.get(target.key);
   const zonePoints = new Set<PointId>();
   const stringKeys = new Set<string>();
@@ -121,8 +144,14 @@ export const buildRelevanceZone = (
 
   const regionsByKey = new Map(graph.emptyRegions.map((region) => [region.key, region] as const));
   const regionByPoint = new Map<PointId, string>();
-  for (const region of graph.emptyRegions) for (const point of region.points) regionByPoint.set(point, region.key);
-  const safeGroupKeys = collectBensonSafeGroupKeys(board, topology);
+  for (const region of graph.emptyRegions) {
+    if (shouldStop()) return interrupted();
+    for (const point of region.points) regionByPoint.set(point, region.key);
+  }
+  const safeGroupKeys = options.safeGroupKeys
+    ?? collectBensonSafeGroupKeys(board, topology, graph, shouldStop);
+  if (!safeGroupKeys) return interrupted();
+
   const pendingGroups: string[] = [currentTarget.key];
   const pendingRegions: string[] = [];
   const processedGroups = new Set<string>();
@@ -134,7 +163,12 @@ export const buildRelevanceZone = (
   };
 
   while (pendingGroups.length > 0 || pendingRegions.length > 0) {
+    if (shouldStop()) {
+      return makeResult(board, topology, target.key, 'unknown-boundary', 'interrupted', zonePoints, stringKeys, regionKeys, boundarySafeGroupKeys);
+    }
+
     while (pendingGroups.length > 0) {
+      if (shouldStop()) return interrupted();
       const groupKey = pendingGroups.pop()!;
       if (processedGroups.has(groupKey)) continue;
       processedGroups.add(groupKey);
@@ -143,8 +177,17 @@ export const buildRelevanceZone = (
         return makeResult(board, topology, target.key, 'unknown-boundary', 'target-mismatch', zonePoints, stringKeys, regionKeys, boundarySafeGroupKeys);
       }
 
+      // A Benson/pass-alive group is an unconditional separator. Do not charge
+      // its potentially large body against the local zone; record the certified
+      // boundary and stop dependency expansion through it.
+      if (safeGroupKeys.has(groupKey) && groupKey !== currentTarget.key) {
+        boundarySafeGroupKeys.add(groupKey);
+        continue;
+      }
+
       stringKeys.add(groupKey);
       for (const point of group.points) {
+        if (shouldStop()) return interrupted();
         if (!addPoint(point)) {
           return makeResult(board, topology, target.key, 'unknown-boundary', 'max-points-exceeded', zonePoints, stringKeys, regionKeys, boundarySafeGroupKeys);
         }
@@ -156,11 +199,12 @@ export const buildRelevanceZone = (
       }
 
       for (const point of group.points) {
+        if (shouldStop()) return interrupted();
         for (const neighbor of topology.neighbors(point)) {
           const adjacentGroupKey = graph.stringByPoint.get(neighbor);
-          if (adjacentGroupKey && adjacentGroupKey !== groupKey && !processedGroups.has(adjacentGroupKey)) {
-            pendingGroups.push(adjacentGroupKey);
-          }
+          if (!adjacentGroupKey || adjacentGroupKey === groupKey || processedGroups.has(adjacentGroupKey)) continue;
+          if (safeGroupKeys.has(adjacentGroupKey)) boundarySafeGroupKeys.add(adjacentGroupKey);
+          else pendingGroups.push(adjacentGroupKey);
         }
       }
       for (const liberty of group.liberties) {
@@ -170,6 +214,7 @@ export const buildRelevanceZone = (
     }
 
     while (pendingRegions.length > 0) {
+      if (shouldStop()) return interrupted();
       const regionKey = pendingRegions.pop()!;
       if (processedRegions.has(regionKey)) continue;
       processedRegions.add(regionKey);
@@ -177,16 +222,23 @@ export const buildRelevanceZone = (
       if (!region) continue;
       regionKeys.add(regionKey);
       for (const point of region.points) {
+        if (shouldStop()) return interrupted();
         if (!addPoint(point)) {
           return makeResult(board, topology, target.key, 'unknown-boundary', 'max-points-exceeded', zonePoints, stringKeys, regionKeys, boundarySafeGroupKeys);
         }
       }
       for (const groupKey of region.boundaryGroups) {
-        if (!processedGroups.has(groupKey)) pendingGroups.push(groupKey);
+        if (safeGroupKeys.has(groupKey)) {
+          boundarySafeGroupKeys.add(groupKey);
+          processedGroups.add(groupKey);
+        } else if (!processedGroups.has(groupKey)) {
+          pendingGroups.push(groupKey);
+        }
       }
     }
   }
 
+  if (shouldStop()) return interrupted();
   if (zonePoints.size >= topology.points().length) {
     return makeResult(board, topology, target.key, 'unknown-boundary', 'localisation-covers-whole-board', zonePoints, stringKeys, regionKeys, boundarySafeGroupKeys);
   }

@@ -23,6 +23,17 @@ export interface EndgameStaticGraph {
   readonly emptyRegions: readonly EndgameEmptyRegion[];
 }
 
+export interface EndgameStaticGraphBuildOptions {
+  readonly shouldStop?: () => boolean;
+}
+
+export class EndgameStaticGraphInterrupted extends Error {
+  constructor() {
+    super('Endgame static graph preparation interrupted');
+    this.name = 'EndgameStaticGraphInterrupted';
+  }
+}
+
 const compareStrings = (left: string, right: string): number =>
   left < right ? -1 : left > right ? 1 : 0;
 
@@ -34,10 +45,44 @@ const occupancyAt = (board: BoardOccupancy, point: PointId): StoneColor | 'empty
   return occupancy;
 };
 
+/**
+ * Endgame boards are immutable snapshots. Cache only fully constructed graphs by
+ * the exact board+topology object pair; interrupted builds are never published.
+ * Weak keys ensure old search/session snapshots remain collectible.
+ */
+const graphCache = new WeakMap<object, WeakMap<object, EndgameStaticGraph>>();
+
+const cachedGraph = (board: BoardOccupancy, topology: Topology): EndgameStaticGraph | null =>
+  graphCache.get(board as object)?.get(topology as object) ?? null;
+
+const cacheGraph = (
+  board: BoardOccupancy,
+  topology: Topology,
+  graph: EndgameStaticGraph,
+): EndgameStaticGraph => {
+  let byTopology = graphCache.get(board as object);
+  if (!byTopology) {
+    byTopology = new WeakMap<object, EndgameStaticGraph>();
+    graphCache.set(board as object, byTopology);
+  }
+  byTopology.set(topology as object, graph);
+  return graph;
+};
+
 export const buildEndgameStaticGraph = (
   board: BoardOccupancy,
   topology: Topology,
+  options: EndgameStaticGraphBuildOptions = {},
 ): EndgameStaticGraph => {
+  const shouldStop = options.shouldStop ?? (() => false);
+  const checkpoint = (): void => {
+    if (shouldStop()) throw new EndgameStaticGraphInterrupted();
+  };
+
+  checkpoint();
+  const previous = cachedGraph(board, topology);
+  if (previous) return previous;
+
   const points = [...topology.points()].sort(compareEndgamePointIds);
   const visitedStones = new Set<PointId>();
   const strings: EndgameStoneString[] = [];
@@ -45,6 +90,7 @@ export const buildEndgameStaticGraph = (
   const stringByPoint = new Map<PointId, string>();
 
   for (const start of points) {
+    checkpoint();
     if (visitedStones.has(start)) continue;
     const color = occupancyAt(board, start);
     if (color === 'empty') continue;
@@ -55,10 +101,12 @@ export const buildEndgameStaticGraph = (
     visitedStones.add(start);
 
     while (pending.length > 0) {
+      checkpoint();
       const point = pending.pop()!;
       groupPoints.push(point);
 
       for (const neighbor of topology.neighbors(point)) {
+        checkpoint();
         const occupancy = occupancyAt(board, neighbor);
         if (occupancy === 'empty') {
           liberties.add(neighbor);
@@ -89,6 +137,7 @@ export const buildEndgameStaticGraph = (
   const visitedEmpty = new Set<PointId>();
   const emptyRegions: EndgameEmptyRegion[] = [];
   for (const start of points) {
+    checkpoint();
     if (visitedEmpty.has(start) || occupancyAt(board, start) !== 'empty') continue;
 
     const pending: PointId[] = [start];
@@ -98,10 +147,12 @@ export const buildEndgameStaticGraph = (
     visitedEmpty.add(start);
 
     while (pending.length > 0) {
+      checkpoint();
       const point = pending.pop()!;
       regionPoints.push(point);
 
       for (const neighbor of topology.neighbors(point)) {
+        checkpoint();
         const occupancy = occupancyAt(board, neighbor);
         if (occupancy === 'empty') {
           if (!visitedEmpty.has(neighbor)) {
@@ -134,11 +185,29 @@ export const buildEndgameStaticGraph = (
   }
 
   emptyRegions.sort((left, right) => compareStrings(left.key, right.key));
+  checkpoint();
 
-  return Object.freeze({
-    strings: Object.freeze(strings),
-    stringsByKey,
-    stringByPoint,
-    emptyRegions: Object.freeze(emptyRegions),
-  });
+  return cacheGraph(
+    board,
+    topology,
+    Object.freeze({
+      strings: Object.freeze(strings),
+      stringsByKey,
+      stringByPoint,
+      emptyRegions: Object.freeze(emptyRegions),
+    }),
+  );
+};
+
+export const tryBuildEndgameStaticGraph = (
+  board: BoardOccupancy,
+  topology: Topology,
+  options: EndgameStaticGraphBuildOptions = {},
+): EndgameStaticGraph | null => {
+  try {
+    return buildEndgameStaticGraph(board, topology, options);
+  } catch (error) {
+    if (error instanceof EndgameStaticGraphInterrupted) return null;
+    throw error;
+  }
 };
