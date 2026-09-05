@@ -80,7 +80,14 @@ describe('Final Proof Search representative benchmark', () => {
       });
       const staticAnalysis = await analyzeFinalGroupJudge(context);
       const final = await runFinalProofSearch(context, staticAnalysis.proposal);
-      const staticResolved = staticAnalysis.proposal.filter((group) => group.status !== 'unresolved').length;
+      const staticResolvedGroups = staticAnalysis.proposal.filter((group) => group.status !== 'unresolved');
+      const proofResolvedGroups = final.proposal.filter((group) => group.evidence?.algorithm === 'final-proof-search-v1');
+      const staticResolved = staticResolvedGroups.length;
+      const tacticalResolved = proofResolvedGroups.filter((group) => group.evidence?.reader === 'tactical-forced-capture-v1').length;
+      const localResolved = proofResolvedGroups.filter((group) => group.evidence?.reader === 'local-life-death-v2').length;
+      const staticAlive = staticResolvedGroups.filter((group) => group.status === 'alive').length;
+      const staticDead = staticResolvedGroups.filter((group) => group.status === 'dead').length;
+      const staticSeki = staticResolvedGroups.filter((group) => group.status === 'seki').length;
       const totalMs = staticAnalysis.diagnostics.totalAnalysisMilliseconds + final.diagnostics.elapsedMilliseconds;
       rows.push({
         case: benchmarkCase.label,
@@ -89,11 +96,17 @@ describe('Final Proof Search representative benchmark', () => {
         proofMs: Number(final.diagnostics.elapsedMilliseconds.toFixed(2)),
         totalMs: Number(totalMs.toFixed(2)),
         staticResolved,
+        staticAlive,
+        staticDead,
+        staticSeki,
         proofResolved: final.diagnostics.resolvedAutomatically,
+        tacticalResolved,
+        localResolved,
         nodes: final.diagnostics.exploredNodes,
         unresolvedBudget: final.diagnostics.outcomes.unresolvedBudget,
         unresolvedBoundary: final.diagnostics.outcomes.unresolvedBoundary,
         koDependent: final.diagnostics.outcomes.koDependent,
+        unresolvedOther: final.diagnostics.outcomes.unresolvedOther,
         stopReason: final.diagnostics.stopReason,
       });
       expect(totalMs).toBeLessThan(6_000);
