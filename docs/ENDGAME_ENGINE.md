@@ -1593,3 +1593,18 @@ Browser diagnostic benchmark запускает тот же production analysis 
 - Torus 19.
 
 Он обязан сохранять `totalAnalysisMilliseconds`, `groupCount`, `emptyRegionCount`, Benson iteration counts и итоговые `alive/dead/seki/unresolved` counts. Web Worker добавляется только если фактический browser benchmark покажет заметный UI freeze.
+
+## 39.7. Measured browser benchmark
+
+Full GitHub Actions CI run `33962358198` executed the browser benchmark in all three Playwright browser projects. Structural results were deterministic across the three runs; measured wall-clock analysis times varied by browser/runtime as expected.
+
+| Topology | Logical points | Groups | Empty regions | Benson iterations (B/W) | Status counts | Analysis ms across 3 browser runs |
+|---|---:|---:|---:|---:|---|---|
+| Cube 4 | 96 | 21 | 12 | 4 (2/2) | alive 0 / dead 0 / seki 0 / unresolved 21 | 4.70 / 6 / 10 |
+| Cube 7 | 294 | 235 | 3 | 4 (2/2) | alive 0 / dead 0 / seki 0 / unresolved 235 | 6.20 / 9 / 16 |
+| Torus 9 | 81 | 57 | 12 | 5 (2/3) | alive 0 / dead 0 / seki 0 / unresolved 57 | 1.90 / 4 / 4 |
+| Torus 19 | 361 | 283 | 52 | 6 (3/3) | alive 0 / dead 0 / seki 0 / unresolved 283 | 6.90 / 11 / 20 |
+
+Maximum observed V1 analysis time in this CI sample was **20 ms** on Torus 19. This does not justify adding a Web Worker for V1; the worker remains deferred unless later real-position profiling shows a materially larger UI stall.
+
+The benchmark boards are deterministic synthetic stress inputs for runtime/diagnostics, not life/death quality fixtures; therefore their all-`unresolved` result is expected and is not used as a correctness oracle.
