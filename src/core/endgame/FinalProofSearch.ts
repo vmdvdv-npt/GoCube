@@ -52,6 +52,8 @@ type SearchOutcome =
   | 'unknown-cycle'
   | 'unknown';
 
+type UnknownSearchOutcome = Exclude<SearchOutcome, 'kill' | 'survive'>;
+
 interface SearchResult {
   readonly outcome: SearchOutcome;
   readonly principalVariation: readonly string[];
@@ -145,7 +147,7 @@ const tenukiState = (state: GameState): GameState =>
   });
 
 const yieldToBrowser = async (): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, 0));
+  new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 const comparePriority = (left: TargetTask, right: TargetTask): number => {
   const length = Math.max(left.priority.length, right.priority.length);
@@ -327,7 +329,7 @@ const targetBensonAlive = (
   return alive;
 };
 
-const unknownPrecedence: readonly SearchOutcome[] = Object.freeze([
+const unknownPrecedence: readonly UnknownSearchOutcome[] = Object.freeze([
   'ko-dependent',
   'unknown-budget',
   'unknown-depth',
@@ -335,7 +337,7 @@ const unknownPrecedence: readonly SearchOutcome[] = Object.freeze([
   'unknown',
 ]);
 
-const dominantUnknown = (results: readonly SearchResult[]): SearchOutcome => {
+const dominantUnknown = (results: readonly SearchResult[]): UnknownSearchOutcome => {
   for (const outcome of unknownPrecedence) {
     if (results.some((result) => result.outcome === outcome)) return outcome;
   }
@@ -361,7 +363,7 @@ const resolvedResult = (
   });
 
 const unknownResult = (
-  outcome: Exclude<SearchOutcome, 'kill' | 'survive'>,
+  outcome: UnknownSearchOutcome,
   attempt: SearchAttempt,
   principalVariation: readonly string[] = [],
 ): SearchResult =>
