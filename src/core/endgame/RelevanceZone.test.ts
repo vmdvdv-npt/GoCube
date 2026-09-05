@@ -52,9 +52,10 @@ describe('RelevanceZone', () => {
     const zone = buildRelevanceZone(target, board, topology);
     expect(zone.algorithm).toBe(RELEVANCE_ZONE_ALGORITHM);
     expect(zone).toMatchObject({ outcome: 'bounded', reason: 'bounded-closure' });
-    expect(zone.points).toEqual(['b0', 'l1', 't', 'x']);
+    expect(zone.points).toEqual(['l1', 't', 'x']);
     expect(zone.boundarySafeGroupKeys).toEqual([safeBoundaryKey]);
     expect(zone.localPositionKey).not.toBeNull();
+    expect(zone.points).not.toContain('b0');
     expect(zone.points).not.toContain('far');
   });
 
