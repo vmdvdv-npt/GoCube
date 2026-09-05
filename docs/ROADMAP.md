@@ -43,7 +43,7 @@
 
 Версия **0.2 Cube 2D завершена и принята** по границе `0.2 integration / regression acceptance`.
 
-Активная разрабатываемая версия — **0.3 Automatic/Assisted alive-dead-seki**. Checkpoints **0.3.01 Library/Reuse Review и contract alignment**, **0.3.02 Deterministic Endgame Test Infrastructure**, **0.3.03 Differential Oracle Infrastructure**, **0.3.04 Automatic Alive core**, **0.3.05 Automatic Dead core**, **0.3.06 Obvious/Proven Seki**, **0.3.07 Assisted Review Integration** и **0.3.08 Stress / Differential Hardening** завершены. Следующий активный checkpoint — **0.3 integration / regression acceptance**.
+Активная разрабатываемая версия — **0.3 Automatic/Assisted alive-dead-seki**. Checkpoints **0.3.01 Library/Reuse Review и contract alignment**, **0.3.02 Deterministic Endgame Test Infrastructure**, **0.3.03 Differential Oracle Infrastructure**, **0.3.04 Automatic Alive core**, **0.3.05 Automatic Dead core**, **0.3.06 Obvious/Proven Seki**, **0.3.07 Assisted Review Integration** и **0.3.08 Stress / Differential Hardening** завершены. Активный checkpoint — **0.3 integration / regression acceptance**; внутри его текущего acceptance-cycle выполняется Final Proof Search completion/hardening, после чего следует полный финальный regression gate и пользовательская/UAT-проверка.
 
 Независимо от нумерованной release-sequence, перед дальнейшим AlphaZero training выполняется первый обязательный этап постоянной cross-version development infrastructure: **Developer Workspace foundation + AlphaZero game replay**. Он не меняет границы уже принятых 0.1/0.2 и не перенумеровывает 0.3/0.5.
 
