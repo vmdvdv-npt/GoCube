@@ -325,6 +325,6 @@ export class AssistedEndgameClassifier implements EndgameClassifier {
     if (context.state.phase !== 'endgame' || context.state.consecutivePasses < 2) {
       return staticAnalysis.proposal;
     }
-    return runFinalProofSearch(context, staticAnalysis.proposal).proposal;
+    return (await runFinalProofSearch(context, staticAnalysis.proposal)).proposal;
   }
 }
