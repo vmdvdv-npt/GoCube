@@ -22,6 +22,7 @@ import {
 } from './BensonPassAlive';
 import { buildEndgameStaticGraph, type EndgameStaticGraph } from './EndgameStaticGraph';
 import { endgameGroupId } from './EndgameGroupIdentity';
+import { runFinalProofSearch } from './FinalProofSearch';
 import { ManualEndgameClassifier } from './ManualEndgameClassifier';
 import {
   PASS_ALIVE_TERRITORY_ALGORITHM,
@@ -155,6 +156,7 @@ export const assertFinalGroupJudgeProofConsistency = (
   }
 };
 
+/** Static/cheap KataGo-style judge. Kept separately for diagnostics and baseline benchmarks. */
 export const analyzeFinalGroupJudge = async (
   context: EndgameAnalysisContext,
 ): Promise<FinalGroupJudgeAnalysis> => {
@@ -236,9 +238,7 @@ export const analyzeFinalGroupJudge = async (
   for (const group of graph.strings) {
     const statuses: string[] = [];
     if (aliveProofs.has(group.key)) statuses.push('alive');
-    if (territoryDeadProofs.has(group.key) || strictDeadProofs.has(group.key)) {
-      statuses.push('dead');
-    }
+    if (territoryDeadProofs.has(group.key) || strictDeadProofs.has(group.key)) statuses.push('dead');
     if (sekiProofs.has(group.key)) statuses.push('seki');
     assertFinalGroupJudgeProofConsistency(group.key, statuses);
   }
@@ -315,11 +315,16 @@ export const analyzeFinalGroupJudge = async (
 };
 
 /**
- * Production client-side final group judge. It intentionally contains no
- * tactical search, minimax, MCTS, neural network, backend, or external process.
+ * Production final judge: cheap exact proofs first, then one bounded proof-search
+ * pass over only the remaining unresolved groups. No simulated move is written
+ * back to the authoritative GameSession state.
  */
 export class AssistedEndgameClassifier implements EndgameClassifier {
   async analyze(context: EndgameAnalysisContext): Promise<EndgameProposal> {
-    return (await analyzeFinalGroupJudge(context)).proposal;
+    const staticAnalysis = await analyzeFinalGroupJudge(context);
+    if (context.state.phase !== 'endgame' || context.state.consecutivePasses < 2) {
+      return staticAnalysis.proposal;
+    }
+    return runFinalProofSearch(context, staticAnalysis.proposal).proposal;
   }
 }
