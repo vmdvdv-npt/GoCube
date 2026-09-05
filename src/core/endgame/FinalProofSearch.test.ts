@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { EndgameAnalysisContext, EndgameProposal } from './EndgameClassifier';
 import { runFinalProofSearch } from './FinalProofSearch';
 import { buildEndgameStaticGraph } from './EndgameStaticGraph';
+import { ProofSearchControl } from './ProofSearchControl';
 import type { GameState, PointOccupancy } from '../game/types';
 import type { PointId, Topology } from '../topology/Topology';
 
@@ -24,6 +25,28 @@ class GraphTopology implements Topology {
   points(): readonly PointId[] { return this.allPoints; }
   neighbors(point: PointId): readonly PointId[] { const result = this.adjacency.get(point); if (!result) throw new Error(`Unknown ${point}`); return result; }
   has(point: PointId): boolean { return this.adjacency.has(point); }
+}
+
+class CandidatePreparationInterruptControl extends ProofSearchControl {
+  private readonly interruptState: { candidateCheckpoints: number };
+
+  constructor() {
+    const interruptState = { candidateCheckpoints: 0 };
+    super({
+      analysisId: 'candidate-preparation-interrupt',
+      startedAt: 0,
+      hardDeadline: Number.MAX_SAFE_INTEGER,
+      now: () => 0,
+      shouldCancel: () => interruptState.candidateCheckpoints >= 2,
+      yieldControl: async () => Promise.resolve(),
+    });
+    this.interruptState = interruptState;
+  }
+
+  override async checkpoint(operation?: string, forceYield = false): Promise<boolean> {
+    if (operation === 'candidate-generation') this.interruptState.candidateCheckpoints += 1;
+    return super.checkpoint(operation, forceYield);
+  }
 }
 
 const stateFor = (topology: Topology, stones: Readonly<Partial<Record<PointId, PointOccupancy>>>): GameState => {
@@ -129,6 +152,23 @@ describe('FinalProofSearch scheduler', () => {
     expect(finalizing.length).toBeGreaterThan(0);
     expect(finalizing.at(-1)?.completed).toBe(finalizing.at(-1)?.total);
     expect(result.diagnostics.groupsCompleted).toBe(result.diagnostics.groupsTotal);
+  });
+
+  it('keeps the full unresolved denominator when candidate preparation is interrupted', async () => {
+    const { topology, state } = deadFixture();
+    const [context, proposal] = contextAndProposal(topology, state);
+    expect(proposal.length).toBeGreaterThan(1);
+
+    const result = await runFinalProofSearch(context, proposal, {
+      control: new CandidatePreparationInterruptControl(),
+    });
+
+    expect(result.proposal).toEqual(proposal);
+    expect(result.diagnostics.stopReason).toBe('cancelled');
+    expect(result.diagnostics.groupsTotal).toBe(proposal.length);
+    expect(result.diagnostics.groupsCompleted).toBe(1);
+    expect(result.diagnostics.groupsPending).toBe(proposal.length - 1);
+    expect(result.diagnostics.remainingUnresolved).toBe(proposal.length);
   });
 
   it('applies the hard deadline to graph/preparation work and fails closed before dynamic proofs', async () => {
