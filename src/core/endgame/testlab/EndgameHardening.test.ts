@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { AssistedEndgameClassifier } from '../AssistedEndgameClassifier';
+import { analyzeFinalGroupJudge } from '../AssistedEndgameClassifier';
 import type {
+  EndgameAnalysisContext,
   EndgameClassification,
+  EndgameClassifier,
   EndgameProposal,
   GroupStatus,
 } from '../EndgameClassifier';
@@ -26,6 +28,11 @@ const AUTOMATIC_ALGORITHMS = new Set([
   'closed-mutual-two-liberties-seki-v1',
 ]);
 const FALLBACK_STATUSES: readonly GroupStatus[] = Object.freeze(['alive', 'dead', 'seki']);
+const STATIC_CLASSIFIER: EndgameClassifier = Object.freeze({
+  async analyze(context: EndgameAnalysisContext): Promise<EndgameProposal> {
+    return (await analyzeFinalGroupJudge(context)).proposal;
+  },
+});
 
 const occupiedPoints = (
   fixture: EndgameTestFixture,
@@ -231,7 +238,7 @@ const firstBlackPoint = (fixture: EndgameTestFixture): PointId => {
 describe('0.3.08 stress / differential hardening', () => {
   it('runs a Full deterministic endgame sweep on Torus and Cube with replay, proposal and scoring invariants', async () => {
     const lab = new EndgameTestLab();
-    const classifier = new AssistedEndgameClassifier();
+    const classifier = STATIC_CLASSIFIER;
     const seeds = endgameTestLabSeeds('0.3.08-full-endgame', 'Full');
 
     for (const seed of seeds) {
@@ -264,7 +271,7 @@ describe('0.3.08 stress / differential hardening', () => {
 
   it('keeps a permanent fixed-seed corpus for proven and fallback classifier boundaries', async () => {
     const lab = new EndgameTestLab();
-    const classifier = new AssistedEndgameClassifier();
+    const classifier = STATIC_CLASSIFIER;
 
     for (const topology of [new TorusTopology(9), new CubeTopology(5)] as const) {
       const provenAlive = lab.generate({
@@ -309,7 +316,7 @@ describe('0.3.08 stress / differential hardening', () => {
 
   it('stress-checks conservative fallback across Torus seams and Cube edges/corners', async () => {
     const lab = new EndgameTestLab();
-    const classifier = new AssistedEndgameClassifier();
+    const classifier = STATIC_CLASSIFIER;
     const seeds = endgameTestLabSeeds('0.3.08-topology-stress', 'Full');
 
     for (const seed of seeds) {
@@ -343,7 +350,7 @@ describe('0.3.08 stress / differential hardening', () => {
 
   it('differentially checks applicable planar Torus and Cube patterns with an independent structural eye oracle', async () => {
     const lab = new EndgameTestLab();
-    const classifier = new AssistedEndgameClassifier();
+    const classifier = STATIC_CLASSIFIER;
     const matchedByTopology = new Map<'torus' | 'cube', number>([
       ['torus', 0],
       ['cube', 0],

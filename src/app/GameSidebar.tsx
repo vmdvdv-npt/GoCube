@@ -1,4 +1,9 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import {
+  currentFinalProofSearchProgress,
+  subscribeFinalProofSearchProgress,
+  type FinalProofSearchProgress,
+} from '../core/endgame/FinalProofSearch';
 import type { GameViewModel } from '../presentation/PresentationModel';
 
 export interface GameSidebarProps {
@@ -42,18 +47,35 @@ export function GameSidebar({
   endgame = null,
   feedback = null,
 }: GameSidebarProps) {
-  const stageLabel =
-    viewModel.phase === 'playing'
+  const [finalAnalysisProgress, setFinalAnalysisProgress] =
+    useState<FinalProofSearchProgress | null>(() => currentFinalProofSearchProgress());
+
+  useEffect(() => {
+    const unsubscribe = subscribeFinalProofSearchProgress(setFinalAnalysisProgress);
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  const stageLabel = finalAnalysisProgress
+    ? 'Analyzing final position…'
+    : viewModel.phase === 'playing'
       ? `${viewModel.currentPlayer === 'black' ? 'Black' : 'White'} to move`
       : viewModel.phase === 'endgame'
         ? 'Classify groups'
         : 'Game finished';
 
+  const analysisDetail = finalAnalysisProgress
+    ? finalAnalysisProgress.totalUnresolvedGroups > 0
+      ? `Checked ${finalAnalysisProgress.completedGroups} of ${finalAnalysisProgress.totalUnresolvedGroups} unresolved groups · tier ${Math.max(1, finalAnalysisProgress.currentTier)} · ${finalAnalysisProgress.exploredNodes.toLocaleString()} nodes`
+      : 'Static proofs resolved the position; final verification is completing.'
+    : null;
+
   return (
     <>
       <div className="game-summary" aria-live="polite">
         <div className="turn-indicator">
-          {viewModel.phase === 'playing' ? (
+          {viewModel.phase === 'playing' && !finalAnalysisProgress ? (
             <span
               className={`stone-chip stone-chip--${viewModel.currentPlayer}`}
               aria-hidden="true"
@@ -94,6 +116,12 @@ export function GameSidebar({
         </label>
       </div>
 
+      {analysisDetail ? (
+        <p className="game-feedback final-proof-progress" role="status" aria-live="polite">
+          {analysisDetail}
+        </p>
+      ) : null}
+
       {endgame}
 
       <div className="game-controls">
@@ -101,15 +129,15 @@ export function GameSidebar({
           className="pass-control"
           type="button"
           onClick={onPass}
-          disabled={passDisabled}
+          disabled={passDisabled || Boolean(finalAnalysisProgress)}
         >
           {viewModel.phase === 'playing' && viewModel.consecutivePasses === 1 ? 'Pass (1)' : 'Pass'}
         </button>
         <div className="history-controls" role="group" aria-label="Move history controls">
-          <button type="button" onClick={onRedo} disabled={!canRedo}>
+          <button type="button" onClick={onRedo} disabled={!canRedo || Boolean(finalAnalysisProgress)}>
             Redo
           </button>
-          <button type="button" onClick={onUndo} disabled={!canUndo}>
+          <button type="button" onClick={onUndo} disabled={!canUndo || Boolean(finalAnalysisProgress)}>
             Undo
           </button>
         </div>
@@ -122,7 +150,7 @@ export function GameSidebar({
           className="new-game-control"
           type="button"
           onClick={onRequestNewGame}
-          disabled={newGameDisabled}
+          disabled={newGameDisabled || Boolean(finalAnalysisProgress)}
         >
           New game
         </button>
