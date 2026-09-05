@@ -1,4 +1,7 @@
-import type { GroupStatus } from '../core/endgame/EndgameClassifier';
+import type {
+  FinalProofSearchProgressListener,
+  GroupStatus,
+} from '../core/endgame/EndgameClassifier';
 import { AssistedEndgameClassifier } from '../core/endgame/AssistedEndgameClassifier';
 import { effectiveEndgameStatus } from '../core/endgame/EndgameReviewState';
 import { GameEngine } from '../core/game/GameEngine';
@@ -235,9 +238,11 @@ export class TorusGameController {
     return this.present(result.ok, result.ok ? null : result.reason);
   }
 
-  async finishEndgame(): Promise<TorusGameActionResult> {
+  async finishEndgame(
+    onProgress?: FinalProofSearchProgressListener,
+  ): Promise<TorusGameActionResult> {
     if (this.viewModel().phase !== 'finished') {
-      await this.session.finishEndgameReview();
+      await this.session.finishEndgameReview(onProgress);
     }
     return this.present(true, null);
   }
