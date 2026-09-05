@@ -46,6 +46,8 @@ export interface AndOrProofTrace {
 
 export interface AndOrSearchOptions {
   readonly maxNodes: number;
+  /** External resource guard such as a global wall-clock deadline. True means fail closed as budget. */
+  readonly shouldStop?: () => boolean;
 }
 
 export interface AndOrSearchResult {
@@ -61,6 +63,7 @@ export interface AndOrSearchResult {
 interface SearchRuntime<State> {
   readonly adapter: AndOrSearchAdapter<State>;
   readonly maxNodes: number;
+  readonly shouldStop: () => boolean;
   exploredNodes: number;
   transpositionHits: number;
   maxDepth: number;
@@ -152,7 +155,9 @@ const search = <State>(
     return Object.freeze({ outcome: cached, unknownReason: null, trace: leafTrace(nodeKey, nodeType, cached, null, 'transposition') });
   }
   if (activePath.has(cacheKey)) return unknownVerdict(nodeKey, nodeType, 'cycle', 'cycle');
-  if (runtime.exploredNodes >= runtime.maxNodes) return unknownVerdict(nodeKey, nodeType, 'budget', 'budget');
+  if (runtime.exploredNodes >= runtime.maxNodes || runtime.shouldStop()) {
+    return unknownVerdict(nodeKey, nodeType, 'budget', 'budget');
+  }
   runtime.exploredNodes += 1;
 
   const terminal = runtime.adapter.terminal(state);
@@ -198,6 +203,7 @@ export const runAndOrSearch = <State>(
   const runtime: SearchRuntime<State> = {
     adapter,
     maxNodes: options.maxNodes,
+    shouldStop: options.shouldStop ?? (() => false),
     exploredNodes: 0,
     transpositionHits: 0,
     maxDepth: 0,
