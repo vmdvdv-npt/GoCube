@@ -76,21 +76,25 @@ describe('strict production dynamic seki', () => {
     expect(result.reason).toBeNull();
   });
 
-  it('can prove mutual restraint beyond the static closed-two-liberty shape', async () => {
-    const topology = new GraphTopology('dynamic-seki-external-leaf', [
-      ['L', 's1'], ['R', 's1'], ['L', 's2'], ['R', 's2'], ['s1', 'e'], ['OUT1', 'OUT2'],
+  it('proves mutual restraint with one shared and one private liberty per target', async () => {
+    const topology = new GraphTopology('dynamic-seki-private-liberties', [
+      ['L', 's'], ['R', 's'], ['L', 'l'], ['R', 'r'], ['OUT1', 'OUT2'],
     ]);
     const state = makeState(topology, { L: 'black', R: 'white' });
-    const result = await analyzeDynamicSeki(
-      targetAt(state, topology, 'L'),
-      targetAt(state, topology, 'R'),
-      state,
-      topology,
-    );
+    const left = targetAt(state, topology, 'L');
+    const right = targetAt(state, topology, 'R');
+    expect(left.liberties).toEqual(['l', 's']);
+    expect(right.liberties).toEqual(['r', 's']);
 
-    expect(result.certifiedZone).toContain('e');
-    expect(result.leftInitiation.moves.map((move) => move.point)).toContain('e');
-    expect(result.rightInitiation.moves.map((move) => move.point)).toContain('e');
+    const result = await analyzeDynamicSeki(left, right, state, topology);
+
+    expect(result.sharedLiberties).toEqual(['s']);
+    expect(result.leftInitiation.moves.map((move) => [move.point, move.outcome])).toEqual([
+      ['l', 'initiator-loses'], ['s', 'initiator-loses'],
+    ]);
+    expect(result.rightInitiation.moves.map((move) => [move.point, move.outcome])).toEqual([
+      ['r', 'initiator-loses'], ['s', 'initiator-loses'],
+    ]);
     expect(result.leftInitiation.outcome).toBe('all-local-initiations-lose');
     expect(result.rightInitiation.outcome).toBe('all-local-initiations-lose');
     expect(result.outcome).toBe('seki');
