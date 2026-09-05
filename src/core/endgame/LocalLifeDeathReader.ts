@@ -28,6 +28,8 @@ export type LocalLifeDeathOutcome = 'proved-dead' | 'proved-alive' | 'unknown';
 export interface LocalLifeDeathOptions {
   readonly maxNodes?: number;
   readonly maxZonePoints?: number;
+  /** Shared/global safety deadline. True stops the current AND/OR tree fail-closed. */
+  readonly shouldStop?: () => boolean;
 }
 
 export interface LocalLifeDeathOrderResult {
@@ -246,12 +248,13 @@ const runOrder = (
   state: GameState,
   firstPlayer: LocalLifeDeathFirstPlayer,
   maxNodes: number,
+  shouldStop: () => boolean,
 ): LocalLifeDeathOrderResult => {
   const mover = firstPlayer === 'attacker' ? runtime.attackerColor : runtime.targetColor;
   const search = runAndOrSearch(
     makePosition(asPlayingState(state, mover), mover, Object.freeze({ kind: 'root-unknown' as const })),
     buildAdapter(runtime),
-    { maxNodes },
+    { maxNodes, shouldStop },
   );
   return Object.freeze({ firstPlayer, outcome: mapOrderOutcome(search), search });
 };
@@ -267,6 +270,7 @@ export const readLocalLifeDeath = (
 ): LocalLifeDeathResult => {
   const maxNodes = options.maxNodes ?? DEFAULT_MAX_NODES;
   const maxZonePoints = options.maxZonePoints ?? DEFAULT_MAX_ZONE_POINTS;
+  const shouldStop = options.shouldStop ?? (() => false);
   const crucialStones = Object.freeze([...target.points].sort(compareEndgamePointIds));
   const zone = buildRelevanceZone(target, state.board, topology, { maxPoints: maxZonePoints });
 
@@ -295,8 +299,8 @@ export const readLocalLifeDeath = (
     maxZonePoints,
   };
 
-  const attackerFirst = runOrder(runtime, state, 'attacker', maxNodes);
-  const defenderFirst = runOrder(runtime, state, 'defender', maxNodes);
+  const attackerFirst = runOrder(runtime, state, 'attacker', maxNodes, shouldStop);
+  const defenderFirst = runOrder(runtime, state, 'defender', maxNodes, shouldStop);
   const outcome: LocalLifeDeathOutcome =
     attackerFirst.outcome === 'proved-dead' && defenderFirst.outcome === 'proved-dead'
       ? 'proved-dead'
