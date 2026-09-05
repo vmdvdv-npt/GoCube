@@ -23,6 +23,7 @@ export interface TacticalReaderOptions {
   readonly maxTopologyPoints?: number;
   readonly safeGroupPoints?: readonly PointId[];
   readonly shouldStop?: () => boolean;
+  readonly cooperativeCheckpoint?: () => Promise<boolean>;
 }
 
 export interface TacticalReadResult {
@@ -58,7 +59,6 @@ const freezeSearchState = (state: GameState, currentPlayer: StoneColor): GameSta
 
 type SearchKind = 'kill' | 'survival' | 'unknown' | 'ko';
 type UnknownReason = 'budget' | 'depth' | 'boundary' | 'cycle';
-
 type CaptureKoCheck = 'clear' | 'ko' | 'budget';
 
 interface SearchVerdict {
@@ -86,6 +86,7 @@ interface SearchRuntime {
   readonly safeGroupPoints: ReadonlySet<PointId>;
   readonly sortedPoints: readonly PointId[];
   readonly shouldStop: (() => boolean) | null;
+  readonly cooperativeCheckpoint: (() => Promise<boolean>) | null;
 }
 
 interface DefenderMoveSet {
@@ -94,10 +95,12 @@ interface DefenderMoveSet {
 }
 
 const targetGroupAt = (runtime: SearchRuntime, state: GameState): StoneGroup | null => {
-  const surviving = runtime.crucialStones.find(
-    (point) => state.board[point] === runtime.targetColor,
-  );
-  return surviving ? runtime.engine.groupAt(state, surviving) : null;
+  const surviving = runtime.crucialStones.filter((point) => state.board[point] === runtime.targetColor);
+  if (surviving.length === 0) return null;
+  if (surviving.length !== runtime.crucialStones.length) return null;
+  const group = runtime.engine.groupAt(state, surviving[0]!);
+  if (!group || !runtime.crucialStones.every((point) => group.points.includes(point))) return null;
+  return group;
 };
 
 const connectsToSafeGroup = (runtime: SearchRuntime, group: StoneGroup): boolean =>
@@ -110,31 +113,25 @@ const stateKey = (runtime: SearchRuntime, node: SearchNode): string => {
       return value === 'black' ? 'b' : value === 'white' ? 'w' : '.';
     })
     .join('');
-  return `${node.mover}|${occupancy}`;
+  const previous = node.previousBoard
+    ? runtime.sortedPoints.map((point) => node.previousBoard![point] === 'black' ? 'b' : node.previousBoard![point] === 'white' ? 'w' : '.').join('')
+    : '-';
+  return `${node.mover}|${previous}|${occupancy}`;
 };
 
 const prependMove = (move: PointId, verdict: SearchVerdict): SearchVerdict =>
   Object.freeze({ ...verdict, pv: Object.freeze([move, ...verdict.pv]) });
-
 const unknown = (reason: UnknownReason): SearchVerdict =>
   Object.freeze({ kind: 'unknown' as const, reason, pv: Object.freeze([]) });
-
 const kill = (pv: readonly PointId[] = Object.freeze([])): SearchVerdict =>
   Object.freeze({ kind: 'kill' as const, pv });
-
 const survival = (pv: readonly PointId[] = Object.freeze([])): SearchVerdict =>
   Object.freeze({ kind: 'survival' as const, pv });
-
 const ko = (pv: readonly PointId[] = Object.freeze([])): SearchVerdict =>
   Object.freeze({ kind: 'ko' as const, pv });
 
 const chooseUnknown = (values: readonly SearchVerdict[]): SearchVerdict => {
-  const rank: Readonly<Record<UnknownReason, number>> = Object.freeze({
-    budget: 4,
-    boundary: 3,
-    cycle: 2,
-    depth: 1,
-  });
+  const rank: Readonly<Record<UnknownReason, number>> = Object.freeze({ budget: 4, boundary: 3, cycle: 2, depth: 1 });
   let selected: SearchVerdict | null = null;
   for (const value of values) {
     if (value.kind === 'ko') return value;
@@ -163,7 +160,6 @@ const attackerMoveCandidates = (
       if (state.board[neighbor] === 'empty' && !direct.has(neighbor)) followUps.add(neighbor);
     }
   }
-
   return Object.freeze([...liberties, ...[...followUps].sort(comparePoints)]);
 };
 
@@ -193,20 +189,13 @@ const allLegalDefenderMoves = (
 ): DefenderMoveSet => {
   const results: Array<Readonly<{ move: PointId; state: GameState }>> = [];
   for (const point of runtime.sortedPoints) {
-    if (runtime.shouldStop?.()) {
-      return Object.freeze({ children: Object.freeze(results), complete: false });
-    }
+    if (runtime.shouldStop?.()) return Object.freeze({ children: Object.freeze(results), complete: false });
     if (node.state.board[point] !== 'empty') continue;
     const result = runtime.engine.placeStone(
-      freezeSearchState(node.state, node.mover),
-      point,
-      node.mover,
-      { previousBoard: node.previousBoard },
+      freezeSearchState(node.state, node.mover), point, node.mover, { previousBoard: node.previousBoard },
     );
     if (!result.ok) continue;
-    if (results.length >= limit) {
-      return Object.freeze({ children: Object.freeze(results), complete: false });
-    }
+    if (results.length >= limit) return Object.freeze({ children: Object.freeze(results), complete: false });
     results.push(Object.freeze({ move: point, state: result.state }));
   }
   return Object.freeze({ children: Object.freeze(results), complete: true });
@@ -231,14 +220,19 @@ const terminalCaptureKoCheck = (
   return 'clear';
 };
 
+const preNode = (runtime: SearchRuntime): SearchVerdict | null => {
+  if (runtime.shouldStop?.()) return unknown('budget');
+  runtime.nodes += 1;
+  return runtime.nodes > runtime.maxNodes ? unknown('budget') : null;
+};
+
 const search = (
   runtime: SearchRuntime,
   node: SearchNode,
   path: ReadonlySet<string>,
 ): SearchVerdict => {
-  if (runtime.shouldStop?.()) return unknown('budget');
-  runtime.nodes += 1;
-  if (runtime.nodes > runtime.maxNodes) return unknown('budget');
+  const stopped = preNode(runtime);
+  if (stopped) return stopped;
 
   const target = targetGroupAt(runtime, node.state);
   if (!target) return kill();
@@ -253,32 +247,18 @@ const search = (
 
   if (node.mover === runtime.attackerColor) {
     const unknowns: SearchVerdict[] = [];
-    const legalMoves: Array<Readonly<{
-      move: PointId;
-      state: GameState;
-      targetLiberties: number;
-    }>> = [];
+    const legalMoves: Array<Readonly<{ move: PointId; state: GameState; targetLiberties: number; captured: number }>> = [];
     for (const move of attackerMoveCandidates(runtime, node.state, target)) {
       if (runtime.shouldStop?.()) return unknown('budget');
       const result = runtime.engine.placeStone(
-        freezeSearchState(node.state, node.mover),
-        move,
-        node.mover,
-        { previousBoard: node.previousBoard },
+        freezeSearchState(node.state, node.mover), move, node.mover, { previousBoard: node.previousBoard },
       );
       if (!result.ok) continue;
       const targetAfterMove = targetGroupAt(runtime, result.state);
-      legalMoves.push(
-        Object.freeze({
-          move,
-          state: result.state,
-          targetLiberties: targetAfterMove?.liberties.length ?? -1,
-        }),
-      );
+      legalMoves.push(Object.freeze({ move, state: result.state, targetLiberties: targetAfterMove?.liberties.length ?? -1, captured: result.captured.length }));
     }
     legalMoves.sort((left, right) =>
-      left.targetLiberties - right.targetLiberties || comparePoints(left.move, right.move),
-    );
+      left.targetLiberties - right.targetLiberties || right.captured - left.captured || comparePoints(left.move, right.move));
 
     for (const childMove of legalMoves) {
       if (runtime.shouldStop?.()) return unknown('budget');
@@ -287,49 +267,32 @@ const search = (
       if (targetCaptured) {
         const koCheck = terminalCaptureKoCheck(runtime, node.state, childMove.state);
         if (koCheck === 'budget') return unknown('budget');
-        if (koCheck === 'ko') {
-          unknowns.push(prependMove(move, ko()));
-          continue;
-        }
+        if (koCheck === 'ko') { unknowns.push(prependMove(move, ko())); continue; }
         return kill(Object.freeze([move]));
       }
 
-      const child = search(
-        runtime,
-        Object.freeze({
-          state: childMove.state,
-          previousBoard: node.state.board,
-          mover: runtime.targetColor,
-          depthRemaining: node.depthRemaining - 1,
-        }),
-        nextPath,
-      );
+      const child = search(runtime, Object.freeze({
+        state: childMove.state,
+        previousBoard: node.state.board,
+        mover: runtime.targetColor,
+        depthRemaining: node.depthRemaining - 1,
+      }), nextPath);
       if (child.kind === 'kill') return prependMove(move, child);
       if (child.kind !== 'survival') unknowns.push(prependMove(move, child));
     }
-
     if (legalMoves.length === 0) return unknown('boundary');
-    // Attacker move generation is intentionally selective. This is safe on an
-    // OR node: finding one fully proved kill is sufficient, while failure to
-    // find one can only remain unknown and never becomes a survival proof.
     return unknowns.length > 0 ? chooseUnknown(unknowns) : unknown('boundary');
   }
 
   const defenderChildren: Array<Readonly<{ move: PointId | null; state: GameState }>> = [];
-
   if (target.liberties.length === 1) {
     for (const move of atariSavingCandidates(runtime, node.state, target)) {
       if (runtime.shouldStop?.()) return unknown('budget');
       const result = runtime.engine.placeStone(
-        freezeSearchState(node.state, node.mover),
-        move,
-        node.mover,
-        { previousBoard: node.previousBoard },
+        freezeSearchState(node.state, node.mover), move, node.mover, { previousBoard: node.previousBoard },
       );
       if (result.ok) defenderChildren.push(Object.freeze({ move, state: result.state }));
     }
-    // Any legal defender move not represented above leaves the target in the
-    // same atari. One pass-equivalent branch covers that equivalence class.
     defenderChildren.push(Object.freeze({ move: null, state: node.state }));
   } else {
     const remainingChildBudget = Math.max(0, runtime.maxNodes - runtime.nodes);
@@ -343,45 +306,144 @@ const search = (
   let representativeKill: SearchVerdict | null = null;
   for (const child of defenderChildren) {
     if (runtime.shouldStop?.()) return unknown('budget');
-    const verdict = search(
-      runtime,
-      Object.freeze({
-        state: child.state,
-        previousBoard: node.state.board,
-        mover: runtime.attackerColor,
-        depthRemaining: node.depthRemaining - 1,
-      }),
-      nextPath,
-    );
+    const verdict = search(runtime, Object.freeze({
+      state: child.state,
+      previousBoard: node.state.board,
+      mover: runtime.attackerColor,
+      depthRemaining: node.depthRemaining - 1,
+    }), nextPath);
     const withMove = child.move === null ? verdict : prependMove(child.move, verdict);
     if (withMove.kind === 'survival') return withMove;
     if (withMove.kind === 'ko' || withMove.kind === 'unknown') unknowns.push(withMove);
     if (withMove.kind === 'kill' && representativeKill === null) representativeKill = withMove;
   }
-
   if (unknowns.length > 0) return chooseUnknown(unknowns);
   return representativeKill ?? unknown('boundary');
 };
 
-export const readTacticalCapture = (
+const searchAsync = async (
+  runtime: SearchRuntime,
+  node: SearchNode,
+  path: ReadonlySet<string>,
+): Promise<SearchVerdict> => {
+  if (runtime.cooperativeCheckpoint && await runtime.cooperativeCheckpoint()) return unknown('budget');
+  const stopped = preNode(runtime);
+  if (stopped) return stopped;
+
+  const target = targetGroupAt(runtime, node.state);
+  if (!target) return kill();
+  if (connectsToSafeGroup(runtime, target)) return survival();
+  if (target.liberties.length > runtime.maxTargetLiberties) return unknown('boundary');
+  if (node.depthRemaining <= 0) return unknown('depth');
+
+  const key = stateKey(runtime, node);
+  if (path.has(key)) return unknown('cycle');
+  const nextPath = new Set(path);
+  nextPath.add(key);
+
+  if (node.mover === runtime.attackerColor) {
+    const unknowns: SearchVerdict[] = [];
+    const legalMoves: Array<Readonly<{ move: PointId; state: GameState; targetLiberties: number; captured: number }>> = [];
+    for (const move of attackerMoveCandidates(runtime, node.state, target)) {
+      if (runtime.shouldStop?.()) return unknown('budget');
+      const result = runtime.engine.placeStone(
+        freezeSearchState(node.state, node.mover), move, node.mover, { previousBoard: node.previousBoard },
+      );
+      if (!result.ok) continue;
+      const targetAfterMove = targetGroupAt(runtime, result.state);
+      legalMoves.push(Object.freeze({ move, state: result.state, targetLiberties: targetAfterMove?.liberties.length ?? -1, captured: result.captured.length }));
+    }
+    legalMoves.sort((left, right) =>
+      left.targetLiberties - right.targetLiberties || right.captured - left.captured || comparePoints(left.move, right.move));
+
+    for (const childMove of legalMoves) {
+      if (runtime.cooperativeCheckpoint && await runtime.cooperativeCheckpoint()) return unknown('budget');
+      if (runtime.shouldStop?.()) return unknown('budget');
+      const { move } = childMove;
+      const targetCaptured = targetGroupAt(runtime, childMove.state) === null;
+      if (targetCaptured) {
+        const koCheck = terminalCaptureKoCheck(runtime, node.state, childMove.state);
+        if (koCheck === 'budget') return unknown('budget');
+        if (koCheck === 'ko') { unknowns.push(prependMove(move, ko())); continue; }
+        return kill(Object.freeze([move]));
+      }
+      const child = await searchAsync(runtime, Object.freeze({
+        state: childMove.state,
+        previousBoard: node.state.board,
+        mover: runtime.targetColor,
+        depthRemaining: node.depthRemaining - 1,
+      }), nextPath);
+      if (child.kind === 'kill') return prependMove(move, child);
+      if (child.kind !== 'survival') unknowns.push(prependMove(move, child));
+    }
+    if (legalMoves.length === 0) return unknown('boundary');
+    return unknowns.length > 0 ? chooseUnknown(unknowns) : unknown('boundary');
+  }
+
+  const defenderChildren: Array<Readonly<{ move: PointId | null; state: GameState }>> = [];
+  if (target.liberties.length === 1) {
+    for (const move of atariSavingCandidates(runtime, node.state, target)) {
+      if (runtime.shouldStop?.()) return unknown('budget');
+      const result = runtime.engine.placeStone(
+        freezeSearchState(node.state, node.mover), move, node.mover, { previousBoard: node.previousBoard },
+      );
+      if (result.ok) defenderChildren.push(Object.freeze({ move, state: result.state }));
+    }
+    defenderChildren.push(Object.freeze({ move: null, state: node.state }));
+  } else {
+    const remainingChildBudget = Math.max(0, runtime.maxNodes - runtime.nodes);
+    const legalDefenses = allLegalDefenderMoves(runtime, node, remainingChildBudget);
+    if (!legalDefenses.complete) return unknown('budget');
+    for (const child of legalDefenses.children) defenderChildren.push(child);
+    defenderChildren.push(Object.freeze({ move: null, state: node.state }));
+  }
+
+  const unknowns: SearchVerdict[] = [];
+  let representativeKill: SearchVerdict | null = null;
+  for (const child of defenderChildren) {
+    if (runtime.cooperativeCheckpoint && await runtime.cooperativeCheckpoint()) return unknown('budget');
+    if (runtime.shouldStop?.()) return unknown('budget');
+    const verdict = await searchAsync(runtime, Object.freeze({
+      state: child.state,
+      previousBoard: node.state.board,
+      mover: runtime.attackerColor,
+      depthRemaining: node.depthRemaining - 1,
+    }), nextPath);
+    const withMove = child.move === null ? verdict : prependMove(child.move, verdict);
+    if (withMove.kind === 'survival') return withMove;
+    if (withMove.kind === 'ko' || withMove.kind === 'unknown') unknowns.push(withMove);
+    if (withMove.kind === 'kill' && representativeKill === null) representativeKill = withMove;
+  }
+  if (unknowns.length > 0) return chooseUnknown(unknowns);
+  return representativeKill ?? unknown('boundary');
+};
+
+const buildRuntime = (
   target: EndgameStoneString,
-  state: GameState,
   topology: Topology,
-  options: TacticalReaderOptions = {},
-): TacticalReadResult => {
-  const firstPlayer = options.firstPlayer ?? 'attacker';
+  options: TacticalReaderOptions,
+): Readonly<{ runtime: SearchRuntime | null; early: TacticalReadResult | null; maxDepth: number }> => {
   const maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH;
   const maxNodes = options.maxNodes ?? DEFAULT_MAX_NODES;
   const maxTargetLiberties = options.maxTargetLiberties ?? DEFAULT_MAX_TARGET_LIBERTIES;
   const maxTopologyPoints = options.maxTopologyPoints ?? DEFAULT_MAX_TOPOLOGY_POINTS;
-  if (!Number.isInteger(maxTopologyPoints) || maxTopologyPoints < 1) {
-    throw new RangeError('maxTopologyPoints must be a positive integer');
-  }
+  if (!Number.isInteger(maxTopologyPoints) || maxTopologyPoints < 1) throw new RangeError('maxTopologyPoints must be a positive integer');
 
   const crucialStones = Object.freeze([...target.points].sort(comparePoints));
   const sortedPoints = Object.freeze([...topology.points()].sort(comparePoints));
+  if (options.shouldStop?.()) {
+    return Object.freeze({ runtime: null, maxDepth, early: Object.freeze({
+      algorithm: TACTICAL_READER_ALGORITHM,
+      outcome: 'unknown-budget' as const,
+      crucialStones,
+      exploredNodes: 0,
+      maxDepth,
+      principalVariation: Object.freeze([]),
+      proofReason: 'shared analysis budget exhausted before tactical search preparation',
+    }) });
+  }
   if (sortedPoints.length > maxTopologyPoints) {
-    return Object.freeze({
+    return Object.freeze({ runtime: null, maxDepth, early: Object.freeze({
       algorithm: TACTICAL_READER_ALGORITHM,
       outcome: 'unknown-boundary' as const,
       crucialStones,
@@ -389,11 +451,11 @@ export const readTacticalCapture = (
       maxDepth,
       principalVariation: Object.freeze([]),
       proofReason: `topology size ${sortedPoints.length} exceeds the conservative tactical cost gate ${maxTopologyPoints}`,
-    });
+    }) });
   }
 
   const attackerColor = opponentOf(target.color);
-  const runtime: SearchRuntime = {
+  return Object.freeze({ runtime: {
     nodes: 0,
     maxNodes,
     maxTargetLiberties,
@@ -405,43 +467,26 @@ export const readTacticalCapture = (
     safeGroupPoints: new Set(options.safeGroupPoints ?? []),
     sortedPoints,
     shouldStop: options.shouldStop ?? null,
-  };
+    cooperativeCheckpoint: options.cooperativeCheckpoint ?? null,
+  }, early: null, maxDepth });
+};
 
-  const verdict = search(
-    runtime,
-    Object.freeze({
-      state: freezeSearchState(state, firstPlayer === 'attacker' ? attackerColor : target.color),
-      previousBoard: null,
-      mover: firstPlayer === 'attacker' ? attackerColor : target.color,
-      depthRemaining: maxDepth,
-    }),
-    new Set(),
-  );
-
+const finish = (runtime: SearchRuntime, maxDepth: number, verdict: SearchVerdict): TacticalReadResult => {
   const outcome: TacticalReadOutcome =
-    verdict.kind === 'kill'
-      ? 'proved-kill'
-      : verdict.kind === 'survival'
-        ? 'proved-survival'
-        : verdict.kind === 'ko'
-          ? 'ko-dependent'
-          : verdict.reason === 'budget'
-            ? 'unknown-budget'
-            : verdict.reason === 'boundary'
-              ? 'unknown-boundary'
-              : verdict.reason === 'cycle'
-                ? 'unknown-cycle'
+    verdict.kind === 'kill' ? 'proved-kill'
+      : verdict.kind === 'survival' ? 'proved-survival'
+        : verdict.kind === 'ko' ? 'ko-dependent'
+          : verdict.reason === 'budget' ? 'unknown-budget'
+            : verdict.reason === 'boundary' ? 'unknown-boundary'
+              : verdict.reason === 'cycle' ? 'unknown-cycle'
                 : 'unknown-depth';
-
-  const proofReason =
-    outcome === 'proved-kill'
-      ? 'all defender continuations required by the tactical proof lead to capture of the crucial stones'
-      : outcome === 'proved-survival'
-        ? 'the target connects to a proven-safe group'
-        : outcome === 'ko-dependent'
-          ? 'the capture line depends on an immediate-ko transition'
-          : outcome;
-
+  const proofReason = outcome === 'proved-kill'
+    ? 'all defender continuations required by the tactical proof lead to capture of the crucial stones'
+    : outcome === 'proved-survival'
+      ? 'the target connects to a proven-safe group'
+      : outcome === 'ko-dependent'
+        ? 'the capture line depends on an immediate-ko transition'
+        : outcome;
   return Object.freeze({
     algorithm: TACTICAL_READER_ALGORITHM,
     outcome,
@@ -451,4 +496,40 @@ export const readTacticalCapture = (
     principalVariation: Object.freeze([...verdict.pv]),
     proofReason,
   });
+};
+
+const rootNode = (runtime: SearchRuntime, state: GameState, firstPlayer: TacticalFirstPlayer, maxDepth: number): SearchNode =>
+  Object.freeze({
+    state: freezeSearchState(state, firstPlayer === 'attacker' ? runtime.attackerColor : runtime.targetColor),
+    previousBoard: null,
+    mover: firstPlayer === 'attacker' ? runtime.attackerColor : runtime.targetColor,
+    depthRemaining: maxDepth,
+  });
+
+export const readTacticalCapture = (
+  target: EndgameStoneString,
+  state: GameState,
+  topology: Topology,
+  options: TacticalReaderOptions = {},
+): TacticalReadResult => {
+  const firstPlayer = options.firstPlayer ?? 'attacker';
+  const built = buildRuntime(target, topology, options);
+  if (built.early) return built.early;
+  const runtime = built.runtime!;
+  return finish(runtime, built.maxDepth, search(runtime, rootNode(runtime, state, firstPlayer, built.maxDepth), new Set()));
+};
+
+/** Production cooperative variant with the same conservative proof semantics. */
+export const readTacticalCaptureAsync = async (
+  target: EndgameStoneString,
+  state: GameState,
+  topology: Topology,
+  options: TacticalReaderOptions = {},
+): Promise<TacticalReadResult> => {
+  const firstPlayer = options.firstPlayer ?? 'attacker';
+  const built = buildRuntime(target, topology, options);
+  if (built.early) return built.early;
+  const runtime = built.runtime!;
+  const verdict = await searchAsync(runtime, rootNode(runtime, state, firstPlayer, built.maxDepth), new Set());
+  return finish(runtime, built.maxDepth, verdict);
 };
