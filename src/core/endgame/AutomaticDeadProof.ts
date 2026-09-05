@@ -34,7 +34,8 @@ export type DeadVerificationResult =
         | 'extension-has-external-liberty'
         | 'extension-connects-friendly-group'
         | 'boundary-group-not-indexed'
-        | 'boundary-opponent-not-pass-alive';
+        | 'boundary-opponent-not-pass-alive'
+        | 'no-pass-alive-opponent-boundary';
     }>;
 
 export interface DeadVerificationContext {
@@ -76,10 +77,10 @@ export const generateDeadCandidates = (
  *
  * The candidate has exactly one current liberty. Filling that liberty cannot
  * save it when the point has no further empty neighbor, cannot connect to a
- * friendly group, and every opponent group whose removal could create a new
- * liberty is already Benson/pass-alive. Therefore any move away from the sole
- * liberty leaves the candidate immediately capturable, while filling the sole
- * liberty is a suicide/no-save move. Anything outside this proof is unresolved.
+ * friendly group, and every surrounding opponent group is already
+ * Benson/pass-alive. At least one such opponent boundary group is required;
+ * otherwise a one-eye group surrounded only by its own stones would be a false
+ * dead proof. Anything outside this proof is unresolved.
  */
 export const verifyDeadCandidate = (
   candidate: DeadCandidate,
@@ -129,6 +130,10 @@ export const verifyDeadCandidate = (
     }
     const rejected = inspectOccupiedBoundary(neighbor);
     if (rejected) return rejected;
+  }
+
+  if (boundaryOpponentKeys.size === 0) {
+    return Object.freeze({ proven: false, reason: 'no-pass-alive-opponent-boundary' });
   }
 
   for (const groupKey of boundaryOpponentKeys) {
