@@ -654,6 +654,48 @@ Scoring получает уже полностью разрешённую `Endga
 - строить dead/seki поверх узких candidate/verifier boundaries;
 - не импортировать neural model или rectangular game engine в authoritative domain core только ради 0.3.
 
+## 12.5. Final Proof Search runtime contract
+
+После conservative static structural pass `FinalProofSearch` получает только те logical groups, которые остались `unresolved`, и может изменить их automatic status только при завершённом proof. Отсутствие Benson/pass-alive proof само по себе никогда не означает `dead`.
+
+Production proof path остаётся topology-neutral и использует только authoritative logical board, `Topology` и существующий `GameEngine` для legal transitions. Отдельного Cube/Torus life-death engine, второго scorer или renderer-specific search path нет.
+
+Proof layers выполняются от дешёвых к дорогим:
+
+1. tactical forced-capture reader для low-liberty groups;
+2. построение bounded/certified `RelevanceZone`;
+3. локальный AND/OR life-and-death search внутри этой зоны с возрастающими node budgets.
+
+Automatic `dead` требует доказательства forced capture при обоих порядках первого локального хода: attacker-first и defender-first. Для kill proof defender/AND node обязан закрыть все legal continuations, необходимые для доказательства. Неполная enumeration не может считаться победой. Attacker/OR node может использовать selective candidate generation только потому, что найденная полностью доказанная ветка достаточна для kill, а отсутствие такой ветки возвращает `unknown`, а не survival.
+
+Любой из следующих исходов fail-closed в `unresolved`:
+
+- ko-dependent line;
+- открытая или несертифицированная locality boundary;
+- cycle;
+- depth, node или wall-clock exhaustion;
+- неполная enumeration/branch;
+- невозможность однозначно сохранить target/crucial group identity;
+- другой incomplete/unknown search outcome.
+
+`FinalProofSearch` обязан отказаться от automatic proof search целиком, если переданный group context или proposal не покрывает **ровно** все logical stone groups authoritative final board. Partial context не допускается как основание для статуса.
+
+Поиск работает на производных immutable search states. Он не мутирует authoritative final `GameState`, capture counters, move number, phase, history или final board position. Search evidence/diagnostics могут прикрепляться к `EndgameProposal` как renderer-independent metadata; `ScoringStrategy` эти evidence не читает и получает только итоговый resolved classification после review.
+
+Progress (`current group`, tier, explored nodes, elapsed time и т. п.) является только observable diagnostic/presentation signal. Он не является confidence score, не меняет proof semantics и не становится вторым источником session/domain state.
+
+Default production safety envelope:
+
+- soft wall-clock budget: `3000 ms`;
+- hard wall-clock budget: `4500 ms`;
+- global node budget: `60,000`;
+- maximum certified `RelevanceZone`: `96` logical points;
+- tactical budget: `300` nodes на каждый first-player order, targets до `3` liberties;
+- local life/death tiers: `300 → 1500 → 6000` nodes на каждый first-player order;
+- full-board tactical defender enumeration допускается только для topology до `128` logical points; на большем graph этот tier пропускается/fails closed и остаются certified local proof paths и manual fallback.
+
+Исчерпание любого budget уменьшает только automatic coverage и никогда не ослабляет требования доказательства. Benchmark measurements являются regression/operational evidence конкретного CI run и не заменяют эти correctness invariants.
+
 # 13. PresentationModel
 
 `PresentationModel` отделяет доменное/session state от конкретного способа рисования.
@@ -1090,7 +1132,12 @@ Storage adapter должен заменяться без изменения `Gam
 - полный review детерминированно создаёт `EndgameClassification`;
 - работу classifier через абстрактный `Topology` без renderer assumptions;
 - отсутствие изменения итогового scoring при одинаковом полном `EndgameClassification` независимо от того, какие statuses пришли automatic, а какие user;
-- доказуемые automatic statuses отдельно от heuristic/oracle candidates.
+- доказуемые automatic statuses отдельно от heuristic/oracle candidates;
+- Final Proof Search forced-resolution cases и conservative fallback при open boundary, ko, depth/node/deadline exhaustion или другом incomplete outcome;
+- fail-closed поведение при incomplete group/proposal context;
+- tactical regressions для low-liberty capture, multi-step capture, ladder, net, snapback и counter-capture defense;
+- topology-metamorphic эквивалентность применимых proof cases для Torus interior/wrap seam и Cube same-face/face-edge/multi-face groups;
+- benchmark/regression checks operational runtime envelope отдельно от correctness assertions: превышение budget не имеет права превращаться в guessed status.
 
 ## 19.7. Renderer contract tests
 
@@ -1455,6 +1502,9 @@ Oracle disagreement не означает автоматически bug GoCube.
 - запускать scoring на partial/incomplete endgame review;
 - выдавать unresolved classifier result за окончательный `EndgameClassification`;
 - считать probabilistic AI/oracle confidence доказательством alive/dead/seki без project verifier;
+- трактовать отсутствие Benson/pass-alive proof, exhaustion budget или incomplete Final Proof Search branch как `dead`/`alive`;
+- использовать неполную defender enumeration как доказательство forced kill;
+- запускать неограниченную full-board tactical defender enumeration на больших topology вместо bounded/fail-closed path;
 - делать внешний oracle или AlphaZero обязательной production dependency;
 - считать AlphaZero authoritative владельцем `GameState` или принимать от него готовую board occupancy вместо generated actions;
 - рисовать AlphaZero board напрямую в Renderer или мутировать `GameState` в обход `GameSession → GameEngine`;
@@ -1530,6 +1580,7 @@ Oracle disagreement не означает автоматически bug GoCube.
 - `History` владеет past/current/redo snapshots;
 - `EndgameClassifier` создаёт proposal, который может содержать unresolved groups;
 - deterministic structural proof решает только доказуемые statuses, а heuristic/oracle остаётся candidate/diagnostic без verifier;
+- bounded Final Proof Search может дополнительно resolve unresolved groups только через fail-closed tactical/local proofs и никогда не превращает exhaustion/unknown в status;
 - `EndgameReviewState` хранит partial/ручные решения до полного resolution;
 - только полный `EndgameClassification` передаётся в `ScoringStrategy`;
 - `ScoringStrategy` создаёт `FinalScore`;
