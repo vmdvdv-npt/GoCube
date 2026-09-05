@@ -165,8 +165,8 @@ const structuralTwoEyeReference = (
         if (
           point.row === 0 ||
           point.column === 0 ||
-          point.row === boardSize - 1 ||
-          point.column === boardSize - 1
+          point.row === position.boardSize - 1 ||
+          point.column === position.boardSize - 1
         ) {
           touchesBoardEdge = true;
         }
