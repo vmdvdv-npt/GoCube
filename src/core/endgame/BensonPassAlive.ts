@@ -58,6 +58,36 @@ const checkerFor = (options: BensonPassAliveOptions): (() => void) => {
   };
 };
 
+type BensonColorCache = Partial<Record<StoneColor, BensonPassAliveResult>>;
+const bensonCache = new WeakMap<object, WeakMap<object, BensonColorCache>>();
+
+const cachedBenson = (
+  board: BoardOccupancy,
+  topology: Topology,
+  color: StoneColor,
+): BensonPassAliveResult | null =>
+  bensonCache.get(board as object)?.get(topology as object)?.[color] ?? null;
+
+const cacheBenson = (
+  board: BoardOccupancy,
+  topology: Topology,
+  color: StoneColor,
+  result: BensonPassAliveResult,
+): BensonPassAliveResult => {
+  let byTopology = bensonCache.get(board as object);
+  if (!byTopology) {
+    byTopology = new WeakMap<object, BensonColorCache>();
+    bensonCache.set(board as object, byTopology);
+  }
+  let byColor = byTopology.get(topology as object);
+  if (!byColor) {
+    byColor = {};
+    byTopology.set(topology as object, byColor);
+  }
+  byColor[color] = result;
+  return result;
+};
+
 /**
  * KataGo Rules v3 / Board::calculateAreaForPla compatible region construction
  * for GoCube's suicide-illegal rules: maximal non-color regions include empty
@@ -162,6 +192,10 @@ export const proveBensonPassAlive = (
   options: BensonPassAliveOptions = {},
 ): BensonPassAliveResult => {
   const checkpoint = checkerFor(options);
+  checkpoint();
+  const previous = cachedBenson(board, topology, color);
+  if (previous) return previous;
+
   const regions = buildBensonColorRegions(board, topology, graph, color, options);
   const regionsByKey = new Map(regions.map((region) => [region.key, region] as const));
   const remainingGroups = new Set(
@@ -216,7 +250,12 @@ export const proveBensonPassAlive = (
   }
 
   checkpoint();
-  return Object.freeze({ color, regions, aliveGroups, iterations });
+  return cacheBenson(
+    board,
+    topology,
+    color,
+    Object.freeze({ color, regions, aliveGroups, iterations }),
+  );
 };
 
 export const tryProveBensonPassAlive = (
