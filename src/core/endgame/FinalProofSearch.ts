@@ -25,6 +25,7 @@ export const DEFAULT_FINAL_PROOF_SEARCH_BUDGET: FinalProofSearchBudget = Object.
 
 export type FinalProofSearchStopReason =
   | 'complete'
+  | 'incomplete-context'
   | 'soft-time-budget'
   | 'hard-time-budget'
   | 'global-node-budget';
@@ -178,6 +179,15 @@ const candidateOrder = (left: Candidate, right: Candidate): number =>
   left.group.points.length - right.group.points.length ||
   (left.group.key < right.group.key ? -1 : left.group.key > right.group.key ? 1 : 0);
 
+const coversGraphExactly = (
+  groups: readonly (readonly string[])[],
+  graphKeys: ReadonlySet<string>,
+): boolean => {
+  if (groups.length !== graphKeys.size) return false;
+  const keys = groups.map((points) => endgameGroupId(points));
+  return new Set(keys).size === keys.length && keys.every((key) => graphKeys.has(key));
+};
+
 export const runFinalProofSearch = async (
   context: EndgameAnalysisContext,
   staticProposal: EndgameProposal,
@@ -189,8 +199,39 @@ export const runFinalProofSearch = async (
   const hardDeadlineReached = (): boolean => now() - started >= budget.hardWallClockMilliseconds;
   const graph = buildEndgameStaticGraph(context.state.board, context.topology);
   const output: EndgameGroupProposal[] = staticProposal.map((group) => group);
-  const candidates: Candidate[] = [];
+  const graphKeys = new Set(graph.strings.map((group) => group.key));
+  const totalStaticUnresolved = staticProposal.filter((group) => group.status === 'unresolved').length;
 
+  if (
+    !coversGraphExactly(context.groups, graphKeys) ||
+    !coversGraphExactly(staticProposal.map((group) => group.points), graphKeys)
+  ) {
+    const diagnostics: FinalProofSearchDiagnostics = Object.freeze({
+      algorithm: FINAL_PROOF_SEARCH_ALGORITHM,
+      totalUnresolvedGroups: totalStaticUnresolved,
+      completedGroups: 0,
+      resolvedAutomatically: 0,
+      remainingUnresolved: totalStaticUnresolved,
+      currentGroupKey: null,
+      currentTier: 0,
+      exploredNodes: 0,
+      elapsedMilliseconds: Math.max(0, now() - started),
+      stopReason: 'incomplete-context',
+      attempts: 0,
+      outcomes: Object.freeze({
+        alive: 0,
+        dead: 0,
+        unresolvedBudget: 0,
+        unresolvedBoundary: 0,
+        koDependent: 0,
+        unresolvedOther: totalStaticUnresolved,
+      }),
+    });
+    options.onProgress?.(diagnostics);
+    return Object.freeze({ proposal: Object.freeze(output), diagnostics });
+  }
+
+  const candidates: Candidate[] = [];
   for (let index = 0; index < staticProposal.length; index += 1) {
     const proposal = staticProposal[index]!;
     if (proposal.status !== 'unresolved') continue;
