@@ -50,6 +50,16 @@ export interface AndOrSearchOptions {
   readonly shouldStop?: () => boolean;
 }
 
+export interface AndOrAsyncSearchOptions extends AndOrSearchOptions {
+  /**
+   * Request-scoped cooperative checkpoint. It may yield to the event loop and
+   * returns true when the shared analysis must stop. The async search calls it
+   * at node/branch boundaries; individual adapter expansions remain bounded by
+   * the reader's certified local zone.
+   */
+  readonly cooperativeCheckpoint?: () => Promise<boolean>;
+}
+
 export interface AndOrSearchResult {
   readonly algorithm: typeof AND_OR_SEARCH_ALGORITHM;
   readonly outcome: AndOrSearchOutcome;
@@ -64,6 +74,7 @@ interface SearchRuntime<State> {
   readonly adapter: AndOrSearchAdapter<State>;
   readonly maxNodes: number;
   readonly shouldStop: () => boolean;
+  readonly cooperativeCheckpoint: (() => Promise<boolean>) | null;
   exploredNodes: number;
   transpositionHits: number;
   maxDepth: number;
@@ -192,25 +203,95 @@ const search = <State>(
   return resolvedVerdict(runtime, cacheKey, nodeKey, nodeType, 'proved', 'expanded', traceChildren);
 };
 
-export const runAndOrSearch = <State>(
-  root: State,
+const searchAsync = async <State>(
+  runtime: SearchRuntime<State>,
+  state: State,
+  activePath: ReadonlySet<string>,
+  depth: number,
+): Promise<SearchVerdict> => {
+  runtime.maxDepth = Math.max(runtime.maxDepth, depth);
+  const nodeKey = runtime.adapter.stateKey(state);
+  const nodeType = runtime.adapter.nodeType(state);
+  const cacheKey = cacheKeyFor(nodeType, nodeKey);
+  const cached = runtime.transposition.get(cacheKey);
+
+  if (cached) {
+    runtime.transpositionHits += 1;
+    return Object.freeze({ outcome: cached, unknownReason: null, trace: leafTrace(nodeKey, nodeType, cached, null, 'transposition') });
+  }
+  if (activePath.has(cacheKey)) return unknownVerdict(nodeKey, nodeType, 'cycle', 'cycle');
+  if (runtime.exploredNodes >= runtime.maxNodes || runtime.shouldStop()) {
+    return unknownVerdict(nodeKey, nodeType, 'budget', 'budget');
+  }
+  if (runtime.cooperativeCheckpoint && await runtime.cooperativeCheckpoint()) {
+    return unknownVerdict(nodeKey, nodeType, 'budget', 'budget');
+  }
+  runtime.exploredNodes += 1;
+
+  const terminal = runtime.adapter.terminal(state);
+  if (terminal) return resolvedVerdict(runtime, cacheKey, nodeKey, nodeType, terminal, 'terminal');
+  if (runtime.shouldStop()) return unknownVerdict(nodeKey, nodeType, 'budget', 'budget');
+
+  const expansion = runtime.adapter.expand(state);
+  const nextPath = new Set(activePath);
+  nextPath.add(cacheKey);
+  const traceChildren: AndOrProofTraceChild[] = [];
+  const unknownReasons: AndOrUnknownReason[] = [];
+
+  if (nodeType === 'or') {
+    for (const child of expansion.children) {
+      if (runtime.shouldStop()) {
+        unknownReasons.push('budget');
+        break;
+      }
+      const verdict = await searchAsync(runtime, child.state, nextPath, depth + 1);
+      traceChildren.push(freezeTraceChild(child.move, verdict));
+      if (verdict.outcome === 'proved') return resolvedVerdict(runtime, cacheKey, nodeKey, nodeType, 'proved', 'expanded', traceChildren);
+      if (verdict.outcome === 'unknown' && verdict.unknownReason) unknownReasons.push(verdict.unknownReason);
+    }
+    if (!expansion.complete) unknownReasons.push('incomplete');
+    if (unknownReasons.length > 0) return unknownVerdict(nodeKey, nodeType, selectUnknownReason(unknownReasons), 'expanded', traceChildren);
+    return resolvedVerdict(runtime, cacheKey, nodeKey, nodeType, 'refuted', 'expanded', traceChildren);
+  }
+
+  for (const child of expansion.children) {
+    if (runtime.shouldStop()) {
+      unknownReasons.push('budget');
+      break;
+    }
+    const verdict = await searchAsync(runtime, child.state, nextPath, depth + 1);
+    traceChildren.push(freezeTraceChild(child.move, verdict));
+    if (verdict.outcome === 'refuted') return resolvedVerdict(runtime, cacheKey, nodeKey, nodeType, 'refuted', 'expanded', traceChildren);
+    if (verdict.outcome === 'unknown' && verdict.unknownReason) unknownReasons.push(verdict.unknownReason);
+  }
+  if (!expansion.complete) unknownReasons.push('incomplete');
+  if (unknownReasons.length > 0) return unknownVerdict(nodeKey, nodeType, selectUnknownReason(unknownReasons), 'expanded', traceChildren);
+  return resolvedVerdict(runtime, cacheKey, nodeKey, nodeType, 'proved', 'expanded', traceChildren);
+};
+
+const createRuntime = <State>(
   adapter: AndOrSearchAdapter<State>,
   options: AndOrSearchOptions,
-): AndOrSearchResult => {
-  if (!Number.isInteger(options.maxNodes) || options.maxNodes < 0) {
+  cooperativeCheckpoint: (() => Promise<boolean>) | null,
+): SearchRuntime<State> => ({
+  adapter,
+  maxNodes: options.maxNodes,
+  shouldStop: options.shouldStop ?? (() => false),
+  cooperativeCheckpoint,
+  exploredNodes: 0,
+  transpositionHits: 0,
+  maxDepth: 0,
+  transposition: new Map(),
+});
+
+const assertMaxNodes = (maxNodes: number): void => {
+  if (!Number.isInteger(maxNodes) || maxNodes < 0) {
     throw new RangeError('maxNodes must be a non-negative integer');
   }
-  const runtime: SearchRuntime<State> = {
-    adapter,
-    maxNodes: options.maxNodes,
-    shouldStop: options.shouldStop ?? (() => false),
-    exploredNodes: 0,
-    transpositionHits: 0,
-    maxDepth: 0,
-    transposition: new Map(),
-  };
-  const verdict = search(runtime, root, new Set(), 0);
-  return Object.freeze({
+};
+
+const resultFor = <State>(runtime: SearchRuntime<State>, verdict: SearchVerdict): AndOrSearchResult =>
+  Object.freeze({
     algorithm: AND_OR_SEARCH_ALGORITHM,
     outcome: verdict.outcome,
     unknownReason: verdict.unknownReason,
@@ -219,4 +300,25 @@ export const runAndOrSearch = <State>(
     maxDepth: runtime.maxDepth,
     trace: verdict.trace,
   });
+
+export const runAndOrSearch = <State>(
+  root: State,
+  adapter: AndOrSearchAdapter<State>,
+  options: AndOrSearchOptions,
+): AndOrSearchResult => {
+  assertMaxNodes(options.maxNodes);
+  const runtime = createRuntime(adapter, options, null);
+  return resultFor(runtime, search(runtime, root, new Set(), 0));
+};
+
+/** Same proof semantics as runAndOrSearch, with host-event-loop checkpoints. */
+export const runAndOrSearchAsync = async <State>(
+  root: State,
+  adapter: AndOrSearchAdapter<State>,
+  options: AndOrAsyncSearchOptions,
+): Promise<AndOrSearchResult> => {
+  assertMaxNodes(options.maxNodes);
+  const runtime = createRuntime(adapter, options, options.cooperativeCheckpoint ?? null);
+  const verdict = await searchAsync(runtime, root, new Set(), 0);
+  return resultFor(runtime, verdict);
 };
