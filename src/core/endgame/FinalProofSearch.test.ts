@@ -62,7 +62,7 @@ describe('FinalProofSearch scheduler', () => {
 
     expect(result.proposal[targetIndex]?.status).toBe('dead');
     expect(result.proposal[targetIndex]?.evidence).toMatchObject({
-      algorithm: 'final-proof-search-v1',
+      algorithm: 'final-proof-search-v2',
       proof: 'proved-dead',
       reader: 'tactical-forced-capture-v1',
       firstPlayerOrders: { attackerFirst: 'proved-kill', defenderFirst: 'proved-kill' },
