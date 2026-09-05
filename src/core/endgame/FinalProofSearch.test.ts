@@ -52,11 +52,11 @@ const deadFixture = () => {
 };
 
 describe('FinalProofSearch scheduler', () => {
-  it('resolves a locally forced death and stores auditable proof evidence', () => {
+  it('resolves a locally forced death and stores auditable proof evidence', async () => {
     const { topology, state } = deadFixture();
     const [context, proposal] = contextAndProposal(topology, state);
     const targetIndex = proposal.findIndex((group) => group.points.includes('t'));
-    const result = runFinalProofSearch(context, proposal, {
+    const result = await runFinalProofSearch(context, proposal, {
       budget: { tierNodeBudgets: [300], maxGlobalNodes: 2_000 },
     });
 
@@ -69,32 +69,32 @@ describe('FinalProofSearch scheduler', () => {
     expect(result.diagnostics.resolvedAutomatically).toBeGreaterThan(0);
   });
 
-  it('never mutates the authoritative final position, captures, phase, or move metadata', () => {
+  it('never mutates the authoritative final position, captures, phase, or move metadata', async () => {
     const { topology, state } = deadFixture();
     const [context, proposal] = contextAndProposal(topology, state);
     const before = JSON.stringify(state);
-    runFinalProofSearch(context, proposal, { budget: { tierNodeBudgets: [300], maxGlobalNodes: 2_000 } });
+    await runFinalProofSearch(context, proposal, { budget: { tierNodeBudgets: [300], maxGlobalNodes: 2_000 } });
     expect(JSON.stringify(state)).toBe(before);
     expect(state.phase).toBe('endgame');
     expect(state.moveNumber).toBe(42);
     expect(state.captures).toEqual({ black: 3, white: 2 });
   });
 
-  it('turns global node exhaustion into unresolved rather than a guessed status', () => {
+  it('turns global node exhaustion into unresolved rather than a guessed status', async () => {
     const { topology, state } = deadFixture();
     const [context, proposal] = contextAndProposal(topology, state);
-    const result = runFinalProofSearch(context, proposal, {
+    const result = await runFinalProofSearch(context, proposal, {
       budget: { tierNodeBudgets: [300, 1500], maxGlobalNodes: 0 },
     });
     expect(result.proposal.some((group) => group.status === 'unresolved')).toBe(true);
     expect(result.diagnostics.stopReason).toBe('global-node-budget');
   });
 
-  it('reports monotonic progress snapshots without affecting correctness', () => {
+  it('reports monotonic progress snapshots without affecting correctness', async () => {
     const { topology, state } = deadFixture();
     const [context, proposal] = contextAndProposal(topology, state);
     const snapshots: number[] = [];
-    runFinalProofSearch(context, proposal, {
+    await runFinalProofSearch(context, proposal, {
       budget: { tierNodeBudgets: [50, 300], maxGlobalNodes: 2_000 },
       onProgress: (progress) => snapshots.push(progress.exploredNodes),
     });
@@ -102,11 +102,11 @@ describe('FinalProofSearch scheduler', () => {
     expect(snapshots).toEqual([...snapshots].sort((a, b) => a - b));
   });
 
-  it('fails closed when locality covers the whole graph', () => {
+  it('fails closed when locality covers the whole graph', async () => {
     const topology = new GraphTopology('final-proof-open', [['t', 'a'], ['a', 'b'], ['b', 'c']]);
     const state = stateFor(topology, { t: 'white' });
     const [context, proposal] = contextAndProposal(topology, state);
-    const result = runFinalProofSearch(context, proposal);
+    const result = await runFinalProofSearch(context, proposal);
     expect(result.proposal[0]?.status).toBe('unresolved');
     expect(result.diagnostics.outcomes.unresolvedBoundary).toBe(1);
   });
