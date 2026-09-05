@@ -96,15 +96,42 @@ test('rapid Torus navigation ignores extra arrows and keeps sidebar actions avai
   await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
 
   const board = page.locator('.torus-board');
-  const shiftRight = page.getByRole('button', { name: 'Shift torus view right' });
   const shiftDown = page.getByRole('button', { name: 'Shift torus view down' });
 
-  await shiftRight.click();
-  await expect(board).toHaveAttribute('data-pan-animating', 'true');
-  // Issue the extra command only after the first animation is observably active.
-  // Canonical behavior is to ignore it, not queue it.
-  await shiftDown.click();
-  await expect(board).toHaveAttribute('data-pan-direction', 'right');
+  // Dispatch both commands in one browser task so the second command is guaranteed to
+  // arrive while the first 240 ms animation is active. Using two Playwright click()
+  // calls here is racy on WebKit because actionability work can outlive the animation.
+  const rapidSnapshot = await page.evaluate(() => {
+    const boardElement = document.querySelector<SVGSVGElement>('.torus-board');
+    const shiftRight = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Shift torus view right"]',
+    );
+    const shiftDownButton = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Shift torus view down"]',
+    );
+    if (!boardElement || !shiftRight || !shiftDownButton) {
+      throw new Error('Torus board controls are missing');
+    }
+
+    shiftRight.click();
+    const startedAnimating = boardElement.getAttribute('data-pan-animating');
+    const startedDirection = boardElement.getAttribute('data-pan-direction');
+
+    // Canonical behavior is to ignore an extra command while animating, not queue it.
+    shiftDownButton.click();
+
+    return {
+      startedAnimating,
+      startedDirection,
+      animatingAfterExtra: boardElement.getAttribute('data-pan-animating'),
+      directionAfterExtra: boardElement.getAttribute('data-pan-direction'),
+    };
+  });
+
+  expect(rapidSnapshot.startedAnimating).toBe('true');
+  expect(rapidSnapshot.startedDirection).toBe('right');
+  expect(rapidSnapshot.animatingAfterExtra).toBe('true');
+  expect(rapidSnapshot.directionAfterExtra).toBe('right');
   await expect(page.getByRole('button', { name: /Pass/ })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Redo' })).toBeDisabled();
