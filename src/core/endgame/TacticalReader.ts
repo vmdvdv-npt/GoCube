@@ -20,6 +20,7 @@ export interface TacticalReaderOptions {
   readonly maxDepth?: number;
   readonly maxNodes?: number;
   readonly maxTargetLiberties?: number;
+  readonly maxTopologyPoints?: number;
   readonly safeGroupPoints?: readonly PointId[];
   readonly shouldStop?: () => boolean;
 }
@@ -37,6 +38,7 @@ export interface TacticalReadResult {
 const DEFAULT_MAX_DEPTH = 8;
 const DEFAULT_MAX_NODES = 2_500;
 const DEFAULT_MAX_TARGET_LIBERTIES = 3;
+const DEFAULT_MAX_TOPOLOGY_POINTS = 128;
 
 const opponentOf = (color: StoneColor): StoneColor =>
   color === 'black' ? 'white' : 'black';
@@ -371,6 +373,25 @@ export const readTacticalCapture = (
   const maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH;
   const maxNodes = options.maxNodes ?? DEFAULT_MAX_NODES;
   const maxTargetLiberties = options.maxTargetLiberties ?? DEFAULT_MAX_TARGET_LIBERTIES;
+  const maxTopologyPoints = options.maxTopologyPoints ?? DEFAULT_MAX_TOPOLOGY_POINTS;
+  if (!Number.isInteger(maxTopologyPoints) || maxTopologyPoints < 1) {
+    throw new RangeError('maxTopologyPoints must be a positive integer');
+  }
+
+  const crucialStones = Object.freeze([...target.points].sort(comparePoints));
+  const sortedPoints = Object.freeze([...topology.points()].sort(comparePoints));
+  if (sortedPoints.length > maxTopologyPoints) {
+    return Object.freeze({
+      algorithm: TACTICAL_READER_ALGORITHM,
+      outcome: 'unknown-boundary' as const,
+      crucialStones,
+      exploredNodes: 0,
+      maxDepth,
+      principalVariation: Object.freeze([]),
+      proofReason: `topology size ${sortedPoints.length} exceeds the conservative tactical cost gate ${maxTopologyPoints}`,
+    });
+  }
+
   const attackerColor = opponentOf(target.color);
   const runtime: SearchRuntime = {
     nodes: 0,
@@ -380,9 +401,9 @@ export const readTacticalCapture = (
     topology,
     targetColor: target.color,
     attackerColor,
-    crucialStones: Object.freeze([...target.points].sort(comparePoints)),
+    crucialStones,
     safeGroupPoints: new Set(options.safeGroupPoints ?? []),
-    sortedPoints: Object.freeze([...topology.points()].sort(comparePoints)),
+    sortedPoints,
     shouldStop: options.shouldStop ?? null,
   };
 
