@@ -1518,3 +1518,93 @@ rewrite a permissive implementation around project contracts
 - **`rlglab/study-LD-RZ` и аналогичные Relevance-Zone research repositories без permissive license** — идеи из опубликованных papers можно реализовывать самостоятельно, но их repository code не рассматривается для адаптации без явного лицензионного разрешения.
 
 Исключение из shortlist не запрещает использовать публичные papers, наблюдаемое поведение или отдельный внешний executable как research/oracle source там, где это разрешено и полезно. Оно означает только, что такой проект **не участвует в сравнении кандидатов на перенос кода в GoCube**.
+---
+
+# 39. KataGo-style Final Group Judge V1 — main production decision (2026-09-05)
+
+Для текущего `main` принят отдельный статический production-level Final Group Judge V1. Это намеренно более узкий correctness boundary, чем ранее исследованный search-oriented план: после второго последовательного `PASS` автоматический proposal строится только из rule-side доказательств; tactical search, minimax, MCTS, NN и backend в V1 не участвуют.
+
+Нормативный reference для этой работы:
+
+- KataGo Rules Version **3**;
+- repository `lightvector/KataGo`;
+- exact reference commit **`f6bc4b19a1686caa2d088b56251e8c11c8be6d51`**;
+- relevant implementation reference: `Board::calculateAreaForPla()` в `cpp/game/board.cpp`.
+
+## 39.1. Production pipeline V1
+
+```text
+build all stone groups
+    ↓
+build connected empty regions for diagnostics/structural graph
+    ↓
+KataGo/Benson pass-alive for black + white
+    ↓
+KataGo pass-alive territory
+    ↓
+proven dead
+    ↓
+strict proven seki
+    ↓
+everything else = unresolved
+```
+
+`AssistedEndgameClassifier` в V1 обязан возвращать automatic status только после статического certificate. Failed proof никогда не превращается в противоположный статус. Если разные proof modules одновременно доказывают разные статусы одной группе, это correctness error, а не priority tie-break.
+
+## 39.2. KataGo/Benson semantics
+
+Для одного цвета Benson region строится как maximal connected **non-color** region, начатый с empty point и продолжающийся через empty points и opponent stones. Поскольку GoCube запрещает suicide, vitality region относительно friendly chain фильтруется только по **empty intersections** этого region — opponent stones участвуют в connectivity, но не снимают vitality сами по себе.
+
+Benson fixed point удаляет chain с менее чем двумя surviving vital regions и инвалидирует regions, граница которых после этого содержит non-pass-alive friendly chain. Surviving chains являются `alive` с proof `BENSON_PASS_ALIVE`/`two-vital-regions`.
+
+## 39.3. Pass-alive territory
+
+`PassAliveTerritory` воспроизводит unconditional pass-alive-territory branch KataGo `calculateAreaForPla`, а не эвристику «окружено живыми» и не `safeBigTerritories`/`unsafeBigTerritories`.
+
+Region принадлежит цвету в V1, если:
+
+- у цвета есть хотя бы один stone на board;
+- region имеет не более одной точки, не adjacent ни к одной friendly stone (`numInternalSpacesMax2 <= 1` в KataGo terminology);
+- ни одна friendly boundary chain этого region не была исключена Benson fixed point.
+
+Такая territory может включать opponent stones. Opponent stone group, все stones которой лежат внутри доказанной pass-alive territory другого цвета, получает `dead` certificate `group-inside-opponent-pass-alive-territory`.
+
+## 39.4. Supplemental strict certificates
+
+Существующий `AutomaticDeadProof` сохранён только как узкий дополнительный certificate. В ходе V1 hardening обнаружен и исправлен false-positive boundary: one-eye group могла считаться dead при отсутствии вообще какой-либо opponent pass-alive boundary. Теперь strict proof требует как минимум одну surrounding opponent group и требует, чтобы каждая такая group была Benson/pass-alive.
+
+Существующий `AutomaticSekiProof` остаётся единственным automatic seki certificate V1: closed mutual two-liberty structure. Любой более сложный или не доказанный seki остаётся `unresolved`.
+
+## 39.5. Topology and runtime boundary
+
+Все correctness traversals используют только `Topology.points()` и `Topology.neighbors(point)`. Planar edge/corner/exterior assumptions в production logic отсутствуют. Cube seam, cube vertex и Torus wraparound являются обычными graph adjacencies.
+
+Анализ выполняется client-side TypeScript только после перехода session в `endgame` после двух последовательных PASS. KataGo executable, Python, AlphaZero service, external API и Web Worker не требуются. Scoring formulas этой работой не меняются.
+
+## 39.6. Conformance and performance acceptance
+
+В CI используется test-only ordinary rectangular topology и frozen golden fixtures с exact KataGo Rules Version/commit metadata. Отдельно проверяются one-eye/false-positive boundaries, multi-chain Benson, opponent stones in pass-alive territory, strict/non-proven seki, proof conflicts, Cube seam/multi-face behavior и Torus horizontal/vertical/double wraparound плюс отсутствие artificial exterior region.
+
+Browser diagnostic benchmark запускает тот же production analysis для:
+
+- Cube 4;
+- Cube 7 (максимальный размер Cube, доступный текущим UI);
+- Torus 9;
+- Torus 19.
+
+Он обязан сохранять `totalAnalysisMilliseconds`, `groupCount`, `emptyRegionCount`, Benson iteration counts и итоговые `alive/dead/seki/unresolved` counts. Web Worker добавляется только если фактический browser benchmark покажет заметный UI freeze.
+
+## 39.7. Measured browser benchmark
+
+Full GitHub Actions CI run `33962358198` executed the browser benchmark in all three Playwright browser projects. Structural results were deterministic across the three runs; measured wall-clock analysis times varied by browser/runtime as expected.
+
+| Topology | Logical points | Groups | Empty regions | Benson iterations (B/W) | Status counts | Analysis ms across 3 browser runs |
+|---|---:|---:|---:|---:|---|---|
+| Cube 4 | 96 | 21 | 12 | 4 (2/2) | alive 0 / dead 0 / seki 0 / unresolved 21 | 4.70 / 6 / 10 |
+| Cube 7 | 294 | 235 | 3 | 4 (2/2) | alive 0 / dead 0 / seki 0 / unresolved 235 | 6.20 / 9 / 16 |
+| Torus 9 | 81 | 57 | 12 | 5 (2/3) | alive 0 / dead 0 / seki 0 / unresolved 57 | 1.90 / 4 / 4 |
+| Torus 19 | 361 | 283 | 52 | 6 (3/3) | alive 0 / dead 0 / seki 0 / unresolved 283 | 6.90 / 11 / 20 |
+
+Maximum observed V1 analysis time in this CI sample was **20 ms** on Torus 19. This does not justify adding a Web Worker for V1; the worker remains deferred unless later real-position profiling shows a materially larger UI stall.
+
+The benchmark boards are deterministic synthetic stress inputs for runtime/diagnostics, not life/death quality fixtures; therefore their all-`unresolved` result is expected and is not used as a correctness oracle.

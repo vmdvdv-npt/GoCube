@@ -7,301 +7,319 @@ import {
   generateDeadCandidates,
   verifyDeadCandidate,
   type AutomaticDeadProof,
-  type DeadAnalysisGroup,
 } from './AutomaticDeadProof';
 import {
   generateSekiCandidates,
   verifySekiCandidate,
   type AutomaticSekiProof,
 } from './AutomaticSekiProof';
+import {
+  BENSON_PASS_ALIVE_ALGORITHM,
+  KATAGO_REFERENCE_COMMIT,
+  KATAGO_RULES_VERSION,
+  proveBensonPassAlive,
+  type BensonColorRegion,
+} from './BensonPassAlive';
+import { buildEndgameStaticGraph, type EndgameStaticGraph } from './EndgameStaticGraph';
 import { endgameGroupId } from './EndgameGroupIdentity';
 import { ManualEndgameClassifier } from './ManualEndgameClassifier';
+import {
+  PASS_ALIVE_TERRITORY_ALGORITHM,
+  buildPassAliveTerritory,
+  type PassAliveTerritoryResult,
+} from './PassAliveTerritory';
 import type { StoneColor } from '../game/types';
-import type { PointId } from '../topology/Topology';
-
-interface GroupInfo extends DeadAnalysisGroup {}
-
-interface EmptyRegion {
-  readonly key: string;
-  readonly points: readonly PointId[];
-  readonly boundaryGroups: readonly string[];
-  readonly vitalGroups: readonly string[];
-}
-
-interface GroupIndex {
-  readonly byKey: ReadonlyMap<string, GroupInfo>;
-  readonly pointOwner: ReadonlyMap<PointId, string>;
-  readonly complete: boolean;
-}
 
 const COLORS: readonly StoneColor[] = Object.freeze(['black', 'white']);
-const ALIVE_ALGORITHM = 'benson-pass-alive-v1';
+export const PASS_ALIVE_TERRITORY_DEAD_ALGORITHM =
+  'katago-pass-alive-territory-dead-v1';
 
-/**
- * Conservative assisted classifier.
- *
- * It proves unconditional/pass-alive groups using Benson's fixed-point
- * criterion, sends only narrow single-liberty dead candidates through a
- * separate strict verifier, and resolves seki only for a closed mutual
- * two-liberty proof. Any group not proven by one of those boundaries remains
- * unresolved.
- */
-export class AssistedEndgameClassifier implements EndgameClassifier {
-  private readonly manual = new ManualEndgameClassifier();
-
-  async analyze(context: EndgameAnalysisContext): Promise<EndgameProposal> {
-    const baseline = await this.manual.analyze(context);
-    const groupIndex = indexGroups(context, baseline);
-
-    // Automatic proof is only sound when the analysis context describes every
-    // stone on the logical board. A partial context remains safely unresolved.
-    if (!groupIndex.complete) return baseline;
-
-    const regions = collectEmptyRegions(context, groupIndex.pointOwner);
-    const aliveProofs = new Map<string, readonly EmptyRegion[]>();
-
-    for (const color of COLORS) {
-      for (const [groupKey, vitalRegions] of provePassAlive(
-        color,
-        groupIndex.byKey,
-        regions,
-      )) {
-        aliveProofs.set(groupKey, vitalRegions);
-      }
-    }
-
-    const passAliveGroupKeys = new Set(aliveProofs.keys());
-    const deadProofs = new Map<string, AutomaticDeadProof>();
-    for (const candidate of generateDeadCandidates(groupIndex.byKey, passAliveGroupKeys)) {
-      const verification = verifyDeadCandidate(candidate, {
-        state: context.state,
-        topology: context.topology,
-        groups: groupIndex.byKey,
-        pointOwner: groupIndex.pointOwner,
-        passAliveGroupKeys,
-      });
-      if (verification.proven) deadProofs.set(candidate.groupKey, verification.evidence);
-    }
-
-    const alreadyResolvedGroupKeys = new Set<string>([
-      ...passAliveGroupKeys,
-      ...deadProofs.keys(),
-    ]);
-    const sekiProofs = new Map<string, AutomaticSekiProof>();
-    for (const candidate of generateSekiCandidates(
-      groupIndex.byKey,
-      alreadyResolvedGroupKeys,
-    )) {
-      const verification = verifySekiCandidate(candidate, {
-        state: context.state,
-        topology: context.topology,
-        groups: groupIndex.byKey,
-        pointOwner: groupIndex.pointOwner,
-      });
-      if (!verification.proven) continue;
-      for (const groupKey of candidate.groupKeys) {
-        sekiProofs.set(groupKey, verification.evidence);
-      }
-    }
-
-    return Object.freeze(
-      baseline.map((proposal) => {
-        const groupKey = endgameGroupId(proposal.points);
-        const vitalRegions = aliveProofs.get(groupKey);
-        if (vitalRegions) {
-          return Object.freeze({
-            points: proposal.points,
-            status: 'alive' as const,
-            source: 'automatic' as const,
-            evidence: Object.freeze({
-              algorithm: ALIVE_ALGORITHM,
-              proof: 'two-vital-regions',
-              vitalRegions: Object.freeze(vitalRegions.map((region) => region.points)),
-            }),
-          });
-        }
-
-        const deadProof = deadProofs.get(groupKey);
-        if (deadProof) {
-          return Object.freeze({
-            points: proposal.points,
-            status: 'dead' as const,
-            source: 'automatic' as const,
-            evidence: Object.freeze({ ...deadProof }),
-          });
-        }
-
-        const sekiProof = sekiProofs.get(groupKey);
-        if (sekiProof) {
-          return Object.freeze({
-            points: proposal.points,
-            status: 'seki' as const,
-            source: 'automatic' as const,
-            evidence: Object.freeze({ ...sekiProof }),
-          });
-        }
-
-        return proposal;
-      }),
-    );
-  }
+export interface FinalGroupJudgeDiagnostics {
+  readonly totalAnalysisMilliseconds: number;
+  readonly groupCount: number;
+  readonly emptyRegionCount: number;
+  readonly bensonIterations: number;
+  readonly bensonIterationsByColor: Readonly<{ black: number; white: number }>;
+  readonly counts: Readonly<{
+    alive: number;
+    dead: number;
+    seki: number;
+    unresolved: number;
+  }>;
 }
 
-const indexGroups = (
-  context: EndgameAnalysisContext,
+export interface FinalGroupJudgeAnalysis {
+  readonly proposal: EndgameProposal;
+  readonly diagnostics: FinalGroupJudgeDiagnostics;
+  readonly passAliveTerritory: PassAliveTerritoryResult;
+}
+
+interface TerritoryDeadProof extends Readonly<Record<string, unknown>> {
+  readonly algorithm: typeof PASS_ALIVE_TERRITORY_DEAD_ALGORITHM;
+  readonly proof: 'group-inside-opponent-pass-alive-territory';
+  readonly territoryAlgorithm: typeof PASS_ALIVE_TERRITORY_ALGORITHM;
+  readonly territoryOwner: StoneColor;
+  readonly territoryRegionKeys: readonly string[];
+  readonly kataGoRulesVersion: typeof KATAGO_RULES_VERSION;
+  readonly kataGoCommit: typeof KATAGO_REFERENCE_COMMIT;
+}
+
+const nowMilliseconds = (): number =>
+  typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+
+const opponentOf = (color: StoneColor): StoneColor =>
+  color === 'black' ? 'white' : 'black';
+
+const emptyTerritoryResult = (): PassAliveTerritoryResult =>
+  Object.freeze({
+    algorithm: PASS_ALIVE_TERRITORY_ALGORITHM,
+    kataGoRulesVersion: KATAGO_RULES_VERSION,
+    kataGoCommit: KATAGO_REFERENCE_COMMIT,
+    black: Object.freeze([]),
+    white: Object.freeze([]),
+    ownerByPoint: new Map(),
+    regions: Object.freeze([]),
+  });
+
+const proposalCounts = (proposal: EndgameProposal) => {
+  let alive = 0;
+  let dead = 0;
+  let seki = 0;
+  let unresolved = 0;
+  for (const group of proposal) {
+    if (group.status === 'alive') alive += 1;
+    else if (group.status === 'dead') dead += 1;
+    else if (group.status === 'seki') seki += 1;
+    else unresolved += 1;
+  }
+  return Object.freeze({ alive, dead, seki, unresolved });
+};
+
+const assertCompleteContext = (
   baseline: EndgameProposal,
-): GroupIndex => {
-  const byKey = new Map<string, GroupInfo>();
-  const pointOwner = new Map<PointId, string>();
+  graph: EndgameStaticGraph,
+): boolean =>
+  baseline.length === graph.strings.length &&
+  baseline.every((proposal) => graph.stringsByKey.has(endgameGroupId(proposal.points)));
 
-  for (const proposal of baseline) {
-    const key = endgameGroupId(proposal.points);
-    const color = context.state.board[proposal.points[0]!];
-    if (color !== 'black' && color !== 'white') {
-      throw new Error(`Validated endgame group lost stone occupancy: ${proposal.points[0]}`);
-    }
+const territoryDeadProofForGroup = (
+  groupKey: string,
+  graph: EndgameStaticGraph,
+  territory: PassAliveTerritoryResult,
+): TerritoryDeadProof | null => {
+  const group = graph.stringsByKey.get(groupKey);
+  if (!group) throw new Error(`Missing endgame group: ${groupKey}`);
+  const owner = opponentOf(group.color);
 
-    const liberties = new Set<PointId>();
-    for (const point of proposal.points) {
-      for (const neighbor of context.topology.neighbors(point)) {
-        if (context.state.board[neighbor] === 'empty') liberties.add(neighbor);
-      }
-    }
-
-    const info: GroupInfo = Object.freeze({
-      key,
-      points: proposal.points,
-      color,
-      liberties: Object.freeze([...liberties].sort()),
-    });
-    byKey.set(key, info);
-    for (const point of proposal.points) pointOwner.set(point, key);
+  if (!group.points.every((point) => territory.ownerByPoint.get(point) === owner)) {
+    return null;
   }
 
-  let complete = true;
-  for (const point of context.topology.points()) {
-    const occupancy = context.state.board[point];
-    if ((occupancy === 'black' || occupancy === 'white') && !pointOwner.has(point)) {
-      complete = false;
-      break;
-    }
+  const regionKeys = territory.regions
+    .filter(
+      (region) =>
+        region.owner === owner &&
+        group.points.some((point) => region.points.includes(point)),
+    )
+    .map((region) => region.key)
+    .sort();
+
+  if (regionKeys.length === 0) {
+    throw new Error(`Pass-alive territory has no evidence region for dead group: ${groupKey}`);
   }
 
-  return Object.freeze({ byKey, pointOwner, complete });
+  return Object.freeze({
+    algorithm: PASS_ALIVE_TERRITORY_DEAD_ALGORITHM,
+    proof: 'group-inside-opponent-pass-alive-territory',
+    territoryAlgorithm: PASS_ALIVE_TERRITORY_ALGORITHM,
+    territoryOwner: owner,
+    territoryRegionKeys: Object.freeze(regionKeys),
+    kataGoRulesVersion: KATAGO_RULES_VERSION,
+    kataGoCommit: KATAGO_REFERENCE_COMMIT,
+  });
 };
 
-const collectEmptyRegions = (
+export const assertFinalGroupJudgeProofConsistency = (
+  groupKey: string,
+  statuses: readonly string[],
+): void => {
+  const unique = new Set(statuses);
+  if (unique.size > 1) {
+    throw new Error(
+      `Final group judge correctness error for ${groupKey}: conflicting proofs ${[
+        ...unique,
+      ].join(', ')}`,
+    );
+  }
+};
+
+export const analyzeFinalGroupJudge = async (
   context: EndgameAnalysisContext,
-  pointOwner: ReadonlyMap<PointId, string>,
-): readonly EmptyRegion[] => {
-  const visited = new Set<PointId>();
-  const regions: EmptyRegion[] = [];
+): Promise<FinalGroupJudgeAnalysis> => {
+  const started = nowMilliseconds();
+  const baseline = await new ManualEndgameClassifier().analyze(context);
+  const graph = buildEndgameStaticGraph(context.state.board, context.topology);
 
-  for (const start of [...context.topology.points()].sort()) {
-    if (visited.has(start) || context.state.board[start] !== 'empty') continue;
-
-    const pending: PointId[] = [start];
-    const points: PointId[] = [];
-    visited.add(start);
-
-    while (pending.length > 0) {
-      const point = pending.pop()!;
-      points.push(point);
-
-      for (const neighbor of context.topology.neighbors(point)) {
-        if (context.state.board[neighbor] !== 'empty' || visited.has(neighbor)) continue;
-        visited.add(neighbor);
-        pending.push(neighbor);
-      }
-    }
-
-    points.sort();
-    const boundaryGroups = new Set<string>();
-    for (const point of points) {
-      for (const neighbor of context.topology.neighbors(point)) {
-        const owner = pointOwner.get(neighbor);
-        if (owner) boundaryGroups.add(owner);
-      }
-    }
-
-    const vitalGroups = new Set(boundaryGroups);
-    for (const point of points) {
-      const adjacentGroups = new Set<string>();
-      for (const neighbor of context.topology.neighbors(point)) {
-        const owner = pointOwner.get(neighbor);
-        if (owner) adjacentGroups.add(owner);
-      }
-
-      for (const groupKey of [...vitalGroups]) {
-        if (!adjacentGroups.has(groupKey)) vitalGroups.delete(groupKey);
-      }
-    }
-
-    const frozenPoints = Object.freeze(points);
-    regions.push(
-      Object.freeze({
-        key: JSON.stringify(frozenPoints),
-        points: frozenPoints,
-        boundaryGroups: Object.freeze([...boundaryGroups].sort()),
-        vitalGroups: Object.freeze([...vitalGroups].sort()),
+  if (
+    context.state.phase !== 'endgame' ||
+    context.state.consecutivePasses < 2 ||
+    !assertCompleteContext(baseline, graph)
+  ) {
+    const proposal = baseline;
+    return Object.freeze({
+      proposal,
+      passAliveTerritory: emptyTerritoryResult(),
+      diagnostics: Object.freeze({
+        totalAnalysisMilliseconds: nowMilliseconds() - started,
+        groupCount: graph.strings.length,
+        emptyRegionCount: graph.emptyRegions.length,
+        bensonIterations: 0,
+        bensonIterationsByColor: Object.freeze({ black: 0, white: 0 }),
+        counts: proposalCounts(proposal),
       }),
-    );
-  }
-
-  return Object.freeze(
-    regions.sort((left, right) => (left.key < right.key ? -1 : left.key > right.key ? 1 : 0)),
-  );
-};
-
-const provePassAlive = (
-  color: StoneColor,
-  groups: ReadonlyMap<string, GroupInfo>,
-  regions: readonly EmptyRegion[],
-): ReadonlyMap<string, readonly EmptyRegion[]> => {
-  const remainingGroups = new Set(
-    [...groups.values()].filter((group) => group.color === color).map((group) => group.key),
-  );
-  const candidateRegions = new Map(
-    regions
-      .filter(
-        (region) =>
-          region.boundaryGroups.length > 0 &&
-          region.boundaryGroups.every((groupKey) => groups.get(groupKey)?.color === color),
-      )
-      .map((region) => [region.key, region] as const),
-  );
-  const remainingRegions = new Set(candidateRegions.keys());
-
-  while (true) {
-    const groupsToRemove = [...remainingGroups].filter((groupKey) => {
-      let vitalRegionCount = 0;
-      for (const regionKey of remainingRegions) {
-        if (candidateRegions.get(regionKey)!.vitalGroups.includes(groupKey)) vitalRegionCount += 1;
-      }
-      return vitalRegionCount < 2;
     });
-
-    for (const groupKey of groupsToRemove) remainingGroups.delete(groupKey);
-
-    const regionsToRemove = [...remainingRegions].filter((regionKey) =>
-      candidateRegions
-        .get(regionKey)!
-        .boundaryGroups.some((groupKey) => !remainingGroups.has(groupKey)),
-    );
-    for (const regionKey of regionsToRemove) remainingRegions.delete(regionKey);
-
-    if (groupsToRemove.length === 0 && regionsToRemove.length === 0) break;
   }
 
-  const proofs = new Map<string, readonly EmptyRegion[]>();
-  for (const groupKey of [...remainingGroups].sort()) {
-    const vitalRegions = [...remainingRegions]
-      .map((regionKey) => candidateRegions.get(regionKey)!)
-      .filter((region) => region.vitalGroups.includes(groupKey))
-      .sort((left, right) => (left.key < right.key ? -1 : left.key > right.key ? 1 : 0));
+  const bensonByColor = {
+    black: proveBensonPassAlive(context.state.board, context.topology, graph, 'black'),
+    white: proveBensonPassAlive(context.state.board, context.topology, graph, 'white'),
+  } as const;
 
-    if (vitalRegions.length >= 2) proofs.set(groupKey, Object.freeze(vitalRegions));
+  const aliveProofs = new Map<string, readonly BensonColorRegion[]>();
+  for (const color of COLORS) {
+    for (const [groupKey, vitalRegions] of bensonByColor[color].aliveGroups) {
+      aliveProofs.set(groupKey, vitalRegions);
+    }
+  }
+  const aliveGroupKeys = new Set(aliveProofs.keys());
+
+  const passAliveTerritory = buildPassAliveTerritory(
+    graph,
+    bensonByColor.black,
+    bensonByColor.white,
+  );
+
+  const territoryDeadProofs = new Map<string, TerritoryDeadProof>();
+  for (const group of graph.strings) {
+    const proof = territoryDeadProofForGroup(group.key, graph, passAliveTerritory);
+    if (proof) territoryDeadProofs.set(group.key, proof);
   }
 
-  return proofs;
+  const strictDeadProofs = new Map<string, AutomaticDeadProof>();
+  for (const candidate of generateDeadCandidates(graph.stringsByKey, aliveGroupKeys)) {
+    const verification = verifyDeadCandidate(candidate, {
+      state: context.state,
+      topology: context.topology,
+      groups: graph.stringsByKey,
+      pointOwner: graph.stringByPoint,
+      passAliveGroupKeys: aliveGroupKeys,
+    });
+    if (verification.proven) strictDeadProofs.set(candidate.groupKey, verification.evidence);
+  }
+
+  const sekiProofs = new Map<string, AutomaticSekiProof>();
+  for (const candidate of generateSekiCandidates(graph.stringsByKey, new Set())) {
+    const verification = verifySekiCandidate(candidate, {
+      state: context.state,
+      topology: context.topology,
+      groups: graph.stringsByKey,
+      pointOwner: graph.stringByPoint,
+    });
+    if (!verification.proven) continue;
+    for (const groupKey of candidate.groupKeys) {
+      sekiProofs.set(groupKey, verification.evidence);
+    }
+  }
+
+  for (const group of graph.strings) {
+    const statuses: string[] = [];
+    if (aliveProofs.has(group.key)) statuses.push('alive');
+    if (territoryDeadProofs.has(group.key) || strictDeadProofs.has(group.key)) {
+      statuses.push('dead');
+    }
+    if (sekiProofs.has(group.key)) statuses.push('seki');
+    assertFinalGroupJudgeProofConsistency(group.key, statuses);
+  }
+
+  const proposal = Object.freeze(
+    baseline.map((base) => {
+      const groupKey = endgameGroupId(base.points);
+      const vitalRegions = aliveProofs.get(groupKey);
+      if (vitalRegions) {
+        return Object.freeze({
+          points: base.points,
+          status: 'alive' as const,
+          source: 'automatic' as const,
+          evidence: Object.freeze({
+            algorithm: BENSON_PASS_ALIVE_ALGORITHM,
+            proof: 'two-vital-regions',
+            semantics: 'katago-rules-v3',
+            vitalRegions: Object.freeze(vitalRegions.map((region) => region.points)),
+            kataGoRulesVersion: KATAGO_RULES_VERSION,
+            kataGoCommit: KATAGO_REFERENCE_COMMIT,
+          }),
+        });
+      }
+
+      const strictDeadProof = strictDeadProofs.get(groupKey);
+      if (strictDeadProof) {
+        return Object.freeze({
+          points: base.points,
+          status: 'dead' as const,
+          source: 'automatic' as const,
+          evidence: Object.freeze({ ...strictDeadProof }),
+        });
+      }
+
+      const territoryDeadProof = territoryDeadProofs.get(groupKey);
+      if (territoryDeadProof) {
+        return Object.freeze({
+          points: base.points,
+          status: 'dead' as const,
+          source: 'automatic' as const,
+          evidence: territoryDeadProof,
+        });
+      }
+
+      const sekiProof = sekiProofs.get(groupKey);
+      if (sekiProof) {
+        return Object.freeze({
+          points: base.points,
+          status: 'seki' as const,
+          source: 'automatic' as const,
+          evidence: Object.freeze({ ...sekiProof }),
+        });
+      }
+
+      return base;
+    }),
+  );
+
+  return Object.freeze({
+    proposal,
+    passAliveTerritory,
+    diagnostics: Object.freeze({
+      totalAnalysisMilliseconds: nowMilliseconds() - started,
+      groupCount: graph.strings.length,
+      emptyRegionCount: graph.emptyRegions.length,
+      bensonIterations: bensonByColor.black.iterations + bensonByColor.white.iterations,
+      bensonIterationsByColor: Object.freeze({
+        black: bensonByColor.black.iterations,
+        white: bensonByColor.white.iterations,
+      }),
+      counts: proposalCounts(proposal),
+    }),
+  });
 };
+
+/**
+ * Production client-side final group judge. It intentionally contains no
+ * tactical search, minimax, MCTS, neural network, backend, or external process.
+ */
+export class AssistedEndgameClassifier implements EndgameClassifier {
+  async analyze(context: EndgameAnalysisContext): Promise<EndgameProposal> {
+    return (await analyzeFinalGroupJudge(context)).proposal;
+  }
+}
