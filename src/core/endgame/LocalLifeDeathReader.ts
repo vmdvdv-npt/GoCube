@@ -10,7 +10,6 @@ import {
 } from './AndOrSearchCore';
 import { tryProveBensonPassAlive } from './BensonPassAlive';
 import {
-  buildEndgameStaticGraph,
   tryBuildEndgameStaticGraph,
   type EndgameStaticGraph,
   type EndgameStoneString,
