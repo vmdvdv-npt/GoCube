@@ -86,6 +86,41 @@ export const cloneEndgameReviewState = (
   });
 };
 
+/**
+ * Replace only automatic proposal facts after Final Proof Search. Explicit user
+ * decisions are authoritative and are deliberately preserved unchanged.
+ */
+export const applyEndgameProposal = (
+  review: EndgameReviewState,
+  proposal: EndgameProposal,
+): EndgameReviewState => {
+  const byId = new Map(proposal.map((group) => [endgameGroupId(group.points), group] as const));
+  if (byId.size !== review.groups.length || proposal.length !== review.groups.length) {
+    throw new Error('Final endgame proposal does not match review groups');
+  }
+
+  const groups = review.groups.map((group) => {
+    const id = endgameGroupId(group.points);
+    const updated = byId.get(id);
+    if (!updated) throw new Error(`Final endgame proposal is missing group: ${id}`);
+    if (endgameGroupId(updated.points) !== id) {
+      throw new Error(`Final endgame proposal group mismatch: ${id}`);
+    }
+    return Object.freeze({
+      points: group.points,
+      proposal: Object.freeze({
+        status: updated.status,
+        ...(updated.evidence
+          ? { evidence: Object.freeze({ ...updated.evidence }) }
+          : {}),
+      }),
+      userDecision: group.userDecision,
+    });
+  });
+
+  return Object.freeze({ groups: Object.freeze(groups) });
+};
+
 export const setEndgameReviewDecision = (
   review: EndgameReviewState,
   points: readonly PointId[],
