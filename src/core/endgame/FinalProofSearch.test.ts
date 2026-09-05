@@ -52,7 +52,7 @@ const deadFixture = () => {
 };
 
 describe('FinalProofSearch scheduler', () => {
-  it('resolves a locally forced death and stores auditable proof evidence', async () => {
+  it('resolves a forced death at the cheapest proof tier and stores auditable evidence', async () => {
     const { topology, state } = deadFixture();
     const [context, proposal] = contextAndProposal(topology, state);
     const targetIndex = proposal.findIndex((group) => group.points.includes('t'));
@@ -64,7 +64,8 @@ describe('FinalProofSearch scheduler', () => {
     expect(result.proposal[targetIndex]?.evidence).toMatchObject({
       algorithm: 'final-proof-search-v1',
       proof: 'proved-dead',
-      firstPlayerOrders: { attackerFirst: 'proved-dead', defenderFirst: 'proved-dead' },
+      reader: 'tactical-forced-capture-v1',
+      firstPlayerOrders: { attackerFirst: 'proved-kill', defenderFirst: 'proved-kill' },
     });
     expect(result.diagnostics.resolvedAutomatically).toBeGreaterThan(0);
   });
@@ -102,8 +103,11 @@ describe('FinalProofSearch scheduler', () => {
     expect(snapshots).toEqual([...snapshots].sort((a, b) => a - b));
   });
 
-  it('fails closed when locality covers the whole graph', async () => {
-    const topology = new GraphTopology('final-proof-open', [['t', 'a'], ['a', 'b'], ['b', 'c']]);
+  it('fails closed when locality covers the whole graph and the target is outside the tactical gate', async () => {
+    const topology = new GraphTopology('final-proof-open', [
+      ['t', 'a'], ['t', 'b'], ['t', 'c'], ['t', 'd'],
+      ['a', 'x'], ['b', 'x'], ['c', 'x'], ['d', 'x'],
+    ]);
     const state = stateFor(topology, { t: 'white' });
     const [context, proposal] = contextAndProposal(topology, state);
     const result = await runFinalProofSearch(context, proposal);
