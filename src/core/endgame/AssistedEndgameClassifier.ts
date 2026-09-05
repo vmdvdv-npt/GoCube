@@ -2,6 +2,8 @@ import type {
   EndgameAnalysisContext,
   EndgameClassifier,
   EndgameProposal,
+  FinalEndgameAnalysisContext,
+  FinalProofSearchProgressListener,
 } from './EndgameClassifier';
 import {
   generateDeadCandidates,
@@ -22,6 +24,10 @@ import {
 } from './BensonPassAlive';
 import { buildEndgameStaticGraph, type EndgameStaticGraph } from './EndgameStaticGraph';
 import { endgameGroupId } from './EndgameGroupIdentity';
+import {
+  analyzeFinalProofSearch,
+  type FinalProofSearchOptions,
+} from './FinalProofSearch';
 import { ManualEndgameClassifier } from './ManualEndgameClassifier';
 import {
   PASS_ALIVE_TERRITORY_ALGORITHM,
@@ -315,11 +321,28 @@ export const analyzeFinalGroupJudge = async (
 };
 
 /**
- * Production client-side final group judge. It intentionally contains no
- * tactical search, minimax, MCTS, neural network, backend, or external process.
+ * Production endgame judge. analyze() remains the cheap/static pass used when
+ * review opens. analyzeFinal() adds bounded proof search only after the user
+ * explicitly asks to finish scoring.
  */
 export class AssistedEndgameClassifier implements EndgameClassifier {
+  constructor(private readonly finalProofOptions?: FinalProofSearchOptions) {}
+
   async analyze(context: EndgameAnalysisContext): Promise<EndgameProposal> {
     return (await analyzeFinalGroupJudge(context)).proposal;
+  }
+
+  async analyzeFinal(
+    context: FinalEndgameAnalysisContext,
+    onProgress?: FinalProofSearchProgressListener,
+  ): Promise<EndgameProposal> {
+    return (
+      await analyzeFinalProofSearch(
+        context,
+        context.proposal,
+        this.finalProofOptions,
+        onProgress,
+      )
+    ).proposal;
   }
 }
