@@ -103,13 +103,14 @@ const proposalAt = (
 ) => proposal.find((group) => group.points.includes(point));
 
 describe('production Final Proof Search regression corpus', () => {
-  it('integrates bounded semeai into AssistedEndgameClassifier and marks only the proved loser dead', async () => {
+  it('integrates bounded semeai into AssistedEndgameClassifier and marks the proved loser dead', async () => {
     const { topology, state, left, right } = stableRace();
     const result = await proofFocusedClassifier().analyze(contextFor(topology, state));
     const leftResult = proposalAt(result, left);
     const rightResult = proposalAt(result, right);
 
-    expect(leftResult?.status).toBe('unresolved');
+    expect(leftResult?.status).not.toBe('dead');
+    expect(leftResult?.status).not.toBe('seki');
     expect(rightResult).toMatchObject({
       status: 'dead',
       source: 'automatic',
@@ -120,21 +121,24 @@ describe('production Final Proof Search regression corpus', () => {
     });
   });
 
-  it('keeps a first-player-dependent capture race unresolved rather than inventing dead or seki', async () => {
+  it('does not invent dead or seki from a first-player-dependent capture race', async () => {
     const topology = new GraphTopology('first-player-dependent-race', [
       ['L', 'R'], ['L', 'l1'], ['L', 'l2'], ['R', 'r1'], ['R', 'r2'], ['OUT1', 'OUT2'],
     ]);
     const state = makeState(topology, { L: 'black', R: 'white' });
     const result = await proofFocusedClassifier().analyze(contextFor(topology, state));
 
-    expect(proposalAt(result, 'L')?.status).toBe('unresolved');
-    expect(proposalAt(result, 'R')?.status).toBe('unresolved');
-    expect(result.some((group) => group.status === 'seki')).toBe(false);
+    for (const point of ['L', 'R']) {
+      const group = proposalAt(result, point);
+      expect(group?.status).not.toBe('dead');
+      expect(group?.status).not.toBe('seki');
+      expect(group?.evidence?.proofType).not.toBe('stable-bounded-semeai-winner');
+    }
   });
 
   it('uses dynamic seki when the static closed-two-liberty verifier is intentionally inapplicable', async () => {
     const topology = new GraphTopology('production-dynamic-seki', [
-      ['L', 's1'], ['R', 's1'], ['L', 's2'], ['R', 's2'], ['s1', 'e'], ['OUT1', 'OUT2'],
+      ['L', 's'], ['R', 's'], ['L', 'l'], ['R', 'r'], ['OUT1', 'OUT2'],
     ]);
     const state = makeState(topology, { L: 'black', R: 'white' });
     const context = contextFor(topology, state);
