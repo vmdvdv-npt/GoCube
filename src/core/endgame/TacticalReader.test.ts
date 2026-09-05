@@ -189,4 +189,16 @@ describe('TacticalReader proof safety', () => {
       firstPlayer: 'attacker', shouldStop: () => true,
     }).outcome).toBe('unknown-budget');
   });
+
+  it('fails closed at the conservative topology-size cost gate without exploring nodes', () => {
+    const topology = new GridTopology(12);
+    const state = makeState(topology, { '6,6': 'white' });
+    const target = targetAt(state, topology, '6,6');
+
+    const result = readTacticalCapture(target, state, topology, { firstPlayer: 'attacker' });
+    expect(result.outcome).toBe('unknown-boundary');
+    expect(result.exploredNodes).toBe(0);
+    expect(result.proofReason).toContain('tactical cost gate');
+    expect(() => readTacticalCapture(target, state, topology, { maxTopologyPoints: 0 })).toThrow(RangeError);
+  });
 });
