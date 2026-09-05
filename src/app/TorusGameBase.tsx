@@ -122,6 +122,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const initialViewModel = controller.viewModel();
   const [viewModel, setViewModel] = useState(() => initialViewModel);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [finalAnalysisComplete, setFinalAnalysisComplete] = useState(false);
   const [endgameGroups, setEndgameGroups] = useState<readonly TorusEndgameGroup[]>(() =>
     initialViewModel.phase === 'endgame' ? controller.endgameGroups() : [],
   );
@@ -199,7 +200,9 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const automaticClassifiedCount = Math.max(0, endgameGroups.length - manualGroupIds.length);
   const resolvedCount = endgameGroups.filter((group) => Boolean(decisions[group.id])).length;
   const canFinishEndgame =
-    viewModel.phase === 'endgame' && controller.nextUnresolvedEndgameGroupId() === null;
+    viewModel.phase === 'endgame' &&
+    !actionInFlight.current &&
+    (!finalAnalysisComplete || controller.nextUnresolvedEndgameGroupId() === null);
 
   useEffect(() => {
     panOffsetRef.current = dragPan.offset;
@@ -220,6 +223,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     const nextViewModel = controller.viewModel();
     setViewModel(nextViewModel);
     setFeedback(null);
+    setFinalAnalysisComplete(false);
     setHoveredGroupId(null);
     setSelectedGroupId(
       nextViewModel.phase === 'endgame' ? controller.nextUnresolvedEndgameGroupId() : null,
@@ -388,6 +392,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   }, [controller, showDuplicateRegions, showMoveNumbers, viewModel]);
 
   const applyResult = (result: TorusGameActionResult): void => {
+    const wasEndgame = viewModel.phase === 'endgame';
     previewedMovePointRef.current = null;
     rendererRef.current?.setMovePreview(null);
     setViewModel(result.viewModel);
@@ -402,6 +407,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     }
 
     if (result.viewModel.phase === 'endgame') {
+      if (!wasEndgame) setFinalAnalysisComplete(false);
       const nextGroups = controller.endgameGroups();
       setEndgameGroups(nextGroups);
       setHoveredGroupId(null);
@@ -411,6 +417,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
           : controller.nextUnresolvedEndgameGroupId(),
       );
     } else {
+      setFinalAnalysisComplete(false);
       setEndgameGroups([]);
       setHoveredGroupId(null);
       setSelectedGroupId(null);
@@ -678,10 +685,34 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const finishEndgame = async (): Promise<void> => {
     if (actionInFlight.current || !canFinishEndgame) return;
     actionInFlight.current = true;
+    setFeedback('Analyzing final position…');
     try {
-      applyResult(await controller.finishEndgame());
+      const result = await controller.finishEndgame((progress) => {
+        const regions = progress.totalRegions > 0
+          ? `${progress.completedRegions}/${progress.totalRegions} regions`
+          : 'preparing';
+        setFeedback(
+          progress.phase === 'complete'
+            ? progress.remainingUnresolved > 0
+              ? `Final analysis complete · ${progress.remainingUnresolved} unresolved`
+              : 'Final analysis complete'
+            : `Analyzing final position… ${regions} · tier ${Math.max(1, progress.tier)} · ${progress.nodesExplored} nodes`,
+        );
+      });
+      applyResult(result);
+      if (result.viewModel.phase === 'endgame') {
+        setFinalAnalysisComplete(true);
+        const remaining = controller.endgameGroups().filter(
+          (group) => !controller.endgameDecisions()[group.id],
+        ).length;
+        setFeedback(
+          remaining > 0
+            ? `Final analysis complete · ${remaining} groups need manual review`
+            : 'Final analysis complete',
+        );
+      }
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : 'Scoring could not be finished.');
+      setFeedback(error instanceof Error ? error.message : 'Final analysis could not be completed.');
     } finally {
       actionInFlight.current = false;
     }
@@ -732,6 +763,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
                       key={status}
                       className={decisions[selectedGroup.id] === status ? 'is-selected' : undefined}
                       aria-pressed={decisions[selectedGroup.id] === status}
+                      disabled={actionInFlight.current}
                       onClick={() => void setGroupStatus(selectedGroup, status)}
                     >
                       {statusLabel(status)}
