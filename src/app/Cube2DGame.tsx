@@ -73,6 +73,8 @@ export function Cube2DGame({
   animationMode = 'normal',
   externalAction = null,
 }: Cube2DGameProps) {
+  useEffect(() => () => controller.dispose(), [controller]);
+
   const g = useCube2DGame(controller, { gameplayReadOnly, animationMode, externalAction });
   const displayViewModel = finalBoardViewModel(g.vm);
   const layoutCellSize = CUBE_2D_BASE_CELL_SIZE * g.zoom;
