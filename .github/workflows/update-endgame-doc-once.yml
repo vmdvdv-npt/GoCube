@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   update-doc:
-    if: github.event.head_commit.message != 'docs: record KataGo final group judge V1'
+    if: "${{ github.event.head_commit.message != 'docs: record KataGo final group judge V1' }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
