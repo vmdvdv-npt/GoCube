@@ -24,6 +24,7 @@ const AUTOMATIC_ALGORITHMS = new Set([
   'benson-pass-alive-v1',
   'sealed-single-liberty-dead-v1',
   'closed-mutual-two-liberties-seki-v1',
+  'final-proof-search-v1',
 ]);
 const FALLBACK_STATUSES: readonly GroupStatus[] = Object.freeze(['alive', 'dead', 'seki']);
 
