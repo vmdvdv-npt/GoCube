@@ -330,7 +330,7 @@ describe('strict seki boundary', () => {
 const torusEyeCase = (
   eyePoints: readonly PointId[],
 ): Readonly<{ topology: TorusTopology; state: GameState }> => {
-  const topology = new TorusTopology(5);
+  const topology = new TorusTopology(9);
   const empties = new Set<PointId>([...eyePoints, '2,2']);
   return Object.freeze({
     topology,
