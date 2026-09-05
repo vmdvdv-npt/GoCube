@@ -74,7 +74,7 @@ describe('AssistedEndgameClassifier static automatic alive/dead core', () => {
       const result = (await analyzeFinalGroupJudge({
         state: fixture.state,
         topology,
-        groups: fixture.groups,
+        groups: collectStoneGroups(topology, fixture.state),
       })).proposal;
 
       expect(result).toHaveLength(1);
@@ -172,7 +172,7 @@ describe('AssistedEndgameClassifier static automatic alive/dead core', () => {
         const result = (await analyzeFinalGroupJudge({
           state: fixture.state,
           topology,
-          groups: fixture.groups,
+          groups: collectStoneGroups(topology, fixture.state),
         })).proposal;
         expect(result.length).toBeGreaterThan(0);
         expect(result.every((proposal) => proposal.status === 'unresolved')).toBe(true);
@@ -193,7 +193,7 @@ describe('AssistedEndgameClassifier static automatic alive/dead core', () => {
       const result = (await analyzeFinalGroupJudge({
         state: fixture.state,
         topology,
-        groups: fixture.groups,
+        groups: collectStoneGroups(topology, fixture.state),
       })).proposal;
       const target = result.find(
         (proposal) => fixture.state.board[proposal.points[0]!] === 'black',
