@@ -27,6 +27,7 @@ import {
   type GameSessionRedoEntrySnapshot,
   type GameSessionSnapshot,
 } from '../persistence/GameSessionSnapshot';
+import { assertSerializedSnapshotGameStates } from '../persistence/GameSessionSnapshotValidation';
 import type { FinalScore, ScoringStrategy } from '../scoring/Scoring';
 import type { PointId } from '../topology/Topology';
 import {
@@ -282,7 +283,7 @@ export class GameSession {
     config: GameSessionConfig,
     snapshot: GameSessionSnapshot,
   ): GameSession {
-    GameSession.assertCompatibleSnapshot(config, snapshot);
+    GameSession.assertCompatibleSnapshot(engine, config, snapshot);
 
     const [initialState] = snapshot.history;
     if (!initialState) throw new Error('Saved game history must not be empty');
@@ -696,9 +697,12 @@ export class GameSession {
   }
 
   private static assertCompatibleSnapshot(
+    engine: GameEngine,
     config: GameSessionConfig,
     snapshot: GameSessionSnapshot,
   ): void {
+    assertSerializedSnapshotGameStates(snapshot, engine.logicalTopology());
+
     if (snapshot.version !== GAME_SESSION_SNAPSHOT_VERSION) {
       throw new Error(`Unsupported saved game version: ${String(snapshot.version)}`);
     }
@@ -720,9 +724,6 @@ export class GameSession {
     }
     if (snapshot.komi !== config.komi) {
       throw new Error(`Saved komi mismatch: expected ${config.komi}, got ${snapshot.komi}`);
-    }
-    if (snapshot.history.length === 0) {
-      throw new Error('Saved game history must not be empty');
     }
 
     GameSession.assertStateMetadata(
