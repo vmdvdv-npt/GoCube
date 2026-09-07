@@ -102,7 +102,10 @@ export class GameSessionControllerFacade {
 
   subscribeEndgameReviewReady(listener: EndgameReviewReadyListener): () => void {
     this.endgameReviewReadyListeners.add(listener);
-    return () => this.endgameReviewReadyListeners.delete(listener);
+    if (this.endgameReviewReady()) this.notifyEndgameReviewReadyListener(listener);
+    return () => {
+      this.endgameReviewReadyListeners.delete(listener);
+    };
   }
 
   cancelFinalAnalysis(): void {
@@ -285,11 +288,15 @@ export class GameSessionControllerFacade {
 
   private publishEndgameReviewReady(): void {
     for (const listener of this.endgameReviewReadyListeners) {
-      try {
-        listener();
-      } catch {
-        // Presentation observers must never change accepted session-command semantics.
-      }
+      this.notifyEndgameReviewReadyListener(listener);
+    }
+  }
+
+  private notifyEndgameReviewReadyListener(listener: EndgameReviewReadyListener): void {
+    try {
+      listener();
+    } catch {
+      // Presentation observers must never change accepted session-command semantics.
     }
   }
 
