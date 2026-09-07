@@ -55,7 +55,11 @@ export interface GameSessionSnapshot {
   readonly redo?: readonly GameSessionRedoEntrySnapshot[];
   /** Partial endgame review. Legacy v1 snapshots may contain only points + status. */
   readonly endgameReview?: EndgameReviewStateSnapshot | null;
-  /** Final classification used for scoring. Optional only for v1 backward compatibility. */
+  /**
+   * Final classification used for scoring. Legacy v1 envelopes may omit it,
+   * but a finished snapshot without classification cannot cross the current
+   * restore trust boundary because FinalScore cannot be verified without it.
+   */
   readonly endgameClassification?: EndgameClassification | null;
   readonly finalScore: FinalScore | null;
 }
