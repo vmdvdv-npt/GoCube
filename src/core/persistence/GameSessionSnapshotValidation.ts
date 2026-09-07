@@ -275,12 +275,11 @@ const assertSerializedEndgameReview = (
 
       if (groupValue.status !== undefined) {
         const proposalStatus = groupValue.proposal.status;
-        const effective =
-          groupValue.userDecision !== undefined
-            ? groupValue.userDecision
-            : isGroupStatus(proposalStatus)
-              ? proposalStatus
-              : null;
+        const effective = isGroupStatus(groupValue.userDecision)
+          ? groupValue.userDecision
+          : isGroupStatus(proposalStatus)
+            ? proposalStatus
+            : null;
         if (groupValue.status !== effective) {
           throw new Error(`Endgame review group for ${label} has inconsistent legacy status`);
         }
