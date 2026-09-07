@@ -93,6 +93,13 @@ describe.each(cases)('%s controller shared gameplay lifecycle', (_name, createCo
     expect(controller.canFinishEndgame()).toBe(true);
     expect(readyNotifications).toBe(1);
 
+    let lateReadyNotifications = 0;
+    const unsubscribeLate = controller.subscribeEndgameReviewReady(() => {
+      lateReadyNotifications += 1;
+    });
+    expect(lateReadyNotifications).toBe(1);
+
+    unsubscribeLate();
     unsubscribe();
     controller.dispose();
   });
