@@ -1074,7 +1074,7 @@ Rule-critical per-file gate использует тот же завершённ�
 
 При наличии отдельного `vitest.config.ts` именно он является владельцем Vitest coverage configuration. Нельзя размещать обязательный coverage gate только в `vite.config.ts`, потому что отдельный Vitest config имеет приоритет и иначе такой gate не участвует в `vitest run`.
 
-`main` обязан быть защищён repository-level branch protection/ruleset: изменения попадают в `main` только через pull request, merge разрешён только после успешного required CI check для job `test`, а обычный direct push или bypass этого gate не допускается. Force-push и удаление `main` запрещены. Эта защита является техническим enforcement на уровне GitHub, а не соглашением по названию PR.
+`main` не обязан быть защищён repository-level branch protection/ruleset; direct push допускается. Каждый push в `main` обязан запускать как минимум стандартный CI и считается корректным только при успешном результате CI; `[no-test]`, commit message или иная workflow-логика не могут отключить этот прогон. Архитектурный контракт не требует PR-only flow или required status checks на уровне GitHub.
 
 ## 19.1. GameEngine tests
 
