@@ -55,6 +55,7 @@ export interface SharedMoveAvailability {
 
 export type SharedEndgameGroup = EndgameGroupPresentation;
 export type SharedEndgameDecisions = Readonly<Partial<Record<string, GroupStatus>>>;
+export type EndgameReviewReadyListener = () => void;
 
 const EMPTY_CAPTURED: readonly PointId[] = Object.freeze([]);
 
@@ -71,6 +72,7 @@ export class GameSessionControllerFacade {
   private readonly session: GameSession;
   private readonly presentation = new PresentationModel();
   private readonly finalAnalysis = new FinalProofSearchRunController();
+  private readonly endgameReviewReadyListeners = new Set<EndgameReviewReadyListener>();
 
   constructor(private readonly options: GameSessionControllerFacadeOptions) {
     if (!Number.isInteger(options.boardSize) || options.boardSize <= 0) {
@@ -98,12 +100,18 @@ export class GameSessionControllerFacade {
     return this.finalAnalysis;
   }
 
+  subscribeEndgameReviewReady(listener: EndgameReviewReadyListener): () => void {
+    this.endgameReviewReadyListeners.add(listener);
+    return () => this.endgameReviewReadyListeners.delete(listener);
+  }
+
   cancelFinalAnalysis(): void {
     this.finalAnalysis.cancelActive();
   }
 
   dispose(): void {
     this.cancelFinalAnalysis();
+    this.endgameReviewReadyListeners.clear();
   }
 
   viewModel(): GameViewModel {
@@ -124,6 +132,18 @@ export class GameSessionControllerFacade {
 
   canRedo(): boolean {
     return this.session.canRedo();
+  }
+
+  endgameReviewReady(): boolean {
+    return this.viewModel().phase === 'endgame' && this.session.endgameReview() !== null;
+  }
+
+  canFinishEndgame(): boolean {
+    const review = this.session.endgameReview();
+    return Boolean(
+      review &&
+      review.groups.every((group) => effectiveEndgameStatus(group) !== 'unresolved'),
+    );
   }
 
   endgameGroups(): readonly SharedEndgameGroup[] {
@@ -229,7 +249,11 @@ export class GameSessionControllerFacade {
 
   async pass(): Promise<SharedGameActionResult> {
     const result = await this.session.execute({ type: 'pass' });
-    return this.present(result.ok, result.ok ? null : result.reason);
+    const presented = this.present(result.ok, result.ok ? null : result.reason);
+    if (result.ok && presented.viewModel.phase === 'endgame') {
+      this.publishEndgameReviewReady();
+    }
+    return presented;
   }
 
   async finishEndgame(decisions?: SharedEndgameDecisions): Promise<SharedGameActionResult> {
@@ -257,6 +281,16 @@ export class GameSessionControllerFacade {
   async redo(): Promise<SharedGameActionResult> {
     const result = await this.session.executeSessionCommand({ type: 'redo' });
     return this.present(result.ok, result.ok ? null : result.reason);
+  }
+
+  private publishEndgameReviewReady(): void {
+    for (const listener of this.endgameReviewReadyListeners) {
+      try {
+        listener();
+      } catch {
+        // Presentation observers must never change accepted session-command semantics.
+      }
+    }
   }
 
   private present(
