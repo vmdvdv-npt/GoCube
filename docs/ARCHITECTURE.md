@@ -1032,17 +1032,20 @@ Renderer не реконструирует историю самостоятел
 
 Автоматические проверки делятся по владельцам ответственности.
 
-PR CI имеет ровно три режима:
+PR CI имеет ровно два режима:
 
-- `[no-test]` в title PR — автоматические test/build/lint/typecheck steps для этого PR не запускаются; workflow выполняет только выбор режима и быстро завершается успешно;
 - без специального marker — стандартный CI: static lint, TypeScript typecheck, unit/integration tests с global coverage thresholds, production build и Playwright E2E только в Chromium;
 - `[full]` в title PR — полный regression gate: все стандартные проверки плюс Playwright E2E в Chromium, Firefox и WebKit.
 
+Автоматического режима, который успешно пропускает required checks для PR, нет. `[no-test]` не является поддерживаемым CI marker и не может отключить проверки; PR с таким marker обязан удалить его до успешного CI.
+
 `[full]` не выбирается автоматически по сложности, размеру, риску, затронутым файлам, renderer/architecture changes или по самостоятельному решению агента. Агент не добавляет `[full]` в title PR, если пользователь явно не попросил Full CI именно для этого PR. Единственное автоматическое применение full — release finalization.
 
-Изменение title PR повторно запускает CI, поэтому по явному запросу пользователя режим можно переключить без нового code commit. Если одновременно указаны `[full]` и `[no-test]`, приоритет имеет `[full]`.
+Изменение title PR повторно запускает CI, поэтому по явному запросу пользователя режим можно переключить между standard и full без нового code commit.
 
-Обычный push в `main` не повторяет уже выполненный PR CI. Release-finalization push всегда принудительно выполняет `full` независимо от title/marker, и только такой cross-browser прогон считается полным regression/release gate. Режим `[no-test]` сознательно не является доказательством regression correctness и используется только как явное решение пропустить автоматические проверки для конкретного PR.
+Каждый push в `main` повторно выполняет как минимум стандартный CI. Release-finalization push всегда принудительно выполняет `full`, и только такой cross-browser прогон считается полным regression/release gate.
+
+`main` обязан быть защищён repository-level branch protection/ruleset: изменения попадают в `main` только через pull request, merge разрешён только после успешного required CI check для job `test`, а обычный direct push или bypass этого gate не допускается. Force-push и удаление `main` запрещены. Эта защита является техническим enforcement на уровне GitHub, а не соглашением по названию PR.
 
 ## 19.1. GameEngine tests
 

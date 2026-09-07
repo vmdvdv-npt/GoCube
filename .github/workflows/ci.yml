@@ -21,51 +21,42 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           HEAD_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
+          set -euo pipefail
           mode="standard"
 
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            if [[ "$PR_TITLE" == *"[no-test]"* ]]; then
+              echo "[no-test] is no longer supported. Remove it from the PR title; required CI may not be skipped." >&2
+              exit 1
+            fi
             if [[ "$PR_TITLE" == *"[full]"* ]]; then
               mode="full"
-            elif [[ "$PR_TITLE" == *"[no-test]"* ]]; then
-              mode="none"
             fi
-          else
-            # Normal main pushes do not repeat PR CI. Release finalization is always full.
-            mode="none"
-            if [[ "$HEAD_MESSAGE" == release:\ finalize\ * ]]; then
-              mode="full"
-            fi
+          elif [[ "$HEAD_MESSAGE" == release:\ finalize\ * ]]; then
+            mode="full"
           fi
 
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
           echo "CI mode: $mode"
 
       - uses: actions/checkout@v7
-        if: steps.mode.outputs.mode != 'none'
 
       - uses: actions/setup-node@v7
-        if: steps.mode.outputs.mode != 'none'
         with:
           node-version: 22
           cache: npm
 
       - run: npm ci
-        if: steps.mode.outputs.mode != 'none'
 
       - run: npm run lint
-        if: steps.mode.outputs.mode != 'none'
 
       - run: npm run typecheck
-        if: steps.mode.outputs.mode != 'none'
 
       - run: npm run test:coverage
-        if: steps.mode.outputs.mode != 'none'
 
       - run: npm run build
-        if: steps.mode.outputs.mode != 'none'
 
       - name: Install Playwright browsers
-        if: steps.mode.outputs.mode != 'none'
         env:
           CI_MODE: ${{ steps.mode.outputs.mode }}
         run: |
@@ -76,7 +67,6 @@ jobs:
           fi
 
       - name: Run Playwright E2E
-        if: steps.mode.outputs.mode != 'none'
         env:
           CI_MODE: ${{ steps.mode.outputs.mode }}
         run: |

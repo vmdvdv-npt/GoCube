@@ -8,17 +8,17 @@
 
 Choose via PR title:
 
-- `[no-test]` — no automated test suite for this PR
 - no marker — standard CI: lint, typecheck, unit/integration coverage, build, Chromium E2E
 - `[full]` — full CI: standard checks plus Chromium, Firefox, and WebKit E2E; use only when the user explicitly requests Full CI for this PR
+
+`[no-test]` is not supported. Required CI may not be disabled by a PR title.
 
 Do not select `[full]` because a PR seems complex, risky, large, architectural, or renderer-related. Release finalization always runs full CI automatically regardless of PR title.
 
 ## Verification
 
-- [ ] TypeScript/build passes, or `N/A` for `[no-test]`
-- [ ] Unit tests pass, or `N/A` for `[no-test]`
-- [ ] Relevant manual/e2e check completed, or `N/A` for `[no-test]`
+- [ ] Required CI passes
+- [ ] Relevant manual/e2e verification completed, or `N/A` with reason
 
 ## Documentation check
 
