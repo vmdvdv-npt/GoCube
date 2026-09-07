@@ -73,11 +73,13 @@ describe('HttpAlphaZeroClient', () => {
       metadataTimeoutMs: 1_000,
     });
 
-    const pending = client.health();
+    const rejection = client.health().catch((error: unknown) => error);
     await vi.advanceTimersByTimeAsync(1_000);
+    const error = await rejection;
 
-    await expect(pending).rejects.toMatchObject({ kind: 'transport' });
-    await expect(pending).rejects.toThrow(/timed out after 1 seconds/i);
+    expect(error).toMatchObject({ kind: 'transport' });
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/timed out after 1 seconds/i);
     expect(seenSignals).toHaveLength(1);
     expect(seenSignals[0]?.aborted).toBe(true);
   });
