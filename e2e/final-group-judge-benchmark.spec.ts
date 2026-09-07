@@ -4,7 +4,7 @@ test('Final Group Judge browser benchmark: Cube 4/7 and Torus 9/19', async ({ pa
   await page.goto('/');
 
   const samples = await page.evaluate(async () => {
-    const benchmarkModulePath = '/src/core/endgame/FinalGroupJudgeBenchmark.ts';
+    const benchmarkModulePath = '/src/core/endgame/testlab/FinalGroupJudgeBenchmark.ts';
     const benchmark = await import(/* @vite-ignore */ benchmarkModulePath);
     return benchmark.runFinalGroupJudgeBrowserBenchmark();
   });

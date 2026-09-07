@@ -1,12 +1,12 @@
 import {
   analyzeFinalGroupJudge,
   type FinalGroupJudgeDiagnostics,
-} from './AssistedEndgameClassifier';
-import { GameEngine } from '../game/GameEngine';
-import type { GameState, PointOccupancy } from '../game/types';
-import { CubeTopology } from '../topology/CubeTopology';
-import type { PointId, Topology } from '../topology/Topology';
-import { TorusTopology } from '../topology/TorusTopology';
+} from '../AssistedEndgameClassifier';
+import { GameEngine } from '../../game/GameEngine';
+import type { GameState, PointOccupancy } from '../../game/types';
+import { CubeTopology } from '../../topology/CubeTopology';
+import type { PointId, Topology } from '../../topology/Topology';
+import { TorusTopology } from '../../topology/TorusTopology';
 
 export interface FinalGroupJudgeBenchmarkSample extends FinalGroupJudgeDiagnostics {
   readonly name: string;
