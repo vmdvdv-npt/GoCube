@@ -4,8 +4,9 @@ import {
   GAME_SESSION_SNAPSHOT_VERSION,
   type GameSessionSnapshot,
 } from '../core/persistence/GameSessionSnapshot';
-import type { CubeSize } from '../core/topology/CubeTopology';
-import { TORUS_SIZES, type TorusSize } from '../core/topology/TorusTopology';
+import { assertSerializedSnapshotGameStates } from '../core/persistence/GameSessionSnapshotValidation';
+import { CubeTopology, type CubeSize } from '../core/topology/CubeTopology';
+import { TORUS_SIZES, TorusTopology, type TorusSize } from '../core/topology/TorusTopology';
 import {
   isCubeUiSize,
   type CubeUiSize,
@@ -44,7 +45,7 @@ export interface ApplicationSavedState {
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const isGameMode = (value: unknown): value is GameMode =>
   value === 'torus-2d' || value === 'cube-2d';
@@ -60,6 +61,11 @@ const isSizeForMode = (mode: GameMode, value: unknown): value is GameSize =>
 
 const isPhase = (value: unknown): value is SavedGameSummary['phase'] =>
   value === 'playing' || value === 'endgame' || value === 'finished';
+
+const topologyForSavedGame = (mode: GameMode, size: GameSize) =>
+  mode === 'torus-2d'
+    ? new TorusTopology(size as TorusSize)
+    : new CubeTopology(size as CubeSize);
 
 const hasValidStateMetadata = (
   state: unknown,
@@ -264,6 +270,11 @@ export class GameApplication {
       ) {
         throw new Error('Invalid saved session snapshot');
       }
+
+      assertSerializedSnapshotGameStates(
+        snapshot,
+        topologyForSavedGame(state.gameMode, snapshot.boardSize),
+      );
 
       const current: unknown = snapshot.history.at(-1);
       if (!hasValidStateMetadata(current, snapshot.endgameClassification, snapshot.finalScore)) {
