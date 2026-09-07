@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HttpAlphaZeroClient, type AlphaZeroFetch } from './HttpAlphaZeroClient';
 
 const jsonResponse = (value: unknown, status = 200): Response =>
@@ -8,6 +8,10 @@ const jsonResponse = (value: unknown, status = 200): Response =>
   });
 
 describe('HttpAlphaZeroClient', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('loads health and checkpoint descriptors through the typed gateway', async () => {
     const seen: string[] = [];
     const fetcher: AlphaZeroFetch = async (input) => {
@@ -50,6 +54,34 @@ describe('HttpAlphaZeroClient', () => {
     });
     await expect(client.health()).rejects.toMatchObject({ kind: 'transport' });
     await expect(client.health()).rejects.toThrow(/unavailable/i);
+  });
+
+  it('aborts and reports a transport timeout when the service stops responding', async () => {
+    vi.useFakeTimers();
+    const seenSignals: AbortSignal[] = [];
+    const fetcher: AlphaZeroFetch = async (_input, init) => {
+      if (init?.signal) seenSignals.push(init.signal);
+      return await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(new DOMException('Aborted', 'AbortError'));
+        }, { once: true });
+      });
+    };
+    const client = new HttpAlphaZeroClient({
+      baseUrl: 'http://127.0.0.1:8765',
+      fetcher,
+      metadataTimeoutMs: 1_000,
+    });
+
+    const rejection = client.health().catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(1_000);
+    const error = await rejection;
+
+    expect(error).toMatchObject({ kind: 'transport' });
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/timed out after 1 seconds/i);
+    expect(seenSignals).toHaveLength(1);
+    expect(seenSignals[0]?.aborted).toBe(true);
   });
 
   it('rejects malformed JSON', async () => {
