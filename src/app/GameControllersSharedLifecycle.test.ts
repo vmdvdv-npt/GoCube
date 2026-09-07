@@ -1,22 +1,27 @@
 import { describe, expect, it } from 'vitest';
+import type { GameViewModel } from '../presentation/PresentationModel';
 import { Cube2DGameController } from './Cube2DGameController';
 import { TorusGameController } from './TorusGameController';
 
-type SharedController = Pick<
-  Cube2DGameController,
-  | 'viewModel'
-  | 'pass'
-  | 'finishEndgame'
-  | 'resultModel'
-  | 'canUndo'
-  | 'canRedo'
-  | 'undo'
-  | 'redo'
-  | 'endgameGroups'
-  | 'endgameManualGroupIds'
-  | 'nextUnresolvedEndgameGroupId'
-  | 'dispose'
->;
+type ActionLike = Readonly<{
+  accepted: boolean;
+  viewModel: GameViewModel;
+}>;
+
+interface SharedController {
+  viewModel(): GameViewModel;
+  pass(): Promise<ActionLike>;
+  finishEndgame(): Promise<ActionLike>;
+  resultModel(): unknown;
+  canUndo(): boolean;
+  canRedo(): boolean;
+  undo(): Promise<ActionLike>;
+  redo(): Promise<ActionLike>;
+  endgameGroups(): readonly unknown[];
+  endgameManualGroupIds(): readonly string[];
+  nextUnresolvedEndgameGroupId(): string | null;
+  dispose(): void;
+}
 
 const cases: readonly [string, () => SharedController][] = [
   ['torus', () => new TorusGameController({ size: 9, komi: 0 })],
