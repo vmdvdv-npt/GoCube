@@ -1,7 +1,10 @@
 import { FinalAnalysisProgressProvider } from './FinalAnalysisProgressContext';
-import { TorusGameBase, type TorusGameProps } from './TorusGameBase';
-import './manual-endgame.css';
-import './game-viewport.css';
+import {
+  TorusGame as TorusGameBase,
+  type TorusGameProps,
+} from './TorusGameBase';
+
+export type { TorusGameProps };
 
 export function TorusGame(props: TorusGameProps) {
   return (
