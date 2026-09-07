@@ -27,7 +27,7 @@ const collectProductionFiles = (directory) => {
     if (entry.isDirectory()) return collectProductionFiles(childPath);
     if (!entry.isFile()) return [];
     if (!/\.(?:ts|tsx)$/.test(entry.name)) return [];
-    if (/\.test\.(?:ts|tsx)$/.test(entry.name) || /\.d\.ts$/.test(entry.name)) return [];
+    if (/\.test\.(?:ts|tsx)$/.test(entry.name) || entry.name.endsWith('.d.ts')) return [];
     return [toPosix(childPath)];
   });
 };
