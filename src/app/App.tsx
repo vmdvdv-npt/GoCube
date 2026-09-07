@@ -18,6 +18,7 @@ import {
   type UserPreferences,
 } from './persistence/PreferencesStorage';
 import { TorusGame } from './TorusGame';
+import { useGameControllerLifecycle } from './useGameControllerLifecycle';
 
 declare const __BUILD_PR__: string;
 
@@ -86,6 +87,8 @@ export function App() {
   const [ruleSet, setRuleSet] = useState<RuleSet>('japanese');
   const [komi, setKomi] = useState(String(DEFAULT_KOMI));
   const [error, setError] = useState<string | null>(null);
+
+  useGameControllerLifecycle(activeGame?.controller ?? null);
 
   useEffect(() => {
     let cancelled = false;

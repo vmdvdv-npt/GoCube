@@ -7,7 +7,7 @@ const torusPoint = (page: Page, logicalPointId: string): Locator =>
     `.torus-board__hit-target[data-logical-point-id="${logicalPointId}"][data-copy-role="primary"]`,
   );
 
-test('final proof search keeps the browser event loop responsive while final analysis is visible', async ({ page }) => {
+const startFinalProofFixture = async (page: Page): Promise<void> => {
   const topology = new TorusTopology(9);
   const fixture = new EndgameTestLab().generate({
     kind: 'endgame-position',
@@ -34,6 +34,21 @@ test('final proof search keeps the browser event loop responsive while final ana
   await page.getByRole('button', { name: 'Pass', exact: true }).click();
   const secondPass = page.getByRole('button', { name: 'Pass (1)' });
   await expect(secondPass).toBeEnabled({ timeout: 2_500 });
+  await secondPass.click();
+
+  await expect(page.getByText('Analyzing final position…', { exact: true })).toBeVisible({
+    timeout: 1_500,
+  });
+};
+
+test('final proof search keeps the browser event loop responsive while final analysis is visible', async ({ page }) => {
+  await startFinalProofFixture(page);
+
+  const undo = page.getByRole('button', { name: 'Undo' });
+  const analysisStatus = page.getByText('Analyzing final position…', { exact: true });
+  await expect(page.getByRole('button', { name: /^Pass/ })).toBeDisabled();
+  await expect(undo).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'New game' })).toBeDisabled();
 
   await page.evaluate(() => {
     const probe = { frames: 0, ticks: 0, running: true };
@@ -51,13 +66,6 @@ test('final proof search keeps the browser event loop responsive while final ana
       if (probe.running) probe.ticks += 1;
     }, 10);
   });
-
-  await secondPass.click();
-  const analysisStatus = page.getByText('Analyzing final position…', { exact: true });
-  await expect(analysisStatus).toBeVisible({ timeout: 1_500 });
-  await expect(page.getByRole('button', { name: /^Pass/ })).toBeDisabled();
-  await expect(undo).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'New game' })).toBeDisabled();
 
   const before = await page.evaluate(() => {
     const probe = (window as Window & {
@@ -91,4 +99,24 @@ test('final proof search keeps the browser event loop responsive while final ana
     }).__finalProofProbe;
     if (probe) probe.running = false;
   });
+});
+
+test('Development Workspace does not cancel the active game Final Proof run', async ({ page }) => {
+  await startFinalProofFixture(page);
+
+  const analysisStatus = page.getByText('Analyzing final position…', { exact: true });
+  await page.getByRole('button', { name: 'Development', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Development Workspace' })).toBeVisible();
+  await page.waitForTimeout(50);
+  await page.getByRole('button', { name: 'Back to GoCube' }).click();
+
+  await expect(analysisStatus).toBeVisible({ timeout: 500 });
+  await expect(page.getByText('Final analysis is still completing.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Finish scoring' })).toBeDisabled();
+
+  await expect(page.getByText('Final analysis is still completing.', { exact: true })).toHaveCount(0, {
+    timeout: 7_000,
+  });
+  await expect(analysisStatus).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
 });

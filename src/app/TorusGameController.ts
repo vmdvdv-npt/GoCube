@@ -14,6 +14,7 @@ import type { GameResultViewModel } from '../presentation/GameResultModel';
 import type { GameViewModel } from '../presentation/PresentationModel';
 import {
   GameSessionControllerFacade,
+  type EndgameReviewReadyListener,
   type SharedGameActionResult,
 } from './GameSessionControllerFacade';
 
@@ -68,6 +69,10 @@ export class TorusGameController {
     return this.gameplay.finalAnalysisProgressSource();
   }
 
+  subscribeEndgameReviewReady(listener: EndgameReviewReadyListener): () => void {
+    return this.gameplay.subscribeEndgameReviewReady(listener);
+  }
+
   cancelFinalAnalysis(): void {
     this.gameplay.cancelFinalAnalysis();
   }
@@ -94,6 +99,14 @@ export class TorusGameController {
 
   canRedo(): boolean {
     return this.gameplay.canRedo();
+  }
+
+  endgameReviewReady(): boolean {
+    return this.gameplay.endgameReviewReady();
+  }
+
+  canFinishEndgame(): boolean {
+    return this.gameplay.canFinishEndgame();
   }
 
   endgameGroups(): readonly TorusEndgameGroup[] {

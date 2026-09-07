@@ -64,6 +64,8 @@ export interface Cube2DGameProps {
   readonly newGameDisabled?: boolean;
   readonly animationMode?: AnimationMode;
   readonly externalAction?: Cube2DExternalAction | null;
+  /** True only when this view is also the explicit owner of an ephemeral controller. */
+  readonly ownsController?: boolean;
 }
 
 export function Cube2DGame({
@@ -73,8 +75,9 @@ export function Cube2DGame({
   newGameDisabled = false,
   animationMode = 'normal',
   externalAction = null,
+  ownsController = false,
 }: Cube2DGameProps) {
-  useGameControllerLifecycle(controller);
+  useGameControllerLifecycle(ownsController ? controller : null);
 
   const g = useCube2DGame(controller, { gameplayReadOnly, animationMode, externalAction });
   const displayViewModel = finalBoardViewModel(g.vm);
@@ -141,7 +144,9 @@ export function Cube2DGame({
         <h2 id="cube-endgame-title">Assisted endgame review</h2>
         <p>Click any stone to select its whole group. You can change Alive, Dead, or Seki even when the status was proposed automatically.</p>
       </div>
-      {g.groups.length ? (
+      {!g.endgameReviewReady ? (
+        <p className="endgame-empty">Final analysis is still completing.</p>
+      ) : g.groups.length ? (
         <>
           <div className="endgame-progress" aria-live="polite">
             Resolved {g.resolvedCount} of {g.groups.length}

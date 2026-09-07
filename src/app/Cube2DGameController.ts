@@ -10,6 +10,7 @@ import type { GameResultViewModel } from '../presentation/GameResultModel';
 import type { GameViewModel } from '../presentation/PresentationModel';
 import {
   GameSessionControllerFacade,
+  type EndgameReviewReadyListener,
   type SharedEndgameDecisions,
   type SharedEndgameGroup,
   type SharedGameActionResult,
@@ -57,6 +58,10 @@ export class Cube2DGameController {
     return this.gameplay.finalAnalysisProgressSource();
   }
 
+  subscribeEndgameReviewReady(listener: EndgameReviewReadyListener): () => void {
+    return this.gameplay.subscribeEndgameReviewReady(listener);
+  }
+
   cancelFinalAnalysis(): void {
     this.gameplay.cancelFinalAnalysis();
   }
@@ -83,6 +88,14 @@ export class Cube2DGameController {
 
   canRedo(): boolean {
     return this.gameplay.canRedo();
+  }
+
+  endgameReviewReady(): boolean {
+    return this.gameplay.endgameReviewReady();
+  }
+
+  canFinishEndgame(): boolean {
+    return this.gameplay.canFinishEndgame();
   }
 
   endgameGroups(): readonly Cube2DEndgameGroup[] {

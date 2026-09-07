@@ -80,6 +80,18 @@ export function useCube2DGame(
       captureTimer.current = null;
     }
   }, [controller]);
+
+  useEffect(() => controller.subscribeEndgameReviewReady(() => {
+    const next = controller.viewModel();
+    if (next.phase !== 'endgame') return;
+    const nextGroups = controller.endgameGroups();
+    setVm(next);
+    setGroups(nextGroups);
+    setDecisionsState(controller.endgameDecisions());
+    setHoveredGroup(null);
+    setSelectedGroup((current) => current && nextGroups.some((group) => group.id === current) ? current : controller.nextUnresolvedEndgameGroupId());
+  }), [controller]);
+
   useEffect(() => () => {
     if (transitionTimer.current !== null) window.clearTimeout(transitionTimer.current);
     if (captureTimer.current !== null) window.clearTimeout(captureTimer.current);
@@ -225,7 +237,7 @@ export function useCube2DGame(
     }
   };
   const finishEndgame = async () => {
-    if (vm.phase !== 'endgame' || controller.nextUnresolvedEndgameGroupId() !== null) return;
+    if (vm.phase !== 'endgame' || !controller.canFinishEndgame()) return;
     await run(() => controller.finishEndgame());
   };
   const setZoom = (next: number) => {
@@ -235,10 +247,11 @@ export function useCube2DGame(
   };
 
   const selected = groups.find((group) => group.id === selectedGroup) ?? null;
-  const manualGroupIds = vm.phase === 'endgame' ? controller.endgameManualGroupIds() : [];
+  const endgameReviewReady = vm.phase === 'endgame' && controller.endgameReviewReady();
+  const manualGroupIds = endgameReviewReady ? controller.endgameManualGroupIds() : [];
   const manualReviewed = manualGroupIds.filter((groupId) => Boolean(decisions[groupId])).length;
   const resolvedCount = groups.filter((group) => Boolean(decisions[group.id])).length;
-  const endgameTerritory = vm.phase === 'endgame' ? controller.endgameTerritory() : new Map();
-  const canFinishEndgame = vm.phase === 'endgame' && controller.nextUnresolvedEndgameGroupId() === null;
-  return { vm, view, layout, transition, hoveredPoint, hoverStatus, hoveredGroup, groups, decisions, setDecision, selectedGroup, selected, resultOpen, setResultOpen, showMoveNumbers, setShowMoveNumbers, passGuarded, feedback, zoom, setZoom, capturedEffects, captureAnimating, navigate, moveAnchor, hover, activate, run, pass, finishEndgame, canFinishEndgame, endgameTerritory, resolvedCount, manualReviewed, manualTotal: manualGroupIds.length, automaticClassified: Math.max(0, groups.length - manualGroupIds.length), result: vm.phase === 'finished' ? controller.resultModel() : null, finalClassification: vm.phase === 'finished' ? controller.snapshot().endgameClassification : null } as const;
+  const endgameTerritory = endgameReviewReady ? controller.endgameTerritory() : new Map();
+  const canFinishEndgame = vm.phase === 'endgame' && controller.canFinishEndgame();
+  return { vm, view, layout, transition, hoveredPoint, hoverStatus, hoveredGroup, groups, decisions, setDecision, selectedGroup, selected, resultOpen, setResultOpen, showMoveNumbers, setShowMoveNumbers, passGuarded, feedback, zoom, setZoom, capturedEffects, captureAnimating, navigate, moveAnchor, hover, activate, run, pass, finishEndgame, endgameReviewReady, canFinishEndgame, endgameTerritory, resolvedCount, manualReviewed, manualTotal: manualGroupIds.length, automaticClassified: endgameReviewReady ? Math.max(0, groups.length - manualGroupIds.length) : 0, result: vm.phase === 'finished' ? controller.resultModel() : null, finalClassification: vm.phase === 'finished' ? controller.snapshot().endgameClassification : null } as const;
 }

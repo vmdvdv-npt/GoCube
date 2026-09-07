@@ -4,7 +4,12 @@ export interface DisposableGameController {
   dispose(): void;
 }
 
-/** One unmount/replacement cleanup path for every gameplay controller. */
-export const useGameControllerLifecycle = (controller: DisposableGameController): void => {
-  useEffect(() => () => controller.dispose(), [controller]);
+/** Dispose a controller only from the React boundary that explicitly owns it. */
+export const useGameControllerLifecycle = (
+  controller: DisposableGameController | null,
+): void => {
+  useEffect(() => {
+    if (!controller) return undefined;
+    return () => controller.dispose();
+  }, [controller]);
 };

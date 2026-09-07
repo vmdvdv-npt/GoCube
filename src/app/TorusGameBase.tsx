@@ -126,7 +126,9 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     initialViewModel.phase === 'endgame' ? controller.endgameGroups() : [],
   );
   const decisions = controller.endgameDecisions();
-  const endgameTerritory = viewModel.phase === 'endgame' ? controller.endgameTerritory() : new Map();
+  const endgameReviewReady =
+    viewModel.phase === 'endgame' && controller.endgameReviewReady();
+  const endgameTerritory = endgameReviewReady ? controller.endgameTerritory() : new Map();
   const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(() =>
     initialViewModel.phase === 'endgame' ? controller.nextUnresolvedEndgameGroupId() : null,
@@ -194,12 +196,13 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     [endgameGroups, selectedGroupId],
   );
 
-  const manualGroupIds =
-    viewModel.phase === 'endgame' ? controller.endgameManualGroupIds() : [];
-  const automaticClassifiedCount = Math.max(0, endgameGroups.length - manualGroupIds.length);
+  const manualGroupIds = endgameReviewReady ? controller.endgameManualGroupIds() : [];
+  const automaticClassifiedCount = endgameReviewReady
+    ? Math.max(0, endgameGroups.length - manualGroupIds.length)
+    : 0;
   const resolvedCount = endgameGroups.filter((group) => Boolean(decisions[group.id])).length;
   const canFinishEndgame =
-    viewModel.phase === 'endgame' && controller.nextUnresolvedEndgameGroupId() === null;
+    viewModel.phase === 'endgame' && controller.canFinishEndgame();
 
   useEffect(() => {
     panOffsetRef.current = dragPan.offset;
@@ -234,6 +237,20 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
       nextViewModel.phase === 'endgame' ? controller.endgameGroups() : [],
     );
   }, [controller, dragPan.reset]);
+
+  useEffect(() => controller.subscribeEndgameReviewReady(() => {
+    const nextViewModel = controller.viewModel();
+    if (nextViewModel.phase !== 'endgame') return;
+    const nextGroups = controller.endgameGroups();
+    setViewModel(nextViewModel);
+    setEndgameGroups(nextGroups);
+    setHoveredGroupId(null);
+    setSelectedGroupId((current) =>
+      current && nextGroups.some((group) => group.id === current)
+        ? current
+        : controller.nextUnresolvedEndgameGroupId(),
+    );
+  }), [controller]);
 
   useEffect(() => {
     dragPan.reconstrain();
@@ -700,7 +717,9 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
           </p>
         </div>
 
-        {endgameGroups.length > 0 ? (
+        {!endgameReviewReady ? (
+          <p className="endgame-empty">Final analysis is still completing.</p>
+        ) : endgameGroups.length > 0 ? (
           <>
             <div className="endgame-progress" aria-live="polite">
               Resolved {resolvedCount} of {endgameGroups.length}

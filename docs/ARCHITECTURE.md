@@ -58,6 +58,7 @@
 35. AlphaZero transport data является недоверенным внешним input и проходит runtime validation до создания developer session или применения move.
 36. Presentation layer имеет явный animation mode `normal | disabled`; режим анимации не читается `GameEngine`/`GameState` и не меняет domain result.
 37. Torus/Cube topology-specific controllers не владеют независимыми копиями общего gameplay/endgame lifecycle: один shared application facade координирует `GameEngine`, `GameSession`, scoring/classifier, request-scoped Final Proof lifetime, history commands, endgame/result projections и disposal; mode-specific controllers остаются тонкими configuration/compatibility adapters.
+38. Lifetime обычного игрового controller определяется application-owned identity текущего `activeGame`, а не mount/unmount конкретного React/renderer view; временное исчезновение Game view не уничтожает controller и не отменяет его активный Final Proof Search.
 
 Стрелка `A → B` в этом документе означает: `A` использует контракт `B` или передаёт ему данные/команду. Она не означает наследование.
 
@@ -229,7 +230,9 @@ Topology-specific UI controllers используют композиционны
 
 `TorusGameController` и `Cube2DGameController` остаются тонкими adapters: они валидируют/создают конкретный `Topology` и size, сохраняют только действительно topology-specific public compatibility surface и делегируют общий gameplay/endgame lifecycle facade. Они не создают собственные независимые `GameSession`, scorer/classifier, Final Proof controller или параллельную реализацию history/endgame/result orchestration.
 
-React/game-view lifecycle также имеет одну shared cleanup boundary (`useGameControllerLifecycle` или функционально эквивалентный adapter): замена/unmount owning game view должна вызвать `controller.dispose()` через общий путь. Renderer-specific view не должен самостоятельно изобретать отличающуюся teardown semantics.
+Lifetime обычного gameplay controller принадлежит application-level `activeGame` (или функционально эквивалентному owner), а не конкретному смонтированному Renderer/Game view. Общая cleanup boundary (`useGameControllerLifecycle` или эквивалент) располагается у этого owner и вызывает `controller.dispose()` только когда сам `activeGame` заменён, уничтожен или установлен в `null`, либо уничтожается владеющий application boundary. Временный unmount Torus/Cube view — в частности переход `Game → Development Workspace → Game` при сохранённом том же `activeGame` — **не** является основанием для `dispose()` и не должен отменять его Final Proof run. Ephemeral controller Developer Replay может иметь собственный более короткий owner lifetime, но это ownership должно быть явным и не переноситься на обычную пользовательскую партию.
+
+Вход `GameState` в `ENDGAME_REVIEW` и готовность session-level `EndgameReviewState` — разные моменты: async classifier/Final Proof может ещё работать после того, как phase уже стал `endgame`. Состояние `phase = endgame` при `endgameReview = null` означает **review pending**, а не «нулевое число unresolved-групп» и не «review полностью resolved». Facade/presentation boundary обязан иметь явный readiness signal/query: до фактического создания review `Finish scoring` остаётся fail-closed, а смонтированный или повторно смонтированный view должен получить завершённый review после окончания analysis. Обнуление progress signal само по себе не считается доказательством готовности review, потому что completion progress и запись session review могут происходить последовательно.
 
 # 5. GameAuthority — execution seam
 
@@ -999,14 +1002,15 @@ Pass проходит тем же `GameCommand` path, что и постанов
 Далее:
 
 1. `GameSession` видит доменный phase и запускает `EndgameClassifier.analyze(...)`.
-2. Из `EndgameProposal` создаётся сохраняемый `EndgameReviewState`.
-3. Ручные/assisted statuses изменяют только review state; каждое изменение autosave-ится с новой session revision. Presentation/UI не хранит вторую изменяемую копию этих решений: экран читает актуальные statuses из session-owned review state и отправляет каждое изменение как session command. DOM events, synthetic clicks и replay пользовательского UI не используются как механизм синхронизации review state.
-4. Пока review incomplete, scoring не запускается.
-5. Когда review полностью resolved, создаётся полный `EndgameClassification`.
-6. `GameSession` передаёт classification в выбранный `ScoringStrategy` и получает `FinalScore`.
-7. `GameSession` передаёт внутреннюю доменную `CompleteEndgame` operation через authority/engine boundary.
-8. `GameEngine` валидирует, что current phase — `ENDGAME_REVIEW`, и возвращает `GameState` с `FINISHED`.
-9. Session сохраняет final classification/result metadata и новый state.
+2. До завершения async classifier/Final Proof состояние уже может иметь phase `ENDGAME_REVIEW`, но `EndgameReviewState` ещё отсутствует; presentation трактует это только как pending analysis и не разрешает завершение scoring.
+3. Из `EndgameProposal` создаётся сохраняемый `EndgameReviewState`, после чего application/presentation boundary публикует готовность review для текущего owning controller.
+4. Ручные/assisted statuses изменяют только review state; каждое изменение autosave-ится с новой session revision. Presentation/UI не хранит вторую изменяемую копию этих решений: экран читает актуальные statuses из session-owned review state и отправляет каждое изменение как session command. DOM events, synthetic clicks и replay пользовательского UI не используются как механизм синхронизации review state.
+5. Пока review incomplete, scoring не запускается.
+6. Когда review полностью resolved, создаётся полный `EndgameClassification`.
+7. `GameSession` передаёт classification в выбранный `ScoringStrategy` и получает `FinalScore`.
+8. `GameSession` передаёт внутреннюю доменную `CompleteEndgame` operation через authority/engine boundary.
+9. `GameEngine` валидирует, что current phase — `ENDGAME_REVIEW`, и возвращает `GameState` с `FINISHED`.
+10. Session сохраняет final classification/result metadata и новый state.
 
 `GameSession` ни на одном шаге не присваивает `GamePhase` напрямую.
 
@@ -1173,6 +1177,7 @@ Storage adapter должен заменяться без изменения `Gam
 - assisted proposal не присваивает недоказанный статус;
 - изменение и повторное изменение пользовательского group status;
 - scoring не запускается при incomplete review;
+- `phase = endgame` при ещё отсутствующем async `EndgameReviewState` остаётся fail-closed для scoring/finish и после readiness notification корректно синхронизируется с presentation;
 - полный review детерминированно создаёт `EndgameClassification`;
 - работу classifier через абстрактный `Topology` без renderer assumptions;
 - отсутствие изменения итогового scoring при одинаковом полном `EndgameClassification` независимо от того, какие statuses пришли automatic, а какие user;
@@ -1188,6 +1193,7 @@ Storage adapter должен заменяться без изменения `Gam
 - absolute deadline применяется уже к preprocessing/static graph/Benson и ко всем последующим tiers;
 - completion-only memoization сохраняет proof-equivalence, а interrupted/incomplete static computations не становятся reusable cached facts;
 - browser semantic responsiveness E2E проверяет фактическое продвижение event loop (`requestAnimationFrame` и timer callbacks) во время видимого final analysis, а не только наличие cooperative API в коде;
+- lifecycle E2E `Game → Development Workspace → Game` во время активного Final Proof доказывает, что тот же application-owned game controller не dispose-ится при временном view unmount, analysis остаётся активным, а pending review не принимается за завершённый;
 - benchmark/regression checks operational runtime envelope отдельно от correctness assertions: превышение budget не имеет права превращаться в guessed status.
 
 ## 19.7. Renderer contract tests
@@ -1280,7 +1286,7 @@ AlphaZero client/protocol coverage проверяет как минимум: val
 
 Presentation coverage проверяет, что изменение replay speed не меняет domain state, `1×` использует normal animation mode, а `5×`/`10×` — disabled; seek/jump выполняется без animation независимо от выбранной скорости.
 
-Isolation coverage обязана доказывать, что opening/using/exiting Development Workspace не удаляет и не меняет saved game `current`, а developer replay не вызывает обычный autosave.
+Isolation coverage обязана доказывать, что opening/using/exiting Development Workspace не удаляет и не меняет saved game `current`, а developer replay не вызывает обычный autosave. Если Development Workspace открыт из активной пользовательской партии, временный unmount игрового view также не меняет identity/lifetime её application-owned controller и не отменяет уже запущенный Final Proof run.
 
 E2E использует mocked AlphaZero transport и реальный GoCube application path/Renderer. CI не требует реально запущенного Python AlphaZero service. Отдельный E2E проверяет compatibility failure и отсутствие application crash.
 
@@ -1545,7 +1551,8 @@ Oracle disagreement не означает автоматически bug GoCube.
 - Cube-specific branches в базовом `GameEngine`;
 - отдельный `GameEngine` для Torus и Cube;
 - дублировать общий `GameSession`/scoring/endgame/Final Proof/disposal lifecycle в отдельных Torus/Cube controllers вместо shared application facade;
-- реализовывать различающуюся renderer-specific teardown semantics для owning game views вместо общей controller lifecycle boundary;
+- привязывать `dispose()` application-owned gameplay controller к unmount конкретного Torus/Cube/renderer view или отменять активный Final Proof из-за временного перехода на другой application screen;
+- трактовать `phase = endgame` при `endgameReview = null` как пустой/полностью resolved review или разрешать на этом основании `Finish scoring`;
 - хранить visual duplicates как игровые stones/points;
 - использовать screen coordinates как logical identity;
 - выводить `PointId` из DOM/SVG/CSS/canvas/Three.js ids;
@@ -1622,6 +1629,7 @@ Oracle disagreement не означает автоматически bug GoCube.
 22. Developer session действительно ephemeral и доказано ли, что она не пишет normal saved game?
 23. Transport DTO runtime-валидирован до использования и использует canonical `PointId`, а не внешний action index?
 24. Можно ли заменить HTTP transport другой реализацией `AlphaZeroGateway` без изменения replay/domain core?
+25. Lifetime controller привязан к реальному application owner, а не к временно смонтированному view, и pending async review явно отличается от отсутствующего/пустого resolved review?
 
 Если ответ показывает нарушение границы, сначала исправляется architecture/adapter contract, затем реализуется функция.
 
@@ -1633,6 +1641,8 @@ Oracle disagreement не означает автоматически bug GoCube.
 - `GameCommand`, `SessionCommand`, `ViewIntent` и New Game draft относятся к разным путям;
 - topology-specific game controller конфигурирует `Topology` и делегирует общий gameplay/endgame lifecycle shared application facade;
 - shared application facade владеет controller-side `GameSession`/classifier/scoring/Final Proof/presentation lifecycle и общим disposal path;
+- application-owned `activeGame` владеет lifetime обычного controller: временный unmount Game view не dispose-ит его; `dispose()` происходит при замене/уничтожении самого owner и тогда отменяет ещё активный Final Proof;
+- `phase = endgame` может предшествовать готовности async `EndgameReviewState`; до readiness presentation остаётся fail-closed и после завершения analysis синхронизируется через явный controller signal/query;
 - `GameSession` координирует сессию и никогда напрямую не патчит `GameState`;
 - `GameAuthority` определяет место исполнения domain command;
 - `GameEngine` применяет правила к current `GameState` и является владельцем forward `GamePhase` transitions;
