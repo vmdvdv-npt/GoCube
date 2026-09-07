@@ -102,6 +102,7 @@ describe('GameSession persisted GameState validation', () => {
       state.moveNumber = -1;
     });
     const invalidPasses = corruptCurrentState(snapshot, (state) => {
+      state.moveNumber = 2;
       state.consecutivePasses = 2;
     });
 
