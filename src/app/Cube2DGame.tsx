@@ -18,6 +18,7 @@ import { GameResultDialog } from './GameResultDialog';
 import { GameSidebar } from './GameSidebar';
 import { CUBE_ENDGAME_STATUSES, cubeEndgameStatusLabel, useCube2DGame, type Cube2DExternalAction } from './useCube2DGame';
 import { useDragPan, type DragPanOffset } from './useDragPan';
+import { useGameControllerLifecycle } from './useGameControllerLifecycle';
 import './manual-endgame.css';
 import './cube2d-preview.css';
 import './cube2d-game-flow.css';
@@ -73,7 +74,7 @@ export function Cube2DGame({
   animationMode = 'normal',
   externalAction = null,
 }: Cube2DGameProps) {
-  useEffect(() => () => controller.dispose(), [controller]);
+  useGameControllerLifecycle(controller);
 
   const g = useCube2DGame(controller, { gameplayReadOnly, animationMode, externalAction });
   const displayViewModel = finalBoardViewModel(g.vm);

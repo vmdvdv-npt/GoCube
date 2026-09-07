@@ -1,27 +1,21 @@
 import type { GroupStatus } from '../core/endgame/EndgameClassifier';
-import { AssistedEndgameClassifier } from '../core/endgame/AssistedEndgameClassifier';
-import { effectiveEndgameStatus } from '../core/endgame/EndgameReviewState';
-import {
-  FinalProofSearchRunController,
-  type FinalProofSearchProgressSource,
-} from '../core/endgame/FinalProofSearchRunController';
-import { GameEngine } from '../core/game/GameEngine';
-import {
-  GameSession,
-  type GameSessionPersistenceConfig,
-  type GameSessionRejectionReason,
+import type { FinalProofSearchProgressSource } from '../core/endgame/FinalProofSearchRunController';
+import type {
+  GameSessionPersistenceConfig,
+  GameSessionRejectionReason,
 } from '../core/game/GameSession';
 import type { RuleSet } from '../core/game/types';
 import type { GameSessionSnapshot } from '../core/persistence/GameSessionSnapshot';
-import { ChineseScoring } from '../core/scoring/ChineseScoring';
-import { JapaneseScoring } from '../core/scoring/JapaneseScoring';
-import type { ScoringStrategy } from '../core/scoring/Scoring';
 import type { PointId } from '../core/topology/Topology';
 import { TORUS_SIZES, TorusTopology, type TorusSize } from '../core/topology/TorusTopology';
-import { buildEndgameGroupEdges, endgameGroupId, type EndgameGroupPresentation } from '../presentation/EndgameGroupPresentation';
-import { provisionalEndgameTerritory, type EndgameTerritoryOwner } from '../presentation/EndgameTerritoryPresentation';
-import { createGameResultModel, type GameResultViewModel } from '../presentation/GameResultModel';
-import { PresentationModel, type GameViewModel } from '../presentation/PresentationModel';
+import type { EndgameGroupPresentation } from '../presentation/EndgameGroupPresentation';
+import type { EndgameTerritoryOwner } from '../presentation/EndgameTerritoryPresentation';
+import type { GameResultViewModel } from '../presentation/GameResultModel';
+import type { GameViewModel } from '../presentation/PresentationModel';
+import {
+  GameSessionControllerFacade,
+  type SharedGameActionResult,
+} from './GameSessionControllerFacade';
 
 export interface TorusGameControllerOptions {
   readonly size?: TorusSize;
@@ -45,126 +39,116 @@ export interface TorusMoveAvailability {
 export type TorusEndgameGroup = EndgameGroupPresentation;
 export type TorusEndgameDecisions = Readonly<Partial<Record<string, GroupStatus>>>;
 
-const isTorusSize = (value: number): value is TorusSize => TORUS_SIZES.some((size) => size === value);
-const scoringFor = (ruleSet: RuleSet, topology: TorusTopology): ScoringStrategy =>
-  ruleSet === 'chinese' ? new ChineseScoring(topology) : new JapaneseScoring(topology);
+const isTorusSize = (value: number): value is TorusSize =>
+  TORUS_SIZES.some((size) => size === value);
 
 export class TorusGameController {
   readonly size: TorusSize;
-  private readonly topology: TorusTopology;
-  private readonly session: GameSession;
-  private readonly presentation = new PresentationModel();
-  private readonly finalAnalysis = new FinalProofSearchRunController();
+  private readonly gameplay: GameSessionControllerFacade;
 
   constructor(options: TorusGameControllerOptions = {}) {
     const snapshot = options.snapshot;
     const requestedSize = snapshot?.boardSize ?? options.size ?? 9;
-    if (!isTorusSize(requestedSize)) throw new Error(`Unsupported saved torus size: ${String(requestedSize)}`);
-    this.size = requestedSize;
-    const ruleSet = snapshot?.ruleSet ?? options.ruleSet ?? 'chinese';
-    const komi = snapshot?.komi ?? options.komi ?? 7.5;
-    if (ruleSet !== 'chinese' && ruleSet !== 'japanese') throw new Error(`Unsupported rule set: ${String(ruleSet)}`);
-    if (!Number.isFinite(komi)) throw new Error('Komi must be a finite number');
+    if (!isTorusSize(requestedSize)) {
+      throw new Error(`Unsupported saved torus size: ${String(requestedSize)}`);
+    }
 
-    this.topology = new TorusTopology(this.size);
-    const engine = new GameEngine(this.topology);
-    const config = {
-      endgameClassifier: new AssistedEndgameClassifier({ runController: this.finalAnalysis }),
-      scoringStrategy: scoringFor(ruleSet, this.topology),
+    this.size = requestedSize;
+    this.gameplay = new GameSessionControllerFacade({
+      topology: new TorusTopology(this.size),
       boardSize: this.size,
-      komi,
+      ruleSet: snapshot?.ruleSet ?? options.ruleSet ?? 'chinese',
+      komi: snapshot?.komi ?? options.komi ?? 7.5,
       persistence: options.persistence,
-    } as const;
-    this.session = snapshot ? GameSession.fromSnapshot(engine, config, snapshot) : new GameSession(engine, config);
+      snapshot,
+    });
   }
 
-  finalAnalysisProgressSource(): FinalProofSearchProgressSource { return this.finalAnalysis; }
-  cancelFinalAnalysis(): void { this.finalAnalysis.cancelActive(); }
-  dispose(): void { this.cancelFinalAnalysis(); }
-  viewModel(): GameViewModel { return this.presentation.fromSession(this.session); }
-  snapshot(): GameSessionSnapshot { return this.session.snapshot(); }
-  resultModel(): GameResultViewModel | null { return createGameResultModel(this.session.snapshot(), this.size); }
-  canUndo(): boolean { return this.session.canUndo(); }
-  canRedo(): boolean { return this.session.canRedo(); }
+  finalAnalysisProgressSource(): FinalProofSearchProgressSource {
+    return this.gameplay.finalAnalysisProgressSource();
+  }
+
+  cancelFinalAnalysis(): void {
+    this.gameplay.cancelFinalAnalysis();
+  }
+
+  dispose(): void {
+    this.gameplay.dispose();
+  }
+
+  viewModel(): GameViewModel {
+    return this.gameplay.viewModel();
+  }
+
+  snapshot(): GameSessionSnapshot {
+    return this.gameplay.snapshot();
+  }
+
+  resultModel(): GameResultViewModel | null {
+    return this.gameplay.resultModel();
+  }
+
+  canUndo(): boolean {
+    return this.gameplay.canUndo();
+  }
+
+  canRedo(): boolean {
+    return this.gameplay.canRedo();
+  }
 
   endgameGroups(): readonly TorusEndgameGroup[] {
-    const review = this.session.endgameReview();
-    if (!review) return Object.freeze([]);
-    const viewModel = this.viewModel();
-    const occupancyByPoint = new Map(viewModel.points.map((point) => [point.logicalPointId, point.occupancy]));
-    return Object.freeze(review.groups.map((group) => {
-      const occupancy = occupancyByPoint.get(group.points[0]!);
-      if (occupancy !== 'black' && occupancy !== 'white') throw new Error(`Endgame group does not begin with a stone: ${group.points[0]}`);
-      return Object.freeze({
-        id: endgameGroupId(group.points),
-        points: Object.freeze([...group.points]),
-        color: occupancy,
-        edges: buildEndgameGroupEdges(group.points, this.topology),
-      });
-    }));
+    return this.gameplay.endgameGroups();
   }
 
   endgameDecisions(): TorusEndgameDecisions {
-    const review = this.session.endgameReview();
-    if (!review) return Object.freeze({});
-    return Object.freeze(Object.fromEntries(review.groups.flatMap((group) => {
-      const status = effectiveEndgameStatus(group);
-      return status === 'unresolved' ? [] : [[endgameGroupId(group.points), status] as const];
-    })));
+    return this.gameplay.endgameDecisions();
   }
 
   endgameTerritory(): ReadonlyMap<PointId, EndgameTerritoryOwner> {
-    const viewModel = this.viewModel();
-    if (viewModel.phase !== 'endgame') return new Map();
-    return provisionalEndgameTerritory({ viewModel, topology: this.topology, groups: this.endgameGroups(), decisions: this.endgameDecisions() });
+    return this.gameplay.endgameTerritory();
   }
 
   endgameManualGroupIds(): readonly string[] {
-    const review = this.session.endgameReview();
-    if (!review) return Object.freeze([]);
-    return Object.freeze(review.groups.filter((group) => group.proposal.status === 'unresolved').map((group) => endgameGroupId(group.points)));
+    return this.gameplay.endgameManualGroupIds();
   }
 
   nextUnresolvedEndgameGroupId(): string | null {
-    const review = this.session.endgameReview();
-    if (!review) return null;
-    const group = review.groups.find((candidate) => effectiveEndgameStatus(candidate) === 'unresolved');
-    return group ? endgameGroupId(group.points) : null;
+    return this.gameplay.nextUnresolvedEndgameGroupId();
   }
 
-  async setEndgameDecision(groupId: string, status: GroupStatus): Promise<void> {
-    const review = this.session.endgameReview();
-    const reviewGroup = review?.groups.find((candidate) => endgameGroupId(candidate.points) === groupId);
-    if (!reviewGroup) throw new Error(`Unknown endgame group: ${groupId}`);
-    await this.session.setEndgameReviewDecision(reviewGroup.points, status);
+  setEndgameDecision(groupId: string, status: GroupStatus): Promise<void> {
+    return this.gameplay.setEndgameDecision(groupId, status);
   }
 
   moveAvailability(point: PointId): TorusMoveAvailability {
-    const result = this.session.queryPlaceStone(point);
-    return Object.freeze({ allowed: result.allowed, reason: result.reason });
+    return this.gameplay.moveAvailability(point);
   }
 
   async placeStone(point: PointId): Promise<TorusGameActionResult> {
-    const result = await this.session.execute({ type: 'place-stone', point });
-    return this.present(result.ok, result.ok ? null : result.reason);
+    return this.present(await this.gameplay.placeStone(point));
   }
+
   async pass(): Promise<TorusGameActionResult> {
-    const result = await this.session.execute({ type: 'pass' });
-    return this.present(result.ok, result.ok ? null : result.reason);
+    return this.present(await this.gameplay.pass());
   }
+
   async finishEndgame(): Promise<TorusGameActionResult> {
-    if (this.viewModel().phase !== 'finished') await this.session.finishEndgameReview();
-    return this.present(true, null);
+    return this.present(await this.gameplay.finishEndgame());
   }
+
   async undo(): Promise<TorusGameActionResult> {
-    const result = await this.session.executeSessionCommand({ type: 'undo' });
-    return this.present(result.ok, result.ok ? null : result.reason);
+    return this.present(await this.gameplay.undo());
   }
+
   async redo(): Promise<TorusGameActionResult> {
-    const result = await this.session.executeSessionCommand({ type: 'redo' });
-    return this.present(result.ok, result.ok ? null : result.reason);
+    return this.present(await this.gameplay.redo());
   }
-  private present(accepted: boolean, reason: GameSessionRejectionReason | null): TorusGameActionResult {
-    return Object.freeze({ accepted, reason, viewModel: this.viewModel() });
+
+  private present(result: SharedGameActionResult): TorusGameActionResult {
+    return Object.freeze({
+      accepted: result.accepted,
+      reason: result.reason,
+      viewModel: result.viewModel,
+    });
   }
 }

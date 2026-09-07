@@ -57,6 +57,7 @@
 34. Developer replay использует отдельную ephemeral `GameSession`/controller без обычного autosave; он не записывает и не перезаписывает сохранённую пользовательскую партию `current`.
 35. AlphaZero transport data является недоверенным внешним input и проходит runtime validation до создания developer session или применения move.
 36. Presentation layer имеет явный animation mode `normal | disabled`; режим анимации не читается `GameEngine`/`GameState` и не меняет domain result.
+37. Torus/Cube topology-specific controllers не владеют независимыми копиями общего gameplay/endgame lifecycle: один shared application facade координирует `GameEngine`, `GameSession`, scoring/classifier, request-scoped Final Proof lifetime, history commands, endgame/result projections и disposal; mode-specific controllers остаются тонкими configuration/compatibility adapters.
 
 Стрелка `A → B` в этом документе означает: `A` использует контракт `B` или передаёт ему данные/команду. Она не означает наследование.
 
@@ -212,6 +213,23 @@ Renderer отвечает за игровое поле и renderer-specific inte
 - drawing/hit-testing;
 - физический storage backend;
 - хранение межпартийных preferences как части session snapshot.
+
+## 4.1. Shared application controller facade
+
+Topology-specific UI controllers используют композиционный shared facade над одной `GameSession`, а не наследуются от универсального gameplay superclass.
+
+`GameSessionControllerFacade` (или эквивалентный единый application adapter с тем же контрактом) является владельцем общей controller-side orchestration для локальной партии:
+
+- создаёт `GameEngine` поверх переданного `Topology` и создаёт/восстанавливает `GameSession`;
+- выбирает `ScoringStrategy` и подключает `AssistedEndgameClassifier`;
+- владеет request-scoped `FinalProofSearchRunController` и его progress/cancellation lifetime;
+- предоставляет общие `placeStone`, `pass`, `undo`, `redo`, endgame review/finish, snapshot/result и move-availability операции;
+- строит общие endgame groups/decisions/territory projections через topology-neutral presentation helpers;
+- при `dispose()` отменяет активный Final Proof run, чтобы stale analysis не переживал lifetime owning game controller.
+
+`TorusGameController` и `Cube2DGameController` остаются тонкими adapters: они валидируют/создают конкретный `Topology` и size, сохраняют только действительно topology-specific public compatibility surface и делегируют общий gameplay/endgame lifecycle facade. Они не создают собственные независимые `GameSession`, scorer/classifier, Final Proof controller или параллельную реализацию history/endgame/result orchestration.
+
+React/game-view lifecycle также имеет одну shared cleanup boundary (`useGameControllerLifecycle` или функционально эквивалентный adapter): замена/unmount owning game view должна вызвать `controller.dispose()` через общий путь. Renderer-specific view не должен самостоятельно изобретать отличающуюся teardown semantics.
 
 # 5. GameAuthority — execution seam
 
@@ -1517,6 +1535,8 @@ Oracle disagreement не означает автоматически bug GoCube.
 
 - Cube-specific branches в базовом `GameEngine`;
 - отдельный `GameEngine` для Torus и Cube;
+- дублировать общий `GameSession`/scoring/endgame/Final Proof/disposal lifecycle в отдельных Torus/Cube controllers вместо shared application facade;
+- реализовывать различающуюся renderer-specific teardown semantics для owning game views вместо общей controller lifecycle boundary;
 - хранить visual duplicates как игровые stones/points;
 - использовать screen coordinates как logical identity;
 - выводить `PointId` из DOM/SVG/CSS/canvas/Three.js ids;
@@ -1602,6 +1622,8 @@ Oracle disagreement не означает автоматически bug GoCube.
 
 - пользователь создаёт typed intent в UI;
 - `GameCommand`, `SessionCommand`, `ViewIntent` и New Game draft относятся к разным путям;
+- topology-specific game controller конфигурирует `Topology` и делегирует общий gameplay/endgame lifecycle shared application facade;
+- shared application facade владеет controller-side `GameSession`/classifier/scoring/Final Proof/presentation lifecycle и общим disposal path;
 - `GameSession` координирует сессию и никогда напрямую не патчит `GameState`;
 - `GameAuthority` определяет место исполнения domain command;
 - `GameEngine` применяет правила к current `GameState` и является владельцем forward `GamePhase` transitions;
