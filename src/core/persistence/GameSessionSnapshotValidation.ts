@@ -24,11 +24,11 @@ const isNonNegativeSafeInteger = (value: unknown): value is number =>
  * rule-relevant scalar fields before History, GameSession or presentation code
  * may treat it as GameState.
  */
-export const assertSerializedGameState = (
+export function assertSerializedGameState(
   value: unknown,
   topology: Topology,
   label: string,
-): asserts value is GameState => {
+): asserts value is GameState {
   if (!isRecord(value)) {
     throw new Error(`${label} must be an object`);
   }
@@ -88,7 +88,7 @@ export const assertSerializedGameState = (
   ) {
     throw new Error(`${label} has invalid capture counters`);
   }
-};
+}
 
 /** Validates every current/past/redo GameState before snapshot restoration. */
 export const assertSerializedSnapshotGameStates = (
