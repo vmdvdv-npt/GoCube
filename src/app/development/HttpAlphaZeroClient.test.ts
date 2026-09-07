@@ -58,9 +58,9 @@ describe('HttpAlphaZeroClient', () => {
 
   it('aborts and reports a transport timeout when the service stops responding', async () => {
     vi.useFakeTimers();
-    let signal: AbortSignal | null = null;
+    const seenSignals: AbortSignal[] = [];
     const fetcher: AlphaZeroFetch = async (_input, init) => {
-      signal = init?.signal ?? null;
+      if (init?.signal) seenSignals.push(init.signal);
       return await new Promise<Response>((_resolve, reject) => {
         init?.signal?.addEventListener('abort', () => {
           reject(new DOMException('Aborted', 'AbortError'));
@@ -78,7 +78,8 @@ describe('HttpAlphaZeroClient', () => {
 
     await expect(pending).rejects.toMatchObject({ kind: 'transport' });
     await expect(pending).rejects.toThrow(/timed out after 1 seconds/i);
-    expect(signal?.aborted).toBe(true);
+    expect(seenSignals).toHaveLength(1);
+    expect(seenSignals[0]?.aborted).toBe(true);
   });
 
   it('rejects malformed JSON', async () => {
