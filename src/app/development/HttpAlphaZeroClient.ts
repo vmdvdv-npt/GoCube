@@ -19,6 +19,16 @@ export type AlphaZeroFetch = (
   init?: RequestInit,
 ) => Promise<Response>;
 
+export interface HttpAlphaZeroClientOptions {
+  readonly baseUrl?: string;
+  readonly fetcher?: AlphaZeroFetch;
+  readonly metadataTimeoutMs?: number;
+  readonly generationTimeoutMs?: number;
+}
+
+const DEFAULT_METADATA_TIMEOUT_MS = 5_000;
+const DEFAULT_GENERATION_TIMEOUT_MS = 10 * 60_000;
+
 const configuredBaseUrl = (): string => {
   const configured = import.meta.env.VITE_ALPHAZERO_BASE_URL;
   return typeof configured === 'string' && configured.trim().length > 0
@@ -27,6 +37,14 @@ const configuredBaseUrl = (): string => {
 };
 
 const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, '');
+
+const normalizeTimeoutMs = (value: number | undefined, fallback: number, name: string): number => {
+  const resolved = value ?? fallback;
+  if (!Number.isFinite(resolved) || resolved <= 0) {
+    throw new RangeError(`${name} must be a positive finite number.`);
+  }
+  return resolved;
+};
 
 const transportRecord = (
   value: unknown,
@@ -81,18 +99,34 @@ const normalizeGeneratedGameResponse = (value: unknown): unknown => {
 export class HttpAlphaZeroClient implements AlphaZeroGateway {
   private readonly baseUrl: string;
   private readonly fetcher: AlphaZeroFetch;
+  private readonly metadataTimeoutMs: number;
+  private readonly generationTimeoutMs: number;
 
-  constructor(options: { readonly baseUrl?: string; readonly fetcher?: AlphaZeroFetch } = {}) {
+  constructor(options: HttpAlphaZeroClientOptions = {}) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl ?? configuredBaseUrl());
     this.fetcher = options.fetcher ?? ((input, init) => fetch(input, init));
+    this.metadataTimeoutMs = normalizeTimeoutMs(
+      options.metadataTimeoutMs,
+      DEFAULT_METADATA_TIMEOUT_MS,
+      'metadataTimeoutMs',
+    );
+    this.generationTimeoutMs = normalizeTimeoutMs(
+      options.generationTimeoutMs,
+      DEFAULT_GENERATION_TIMEOUT_MS,
+      'generationTimeoutMs',
+    );
   }
 
   async health(): Promise<AlphaZeroHealth> {
-    return parseAlphaZeroHealth(normalizeHealthResponse(await this.request('/v1/health')));
+    return parseAlphaZeroHealth(
+      normalizeHealthResponse(await this.request('/v1/health', undefined, this.metadataTimeoutMs)),
+    );
   }
 
   async listCheckpoints(): Promise<readonly AlphaZeroCheckpointDescriptor[]> {
-    return parseAlphaZeroCheckpointList(await this.request('/v1/checkpoints'));
+    return parseAlphaZeroCheckpointList(
+      await this.request('/v1/checkpoints', undefined, this.metadataTimeoutMs),
+    );
   }
 
   async generateGame(request: AlphaZeroGenerateGameRequest): Promise<AlphaZeroGeneratedGame> {
@@ -107,12 +141,37 @@ export class HttpAlphaZeroClient implements AlphaZeroGateway {
             whiteCheckpointId: request.whiteCheckpointId,
             mctsSims: request.mctsSimulations,
           }),
-        }),
+        }, this.generationTimeoutMs),
       ),
     );
   }
 
-  private async request(path: string, init?: RequestInit): Promise<unknown> {
+  private async request(path: string, init: RequestInit | undefined, timeoutMs: number): Promise<unknown> {
+    const controller = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    const operation = this.performRequest(path, {
+      ...init,
+      signal: controller.signal,
+    });
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        controller.abort();
+        reject(new AlphaZeroGatewayError(
+          `AlphaZero service request timed out after ${Math.ceil(timeoutMs / 1000)} seconds.`,
+          'transport',
+        ));
+      }, timeoutMs);
+    });
+
+    try {
+      return await Promise.race([operation, timeout]);
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+    }
+  }
+
+  private async performRequest(path: string, init?: RequestInit): Promise<unknown> {
     let response: Response;
     try {
       response = await this.fetcher(`${this.baseUrl}${path}`, init);
