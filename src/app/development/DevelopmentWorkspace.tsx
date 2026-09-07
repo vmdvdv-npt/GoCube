@@ -496,6 +496,7 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
               newGameDisabled
               animationMode={animationMode}
               externalAction={externalAction}
+              ownsController
             />
           ) : (
             <div className="development-workspace__empty-board">
