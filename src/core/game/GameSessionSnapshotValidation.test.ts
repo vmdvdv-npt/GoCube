@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { EndgameClassifier } from '../endgame/EndgameClassifier';
+import type {
+  EndgameAnalysisContext,
+  EndgameClassifier,
+} from '../endgame/EndgameClassifier';
 import type { GameSessionSnapshot } from '../persistence/GameSessionSnapshot';
 import { ChineseScoring } from '../scoring/ChineseScoring';
 import { TorusTopology } from '../topology/TorusTopology';
@@ -11,7 +14,7 @@ const emptyClassifier: EndgameClassifier = Object.freeze({
 });
 
 const unresolvedClassifier: EndgameClassifier = Object.freeze({
-  analyze: async ({ groups }) =>
+  analyze: async ({ groups }: EndgameAnalysisContext) =>
     Object.freeze(
       groups.map((points) =>
         Object.freeze({
@@ -23,7 +26,7 @@ const unresolvedClassifier: EndgameClassifier = Object.freeze({
 });
 
 const deadClassifier: EndgameClassifier = Object.freeze({
-  analyze: async ({ groups }) =>
+  analyze: async ({ groups }: EndgameAnalysisContext) =>
     Object.freeze(
       groups.map((points) =>
         Object.freeze({
@@ -263,6 +266,41 @@ describe('GameSession persisted session metadata validation', () => {
     expect(() =>
       GameSession.fromSnapshot(engine, config, copy as unknown as GameSessionSnapshot),
     ).toThrow('contains a point that is not a stone: 1,1');
+  });
+
+  it('rejects malformed persisted classification status and source', async () => {
+    const { engine, config } = setup(deadClassifier);
+    const session = new GameSession(engine, config);
+    await session.execute({ type: 'place-stone', point: '0,0' });
+    await session.execute({ type: 'pass' });
+    await session.execute({ type: 'pass' });
+    await session.finishEndgameReview();
+
+    const invalidStatus = structuredClone(session.snapshot()) as unknown as MutableSnapshot;
+    const invalidSource = structuredClone(session.snapshot()) as unknown as MutableSnapshot;
+    if (!Array.isArray(invalidStatus.endgameClassification)) {
+      throw new Error('Expected endgame classification');
+    }
+    if (!Array.isArray(invalidSource.endgameClassification)) {
+      throw new Error('Expected endgame classification');
+    }
+    (invalidStatus.endgameClassification[0] as Record<string, unknown>).status = 'unknown';
+    (invalidSource.endgameClassification[0] as Record<string, unknown>).source = 'storage';
+
+    expect(() =>
+      GameSession.fromSnapshot(
+        engine,
+        config,
+        invalidStatus as unknown as GameSessionSnapshot,
+      ),
+    ).toThrow('has invalid status');
+    expect(() =>
+      GameSession.fromSnapshot(
+        engine,
+        config,
+        invalidSource as unknown as GameSessionSnapshot,
+      ),
+    ).toThrow('has invalid source');
   });
 
   it('rejects a persisted FinalScore that differs from authoritative rescoring', async () => {
