@@ -52,6 +52,25 @@ class MemoryRepository implements GameRepository<GameSessionSnapshot> {
   }
 }
 
+class FailOnceRepository implements GameRepository<GameSessionSnapshot> {
+  readonly saved: SavedGame<GameSessionSnapshot>[] = [];
+  private shouldFail = true;
+
+  async save(game: SavedGame<GameSessionSnapshot>): Promise<void> {
+    if (this.shouldFail) {
+      this.shouldFail = false;
+      throw new Error('simulated storage quota failure');
+    }
+    this.saved.push(JSON.parse(JSON.stringify(game)) as SavedGame<GameSessionSnapshot>);
+  }
+
+  async load(): Promise<SavedGame<GameSessionSnapshot> | null> {
+    return null;
+  }
+
+  async remove(): Promise<void> {}
+}
+
 const configFor = (
   repository: GameRepository<GameSessionSnapshot>,
   topology: TorusTopology,
@@ -98,6 +117,32 @@ describe('GameSession ordered autosave revisions', () => {
 
     repository.releaseNext();
     await secondAction;
+  });
+
+  it('keeps an accepted command authoritative when autosave fails and recovers on the next save', async () => {
+    const topology = new TorusTopology(9);
+    const repository = new FailOnceRepository();
+    const session = new GameSession(
+      new GameEngine(topology),
+      configFor(repository, topology),
+    );
+
+    const firstAction = await session.execute({ type: 'place-stone', point: '0,0' });
+
+    expect(firstAction.ok).toBe(true);
+    expect(session.state().board['0,0']).toBe('black');
+    expect(session.snapshot().sessionRevision).toBe(1);
+    expect(repository.saved).toHaveLength(0);
+
+    const secondAction = await session.execute({ type: 'place-stone', point: '1,1' });
+
+    expect(secondAction.ok).toBe(true);
+    expect(session.state().board['0,0']).toBe('black');
+    expect(session.state().board['1,1']).toBe('white');
+    expect(session.snapshot().sessionRevision).toBe(2);
+    expect(repository.saved).toHaveLength(1);
+    expect(repository.saved[0]?.state.sessionRevision).toBe(2);
+    expect(repository.saved[0]?.state.history).toHaveLength(3);
   });
 
   it('restores the saved revision and continues monotonically after reload', async () => {

@@ -631,11 +631,18 @@ export class GameSession {
 
     const snapshot = this.snapshot();
     const savedAt = (persistence.now ?? (() => new Date().toISOString()))();
-    await coordinator.save({
-      id: persistence.gameId,
-      savedAt,
-      state: snapshot,
-    });
+    try {
+      await coordinator.save({
+        id: persistence.gameId,
+        savedAt,
+        state: snapshot,
+      });
+    } catch {
+      // The accepted in-memory/session mutation is authoritative. A durability
+      // failure must not turn that accepted command into a rejected Promise and
+      // leave presentation behind the controller. The ordered coordinator will
+      // still allow the next persist-worthy change to attempt a newer save.
+    }
   }
 
   private groupsForClassification(

@@ -868,6 +868,8 @@ Persist-worthy изменения включают как минимум при�
 - persisted envelope хранит revision, чтобы stale write/load можно было распознать;
 - новый save после failed write не должен откатывать in-memory authoritative session state к старой revision.
 
+После того как session mutation уже принят и стал authoritative in-memory state, отказ storage write является durability failure, а не отменой этой команды. Такой отказ не должен превращать accepted action/Undo/Redo/review change в rejected Promise после изменения `History` или session metadata и тем самым оставлять presentation на предыдущем состоянии. Следующее persist-worthy изменение обязано снова попытаться сохранить актуальную более новую revision; failed write не должен отравлять ordered-save queue.
+
 Storage adapter дополнительно должен отказываться считать более низкую revision более новой, если его backend допускает конкурирующие writes.
 
 ## 16.3. PreferencesStorage
@@ -1125,6 +1127,7 @@ Headless tests обязаны проверять без SVG/DOM/Three.js:
 - final result state восстанавливается детерминированно;
 - искусственно задержанные async writes `revision N` и `revision N+1` не позволяют старой revision победить;
 - rapid sequence move/pass/undo/review-decision сохраняет highest committed session revision;
+- failed storage write после уже принятой session mutation не отклоняет accepted command и не оставляет presentation позади authoritative session state; следующий save может сохранить более новую revision;
 - `GameStorage.clear()` не удаляет `UserPreferences`;
 - preferences и game save валидируются/мигрируют независимо.
 
