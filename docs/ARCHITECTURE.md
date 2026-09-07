@@ -1065,6 +1065,15 @@ PR CI имеет ровно два режима:
 
 Каждый push в `main` повторно выполняет как минимум стандартный CI. Release-finalization push всегда принудительно выполняет `full`, и только такой cross-browser прогон считается полным regression/release gate.
 
+Coverage gate имеет два независимых уровня, и оба выполняются одной командой `npm run test:coverage`:
+
+- global baseline собирает V8 coverage по production source и требует минимум `60%` statements, `50%` branches, `50%` functions и `60%` lines;
+- rule-critical production modules в `src/core/endgame/**` (кроме `testlab/**`, test-файлов и declaration-файлов) и `src/core/scoring/**` дополнительно проверяются **по каждому executable файлу отдельно** с минимумом `80%` statements, `70%` branches, `75%` functions и `80%` lines. Среднее покрытие соседних файлов не может компенсировать недостаточно протестированный proof reader, classifier или scorer.
+
+Rule-critical per-file gate использует тот же завершённый V8 coverage run и его machine-readable summary. Production critical file с executable code обязан присутствовать в coverage summary; отсутствие такого файла считается failure. Файл без executable coverage counters не получает искусственный процент и может быть пропущен как type-only/no-executable module.
+
+При наличии отдельного `vitest.config.ts` именно он является владельцем Vitest coverage configuration. Нельзя размещать обязательный coverage gate только в `vite.config.ts`, потому что отдельный Vitest config имеет приоритет и иначе такой gate не участвует в `vitest run`.
+
 `main` обязан быть защищён repository-level branch protection/ruleset: изменения попадают в `main` только через pull request, merge разрешён только после успешного required CI check для job `test`, а обычный direct push или bypass этого gate не допускается. Force-push и удаление `main` запрещены. Эта защита является техническим enforcement на уровне GitHub, а не соглашением по названию PR.
 
 ## 19.1. GameEngine tests
