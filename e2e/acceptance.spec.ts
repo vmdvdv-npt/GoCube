@@ -222,5 +222,14 @@ test('corrupted local save is discarded without blocking startup', async ({ page
 
   await page.goto('/');
   await expect(page.getByTestId('new-game-settings-grid')).toBeVisible();
-  expect(await page.evaluate(() => localStorage.getItem('gocube:game:current'))).toBeNull();
+
+  const stored = await page.evaluate(() => localStorage.getItem('gocube:game:current'));
+  expect(stored).not.toBeNull();
+  expect(JSON.parse(stored ?? 'null')).toMatchObject({
+    id: 'current',
+    state: {
+      __gocubeRetiredGameSlot: 'gocube-retired-game-slot-v1',
+      sessionRevision: Number.MAX_SAFE_INTEGER,
+    },
+  });
 });
