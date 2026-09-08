@@ -1,5 +1,5 @@
 import type {
-  GameRepository,
+  ActiveGameRepository,
   SavedGame,
 } from '../../core/persistence/GameRepository';
 
@@ -26,8 +26,14 @@ type RevisionInspection =
   | { readonly kind: 'valid'; readonly value: number }
   | { readonly kind: 'invalid' };
 
+type SessionIdentityInspection =
+  | { readonly kind: 'missing' }
+  | { readonly kind: 'valid'; readonly value: string }
+  | { readonly kind: 'invalid' };
+
 const LOCK_STORE = 'mutex';
 const LOCK_RECORD_KEY = 'exclusive';
+const RETIRED_SLOT_MARKER = 'gocube-retired-game-slot-v1';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -37,6 +43,23 @@ const isSavedGame = <TState>(value: unknown): value is SavedGame<TState> =>
   typeof value.id === 'string' &&
   typeof value.savedAt === 'string' &&
   Object.prototype.hasOwnProperty.call(value, 'state');
+
+const isRetiredGameSlot = (value: unknown, id: string): boolean =>
+  isSavedGame<unknown>(value) &&
+  value.id === id &&
+  isRecord(value.state) &&
+  value.state.__gocubeRetiredGameSlot === RETIRED_SLOT_MARKER;
+
+const retiredGameSlot = (id: string): SavedGame<Record<string, unknown>> => ({
+  id,
+  savedAt: '',
+  state: {
+    __gocubeRetiredGameSlot: RETIRED_SLOT_MARKER,
+    // A revision-aware client from before session identities were introduced
+    // also fails closed when it encounters this retired slot.
+    sessionRevision: Number.MAX_SAFE_INTEGER,
+  },
+});
 
 const inspectRevisionField = (
   state: Record<string, unknown>,
@@ -73,11 +96,64 @@ const inspectSessionRevision = (state: unknown): RevisionInspection => {
   return { kind: 'missing' };
 };
 
+const inspectSessionIdentityField = (
+  state: Record<string, unknown>,
+): SessionIdentityInspection => {
+  if (!Object.prototype.hasOwnProperty.call(state, 'sessionId')) {
+    return { kind: 'missing' };
+  }
+
+  const sessionId = state.sessionId;
+  if (typeof sessionId === 'string' && sessionId.length > 0) {
+    return { kind: 'valid', value: sessionId };
+  }
+
+  return { kind: 'invalid' };
+};
+
+const inspectSessionIdentity = (state: unknown): SessionIdentityInspection => {
+  if (!isRecord(state)) return { kind: 'missing' };
+
+  const direct = inspectSessionIdentityField(state);
+  if (direct.kind !== 'missing') return direct;
+
+  if (isRecord(state.snapshot)) {
+    return inspectSessionIdentityField(state.snapshot);
+  }
+
+  return { kind: 'missing' };
+};
+
 const revisionOrLegacyZero = (state: unknown, source: string): number => {
   const inspection = inspectSessionRevision(state);
   if (inspection.kind === 'valid') return inspection.value;
   if (inspection.kind === 'missing') return 0;
   throw new Error(`Invalid sessionRevision in ${source} saved game`);
+};
+
+const requireValidSessionIdentity = (state: unknown, source: string): string => {
+  const inspection = inspectSessionIdentity(state);
+  if (inspection.kind === 'valid') return inspection.value;
+  if (inspection.kind === 'missing') {
+    throw new Error(`Missing sessionId in ${source} saved game`);
+  }
+  throw new Error(`Invalid sessionId in ${source} saved game`);
+};
+
+const sameSessionIdentity = (
+  stored: SessionIdentityInspection,
+  incoming: SessionIdentityInspection,
+): boolean => {
+  if (stored.kind === 'invalid' || incoming.kind === 'invalid') {
+    throw new Error('Cannot safely compare invalid saved-game session identity');
+  }
+  if (stored.kind === 'missing' || incoming.kind === 'missing') {
+    // Backward compatibility: missing identity is one explicit legacy
+    // generation and only compares against another legacy save. It never
+    // matches a modern identified session.
+    return stored.kind === 'missing' && incoming.kind === 'missing';
+  }
+  return stored.value === incoming.value;
 };
 
 const inProcessLockTails = new Map<string, Promise<void>>();
@@ -216,7 +292,7 @@ const browserExclusiveLock: LocalStorageExclusiveLock = {
 
 /** Browser persistence adapter. Core/session code only depends on GameRepository. */
 export class LocalStorageGameRepository<TState = unknown>
-  implements GameRepository<TState>
+  implements ActiveGameRepository<TState>
 {
   constructor(
     private readonly prefix = 'gocube:game:',
@@ -225,35 +301,69 @@ export class LocalStorageGameRepository<TState = unknown>
   ) {}
 
   async save(game: SavedGame<TState>): Promise<void> {
-    const incomingRevision = revisionOrLegacyZero(game.state, 'incoming');
+    const incomingIdentity = inspectSessionIdentity(game.state);
+    if (incomingIdentity.kind === 'invalid') {
+      throw new Error('Invalid sessionId in incoming saved game');
+    }
 
     await this.exclusiveLock.runExclusive(this.lockName(game.id), () => {
       const key = this.key(game.id);
       const raw = this.storage.getItem(key);
 
-      if (raw !== null) {
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(raw);
-        } catch {
-          throw new Error(
-            `Cannot safely compare revision of corrupted saved game ${game.id}`,
-          );
-        }
+      if (raw === null) {
+        revisionOrLegacyZero(game.state, 'incoming');
+        this.storage.setItem(key, JSON.stringify(game));
+        return;
+      }
 
-        if (!isSavedGame<TState>(parsed) || parsed.id !== game.id) {
-          throw new Error(
-            `Cannot safely replace corrupted saved game ${game.id}`,
-          );
-        }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        throw new Error(
+          `Cannot safely compare revision of corrupted saved game ${game.id}`,
+        );
+      }
 
-        const storedRevision = revisionOrLegacyZero(parsed.state, 'stored');
-        if (storedRevision > incomingRevision) {
-          return;
-        }
+      if (isRetiredGameSlot(parsed, game.id)) {
+        return;
+      }
+
+      if (!isSavedGame<TState>(parsed) || parsed.id !== game.id) {
+        throw new Error(
+          `Cannot safely replace corrupted saved game ${game.id}`,
+        );
+      }
+
+      const storedIdentity = inspectSessionIdentity(parsed.state);
+      if (storedIdentity.kind === 'invalid') {
+        throw new Error(
+          `Cannot safely compare session identity of corrupted saved game ${game.id}`,
+        );
+      }
+
+      if (!sameSessionIdentity(storedIdentity, incomingIdentity)) {
+        return;
+      }
+
+      const incomingRevision = revisionOrLegacyZero(game.state, 'incoming');
+      const storedRevision = revisionOrLegacyZero(parsed.state, 'stored');
+      if (storedRevision > incomingRevision) {
+        return;
       }
 
       this.storage.setItem(key, JSON.stringify(game));
+    });
+  }
+
+  async activate(game: SavedGame<TState>): Promise<void> {
+    requireValidSessionIdentity(game.state, 'activated');
+    revisionOrLegacyZero(game.state, 'activated');
+
+    await this.exclusiveLock.runExclusive(this.lockName(game.id), () => {
+      // Activation is the only operation allowed to replace the active session
+      // identity. It intentionally ignores the previous generation/revision.
+      this.storage.setItem(this.key(game.id), JSON.stringify(game));
     });
   }
 
@@ -269,6 +379,7 @@ export class LocalStorageGameRepository<TState = unknown>
 
     try {
       const parsed: unknown = JSON.parse(raw);
+      if (isRetiredGameSlot(parsed, id)) return null;
       if (!isSavedGame<TState>(parsed) || parsed.id !== id) {
         this.removeCorrupted(id);
         return null;
@@ -281,7 +392,12 @@ export class LocalStorageGameRepository<TState = unknown>
   }
 
   async remove(id: string): Promise<void> {
-    this.storage.removeItem(this.key(id));
+    await this.exclusiveLock.runExclusive(this.lockName(id), () => {
+      // Keep a fail-closed sentinel instead of exposing an empty interval where
+      // an old tab could recreate the retired session before New Game activates
+      // its new identity.
+      this.storage.setItem(this.key(id), JSON.stringify(retiredGameSlot(id)));
+    });
   }
 
   private key(id: string): string {
