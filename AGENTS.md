@@ -8,7 +8,12 @@ Before planning, reviewing, editing, or implementing work, read the repository d
 - Version scope/sequencing/`introducedIn` → `docs/ROADMAP.md`
 - Detailed product behavior/requirements → `docs/GAME_CUBE_GO.md`
 
-These three files are the canonical project documentation. Do not infer current requirements from release records, README, issues, PR descriptions, comments, old tasks, chat excerpts, cached copies, or exports.
+These three files remain the canonical project documentation for architecture, roadmap/version scope, and product requirements. Do not infer current requirements from release records, README, issues, PR descriptions, comments, old tasks, chat excerpts, cached copies, or exports.
+
+The following approved AlphaZero ↔ GoCube integration documents have deliberately narrower authority:
+
+- `docs/ALPHAZERO_V2_COMPATIBILITY_MATRIX.md` — canonical only for the AlphaZero ↔ GoCube V2 product-boundary compatibility matrix, acceptance rows, and intentional-difference registry. It does not override `GAME_CUBE_GO.md`, `ROADMAP.md`, or `ARCHITECTURE.md`.
+- `docs/ALPHAZERO_V2_VERIFICATION_REPORT.md` — historical record of the evidence and checks completed for AlphaZero ↔ GoCube V2 verification. It is not a source of current product requirements, roadmap scope, or architecture.
 
 ## Documentation hygiene
 
