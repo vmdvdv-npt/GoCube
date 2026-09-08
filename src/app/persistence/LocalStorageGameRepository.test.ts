@@ -72,8 +72,18 @@ interface RevisionState {
   readonly marker: string;
 }
 
+interface IdentifiedRevisionState extends RevisionState {
+  readonly sessionId: string;
+}
+
 interface WrappedRevisionState {
   readonly version: 2;
+  readonly snapshot: RevisionState;
+}
+
+interface WrappedIdentifiedRevisionState {
+  readonly version: 2;
+  readonly sessionId: string;
   readonly snapshot: RevisionState;
 }
 
@@ -81,6 +91,17 @@ const savedGame = (id: string, sessionRevision: number, marker: string) => ({
   id,
   savedAt: `2026-09-08T00:00:${String(sessionRevision).padStart(2, '0')}.000Z`,
   state: { sessionRevision, marker } satisfies RevisionState,
+});
+
+const identifiedSavedGame = (
+  id: string,
+  sessionId: string,
+  sessionRevision: number,
+  marker: string,
+) => ({
+  id,
+  savedAt: `2026-09-08T00:00:${String(sessionRevision).padStart(2, '0')}.000Z`,
+  state: { sessionId, sessionRevision, marker } satisfies IdentifiedRevisionState,
 });
 
 const wrappedSavedGame = (
@@ -94,6 +115,21 @@ const wrappedSavedGame = (
     version: 2 as const,
     snapshot: { sessionRevision, marker },
   } satisfies WrappedRevisionState,
+});
+
+const wrappedIdentifiedSavedGame = (
+  id: string,
+  sessionId: string,
+  sessionRevision: number,
+  marker: string,
+) => ({
+  id,
+  savedAt: `2026-09-08T00:00:${String(sessionRevision).padStart(2, '0')}.000Z`,
+  state: {
+    version: 2 as const,
+    sessionId,
+    snapshot: { sessionRevision, marker },
+  } satisfies WrappedIdentifiedRevisionState,
 });
 
 describe('LocalStorageGameRepository', () => {
@@ -188,6 +224,55 @@ describe('LocalStorageGameRepository', () => {
     );
   });
 
+  it('does not let an old revision 21 session overwrite a newly activated revision 0 session', async () => {
+    const storage = new MemoryStorage();
+    const repository = new LocalStorageGameRepository<IdentifiedRevisionState>(
+      'test:game:',
+      storage,
+    );
+
+    await repository.activate(identifiedSavedGame('current', 'old-session', 20, 'old-20'));
+    const newGame = identifiedSavedGame('current', 'new-session', 0, 'new-0');
+    await repository.activate(newGame);
+    await repository.save(identifiedSavedGame('current', 'old-session', 21, 'old-21'));
+
+    await expect(repository.load('current')).resolves.toEqual(newGame);
+  });
+
+  it('continues comparing revisions for two tabs of the same session identity', async () => {
+    const storage = new MemoryStorage();
+    const lock = new BlockingFirstPerNameLock();
+    const freshRepository = new LocalStorageGameRepository<IdentifiedRevisionState>(
+      'test:game:',
+      storage,
+      lock,
+    );
+    const staleRepository = new LocalStorageGameRepository<IdentifiedRevisionState>(
+      'test:game:',
+      storage,
+      lock,
+    );
+    storage.values.set(
+      'test:game:current',
+      JSON.stringify(identifiedSavedGame('current', 'shared-session', 11, 'baseline')),
+    );
+
+    const freshSave = freshRepository.save(
+      identifiedSavedGame('current', 'shared-session', 13, 'fresh'),
+    );
+    await lock.firstEntered;
+    const staleSave = staleRepository.save(
+      identifiedSavedGame('current', 'shared-session', 12, 'stale'),
+    );
+
+    lock.releaseFirst();
+    await Promise.all([freshSave, staleSave]);
+
+    await expect(freshRepository.load('current')).resolves.toEqual(
+      identifiedSavedGame('current', 'shared-session', 13, 'fresh'),
+    );
+  });
+
   it('serializes two repository instances so a later stale save cannot erase a newer revision', async () => {
     const storage = new MemoryStorage();
     storage.values.set(
@@ -223,6 +308,73 @@ describe('LocalStorageGameRepository', () => {
     expect(JSON.parse(storage.values.get('test:game:current') ?? 'null')).toEqual(
       savedGame('current', 13, 'fresh'),
     );
+  });
+
+  it('keeps the slot fenced from stale saves between remove and New Game activation', async () => {
+    const storage = new MemoryStorage();
+    const repository = new LocalStorageGameRepository<IdentifiedRevisionState>(
+      'test:game:',
+      storage,
+    );
+    await repository.activate(identifiedSavedGame('current', 'old-session', 20, 'old-20'));
+
+    await repository.remove('current');
+    await repository.save(identifiedSavedGame('current', 'old-session', 21, 'old-21'));
+    await expect(repository.load('current')).resolves.toBeNull();
+
+    const newGame = identifiedSavedGame('current', 'new-session', 0, 'new-0');
+    await repository.activate(newGame);
+    await repository.save(identifiedSavedGame('current', 'old-session', 22, 'old-22'));
+    await expect(repository.load('current')).resolves.toEqual(newGame);
+  });
+
+  it('keeps legacy saves in a separate compatibility generation from identified sessions', async () => {
+    const storage = new MemoryStorage();
+    const modernRepository = new LocalStorageGameRepository<IdentifiedRevisionState>(
+      'test:game:',
+      storage,
+    );
+    const legacyRepository = new LocalStorageGameRepository<RevisionState>(
+      'test:game:',
+      storage,
+    );
+    const modern = identifiedSavedGame('current', 'modern-session', 0, 'modern');
+
+    await modernRepository.activate(modern);
+    await legacyRepository.save(savedGame('current', 99, 'legacy-stale'));
+    await expect(modernRepository.load('current')).resolves.toEqual(modern);
+
+    storage.values.set(
+      'test:game:current',
+      JSON.stringify(savedGame('current', 20, 'legacy-current')),
+    );
+    await modernRepository.save(
+      identifiedSavedGame('current', 'modern-session', 21, 'not-an-activation'),
+    );
+    expect(JSON.parse(storage.values.get('test:game:current') ?? 'null')).toEqual(
+      savedGame('current', 20, 'legacy-current'),
+    );
+
+    await legacyRepository.save(savedGame('current', 21, 'legacy-newer'));
+    expect(JSON.parse(storage.values.get('test:game:current') ?? 'null')).toEqual(
+      savedGame('current', 21, 'legacy-newer'),
+    );
+  });
+
+  it('reads session identity from the production envelope and revision from its snapshot', async () => {
+    const storage = new MemoryStorage();
+    const repository = new LocalStorageGameRepository<WrappedIdentifiedRevisionState>(
+      'test:game:',
+      storage,
+    );
+    const active = wrappedIdentifiedSavedGame('current', 'new-session', 0, 'new');
+
+    await repository.activate(active);
+    await repository.save(
+      wrappedIdentifiedSavedGame('current', 'old-session', 999, 'stale-high-revision'),
+    );
+
+    await expect(repository.load('current')).resolves.toEqual(active);
   });
 
   it('uses independent exclusive locks for different game ids', async () => {
