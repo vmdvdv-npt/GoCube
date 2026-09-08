@@ -50,3 +50,47 @@ test('LocalStorageGameRepository persists through the browser cross-tab lock bou
     });
   }
 });
+
+test('production Start game creates the initial current-game save through the same lock boundary', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start game' }).click();
+
+  await expect
+    .poll(async () =>
+      page.evaluate(() => ({
+        feedback: document.querySelector('.game-feedback')?.textContent ?? null,
+        stored: localStorage.getItem('gocube:game:current'),
+        hasGame: Boolean(document.querySelector('.game-shell, .torus-game, .cube-2d-game')),
+        secureContext: window.isSecureContext,
+        hasWebLocks: Boolean(
+          (navigator as Navigator & { readonly locks?: unknown }).locks,
+        ),
+        hasIndexedDb: typeof indexedDB !== 'undefined',
+      })),
+    )
+    .toMatchObject({
+      feedback: null,
+      hasGame: true,
+      secureContext: true,
+    });
+
+  const diagnostic = await page.evaluate(() => ({
+    feedback: document.querySelector('.game-feedback')?.textContent ?? null,
+    stored: localStorage.getItem('gocube:game:current'),
+    hasWebLocks: Boolean(
+      (navigator as Navigator & { readonly locks?: unknown }).locks,
+    ),
+    hasIndexedDb: typeof indexedDB !== 'undefined',
+  }));
+
+  expect(diagnostic.stored, JSON.stringify(diagnostic)).not.toBeNull();
+  if (diagnostic.stored) {
+    expect(JSON.parse(diagnostic.stored)).toMatchObject({
+      id: 'current',
+      state: {
+        version: 2,
+        snapshot: { sessionRevision: 0 },
+      },
+    });
+  }
+});
