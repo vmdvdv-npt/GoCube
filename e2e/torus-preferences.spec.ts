@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('Show duplicate regions persists between Torus games while Move numbers stays game-local', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByLabel('Komi')).toHaveValue('0.5');
   await page.getByLabel('Board size').selectOption('9');
   await page.getByRole('button', { name: 'Start game' }).click();
 
