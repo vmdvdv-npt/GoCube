@@ -1,5 +1,7 @@
 # AlphaZero ↔ GoCube V2 verification report
 
+> Authority: historical record of the evidence and checks completed for AlphaZero ↔ GoCube V2 verification. It is not a source of current product requirements, roadmap scope, or architecture and does not override `docs/GAME_CUBE_GO.md`, `docs/ROADMAP.md`, or `docs/ARCHITECTURE.md`.
+
 ## Scope
 
 V2 verifies the logical AlphaZero/GoCube product boundary from the F0-integrated
