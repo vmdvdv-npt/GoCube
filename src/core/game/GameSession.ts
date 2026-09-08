@@ -582,19 +582,25 @@ export class GameSession {
 
   private async startEndgameReview(state: GameState): Promise<void> {
     const groups = this.groupsForClassification(state);
-    const proposal = await this.config.endgameClassifier.analyze(
-      Object.freeze({
-        state,
-        topology: this.engine.logicalTopology(),
-        groups,
-      }),
-    );
+    let proposal: EndgameProposal;
+
+    try {
+      proposal = await this.config.endgameClassifier.analyze(
+        Object.freeze({
+          state,
+          topology: this.engine.logicalTopology(),
+          groups,
+        }),
+      );
+      this.assertProposalMatchesGroups(groups, proposal);
+    } catch {
+      proposal = this.unresolvedProposal(groups);
+    }
 
     if (this.history.current() !== state || state.phase !== 'endgame') {
       throw new Error('Endgame state changed while analysis was pending');
     }
 
-    this.assertProposalMatchesGroups(groups, proposal);
     this.currentEndgameReview = createEndgameReviewState(proposal);
   }
 
@@ -667,6 +673,14 @@ export class GameSession {
     }
 
     return Object.freeze(groups);
+  }
+
+  private unresolvedProposal(
+    groups: readonly (readonly PointId[])[],
+  ): EndgameProposal {
+    return Object.freeze(
+      groups.map((points) => Object.freeze({ points, status: 'unresolved' as const })),
+    );
   }
 
   private assertProposalMatchesGroups(
