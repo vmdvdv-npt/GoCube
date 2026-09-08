@@ -636,6 +636,8 @@ Persistence должен сохранять redo-future. После `Undo → sa
 
 Ручное решение является authoritative override/fallback в пределах правил, определённых продуктовым документом.
 
+Failure автоматического classifier/proposal boundary является **degradation of automation**, а не откатом уже принятого доменного действия. Если после завершающего `Pass` `EndgameClassifier.analyze()` бросает exception либо возвращённый `EndgameProposal` не проходит session-level validation относительно фактических logical stone groups authoritative endgame position, `GameSession` сохраняет уже принятый `Pass`/`ENDGAME_REVIEW` state и создаёт безопасный manual fallback: заново использует фактические logical stone groups этой позиции и задаёт каждой proposal-status `unresolved`. До ручного resolution `EndgameClassification` и `FinalScore` отсутствуют. Эта fail-soft граница относится **только** к вызову classifier и validation его proposal; ошибки `GameEngine`, `History`, проверки неизменности authoritative endgame state, построения authoritative group set и session/persistence invariants не маскируются этим fallback и продолжают fail-closed.
+
 Порядок, в котором presentation предлагает unresolved groups пользователю, не является частью classifier algorithm. Он принадлежит application/presentation layer и может меняться без изменения `AssistedEndgameClassifier`, `EndgameProposal` или scoring.
 
 ## 12.3. ScoringStrategy

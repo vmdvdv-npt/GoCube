@@ -116,6 +116,79 @@ describe('GameSession endgame proposal/review flow', () => {
     expect(scoring.calls).toHaveLength(0);
   });
 
+  it('keeps the second Pass accepted and falls back to manual review when classifier throws', async () => {
+    const topology = new TorusTopology(9);
+    const classifier = new RecordingClassifier(() => {
+      throw new Error('classifier failed');
+    });
+    const scoring = new RecordingScoring(new ChineseScoring(topology));
+    const session = new GameSession(
+      new GameEngine(topology),
+      config(classifier, scoring),
+      makePosition(topology, { '0,0': 'black', '4,4': 'white' }),
+    );
+
+    await session.execute({ type: 'pass' });
+    const secondPass = await session.execute({ type: 'pass' });
+
+    expect(secondPass).toMatchObject({
+      ok: true,
+      action: 'pass',
+      state: { consecutivePasses: 2, phase: 'endgame' },
+    });
+    expect(classifier.calls).toHaveLength(1);
+    expect(session.endgameReview()).toEqual({
+      groups: [
+        { points: ['0,0'], proposal: { status: 'unresolved' }, userDecision: null },
+        { points: ['4,4'], proposal: { status: 'unresolved' }, userDecision: null },
+      ],
+    });
+    expect(session.snapshot().endgameClassification).toBeNull();
+    expect(session.finalScore()).toBeNull();
+    expect(scoring.calls).toHaveLength(0);
+
+    await session.setEndgameReviewDecision(['0,0'], 'alive');
+    await session.setEndgameReviewDecision(['4,4'], 'alive');
+    await session.finishEndgameReview();
+    expect(session.state().phase).toBe('finished');
+    expect(scoring.calls).toHaveLength(1);
+  });
+
+  it('falls back to unresolved manual review when classifier proposal is invalid', async () => {
+    const topology = new TorusTopology(9);
+    const classifier = new RecordingClassifier((context) => Object.freeze([
+      Object.freeze({
+        points: context.groups[0]!,
+        status: 'alive' as const,
+        source: 'automatic' as const,
+      }),
+    ]));
+    const scoring = new RecordingScoring(new ChineseScoring(topology));
+    const session = new GameSession(
+      new GameEngine(topology),
+      config(classifier, scoring),
+      makePosition(topology, { '0,0': 'black', '4,4': 'white' }),
+    );
+
+    await session.execute({ type: 'pass' });
+    const secondPass = await session.execute({ type: 'pass' });
+
+    expect(secondPass).toMatchObject({
+      ok: true,
+      action: 'pass',
+      state: { consecutivePasses: 2, phase: 'endgame' },
+    });
+    expect(session.endgameReview()).toEqual({
+      groups: [
+        { points: ['0,0'], proposal: { status: 'unresolved' }, userDecision: null },
+        { points: ['4,4'], proposal: { status: 'unresolved' }, userDecision: null },
+      ],
+    });
+    expect(session.snapshot().endgameClassification).toBeNull();
+    expect(session.finalScore()).toBeNull();
+    expect(scoring.calls).toHaveLength(0);
+  });
+
   it('manual decisions resolve only their group and can be changed before completion', async () => {
     const topology = new TorusTopology(9);
     const scoring = new RecordingScoring(new ChineseScoring(topology));
