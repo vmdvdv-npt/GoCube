@@ -108,6 +108,13 @@ export class GameSessionControllerFacade {
     };
   }
 
+  async resumeRestoredEndgame(): Promise<void> {
+    if (this.viewModel().phase !== 'endgame' || this.session.endgameReview() !== null) return;
+
+    await this.session.resumeEndgame();
+    this.publishEndgameReviewReady();
+  }
+
   cancelFinalAnalysis(): void {
     this.finalAnalysis.cancelActive();
   }
