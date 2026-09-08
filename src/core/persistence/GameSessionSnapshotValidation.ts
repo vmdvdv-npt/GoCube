@@ -7,9 +7,11 @@ import {
   canonicalizeEndgameGroup,
   endgameGroupId,
 } from '../endgame/EndgameGroupIdentity';
+import type { GameEngine } from '../game/GameEngine';
 import type { GameState, PointOccupancy, StoneColor } from '../game/types';
 import type { ScoringStrategy } from '../scoring/Scoring';
 import type { PointId, Topology } from '../topology/Topology';
+import type { GameSessionSnapshot } from './GameSessionSnapshot';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -134,6 +136,139 @@ export const assertSerializedSnapshotGameStates = (
     }
     assertSerializedGameState(entry.state, topology, `Saved Redo state ${index}`);
   });
+};
+
+const sameGameState = (
+  actual: GameState,
+  expected: GameState,
+  topology: Topology,
+): boolean =>
+  actual.currentPlayer === expected.currentPlayer &&
+  actual.moveNumber === expected.moveNumber &&
+  actual.consecutivePasses === expected.consecutivePasses &&
+  actual.phase === expected.phase &&
+  actual.captures.black === expected.captures.black &&
+  actual.captures.white === expected.captures.white &&
+  topology.points().every((point) => actual.board[point] === expected.board[point]);
+
+const boardsMatch = (
+  left: GameState,
+  right: GameState,
+  topology: Topology,
+): boolean => topology.points().every((point) => left.board[point] === right.board[point]);
+
+const assertReplayedStateMatches = (
+  actual: GameState,
+  expected: GameState,
+  topology: Topology,
+  label: string,
+): void => {
+  if (!sameGameState(actual, expected, topology)) {
+    throw new Error(`${label} does not match the GameEngine result`);
+  }
+};
+
+const assertGameEngineTransition = (
+  engine: GameEngine,
+  previousState: GameState | null,
+  source: GameState,
+  target: GameState,
+  label: string,
+): void => {
+  const topology = engine.logicalTopology();
+
+  if (target.phase === 'finished') {
+    const pass = engine.pass(source);
+    if (!pass.ok || pass.state.phase !== 'endgame') {
+      throw new Error(`${label} is impossible: finished state requires a second Pass`);
+    }
+
+    const completion = engine.completeEndgame(pass.state);
+    if (!completion.ok) {
+      throw new Error(`${label} is impossible: GameEngine rejected endgame completion`);
+    }
+    assertReplayedStateMatches(completion.state, target, topology, label);
+    return;
+  }
+
+  if (boardsMatch(source, target, topology)) {
+    const pass = engine.pass(source);
+    if (!pass.ok) {
+      throw new Error(`${label} is impossible: GameEngine rejected Pass`);
+    }
+    assertReplayedStateMatches(pass.state, target, topology, label);
+    return;
+  }
+
+  const placedPoints = topology.points().filter(
+    (point) =>
+      source.board[point] === 'empty' &&
+      target.board[point] === source.currentPlayer,
+  );
+  if (placedPoints.length !== 1) {
+    throw new Error(`${label} is impossible: expected exactly one newly placed stone`);
+  }
+
+  const placement = engine.placeStone(
+    source,
+    placedPoints[0]!,
+    source.currentPlayer,
+    Object.freeze({ previousBoard: previousState?.board ?? null }),
+  );
+  if (!placement.ok) {
+    throw new Error(
+      `${label} is impossible: GameEngine rejected placement (${placement.reason})`,
+    );
+  }
+  assertReplayedStateMatches(placement.state, target, topology, label);
+};
+
+/**
+ * Transition-semantic trust boundary for persisted History.
+ *
+ * Call this only after assertSerializedSnapshotGameStates() has structurally
+ * validated every state. The initial state and every past/current/redo forward
+ * transition are then replayed through the configured GameEngine. Redo is
+ * traversed in actual redo order: the last persisted stack entry is next.
+ */
+export const assertSerializedSnapshotHistoryTransitions = (
+  snapshot: Pick<GameSessionSnapshot, 'history' | 'redo'>,
+  engine: GameEngine,
+): void => {
+  const topology = engine.logicalTopology();
+  const initialState = snapshot.history[0]!;
+  if (!sameGameState(engine.createInitialState(), initialState, topology)) {
+    throw new Error('Saved history state 0 does not match GameEngine initial state');
+  }
+
+  for (let index = 1; index < snapshot.history.length; index += 1) {
+    assertGameEngineTransition(
+      engine,
+      index >= 2 ? snapshot.history[index - 2]! : null,
+      snapshot.history[index - 1]!,
+      snapshot.history[index]!,
+      `Saved history transition ${index - 1} -> ${index}`,
+    );
+  }
+
+  let source = snapshot.history[snapshot.history.length - 1]!;
+  let previousState =
+    snapshot.history.length >= 2
+      ? snapshot.history[snapshot.history.length - 2]!
+      : null;
+  const redo = snapshot.redo ?? [];
+  for (let index = redo.length - 1; index >= 0; index -= 1) {
+    const target = redo[index]!.state;
+    assertGameEngineTransition(
+      engine,
+      previousState,
+      source,
+      target,
+      `Saved Redo transition to stack entry ${index}`,
+    );
+    previousState = source;
+    source = target;
+  }
 };
 
 const logicalStoneGroups = (

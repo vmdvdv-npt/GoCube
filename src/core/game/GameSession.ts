@@ -29,6 +29,7 @@ import {
 } from '../persistence/GameSessionSnapshot';
 import {
   assertSerializedSnapshotGameStates,
+  assertSerializedSnapshotHistoryTransitions,
   assertSerializedSnapshotSessionMetadata,
 } from '../persistence/GameSessionSnapshotValidation';
 import type { FinalScore, ScoringStrategy } from '../scoring/Scoring';
@@ -720,6 +721,7 @@ export class GameSession {
     snapshot: GameSessionSnapshot,
   ): void {
     assertSerializedSnapshotGameStates(snapshot, engine.logicalTopology());
+    assertSerializedSnapshotHistoryTransitions(snapshot, engine);
 
     if (snapshot.version !== GAME_SESSION_SNAPSHOT_VERSION) {
       throw new Error(`Unsupported saved game version: ${String(snapshot.version)}`);

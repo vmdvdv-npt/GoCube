@@ -257,23 +257,21 @@ describe('GameSession persistence', () => {
     expect(restored?.endgameReview()).toEqual(session.endgameReview());
   });
 
-  it('reads legacy v1 partial review status as a user decision without losing it', () => {
+  it('reads legacy v1 partial review status as a user decision without losing it', async () => {
     const topology = new TorusTopology(9);
     const engine = new GameEngine(topology);
-    const initial = engine.createInitialState();
-    const endgame = {
-      ...initial,
-      board: Object.freeze({ ...initial.board, '0,0': 'black' as const }),
-      moveNumber: 2,
-      consecutivePasses: 2,
-      phase: 'endgame' as const,
-    };
+    const source = new GameSession(
+      engine,
+      persistentConfig(new MemoryRepository(), new ChineseScoring(topology)),
+    );
+
+    await source.execute({ type: 'place-stone', point: '0,0' });
+    await source.execute({ type: 'pass' });
+    await source.execute({ type: 'pass' });
+
+    const current = source.snapshot();
     const snapshot: GameSessionSnapshot = Object.freeze({
-      version: 1,
-      ruleSet: 'chinese',
-      komi: 7.5,
-      history: Object.freeze([initial, endgame]),
-      redo: Object.freeze([]),
+      ...current,
       endgameReview: Object.freeze({
         groups: Object.freeze([
           Object.freeze({ points: Object.freeze(['0,0']), status: 'dead' as const }),

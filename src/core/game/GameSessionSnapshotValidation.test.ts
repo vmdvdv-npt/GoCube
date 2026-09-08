@@ -8,6 +8,7 @@ import { ChineseScoring } from '../scoring/ChineseScoring';
 import { TorusTopology } from '../topology/TorusTopology';
 import { GameEngine } from './GameEngine';
 import { GameSession, type GameSessionConfig } from './GameSession';
+import type { GameState } from './types';
 
 const emptyClassifier: EndgameClassifier = Object.freeze({
   analyze: async () => Object.freeze([]),
@@ -63,6 +64,28 @@ const setup = (endgameClassifier: EndgameClassifier = emptyClassifier) => {
   });
   const snapshot = new GameSession(engine, config).snapshot();
   return { engine, config, snapshot };
+};
+
+const playKoCapture = async (session: GameSession): Promise<void> => {
+  const sequence = [
+    '3,4',
+    '4,4',
+    '5,4',
+    '3,5',
+    '4,3',
+    '5,5',
+    '0,0',
+    '4,6',
+    '4,5',
+  ] as const;
+
+  for (const point of sequence) {
+    const result = await session.execute({ type: 'place-stone', point });
+    expect(result.ok).toBe(true);
+  }
+
+  expect(session.state().board['4,4']).toBe('empty');
+  expect(session.state().board['4,5']).toBe('black');
 };
 
 const corruptCurrentState = (
@@ -209,6 +232,113 @@ describe('GameSession persisted GameState validation', () => {
     expect(() =>
       GameSession.fromSnapshot(engine, config, copy as unknown as GameSessionSnapshot),
     ).toThrow('Saved Redo state 0 has invalid occupancy');
+  });
+});
+
+describe('GameSession persisted History transition validation', () => {
+  it('requires the first persisted state to exactly match GameEngine initial state', () => {
+    const { engine, config, snapshot } = setup();
+    const copy = structuredClone(snapshot) as unknown as MutableSnapshot;
+    boardOf(copy.history[0]!)['0,0'] = 'black';
+
+    expect(() =>
+      GameSession.fromSnapshot(engine, config, copy as unknown as GameSessionSnapshot),
+    ).toThrow('Saved history state 0 does not match GameEngine initial state');
+  });
+
+  it('rejects a structurally valid but impossible board transition', async () => {
+    const { engine, config } = setup();
+    const session = new GameSession(engine, config);
+    await session.execute({ type: 'place-stone', point: '0,0' });
+
+    const copy = structuredClone(session.snapshot()) as unknown as MutableSnapshot;
+    boardOf(copy.history.at(-1)!)['1,1'] = 'black';
+
+    expect(() =>
+      GameSession.fromSnapshot(engine, config, copy as unknown as GameSessionSnapshot),
+    ).toThrow('Saved history transition 0 -> 1 is impossible');
+  });
+
+  it('rejects a tampered previous board that would change Simple Ko', async () => {
+    const { engine, config } = setup();
+    const session = new GameSession(engine, config);
+    await playKoCapture(session);
+
+    const snapshot = session.snapshot();
+    const truePrevious = snapshot.history.at(-2);
+    const captureState = snapshot.history.at(-1);
+    if (!truePrevious || !captureState) throw new Error('Expected ko history states');
+
+    const trueRecapture = engine.placeStone(captureState, '4,4', 'white', {
+      previousBoard: truePrevious.board,
+    });
+    expect(trueRecapture.ok).toBe(false);
+    if (trueRecapture.ok) throw new Error('Expected Simple Ko rejection');
+    expect(trueRecapture.reason).toBe('repetition');
+
+    const copy = structuredClone(snapshot) as unknown as MutableSnapshot;
+    const tamperedPrevious = copy.history.at(-2);
+    if (!tamperedPrevious) throw new Error('Expected previous state');
+    boardOf(tamperedPrevious)['0,1'] = 'black';
+
+    const recaptureWithTamperedContext = engine.placeStone(captureState, '4,4', 'white', {
+      previousBoard: boardOf(tamperedPrevious) as GameState['board'],
+    });
+    expect(recaptureWithTamperedContext.ok).toBe(true);
+
+    expect(() =>
+      GameSession.fromSnapshot(engine, config, copy as unknown as GameSessionSnapshot),
+    ).toThrow('Saved history transition');
+  });
+
+  it('accepts valid placement, capture and Pass history', async () => {
+    const { engine, config } = setup();
+    const session = new GameSession(engine, config);
+    await playKoCapture(session);
+    await session.execute({ type: 'pass' });
+
+    const snapshot = session.snapshot();
+    const restored = GameSession.fromSnapshot(engine, config, snapshot);
+
+    expect(restored.snapshot()).toEqual(snapshot);
+    expect(restored.state()).toEqual(session.state());
+  });
+
+  it('replays Redo in actual stack order and rejects a damaged Redo transition', async () => {
+    const { engine, config } = setup();
+    const session = new GameSession(engine, config);
+    await session.execute({ type: 'place-stone', point: '0,0' });
+    await session.execute({ type: 'place-stone', point: '1,1' });
+    await session.execute({ type: 'place-stone', point: '2,2' });
+    await session.executeSessionCommand({ type: 'undo' });
+    await session.executeSessionCommand({ type: 'undo' });
+
+    const snapshot = session.snapshot();
+    expect(() => GameSession.fromSnapshot(engine, config, snapshot)).not.toThrow();
+
+    const copy = structuredClone(snapshot) as unknown as MutableSnapshot;
+    const laterRedoTarget = copy.redo?.[0];
+    if (!laterRedoTarget) throw new Error('Expected two-step Redo future');
+    boardOf(laterRedoTarget.state)['3,3'] = 'black';
+
+    expect(() =>
+      GameSession.fromSnapshot(engine, config, copy as unknown as GameSessionSnapshot),
+    ).toThrow('Saved Redo transition to stack entry 0');
+  });
+
+  it('accepts a valid finished snapshot produced by second Pass and endgame completion', async () => {
+    const { engine, config } = setup();
+    const session = new GameSession(engine, config);
+    await session.execute({ type: 'pass' });
+    await session.execute({ type: 'pass' });
+    await session.finishEndgameReview();
+
+    const snapshot = session.snapshot();
+    expect(snapshot.history.at(-1)?.phase).toBe('finished');
+
+    const restored = GameSession.fromSnapshot(engine, config, snapshot);
+    expect(restored.state()).toEqual(session.state());
+    expect(restored.snapshot()).toEqual(snapshot);
   });
 });
 

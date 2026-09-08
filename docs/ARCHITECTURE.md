@@ -59,7 +59,7 @@
 36. Presentation layer имеет явный animation mode `normal | disabled`; режим анимации не читается `GameEngine`/`GameState` и не меняет domain result.
 37. Torus/Cube topology-specific controllers не владеют независимыми копиями общего gameplay/endgame lifecycle: один shared application facade координирует `GameEngine`, `GameSession`, scoring/classifier, request-scoped Final Proof lifetime, history commands, endgame/result projections и disposal; mode-specific controllers остаются тонкими configuration/compatibility adapters.
 38. Lifetime обычного игрового controller определяется application-owned identity текущего `activeGame`, а не mount/unmount конкретного React/renderer view; временное исчезновение Game view не уничтожает controller и не отменяет его активный Final Proof Search.
-39. Persistence trust boundary охватывает **весь** `GameSessionSnapshot`, а не только `GameState`: session-level endgame/result metadata после чтения storage считается недоверенной до проверки относительно соответствующего authoritative `GameState`/`Topology`; persisted `FinalScore` является derived data и принимается только после доказательства эквивалентности свежему результату выбранной `ScoringStrategy` для проверенной classification/state.
+39. Persistence trust boundary охватывает **весь** `GameSessionSnapshot`, а не только отдельные `GameState`: persisted `History` становится trusted только после structural runtime-validation каждого state и transition-semantic replay всей past/current/redo timeline через authoritative `GameEngine` с корректным `SimpleKoContext`; session-level endgame/result metadata после чтения storage остаётся недоверенной до проверки относительно соответствующего authoritative `GameState`/`Topology`; persisted `FinalScore` является derived data и принимается только после доказательства эквивалентности свежему результату выбранной `ScoringStrategy` для проверенной classification/state.
 
 Стрелка `A → B` в этом документе означает: `A` использует контракт `B` или передаёт ему данные/команду. Она не означает наследование.
 
@@ -366,8 +366,11 @@ UI не должен знать, local или remote execution использу�
 
 Для replaceable application slot текущей партии persistence envelope над `GameSessionSnapshot` дополнительно хранит стабильный `sessionId`/generation. Он создаётся application lifecycle при `New Game`, остаётся неизменным для всех autosave этой партии и восстанавливается при reload. Это application/persistence identity, а не поле `GameState` и не ответственность `GameEngine` или Renderer.
 
-`GameSessionSnapshot` после чтения storage является недоверенным **целиком**. Успешная runtime-проверка вложенных `GameState` не делает автоматически доверенными session-level metadata. До создания/restoration `GameSession` действуют следующие правила:
+`GameSessionSnapshot` после чтения storage является недоверенным **целиком**. Успешная runtime-проверка вложенных `GameState` не делает автоматически доверенными ни persisted `History` timeline, ни session-level metadata. До создания/restoration `GameSession` действуют следующие правила:
 
+- persisted `History` считается trusted только после двух последовательных границ: structural runtime-validation каждого past/current/redo `GameState`, затем transition-semantic replay через тот же authoritative `GameEngine`; `history[0]` обязан полностью совпасть с `engine.createInitialState()`, каждый следующий обычный Pass воспроизводится через `engine.pass()`, placement определяется по единственной новой поставленной точке и воспроизводится через `engine.placeStone()` с `SimpleKoContext` из непосредственно предыдущей history-позиции, а persisted `FINISHED` target допускается как composite `second Pass → ENDGAME_REVIEW → completeEndgame`; replayed result обязан полностью совпасть с persisted target по board, `currentPlayer`, move/action number, `consecutivePasses`, captures и phase;
+- Redo проходит тот же transition-semantic replay как продолжение current timeline **в фактическом порядке redo stack**: последний persisted Redo entry является следующим target, после чего validation движется к предыдущим stack entries; Simple Ko context на каждом шаге строится из фактической ближайшей предшествующей позиции этой replay timeline;
+- любой impossible/rejected transition, неоднозначная/множественная новая placement point, несовпадение replay result или повреждённый Redo fail-closed **до** создания/restoration `LinearHistory`/`GameSession`; structurally valid state сам по себе не является доказательством достижимости позиции;
 - `EndgameReviewState.groups[].points` проверяются относительно `Topology` и связанного history/redo `GameState`: каждая point существует, занята stone и набор review groups покрывает ровно все фактические logical stone groups без partial/merged/duplicate/extra groups;
 - persisted `EndgameClassification` проходит тот же exact logical-group identity check, а `status`/`source` проходят runtime validation; unfinished state не может иметь final classification;
 - persisted `FinalScore` не является самостоятельным authoritative источником истины: для `FINISHED` state он принимается только если существует проверенная полная classification и свежий вызов configured `ScoringStrategy` для этого state/classification/komi даёт семантически тот же `FinalScore`;
@@ -1177,6 +1180,11 @@ Headless tests обязаны проверять без SVG/DOM/Three.js:
 
 - serialize → save → load → semantic equality;
 - corrupted/old data handling;
+- structurally valid, но недостижимый board transition в persisted `History` отклоняется transition-semantic validation;
+- подмена immediate previous board, способная изменить решение `SimpleKoPolicy`, отклоняется, потому что вся timeline повторно воспроизводится через `GameEngine`;
+- валидная timeline с placements, captures и Pass успешно проходит restore;
+- Redo semantic validation идёт от current state в фактическом stack order (последний entry первый), а повреждённый Redo transition отклоняется;
+- валидный persisted `FINISHED` target после second Pass принимается как доказуемый composite `Pass → ENDGAME_REVIEW → completeEndgame`;
 - runtime rejection session-level endgame metadata, если persisted review/classification group points не соответствуют ровно logical stone groups связанного current/redo `GameState`;
 - runtime rejection malformed classification status/source и inconsistent partial-review metadata до их передачи presentation layer;
 - persisted `FinalScore` проверяется authoritative rescoring из validated `GameState + EndgameClassification + configured ScoringStrategy`; tampered/stale result отклоняется;
@@ -1589,6 +1597,7 @@ Oracle disagreement не означает автоматически bug GoCube.
 - дублировать общий `GameSession`/scoring/endgame/Final Proof/disposal lifecycle в отдельных Torus/Cube controllers вместо shared application facade;
 - привязывать `dispose()` application-owned gameplay controller к unmount конкретного Torus/Cube/renderer view или отменять активный Final Proof из-за временного перехода на другой application screen;
 - трактовать `phase = endgame` при `endgameReview = null` как пустой/полностью resolved review или разрешать на этом основании `Finish scoring`;
+- доверять persisted `History` после одной structural validation вложенных `GameState` без transition-semantic replay через `GameEngine`, включая фактический Redo order и корректный Simple Ko context;
 - доверять persisted `EndgameReviewState`, `EndgameClassification` или `FinalScore` после проверки только вложенного `GameState`; session-level metadata обязана пройти полный restore trust boundary до Presentation/Renderer;
 - хранить visual duplicates как игровые stones/points;
 - использовать screen coordinates как logical identity;
@@ -1670,7 +1679,7 @@ Oracle disagreement не означает автоматически bug GoCube.
 23. Transport DTO runtime-валидирован до использования и использует canonical `PointId`, а не внешний action index?
 24. Можно ли заменить HTTP transport другой реализацией `AlphaZeroGateway` без изменения replay/domain core?
 25. Lifetime controller привязан к реальному application owner, а не к временно смонтированному view, и pending async review явно отличается от отсутствующего/пустого resolved review?
-26. После чтения storage проверен ли весь `GameSessionSnapshot`, включая exact group identity review/classification и независимую проверку persisted `FinalScore` через configured scorer, до передачи этих данных presentation layer?
+26. После чтения storage проверен ли весь `GameSessionSnapshot`: structural validity каждого past/current/redo `GameState`, transition-semantic достижимость всей `History`/Redo timeline через `GameEngine` с корректным Simple Ko context, exact group identity review/classification и независимая проверка persisted `FinalScore` через configured scorer — всё до создания restored session и передачи данных presentation layer?
 
 Если ответ показывает нарушение границы, сначала исправляется architecture/adapter contract, затем реализуется функция.
 
@@ -1696,7 +1705,7 @@ Oracle disagreement не означает автоматически bug GoCube.
 - `EndgameReviewState` хранит partial/ручные решения до полного resolution;
 - только полный `EndgameClassification` передаётся в `ScoringStrategy`;
 - `ScoringStrategy` создаёт `FinalScore`;
-- после `GameStorage.load()` весь session envelope остаётся untrusted, пока current/redo `GameState`, exact logical group identity review/classification и derived `FinalScore` не пройдут единый restore boundary;
+- после `GameStorage.load()` весь session envelope остаётся untrusted, пока каждый persisted `GameState` не пройдёт structural validation, вся History/Redo timeline не будет transition-semantically воспроизведена через `GameEngine` с корректным Simple Ko context, а exact logical group identity review/classification и derived `FinalScore` не пройдут тот же единый restore boundary;
 - seeded generators и independent oracle adapters помогают тестировать core только внутри test infrastructure и не становятся частью authoritative gameplay/runtime UI;
 - Development Workspace отдельно получает external AlphaZero actions через `AlphaZeroGateway`, создаёт ephemeral replay session и отправляет каждый move назад через обычный controller/`GameSession`/`GameEngine`;
 - AlphaZero не владеет board state, а compatibility disagreement останавливает replay и становится diagnostic;
