@@ -54,7 +54,7 @@ test('new game uses board-size buttons and keeps Japanese rules as the default',
   const rules = page.getByLabel('Rules');
   await expect(rules.locator('option')).toHaveText(['Japanese', 'Chinese']);
   await expect(rules).toHaveValue('japanese');
-  await expect(page.getByLabel('Komi')).toHaveValue('7.5');
+  await expect(page.getByLabel('Komi')).toHaveValue('0.5');
 
   const startGame = page.getByRole('button', { name: 'Start game' });
   const startBackground = await startGame.evaluate((element) => getComputedStyle(element).backgroundImage);
