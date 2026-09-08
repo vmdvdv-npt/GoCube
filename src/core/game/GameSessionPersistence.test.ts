@@ -18,6 +18,12 @@ class EmptyClassifier implements EndgameClassifier {
   }
 }
 
+class ThrowingClassifier implements EndgameClassifier {
+  async analyze(): Promise<EndgameProposal> {
+    throw new Error('classifier failed');
+  }
+}
+
 class MixedClassifier implements EndgameClassifier {
   async analyze(context: EndgameAnalysisContext): Promise<EndgameProposal> {
     return Object.freeze(
@@ -103,6 +109,66 @@ describe('GameSession persistence', () => {
       consecutivePasses: 1,
       phase: 'playing',
     });
+  });
+
+  it('autosaves the accepted endgame position and unresolved fallback when classifier fails', async () => {
+    const topology = new TorusTopology(9);
+    const repository = new MemoryRepository();
+    const session = new GameSession(
+      new GameEngine(topology),
+      persistentConfig(
+        repository,
+        new ChineseScoring(topology),
+        7.5,
+        new ThrowingClassifier(),
+      ),
+    );
+
+    await session.execute({ type: 'place-stone', point: '0,0' });
+    await session.execute({ type: 'place-stone', point: '4,4' });
+    await session.execute({ type: 'pass' });
+    const secondPass = await session.execute({ type: 'pass' });
+
+    expect(secondPass).toMatchObject({
+      ok: true,
+      action: 'pass',
+      state: { consecutivePasses: 2, phase: 'endgame' },
+    });
+
+    const snapshot = session.snapshot();
+    expect(snapshot.history.at(-1)).toMatchObject({
+      board: { '0,0': 'black', '4,4': 'white' },
+      consecutivePasses: 2,
+      phase: 'endgame',
+    });
+    expect(snapshot.endgameReview).toEqual({
+      groups: [
+        {
+          points: ['0,0'],
+          proposal: { status: 'unresolved' },
+          userDecision: null,
+          status: null,
+        },
+        {
+          points: ['4,4'],
+          proposal: { status: 'unresolved' },
+          userDecision: null,
+          status: null,
+        },
+      ],
+    });
+    expect(snapshot.endgameClassification).toBeNull();
+    expect(snapshot.finalScore).toBeNull();
+
+    const stored = repository.saves.at(-1)?.state;
+    expect(stored?.history.at(-1)).toMatchObject({
+      board: { '0,0': 'black', '4,4': 'white' },
+      consecutivePasses: 2,
+      phase: 'endgame',
+    });
+    expect(stored?.endgameReview).toEqual(snapshot.endgameReview);
+    expect(stored?.endgameClassification).toBeNull();
+    expect(stored?.finalScore).toBeNull();
   });
 
   it('restores the full linear history and can continue with Undo', async () => {
