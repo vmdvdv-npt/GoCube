@@ -225,6 +225,17 @@ export function App() {
     }
   };
 
+  const setTorusDuplicateRegionsPreference = (visible: boolean): void => {
+    const nextPreferences: UserPreferences = Object.freeze({
+      ...preferences,
+      showTorusDuplicateRegions: visible,
+    });
+    setPreferences(nextPreferences);
+    void preferencesStorage.savePreferences(nextPreferences).catch(() => {
+      setError('Display preference could not be saved.');
+    });
+  };
+
   const openDevelopment = (): void => {
     if (screen === 'resume' || screen === 'settings' || screen === 'game') {
       developmentReturnScreenRef.current = screen;
@@ -417,6 +428,8 @@ export function App() {
           key={`torus-${String(gameInstanceKey)}`}
           controller={activeGame.controller}
           onRequestNewGame={() => setConfirmNewGame(true)}
+          initialShowDuplicateRegions={preferences.showTorusDuplicateRegions}
+          onShowDuplicateRegionsPreferenceChange={setTorusDuplicateRegionsPreference}
         />
       ) : null}
 
