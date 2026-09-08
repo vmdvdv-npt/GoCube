@@ -48,7 +48,7 @@
 25. `GameEngine` является единственным владельцем **forward mutations** полей `GameState`, включая `GamePhase`; `GameSession` может инициировать доменную операцию, но не присваивает `GamePhase` напрямую.
 26. Частичный ручной/assisted endgame review хранится как отдельный session-level `EndgameReviewState`; он не маскируется под уже завершённую `EndgameClassification`.
 27. Межпартийные пользовательские preferences отделены от сохранения текущей партии и от `ViewState` конкретной сессии.
-28. Autosave имеет монотонную revision и упорядоченную запись: более старый async save не может перезаписать более новое состояние.
+28. Autosave имеет persisted session identity/generation и монотонную revision внутри этой identity: новая партия получает новую уникальную identity, revision сравнивается только для одной identity, а stale write предыдущей партии не может перезаписать активную новую партию даже при большей revision.
 29. Обычный production gameplay, production-classifier и final scoring не зависят от внешнего oracle, сети или developer-only AI services; Development Workspace может использовать внешние AI/oracle services для diagnostics, но они не становятся correctness dependency обычной игры.
 30. Внешний oracle никогда не превращает вероятностную или эвристическую оценку в authoritative automatic status без внутренней project-defined proof/verification boundary.
 31. Test-position generators существуют только как test infrastructure: legal sequences строятся через `GameEngine`/эквивалентную domain boundary, synthetic pattern fixtures изолированы от runtime, а пользовательского Test Case/Test ID API для этой test infrastructure нет. Отдельный постоянный Development Workspace не публикует эти generators и работает через собственные application/infrastructure contracts.
@@ -363,6 +363,8 @@ UI не должен знать, local или remote execution использу�
 - монотонный `sessionRevision`;
 - schema/version metadata;
 - `PlayerSlot` или эквивалентные session-level player identifiers, если они используются.
+
+Для replaceable application slot текущей партии persistence envelope над `GameSessionSnapshot` дополнительно хранит стабильный `sessionId`/generation. Он создаётся application lifecycle при `New Game`, остаётся неизменным для всех autosave этой партии и восстанавливается при reload. Это application/persistence identity, а не поле `GameState` и не ответственность `GameEngine` или Renderer.
 
 `GameSessionSnapshot` после чтения storage является недоверенным **целиком**. Успешная runtime-проверка вложенных `GameState` не делает автоматически доверенными session-level metadata. До создания/restoration `GameSession` действуют следующие правила:
 
@@ -865,11 +867,12 @@ Animation layer принимает `DomainEvents`/`ViewEvents` и создаёт
 
 Канонический application-level storage contract текущей партии называется `GameStorage`:
 
-- `save(serializableSession)`;
+- `save(serializableSession)` — ordinary save уже активной session identity;
 - `load()`;
-- `clear()`.
+- `clear()`;
+- explicit `activate(serializableSession)`/эквивалентная active-slot operation — единственная persistence operation, которой разрешено заменить identity текущей партии новой generation.
 
-`GameSession` зависит от `GameStorage`, а не от `localStorage`, IndexedDB или server API напрямую.
+`GameSession` зависит от обычного `GameStorage` save/load semantics, а не от `localStorage`, IndexedDB или server API напрямую. Lifecycle-specific activation принадлежит application/persistence boundary над `GameSession`; browser locking и смена active identity не протаскиваются в `GameEngine`, Renderer или UI.
 
 Локальные adapters могут включать:
 
@@ -878,9 +881,9 @@ Animation layer принимает `DomainEvents`/`ViewEvents` и создаёт
 
 Будущие remote/cloud persistence adapters не смешиваются с игровым `NetworkTransport`.
 
-Если код использует имя `GameRepository`, оно должно быть либо alias/adapter с тем же единственным application responsibility, либо мигрировано к одному каноническому storage boundary; нельзя поддерживать две конкурирующие абстракции, которые обе претендуют на владение persistence партии.
+Если код использует имя `GameRepository`, оно должно быть либо alias/adapter с тем же единственным application responsibility, либо мигрировано к одному каноническому storage boundary; нельзя поддерживать две конкурирующие абстракции, которые обе претендуют на владение persistence партии. Узкий `ActiveGameRepository`/эквивалент может расширять обычный repository только explicit activation operation для replaceable current-game slot; это не второй независимый persistence owner.
 
-Сохраняется `GameSessionSnapshot` или эквивалентный envelope, содержащий всё необходимое для exact restoration, включая History redo-future, partial `EndgameReviewState` и связанные result metadata. При `load()` весь envelope проходит единый trust boundary из §7.3 до того, как session-level metadata становятся доступны History/Presentation.
+Сохраняется `GameSessionSnapshot` или эквивалентный envelope, содержащий всё необходимое для exact restoration, включая History redo-future, partial `EndgameReviewState` и связанные result metadata. Application envelope текущего replaceable slot дополнительно хранит session identity/generation. При `load()` весь envelope проходит единый trust boundary из §7.3 до того, как session-level metadata становятся доступны History/Presentation.
 
 Обязательный persistence invariant:
 
@@ -888,26 +891,32 @@ Animation layer принимает `DomainEvents`/`ViewEvents` и создаёт
 
 должен возвращать тот же следующий state/result, который был доступен до reload.
 
-## 16.2. Autosave ordering / revision
+## 16.2. Autosave ordering / session identity / revision
 
-Каждое persist-worthy изменение session state получает монотонно возрастающий `sessionRevision`.
+Каждая новая пользовательская партия получает уникальный непустой persisted `sessionId`/generation при application-level `New Game`. Эта identity остаётся неизменной для всех autosave данной партии и при reload восстанавливается из save envelope; reload не генерирует новую identity существующей партии.
+
+Каждое persist-worthy изменение session state получает монотонно возрастающий `sessionRevision` **внутри одной session identity**.
 
 Persist-worthy изменения включают как минимум принятые game actions, Undo/Redo, изменения endgame review decisions и переход к final result.
 
 `GameSession`/application persistence coordinator обязан сериализовать autosave writes в единую ordered queue либо использовать функционально эквивалентный механизм, который даёт ту же гарантию:
 
-- snapshot revision `N+1` никогда не может быть фактически заменён более поздно завершившейся записью revision `N`;
+- snapshot revision `N+1` одной session identity никогда не может быть фактически заменён более поздно завершившейся записью revision `N` той же identity;
 - completion order асинхронного storage API не является источником истины о свежести save;
 - persisted envelope хранит revision, чтобы stale write/load можно было распознать;
 - новый save после failed write не должен откатывать in-memory authoritative session state к старой revision.
 
 После того как session mutation уже принят и стал authoritative in-memory state, отказ storage write является durability failure, а не отменой этой команды. Такой отказ не должен превращать accepted action/Undo/Redo/review change в rejected Promise после изменения `History` или session metadata и тем самым оставлять presentation на предыдущем состоянии. Следующее persist-worthy изменение обязано снова попытаться сохранить актуальную более новую revision; failed write не должен отравлять ordered-save queue.
 
-Storage adapter дополнительно должен отказываться считать более низкую revision более новой, если его backend допускает конкурирующие writes.
+Storage adapter дополнительно должен защищать replaceable active-game slot от concurrent tabs/sessions. Обычный `save()` никогда не переключает active session identity. Сначала валидируется persisted identity; только если incoming и stored identity совпадают, adapter сравнивает `sessionRevision`. Если identities различаются, incoming write игнорируется независимо от численного значения revision. Поэтому stale вкладка старой партии с revision `21` не может перезаписать новую партию revision `0`.
 
-Для browser-backed `localStorage` проверка revision принадлежит самому persistence adapter. Для одного game id весь критический участок `read existing → compare sessionRevision → write` выполняется под одним exclusive cross-tab lock. Если stored revision выше incoming revision, запись не выполняется; равная либо более высокая incoming revision может быть записана. Lock identity привязана к game id/storage key, поэтому разные game ids не должны сериализоваться друг с другом.
+Смена active session выполняется только явной `activate()`/эквивалентной lifecycle operation. Она имеет право заменить предыдущую identity независимо от её revision, потому что создание новой партии является generation switch, а не «более старым autosave». Initial save новой партии выполняется внутри этой activation boundary.
 
-Конкретный browser locking primitive остаётся infrastructure detail `LocalStorageGameRepository` и не протаскивается в `GameSession`, `GameEngine` или UI. Ошибка чтения, malformed/corrupted existing envelope либо revision, которую нельзя безопасно сравнить, не трактуется как доказательство, что incoming snapshot новее: adapter обязан fail-closed и не заменять existing value заведомо более старой записью.
+Для browser-backed `localStorage` операции ordinary save, active-session activation и retirement/clear текущего slot используют **один и тот же per-game exclusive cross-tab lock namespace**. Критический участок ordinary save — `read existing → validate/compare session identity → при совпадении compare sessionRevision → write`. Критический участок activation — replacement active identity + initial save. `clear/remove` не должен оставлять writable empty interval, в котором stale вкладка может воскресить retired session до следующего `New Game` activation; adapter обязан сохранить fail-closed fence/tombstone или дать функционально эквивалентную гарантию под тем же lock. Lock identity привязана к game id/storage key, поэтому разные game ids не должны сериализоваться друг с другом.
+
+Backward compatibility для saves без `sessionId` является явной и консервативной: отсутствие identity трактуется как одна legacy compatibility generation. Revision сравнивается только legacy↔legacy; legacy write никогда не совпадает с современным identified session и не может его заменить, а ordinary modern save не может молча «захватить» legacy slot — смена generation выполняется только explicit activation. Malformed/invalid identity fail-closed. После успешного legacy restore партия может продолжать сохраняться как legacy generation до явного `New Game`; система не выдумывает identity, которой не было в persisted data.
+
+Конкретный browser locking primitive и tombstone/fence representation остаются infrastructure detail `LocalStorageGameRepository` и не протаскиваются в `GameSession`, `GameEngine`, Renderer или UI. Ошибка чтения, malformed/corrupted existing envelope, identity либо revision, которые нельзя безопасно сравнить, не трактуются как доказательство, что incoming snapshot новее: adapter обязан fail-closed и не заменять existing value потенциально stale записью.
 
 ## 16.3. PreferencesStorage
 
@@ -1177,13 +1186,19 @@ Headless tests обязаны проверять без SVG/DOM/Three.js:
 - regression `Undo → save → load → Redo`;
 - partial `EndgameReviewState` переживает save/load без потери пользовательских решений;
 - final result state восстанавливается детерминированно;
-- искусственно задержанные async writes `revision N` и `revision N+1` не позволяют старой revision победить;
+- искусственно задержанные async writes `revision N` и `revision N+1` одной session identity не позволяют старой revision победить;
+- старая партия revision `20`, explicit activation новой партии revision `0`, затем stale write старой identity revision `21` оставляет новую партию активной;
+- две вкладки одной session identity продолжают сравниваться по revision, и более низкая revision не заменяет более высокую;
+- после `New Game` все autosave сохраняют одну identity, а `sessionRevision` нормально растёт `0 → 1 → 2`;
+- reload восстанавливает persisted identity активной партии и не создаёт новую identity вместо неё;
+- `remove/clear → New Game activation → initial save` защищён тем же per-game cross-tab lock/fence boundary, включая stale write в промежутке;
+- legacy save без identity может сравниваться по revision только с legacy generation и не может перезаписать identified active session;
 - rapid sequence move/pass/undo/review-decision сохраняет highest committed session revision;
 - failed storage write после уже принятой session mutation не отклоняет accepted command и не оставляет presentation позади authoritative session state; следующий save может сохранить более новую revision;
 - `GameStorage.clear()` не удаляет `UserPreferences`;
 - preferences и game save валидируются/мигрируют независимо.
 
-Storage adapter должен заменяться без изменения `GameSession` API.
+Storage adapter должен заменяться без изменения `GameSession` API; session-generation fencing/activation и browser lock остаются persistence/application concern.
 
 ## 19.6. Scoring/endgame tests
 
@@ -1609,7 +1624,10 @@ Oracle disagreement не означает автоматически bug GoCube.
 - менять `GamePhase` прямым присваиванием из `GameSession`, UI или Renderer;
 - смешивать `GameCommand`, `SessionCommand`, `ViewIntent` и New Game draft changes в один бесформенный command path;
 - терять redo-future при autosave/reload;
-- разрешать старой async save revision перезаписывать более новую;
+- разрешать старой async save revision перезаписывать более новую revision той же session identity;
+- сравнивать `sessionRevision` между разными session identities или позволять stale previous generation перезаписать новую active session только потому, что её revision численно больше;
+- переключать active session identity через ordinary autosave вместо explicit activation boundary;
+- оставлять после `clear/remove` current-game slot незапертую writable паузу, в которой stale вкладка может воскресить retired session до activation новой партии;
 - хранить cross-game preferences только внутри текущего `GameSessionSnapshot`;
 - очищать product-approved preferences вместе с `GameStorage.clear()`;
 - хранить ViewState в rule history как игровое действие;
@@ -1636,7 +1654,7 @@ Oracle disagreement не означает автоматически bug GoCube.
 7. Можно ли протестировать новую логику headless без browser/Renderer?
 8. Можно ли заменить TorusTopology на CubeTopology без переписывания этой логики?
 9. Сохраняется ли только `SimpleKoPolicy`, без альтернативного repetition branch?
-10. Можно ли заменить storage adapter без изменения `GameSession` API и без нарушения revision ordering?
+10. Можно ли заменить storage adapter без изменения `GameSession` API и без нарушения session-generation fencing, explicit activation semantics и revision ordering внутри одной identity?
 11. Не смешивается ли cross-game preference с session save/ViewState?
 12. Можно ли заменить Renderer2D/Renderer3D без изменения `GameState` и rules?
 13. Можно ли в будущем заменить local execution на `RemoteGameAuthority` без изменения UI?
@@ -1682,7 +1700,8 @@ Oracle disagreement не означает автоматически bug GoCube.
 - seeded generators и independent oracle adapters помогают тестировать core только внутри test infrastructure и не становятся частью authoritative gameplay/runtime UI;
 - Development Workspace отдельно получает external AlphaZero actions через `AlphaZeroGateway`, создаёт ephemeral replay session и отправляет каждый move назад через обычный controller/`GameSession`/`GameEngine`;
 - AlphaZero не владеет board state, а compatibility disagreement останавливает replay и становится diagnostic;
-- ordered autosave с `sessionRevision` сохраняет обычный session envelope через `GameStorage`, тогда как developer replay не подключён к normal autosave;
+- ordinary autosave сохраняет стабильный application-level `sessionId` и монотонный `sessionRevision` внутри этой identity; storage сравнивает revision только при совпадении identity, а New Game переключает active identity explicit activation operation под тем же cross-tab lock/fence boundary;
+- developer replay не подключён к normal autosave;
 - `PreferencesStorage` отдельно хранит только product-approved cross-game preferences;
 - `PresentationModel` строит данные для показа и управляет presentation animation mode независимо от domain state;
 - Renderer отображает их, переводит game points в `PointId`, а presentation-only controls — в `ViewIntent`;
