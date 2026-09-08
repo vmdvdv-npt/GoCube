@@ -788,6 +788,9 @@ export class GameSession {
     if (state.phase === 'finished' && !finalScore) {
       throw new Error(`Finished ${label} must include FinalScore`);
     }
+    if (state.phase === 'finished' && !endgameClassification) {
+      throw new Error(`Finished ${label} must include endgame classification`);
+    }
     if (state.phase !== 'finished' && finalScore) {
       throw new Error(`Unfinished ${label} must not include FinalScore`);
     }
