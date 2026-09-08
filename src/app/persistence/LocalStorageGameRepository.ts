@@ -10,14 +10,14 @@ export interface KeyValueStorage {
 }
 
 export interface LocalStorageExclusiveLock {
-  runExclusive<T>(name: string, task: () => T | Promise<T>): Promise<T>;
+  runExclusive<T>(name: string, task: () => T): Promise<T>;
 }
 
 interface BrowserLockManager {
   request<T>(
     name: string,
     options: { readonly mode: 'exclusive' },
-    callback: () => T | Promise<T>,
+    callback: () => T,
   ): Promise<T>;
 }
 
@@ -25,6 +25,9 @@ type RevisionInspection =
   | { readonly kind: 'missing' }
   | { readonly kind: 'valid'; readonly value: number }
   | { readonly kind: 'invalid' };
+
+const LOCK_STORE = 'mutex';
+const LOCK_RECORD_KEY = 'exclusive';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -35,11 +38,10 @@ const isSavedGame = <TState>(value: unknown): value is SavedGame<TState> =>
   typeof value.savedAt === 'string' &&
   Object.prototype.hasOwnProperty.call(value, 'state');
 
-const inspectSessionRevision = (state: unknown): RevisionInspection => {
-  if (
-    !isRecord(state) ||
-    !Object.prototype.hasOwnProperty.call(state, 'sessionRevision')
-  ) {
+const inspectRevisionField = (
+  state: Record<string, unknown>,
+): RevisionInspection => {
+  if (!Object.prototype.hasOwnProperty.call(state, 'sessionRevision')) {
     return { kind: 'missing' };
   }
 
@@ -55,6 +57,22 @@ const inspectSessionRevision = (state: unknown): RevisionInspection => {
   return { kind: 'invalid' };
 };
 
+const inspectSessionRevision = (state: unknown): RevisionInspection => {
+  if (!isRecord(state)) return { kind: 'missing' };
+
+  const direct = inspectRevisionField(state);
+  if (direct.kind !== 'missing') return direct;
+
+  // Production saves wrap GameSessionSnapshot inside ApplicationSavedState.
+  // Keep revision inspection at the persistence boundary without teaching
+  // GameSession or the UI about browser storage details.
+  if (isRecord(state.snapshot)) {
+    return inspectRevisionField(state.snapshot);
+  }
+
+  return { kind: 'missing' };
+};
+
 const revisionOrLegacyZero = (state: unknown, source: string): number => {
   const inspection = inspectSessionRevision(state);
   if (inspection.kind === 'valid') return inspection.value;
@@ -65,7 +83,7 @@ const revisionOrLegacyZero = (state: unknown, source: string): number => {
 const inProcessLockTails = new Map<string, Promise<void>>();
 
 const inProcessExclusiveLock: LocalStorageExclusiveLock = {
-  async runExclusive<T>(name: string, task: () => T | Promise<T>): Promise<T> {
+  async runExclusive<T>(name: string, task: () => T): Promise<T> {
     const previous = inProcessLockTails.get(name) ?? Promise.resolve();
     let releaseCurrent!: () => void;
     const current = new Promise<void>((resolve) => {
@@ -76,7 +94,7 @@ const inProcessExclusiveLock: LocalStorageExclusiveLock = {
 
     await previous;
     try {
-      return await task();
+      return task();
     } finally {
       releaseCurrent();
       if (inProcessLockTails.get(name) === tail) {
@@ -86,27 +104,113 @@ const inProcessExclusiveLock: LocalStorageExclusiveLock = {
   },
 };
 
+const indexedDbLockDatabases = new Map<string, Promise<IDBDatabase>>();
+
+const indexedDbLockDatabase = (name: string): Promise<IDBDatabase> => {
+  const existing = indexedDbLockDatabases.get(name);
+  if (existing) return existing;
+
+  const opening = new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(`gocube:local-storage-lock:${name}`, 1);
+
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(LOCK_STORE)) {
+        request.result.createObjectStore(LOCK_STORE);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => {
+      reject(
+        request.error ??
+          new Error(`Unable to open cross-tab lock database for ${name}`),
+      );
+    };
+    request.onblocked = () => {
+      reject(new Error(`Cross-tab lock database is blocked for ${name}`));
+    };
+  });
+
+  indexedDbLockDatabases.set(name, opening);
+  void opening.catch(() => {
+    if (indexedDbLockDatabases.get(name) === opening) {
+      indexedDbLockDatabases.delete(name);
+    }
+  });
+  return opening;
+};
+
+const indexedDbExclusiveLock: LocalStorageExclusiveLock = {
+  async runExclusive<T>(name: string, task: () => T): Promise<T> {
+    const database = await indexedDbLockDatabase(name);
+
+    return new Promise<T>((resolve, reject) => {
+      let taskCompleted = false;
+      let taskResult!: T;
+      let taskError: unknown = null;
+      const transaction = database.transaction(LOCK_STORE, 'readwrite');
+
+      transaction.oncomplete = () => {
+        if (!taskCompleted) {
+          reject(
+            taskError ??
+              new Error(`Cross-tab lock transaction completed without task for ${name}`),
+          );
+          return;
+        }
+        resolve(taskResult);
+      };
+      transaction.onabort = () => {
+        reject(
+          taskError ??
+            transaction.error ??
+            new Error(`Cross-tab lock transaction aborted for ${name}`),
+        );
+      };
+
+      const claim = transaction
+        .objectStore(LOCK_STORE)
+        .put(Date.now(), LOCK_RECORD_KEY);
+      claim.onsuccess = () => {
+        try {
+          // This callback runs while the readwrite transaction owns the object
+          // store. localStorage read/compare/write is synchronous, so the whole
+          // critical section completes before the transaction can commit.
+          taskResult = task();
+          taskCompleted = true;
+        } catch (error) {
+          taskError = error;
+          transaction.abort();
+        }
+      };
+    });
+  },
+};
+
 const browserExclusiveLock: LocalStorageExclusiveLock = {
-  async runExclusive<T>(name: string, task: () => T | Promise<T>): Promise<T> {
+  async runExclusive<T>(name: string, task: () => T): Promise<T> {
     if (typeof window === 'undefined') {
-      // Headless/unit-test environments have no tabs. Keep repository instances
-      // serialized in-process without introducing browser APIs into core code.
+      // Unit/headless JS environments have no competing browser tabs.
       return inProcessExclusiveLock.runExclusive(name, task);
     }
 
     const locks = (
       navigator as unknown as { readonly locks?: BrowserLockManager }
     ).locks;
-    if (!locks) {
-      // A browser without a cross-context lock primitive cannot safely perform
-      // read -> compare -> write against localStorage. Fail closed instead of
-      // silently allowing a stale tab to overwrite a newer revision.
-      throw new Error(
-        'Web Locks API is required for revision-safe localStorage game saves',
-      );
+    if (locks) {
+      return locks.request(name, { mode: 'exclusive' }, task);
     }
 
-    return locks.request(name, { mode: 'exclusive' }, task);
+    // Some browser/headless contexts do not expose Web Locks. IndexedDB
+    // readwrite transactions still provide a browser-owned cross-context
+    // serialization primitive. One database per lock name keeps different game
+    // ids independent instead of serializing unrelated saves through one store.
+    if (typeof indexedDB !== 'undefined') {
+      return indexedDbExclusiveLock.runExclusive(name, task);
+    }
+
+    throw new Error(
+      'No browser cross-tab lock primitive is available for revision-safe localStorage game saves',
+    );
   },
 };
 
