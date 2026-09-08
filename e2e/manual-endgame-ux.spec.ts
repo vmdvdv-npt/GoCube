@@ -62,10 +62,9 @@ test('assisted endgame keeps every logical group editable until explicit scoring
   await expect(page.locator('.torus-board__group-contour--dead')).toHaveCount(1);
   await expect(page.locator('.torus-board__group-contour--seki')).toHaveCount(0);
 
-  // Main-game endgame rendering remains canonical and never leaks duplicate-region UI.
+  // Duplicate-region display remains an independent option during endgame and is off by default.
   const contourCount = await page.locator('.torus-board__group-contour').count();
-  await expect(page.getByText(/duplicate regions/i)).toHaveCount(0);
-  await expect(page.getByText('Показывать дублирующие области')).toHaveCount(0);
+  await expect(page.getByLabel('Show duplicate regions', { exact: true })).not.toBeChecked();
   await expect(page.locator('.torus-board')).toHaveAttribute('data-duplicate-regions-visible', 'false');
   await expect(page.locator('.torus-board__edge-duplicates')).toHaveCount(0);
   await expect(page.locator('.torus-board__group-contour')).toHaveCount(contourCount);
