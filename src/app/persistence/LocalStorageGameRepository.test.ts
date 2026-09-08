@@ -328,6 +328,28 @@ describe('LocalStorageGameRepository', () => {
     await expect(repository.load('current')).resolves.toEqual(newGame);
   });
 
+  it('does not let a stale tab remove a newer active session generation', async () => {
+    const storage = new MemoryStorage();
+    const oldTab = new LocalStorageGameRepository<IdentifiedRevisionState>(
+      'test:game:',
+      storage,
+    );
+    const newTab = new LocalStorageGameRepository<IdentifiedRevisionState>(
+      'test:game:',
+      storage,
+    );
+
+    await oldTab.activate(
+      identifiedSavedGame('current', 'old-session', 20, 'old-20'),
+    );
+    const newGame = identifiedSavedGame('current', 'new-session', 0, 'new-0');
+    await newTab.activate(newGame);
+
+    await oldTab.remove('current');
+
+    await expect(newTab.load('current')).resolves.toEqual(newGame);
+  });
+
   it('keeps legacy saves in a separate compatibility generation from identified sessions', async () => {
     const storage = new MemoryStorage();
     const modernRepository = new LocalStorageGameRepository<IdentifiedRevisionState>(
@@ -449,21 +471,29 @@ describe('LocalStorageGameRepository', () => {
     expect(storage.values.get('test:game:current')).toBe(corrupted);
   });
 
-  it('treats malformed JSON as no save and removes the corrupted value', async () => {
+  it('treats malformed JSON as no save and keeps a fail-closed retired fence', async () => {
     const storage = new MemoryStorage();
     storage.values.set('test:game:current', '{ definitely not json');
-    const repository = new LocalStorageGameRepository('test:game:', storage);
+    const repository = new LocalStorageGameRepository<RevisionState>(
+      'test:game:',
+      storage,
+    );
 
     await expect(repository.load('current')).resolves.toBeNull();
-    expect(storage.values.has('test:game:current')).toBe(false);
+    await repository.save(savedGame('current', 99, 'stale-after-corruption'));
+    await expect(repository.load('current')).resolves.toBeNull();
   });
 
-  it('rejects a malformed saved-game envelope without throwing', async () => {
+  it('rejects a malformed saved-game envelope and fences the slot', async () => {
     const storage = new MemoryStorage();
     storage.values.set('test:game:current', JSON.stringify({ id: 42, state: {} }));
-    const repository = new LocalStorageGameRepository('test:game:', storage);
+    const repository = new LocalStorageGameRepository<RevisionState>(
+      'test:game:',
+      storage,
+    );
 
     await expect(repository.load('current')).resolves.toBeNull();
-    expect(storage.values.has('test:game:current')).toBe(false);
+    await repository.save(savedGame('current', 99, 'stale-after-corruption'));
+    await expect(repository.load('current')).resolves.toBeNull();
   });
 });
