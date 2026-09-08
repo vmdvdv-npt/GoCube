@@ -2,6 +2,10 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { TorusTopology } from '../src/core/topology/TorusTopology';
 import { EndgameTestLab } from '../src/core/endgame/testlab/EndgameTestLab';
 
+// These tests replay a long deterministic game through the real UI before Final Proof starts.
+// Keep the analysis assertions themselves at 7 seconds while giving slower WebKit CI setup room.
+const FINAL_PROOF_E2E_TEST_TIMEOUT_MILLISECONDS = 60_000;
+
 const torusPoint = (page: Page, logicalPointId: string): Locator =>
   page.locator(
     `.torus-board__hit-target[data-logical-point-id="${logicalPointId}"][data-copy-role="primary"]`,
@@ -42,6 +46,7 @@ const startFinalProofFixture = async (page: Page): Promise<void> => {
 };
 
 test('final proof search keeps the browser event loop responsive while final analysis is visible', async ({ page }) => {
+  test.setTimeout(FINAL_PROOF_E2E_TEST_TIMEOUT_MILLISECONDS);
   await startFinalProofFixture(page);
 
   const undo = page.getByRole('button', { name: 'Undo' });
@@ -102,6 +107,7 @@ test('final proof search keeps the browser event loop responsive while final ana
 });
 
 test('Development Workspace does not cancel the active game Final Proof run', async ({ page }) => {
+  test.setTimeout(FINAL_PROOF_E2E_TEST_TIMEOUT_MILLISECONDS);
   await startFinalProofFixture(page);
 
   const analysisStatus = page.getByText('Analyzing final position…', { exact: true });
