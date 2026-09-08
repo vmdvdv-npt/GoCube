@@ -228,29 +228,30 @@ export class GameApplication {
     const persistence = this.persistenceConfig(gameMode, sessionId);
 
     try {
-      if (gameMode === 'cube-2d') {
-        return Object.freeze({
-          gameMode,
-          controller: new Cube2DGameController({
-            size: snapshot.boardSize as CubeSize,
-            ruleSet: snapshot.ruleSet,
-            komi: snapshot.komi,
-            persistence,
-            snapshot,
-          }),
-        });
-      }
+      const active: ActiveGame = gameMode === 'cube-2d'
+        ? Object.freeze({
+            gameMode,
+            controller: new Cube2DGameController({
+              size: snapshot.boardSize as CubeSize,
+              ruleSet: snapshot.ruleSet,
+              komi: snapshot.komi,
+              persistence,
+              snapshot,
+            }),
+          })
+        : Object.freeze({
+            gameMode,
+            controller: new TorusGameController({
+              size: snapshot.boardSize as TorusSize,
+              ruleSet: snapshot.ruleSet,
+              komi: snapshot.komi,
+              persistence,
+              snapshot,
+            }),
+          });
 
-      return Object.freeze({
-        gameMode,
-        controller: new TorusGameController({
-          size: snapshot.boardSize as TorusSize,
-          ruleSet: snapshot.ruleSet,
-          komi: snapshot.komi,
-          persistence,
-          snapshot,
-        }),
-      });
+      await active.controller.resumeRestoredEndgame();
+      return active;
     } catch {
       await this.removeInvalidSave();
       return null;
