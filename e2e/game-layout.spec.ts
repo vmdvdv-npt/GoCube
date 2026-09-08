@@ -15,7 +15,7 @@ test('game screen uses compact statistics and uniform history controls', async (
   await expect(page.getByText('Move 0')).toBeVisible();
   await expect(page.getByText(/^Passes \d+$/)).toHaveCount(0);
   await expect(page.getByText('Japanese rules')).toBeVisible();
-  await expect(page.getByText('Komi 7.5')).toBeVisible();
+  await expect(page.getByText('Komi 0.5')).toBeVisible();
   await expect(page.getByLabel('Move numbers', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Show duplicate regions', { exact: true })).toBeVisible();
 
