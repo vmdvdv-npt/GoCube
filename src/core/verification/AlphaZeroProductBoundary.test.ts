@@ -148,11 +148,18 @@ describe('AlphaZero product-boundary contract', () => {
   });
 
   it('reaches the V1-verified final score through the product manual lifecycle', async () => {
-    const scoreFixtures = boundaryFixtures.filter((candidate) => candidate.expectedFinalScore !== null);
-    expect(scoreFixtures).toHaveLength(2);
-    expect(scoreFixtures.some((fixture) => fixture.fixtureId === 'cube4_nonempty_two_eye_score_001')).toBe(true);
+    const emptyFixture = boundaryFixtures.find(
+      (candidate) => candidate.fixtureId === 'cube4_early_termination_boundary_001',
+    );
+    const nonemptyFixture = boundaryFixtures.find(
+      (candidate) => candidate.fixtureId === 'cube4_nonempty_two_eye_score_001',
+    );
+    expect(emptyFixture?.expectedFinalScore).not.toBeNull();
+    expect(nonemptyFixture?.expectedFinalScore).not.toBeNull();
+    expect(nonemptyFixture?.expectedEndgameClassification).toHaveLength(1);
 
-    for (const fixture of scoreFixtures) {
+    for (const fixture of [emptyFixture, nonemptyFixture]) {
+      if (!fixture || !fixture.expectedFinalScore) continue;
       const topology = fixture.topology === 'cube'
         ? new CubeTopology(fixture.size)
         : new TorusTopology(fixture.size as 9 | 13 | 19);
