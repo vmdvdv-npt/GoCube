@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import type { GameRepository, SavedGame } from '../../core/persistence/GameRepository';
+import type { ActiveGameRepository, SavedGame } from '../../core/persistence/GameRepository';
 import { GameApplication, type ApplicationSavedState } from '../GameApplication';
 import type { AlphaZeroGeneratedGame } from './AlphaZeroGateway';
 import { DeveloperReplaySession } from './DeveloperReplaySession';
 
-class RecordingRepo implements GameRepository<ApplicationSavedState> {
+class RecordingRepo implements ActiveGameRepository<ApplicationSavedState> {
   saved: SavedGame<ApplicationSavedState> | null = null;
   saves = 0;
   removes = 0;
 
   async save(game: SavedGame<ApplicationSavedState>) {
+    this.saved = structuredClone(game);
+    this.saves += 1;
+  }
+
+  async activate(game: SavedGame<ApplicationSavedState>) {
     this.saved = structuredClone(game);
     this.saves += 1;
   }
@@ -42,7 +47,7 @@ const generatedGame: AlphaZeroGeneratedGame = Object.freeze({
 describe('Development Workspace persistence isolation', () => {
   it('does not delete, replace, or autosave over the ordinary current game', async () => {
     const repo = new RecordingRepo();
-    const app = new GameApplication(repo);
+    const app = new GameApplication(repo, undefined, () => 'ordinary-session');
     const normal = await app.createNewGame({
       gameMode: 'cube-2d',
       size: 4,
@@ -64,7 +69,7 @@ describe('Development Workspace persistence isolation', () => {
     expect(repo.saved).toEqual(savedBeforeDevelopment);
     expect(normal.controller.snapshot()).toEqual(normalSnapshotBeforeDevelopment);
 
-    const restored = await new GameApplication(repo).restoreSavedGame();
+    const restored = await new GameApplication(repo, undefined, () => 'unused').restoreSavedGame();
     if (!restored || restored.gameMode !== 'cube-2d') throw new Error('Saved Cube game expected');
     expect(restored.controller.snapshot()).toEqual(normalSnapshotBeforeDevelopment);
   });

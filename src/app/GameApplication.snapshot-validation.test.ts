@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import type { GameRepository, SavedGame } from '../core/persistence/GameRepository';
+import type { ActiveGameRepository, SavedGame } from '../core/persistence/GameRepository';
 import { GameApplication, type ApplicationSavedState } from './GameApplication';
 
-class MemoryRepository implements GameRepository<ApplicationSavedState> {
+class MemoryRepository implements ActiveGameRepository<ApplicationSavedState> {
   saved: SavedGame<ApplicationSavedState> | null = null;
   removes = 0;
 
   async save(game: SavedGame<ApplicationSavedState>): Promise<void> {
+    this.saved = structuredClone(game);
+  }
+
+  async activate(game: SavedGame<ApplicationSavedState>): Promise<void> {
     this.saved = structuredClone(game);
   }
 
@@ -47,7 +51,7 @@ const boardOf = (state: Record<string, unknown>): Record<string, unknown> => {
 describe('GameApplication saved GameState trust boundary', () => {
   it('does not expose Continue when the saved board schema is corrupted', async () => {
     const repo = new MemoryRepository();
-    const app = new GameApplication(repo);
+    const app = new GameApplication(repo, undefined, () => 'board-session');
     await app.createNewGame({
       gameMode: 'torus-2d',
       size: 9,
@@ -57,14 +61,14 @@ describe('GameApplication saved GameState trust boundary', () => {
 
     currentStateOf(repo).board = null;
 
-    await expect(new GameApplication(repo).findSavedGame()).resolves.toBeNull();
+    await expect(new GameApplication(repo, undefined, () => 'unused').findSavedGame()).resolves.toBeNull();
     expect(repo.saved).toBeNull();
     expect(repo.removes).toBe(1);
   });
 
   it('rejects a board whose point set or occupancy does not match the saved topology', async () => {
     const repo = new MemoryRepository();
-    const app = new GameApplication(repo);
+    const app = new GameApplication(repo, undefined, () => 'occupancy-session');
     await app.createNewGame({
       gameMode: 'cube-2d',
       size: 3,
@@ -74,14 +78,14 @@ describe('GameApplication saved GameState trust boundary', () => {
 
     boardOf(currentStateOf(repo))['front:0:0'] = 'corrupted';
 
-    await expect(new GameApplication(repo).restoreSavedGame()).resolves.toBeNull();
+    await expect(new GameApplication(repo, undefined, () => 'unused').restoreSavedGame()).resolves.toBeNull();
     expect(repo.saved).toBeNull();
     expect(repo.removes).toBe(1);
   });
 
   it('rejects invalid rule-relevant scalar state before building a save summary', async () => {
     const repo = new MemoryRepository();
-    const app = new GameApplication(repo);
+    const app = new GameApplication(repo, undefined, () => 'scalar-session');
     await app.createNewGame({
       gameMode: 'torus-2d',
       size: 9,
@@ -94,7 +98,7 @@ describe('GameApplication saved GameState trust boundary', () => {
     current.moveNumber = Number.NaN;
     current.captures = { black: 0, white: -1 };
 
-    await expect(new GameApplication(repo).findSavedGame()).resolves.toBeNull();
+    await expect(new GameApplication(repo, undefined, () => 'unused').findSavedGame()).resolves.toBeNull();
     expect(repo.saved).toBeNull();
     expect(repo.removes).toBe(1);
   });
