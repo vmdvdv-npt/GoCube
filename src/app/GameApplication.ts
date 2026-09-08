@@ -1,5 +1,9 @@
 import type { RuleSet } from '../core/game/types';
-import type { GameRepository, SavedGame } from '../core/persistence/GameRepository';
+import type {
+  ActiveGameRepository,
+  GameRepository,
+  SavedGame,
+} from '../core/persistence/GameRepository';
 import {
   GAME_SESSION_SNAPSHOT_VERSION,
   type GameSessionSnapshot,
@@ -41,6 +45,8 @@ export type ActiveGame =
 export interface ApplicationSavedState {
   readonly version: typeof APPLICATION_SAVE_VERSION;
   readonly gameMode: GameMode;
+  /** Missing only in pre-session-identity legacy application v2 saves. */
+  readonly sessionId?: string;
   readonly snapshot: GameSessionSnapshot;
 }
 
@@ -52,6 +58,9 @@ const isGameMode = (value: unknown): value is GameMode =>
 
 const isRuleSet = (value: unknown): value is RuleSet =>
   value === 'chinese' || value === 'japanese';
+
+const isSessionId = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0;
 
 const isTorusSize = (value: unknown): value is TorusSize =>
   typeof value === 'number' && TORUS_SIZES.some((size) => size === value);
@@ -90,31 +99,49 @@ const hasValidRedo = (redo: unknown): boolean =>
         ),
     ));
 
+const wrapApplicationSavedState = (
+  gameMode: GameMode,
+  sessionId: string | undefined,
+  snapshot: GameSessionSnapshot,
+): ApplicationSavedState =>
+  Object.freeze({
+    version: APPLICATION_SAVE_VERSION,
+    gameMode,
+    ...(sessionId === undefined ? {} : { sessionId }),
+    snapshot,
+  });
+
+const defaultSessionIdFactory = (): string => globalThis.crypto.randomUUID();
+
 /**
  * Bridges the shared GameSession persistence contract to the application save envelope.
- * GameSession continues to persist only GameSessionSnapshot; the application adds gameMode.
+ * GameSession continues to persist only GameSessionSnapshot; the application adds gameMode
+ * and the stable identity of the active application session.
  */
 class ApplicationSessionRepository implements GameRepository<GameSessionSnapshot> {
   constructor(
     private readonly repository: GameRepository<ApplicationSavedState>,
     private readonly gameMode: GameMode,
+    private readonly sessionId: string | undefined,
   ) {}
 
   async save(game: SavedGame<GameSessionSnapshot>): Promise<void> {
     await this.repository.save({
       id: game.id,
       savedAt: game.savedAt,
-      state: Object.freeze({
-        version: APPLICATION_SAVE_VERSION,
-        gameMode: this.gameMode,
-        snapshot: game.state,
-      }),
+      state: wrapApplicationSavedState(this.gameMode, this.sessionId, game.state),
     });
   }
 
   async load(id: string): Promise<SavedGame<GameSessionSnapshot> | null> {
     const saved = await this.repository.load(id);
-    if (!saved || saved.state.gameMode !== this.gameMode) return null;
+    if (
+      !saved ||
+      saved.state.gameMode !== this.gameMode ||
+      saved.state.sessionId !== this.sessionId
+    ) {
+      return null;
+    }
     return Object.freeze({
       id: saved.id,
       savedAt: saved.savedAt,
@@ -130,9 +157,10 @@ class ApplicationSessionRepository implements GameRepository<GameSessionSnapshot
 /** Owns the single application lifecycle for Torus 2D and Cube 2D. */
 export class GameApplication {
   constructor(
-    private readonly repository: GameRepository<ApplicationSavedState> =
+    private readonly repository: ActiveGameRepository<ApplicationSavedState> =
       new LocalStorageGameRepository<ApplicationSavedState>(),
     private readonly now: () => string = () => new Date().toISOString(),
+    private readonly sessionIdFactory: () => string = defaultSessionIdFactory,
   ) {}
 
   async findSavedGame(): Promise<SavedGameSummary | null> {
@@ -156,7 +184,8 @@ export class GameApplication {
 
   async createNewGame(settings: NewGameSettings): Promise<ActiveGame> {
     this.assertSettings(settings);
-    const persistence = this.persistenceConfig(settings.gameMode);
+    const sessionId = this.createSessionId();
+    const persistence = this.persistenceConfig(settings.gameMode, sessionId);
 
     const active: ActiveGame = settings.gameMode === 'cube-2d'
       ? Object.freeze({
@@ -178,10 +207,14 @@ export class GameApplication {
           }),
         });
 
-    await persistence.repository.save({
+    await this.repository.activate({
       id: CURRENT_GAME_ID,
       savedAt: this.now(),
-      state: active.controller.snapshot(),
+      state: wrapApplicationSavedState(
+        settings.gameMode,
+        sessionId,
+        active.controller.snapshot(),
+      ),
     });
 
     return active;
@@ -191,8 +224,8 @@ export class GameApplication {
     const saved = await this.readSavedGame();
     if (!saved) return null;
 
-    const { gameMode, snapshot } = saved.state;
-    const persistence = this.persistenceConfig(gameMode);
+    const { gameMode, sessionId, snapshot } = saved.state;
+    const persistence = this.persistenceConfig(gameMode, sessionId);
 
     try {
       if (gameMode === 'cube-2d') {
@@ -228,9 +261,9 @@ export class GameApplication {
     await this.repository.remove(CURRENT_GAME_ID);
   }
 
-  private persistenceConfig(gameMode: GameMode) {
+  private persistenceConfig(gameMode: GameMode, sessionId: string | undefined) {
     return Object.freeze({
-      repository: new ApplicationSessionRepository(this.repository, gameMode),
+      repository: new ApplicationSessionRepository(this.repository, gameMode, sessionId),
       gameId: CURRENT_GAME_ID,
       now: this.now,
     });
@@ -252,6 +285,7 @@ export class GameApplication {
         !isRecord(state) ||
         state.version !== APPLICATION_SAVE_VERSION ||
         !isGameMode(state.gameMode) ||
+        (state.sessionId !== undefined && !isSessionId(state.sessionId)) ||
         !isRecord(state.snapshot)
       ) {
         throw new Error('Invalid application save envelope');
@@ -303,6 +337,14 @@ export class GameApplication {
     if (!Number.isFinite(settings.komi)) {
       throw new Error('Komi must be a finite number');
     }
+  }
+
+  private createSessionId(): string {
+    const sessionId = this.sessionIdFactory();
+    if (!isSessionId(sessionId)) {
+      throw new Error('Session id factory must return a non-empty string');
+    }
+    return sessionId;
   }
 
   private async removeInvalidSave(): Promise<void> {
