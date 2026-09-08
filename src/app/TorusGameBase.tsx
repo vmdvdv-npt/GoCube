@@ -116,9 +116,16 @@ const statusLabel = (status: GroupStatus): string =>
 export interface TorusGameProps {
   readonly controller: TorusGameController;
   readonly onRequestNewGame: () => void;
+  readonly initialShowDuplicateRegions: boolean;
+  readonly onShowDuplicateRegionsPreferenceChange: (visible: boolean) => void;
 }
 
-export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
+export function TorusGame({
+  controller,
+  onRequestNewGame,
+  initialShowDuplicateRegions,
+  onShowDuplicateRegionsPreferenceChange,
+}: TorusGameProps) {
   const initialViewModel = controller.viewModel();
   const [viewModel, setViewModel] = useState(() => initialViewModel);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -136,7 +143,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
   const [resultOpen, setResultOpen] = useState(
     () => initialViewModel.phase === 'finished',
   );
-  const [showDuplicateRegions, setShowDuplicateRegions] = useState(false);
+  const [showDuplicateRegions, setShowDuplicateRegions] = useState(initialShowDuplicateRegions);
   const [showMoveNumbers, setShowMoveNumbers] = useState(false);
   const [viewZoom, setViewZoom] = useState(1);
   const [passGuardUntil, setPassGuardUntil] = useState<number | null>(null);
@@ -227,7 +234,6 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
     setSelectedGroupId(
       nextViewModel.phase === 'endgame' ? controller.nextUnresolvedEndgameGroupId() : null,
     );
-    setShowDuplicateRegions(false);
     setShowMoveNumbers(false);
     setViewZoom(1);
     setPassGuardUntil(null);
@@ -776,6 +782,11 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
       </section>
     ) : null;
 
+  const handleShowDuplicateRegionsChange = (visible: boolean): void => {
+    setShowDuplicateRegions(visible);
+    onShowDuplicateRegionsPreferenceChange(visible);
+  };
+
   const hasVisualTransform =
     viewZoom !== 1 || dragPan.offset.x !== 0 || dragPan.offset.y !== 0;
 
@@ -787,7 +798,7 @@ export function TorusGame({ controller, onRequestNewGame }: TorusGameProps) {
         showMoveNumbers={showMoveNumbers}
         onShowMoveNumbersChange={setShowMoveNumbers}
         showDuplicateRegions={showDuplicateRegions}
-        onShowDuplicateRegionsChange={setShowDuplicateRegions}
+        onShowDuplicateRegionsChange={handleShowDuplicateRegionsChange}
         passDisabled={viewModel.phase !== 'playing' || passGuardActive}
         canRedo={controller.canRedo()}
         canUndo={controller.canUndo()}
