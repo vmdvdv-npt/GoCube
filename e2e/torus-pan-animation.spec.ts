@@ -136,9 +136,10 @@ test('rapid Torus navigation ignores extra arrows and keeps sidebar actions avai
   await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Redo' })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'New game', exact: true })).toBeEnabled();
-  await expect(page.getByLabel('Show move number')).toBeEnabled();
-  await expect(page.getByText(/duplicate regions/i)).toHaveCount(0);
-  await expect(page.getByText('Показывать дублирующие области')).toHaveCount(0);
+  await expect(page.getByLabel('Move numbers', { exact: true })).toBeEnabled();
+  const duplicateRegions = page.getByLabel('Show duplicate regions', { exact: true });
+  await expect(duplicateRegions).toBeEnabled();
+  await expect(duplicateRegions).not.toBeChecked();
 
   await expect(board).toHaveAttribute('data-pan-animating', 'false', { timeout: 2_000 });
   await expect(board).toHaveAttribute('data-view-offset-x', '1');

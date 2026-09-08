@@ -37,7 +37,7 @@ const edgeMarginInGridSteps = async (page: Page): Promise<number> =>
   });
 
 for (const size of ['9', '13', '19'] as const) {
-  test(`${size}x${size} keeps its normal edge margin without duplicate-region UI`, async ({
+  test(`${size}x${size} keeps its normal edge margin with duplicate regions off`, async ({
     page,
   }) => {
     await startGame(page, size);
@@ -46,8 +46,8 @@ for (const size of ['9', '13', '19'] as const) {
     await expect.poll(() => edgeMarginInGridSteps(page)).toBeLessThan(0.88);
 
     const board = page.locator('.torus-board');
+    await expect(page.getByLabel('Show duplicate regions', { exact: true })).not.toBeChecked();
     await expect(board).toHaveAttribute('data-duplicate-regions-visible', 'false');
-    await expect(page.getByText(/duplicate regions/i)).toHaveCount(0);
     await expect(page.locator('.torus-board__hit-target[data-copy-role="primary"]')).toHaveCount(
       Number(size) ** 2,
     );

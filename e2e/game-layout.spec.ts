@@ -16,8 +16,55 @@ test('game screen uses compact statistics and uniform history controls', async (
   await expect(page.getByText(/^Passes \d+$/)).toHaveCount(0);
   await expect(page.getByText('Japanese rules')).toBeVisible();
   await expect(page.getByText('Komi 7.5')).toBeVisible();
-  await expect(page.getByLabel('Show move number')).toBeVisible();
-  await expect(page.getByText(/duplicate regions/i)).toHaveCount(0);
+  await expect(page.getByLabel('Move numbers', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Show duplicate regions', { exact: true })).toBeVisible();
+
+  const displayRows = page.locator('.torus-duplicates-control label');
+  await expect(displayRows).toHaveCount(2);
+  const displayRowStyles = await displayRows.evaluateAll((rows) =>
+    rows.map((row) => {
+      const style = getComputedStyle(row);
+      return {
+        display: style.display,
+        alignItems: style.alignItems,
+        minHeight: style.minHeight,
+        paddingLeft: style.paddingLeft,
+      };
+    }),
+  );
+  expect(displayRowStyles).toEqual([
+    { display: 'flex', alignItems: 'center', minHeight: '34px', paddingLeft: '8px' },
+    { display: 'flex', alignItems: 'center', minHeight: '34px', paddingLeft: '8px' },
+  ]);
+
+  const [firstRowBox, secondRowBox, firstInputBox, secondInputBox] = await Promise.all([
+    displayRows.nth(0).boundingBox(),
+    displayRows.nth(1).boundingBox(),
+    displayRows.nth(0).locator('input').boundingBox(),
+    displayRows.nth(1).locator('input').boundingBox(),
+  ]);
+  expect(firstRowBox).not.toBeNull();
+  expect(secondRowBox).not.toBeNull();
+  expect(firstInputBox).not.toBeNull();
+  expect(secondInputBox).not.toBeNull();
+  if (firstRowBox && secondRowBox && firstInputBox && secondInputBox) {
+    expect(firstRowBox.x).toBeCloseTo(secondRowBox.x, 0);
+    expect(firstRowBox.width).toBeCloseTo(secondRowBox.width, 0);
+    expect(firstRowBox.height).toBeCloseTo(secondRowBox.height, 0);
+    expect(firstInputBox.x).toBeCloseTo(secondInputBox.x, 0);
+    expect(
+      Math.abs(
+        firstInputBox.y + firstInputBox.height / 2 -
+          (firstRowBox.y + firstRowBox.height / 2),
+      ),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(
+        secondInputBox.y + secondInputBox.height / 2 -
+          (secondRowBox.y + secondRowBox.height / 2),
+      ),
+    ).toBeLessThanOrEqual(1);
+  }
 
   const standardStatStyle = await page.getByText('9×9').evaluate((element) => ({
     color: getComputedStyle(element).color,

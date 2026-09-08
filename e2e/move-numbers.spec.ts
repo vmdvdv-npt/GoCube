@@ -31,7 +31,7 @@ test('last stone keeps a contrast dot while move numbers preserve pass gaps', as
   await expect(marker(page, '1,0')).toHaveCount(1);
   await expect(marker(page, '1,0')).toHaveAttribute('fill', '#111111');
 
-  const toggle = page.getByLabel('Show move number');
+  const toggle = page.getByLabel('Move numbers', { exact: true });
   await expect(toggle).not.toBeChecked();
   await toggle.check();
   await expect(toggle).toBeChecked();
@@ -55,15 +55,17 @@ test('last stone keeps a contrast dot while move numbers preserve pass gaps', as
   await expect(moveNumber(page, '1,0')).toHaveCount(0);
 });
 
-test('move annotations survive smooth torus pan without duplicate-region UI', async ({ page }) => {
+test('move annotations survive smooth torus pan with an independent duplicate-region control', async ({ page }) => {
   await startGame(page);
   await point(page, '0,0').click();
   await point(page, '1,0').click();
-  await page.getByLabel('Show move number').check();
+  await page.getByLabel('Move numbers', { exact: true }).check();
 
   await expect(moveNumber(page, '0,0')).toHaveText('1');
   await expect(marker(page, '1,0')).toHaveCount(1);
-  await expect(page.getByText(/duplicate regions/i)).toHaveCount(0);
+  const duplicateRegions = page.getByLabel('Show duplicate regions', { exact: true });
+  await expect(duplicateRegions).toBeVisible();
+  await expect(duplicateRegions).not.toBeChecked();
 
   await page.getByRole('button', { name: 'Shift torus view right' }).click();
   await expect(page.locator('.torus-board')).toHaveAttribute('data-pan-animating', 'true');

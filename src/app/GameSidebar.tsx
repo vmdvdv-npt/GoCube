@@ -9,7 +9,6 @@ export interface GameSidebarProps {
   readonly viewModel: GameViewModel;
   readonly showMoveNumbers: boolean;
   readonly onShowMoveNumbersChange: (visible: boolean) => void;
-  /** Legacy renderer plumbing retained for caller compatibility; not exposed by the main UI. */
   readonly showDuplicateRegions?: boolean;
   readonly onShowDuplicateRegionsChange?: (visible: boolean) => void;
   readonly duplicateRegionsDisabled?: boolean;
@@ -33,6 +32,9 @@ export function GameSidebar({
   viewModel,
   showMoveNumbers,
   onShowMoveNumbersChange,
+  showDuplicateRegions,
+  onShowDuplicateRegionsChange,
+  duplicateRegionsDisabled = false,
   passDisabled,
   canRedo,
   canUndo,
@@ -73,6 +75,11 @@ export function GameSidebar({
       : 'Static proofs resolved the position; final verification is completing.'
     : null;
 
+  const duplicateRegionsAvailable =
+    !duplicateRegionsDisabled &&
+    showDuplicateRegions !== undefined &&
+    onShowDuplicateRegionsChange !== undefined;
+
   return (
     <>
       <div className="game-summary" aria-live="polite">
@@ -101,8 +108,18 @@ export function GameSidebar({
       <div className="torus-duplicates-control" role="group" aria-label="Board display options">
         <label>
           <input type="checkbox" checked={showMoveNumbers} onChange={(event) => onShowMoveNumbersChange(event.target.checked)} />
-          Show move number
+          <span>Move numbers</span>
         </label>
+        {duplicateRegionsAvailable ? (
+          <label>
+            <input
+              type="checkbox"
+              checked={showDuplicateRegions}
+              onChange={(event) => onShowDuplicateRegionsChange?.(event.target.checked)}
+            />
+            <span>Show duplicate regions</span>
+          </label>
+        ) : null}
       </div>
 
       {analysisDetail ? (
