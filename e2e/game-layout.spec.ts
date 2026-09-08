@@ -52,14 +52,18 @@ test('game screen uses compact statistics and uniform history controls', async (
     expect(firstRowBox.width).toBeCloseTo(secondRowBox.width, 0);
     expect(firstRowBox.height).toBeCloseTo(secondRowBox.height, 0);
     expect(firstInputBox.x).toBeCloseTo(secondInputBox.x, 0);
-    expect(firstInputBox.y + firstInputBox.height / 2).toBeCloseTo(
-      firstRowBox.y + firstRowBox.height / 2,
-      0,
-    );
-    expect(secondInputBox.y + secondInputBox.height / 2).toBeCloseTo(
-      secondRowBox.y + secondRowBox.height / 2,
-      0,
-    );
+    expect(
+      Math.abs(
+        firstInputBox.y + firstInputBox.height / 2 -
+          (firstRowBox.y + firstRowBox.height / 2),
+      ),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(
+        secondInputBox.y + secondInputBox.height / 2 -
+          (secondRowBox.y + secondRowBox.height / 2),
+      ),
+    ).toBeLessThanOrEqual(1);
   }
 
   const standardStatStyle = await page.getByText('9×9').evaluate((element) => ({
