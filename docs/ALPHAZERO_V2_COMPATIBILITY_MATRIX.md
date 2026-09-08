@@ -1,5 +1,7 @@
 # AlphaZero ↔ GoCube V2 compatibility matrix
 
+> Authority: canonical only for the AlphaZero ↔ GoCube V2 product-boundary compatibility matrix, acceptance rows, and intentional-difference registry. It does not override `docs/GAME_CUBE_GO.md`, `docs/ROADMAP.md`, or `docs/ARCHITECTURE.md`.
+
 This matrix is the product-boundary acceptance index for
 `gocube-product-boundary-v1`.  `PASS` means the check is covered by the
 versioned imported fixture or by the named product regression.  `NOT_APPLICABLE`
