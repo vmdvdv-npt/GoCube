@@ -5,25 +5,32 @@ const point = (page: Page, logicalPointId: string): Locator =>
     `.torus-board__hit-target[data-logical-point-id="${logicalPointId}"][data-copy-role="primary"]`,
   ).first();
 
+const stone = (page: Page, logicalPointId: string): Locator =>
+  page.locator(
+    `.torus-board__stone[data-logical-point-id="${logicalPointId}"][data-copy-role="primary"]`,
+  ).first();
+
+const playPoint = async (page: Page, logicalPointId: string): Promise<void> => {
+  await point(page, logicalPointId).click();
+  await expect(stone(page, logicalPointId)).toHaveCount(1);
+};
+
 const startGame = async (page: Page): Promise<void> => {
   await page.goto('/');
   await page.getByLabel('Board size').selectOption('9');
   await page.getByLabel('Rules').selectOption('chinese');
   await page.getByRole('button', { name: 'Start game' }).click();
+  await expect(page.locator('.torus-board')).toBeVisible();
 };
 
 test('uses matte black SVG artwork without a highlight and preserves the white highlight', async ({ page }) => {
   await startGame(page);
 
-  await point(page, '4,4').click();
-  await point(page, '5,4').click();
+  await playPoint(page, '4,4');
+  await playPoint(page, '5,4');
 
-  const blackStone = page.locator(
-    '.torus-board__stone[data-logical-point-id="4,4"][data-copy-role="primary"]',
-  ).first();
-  const whiteStone = page.locator(
-    '.torus-board__stone[data-logical-point-id="5,4"][data-copy-role="primary"]',
-  ).first();
+  const blackStone = stone(page, '4,4');
+  const whiteStone = stone(page, '5,4');
 
   await expect(blackStone).toHaveAttribute('data-stone-artwork', 'custom-svg');
   await expect(whiteStone).toHaveAttribute('data-stone-artwork', 'custom-svg');
@@ -61,17 +68,19 @@ test('uses matte black SVG artwork without a highlight and preserves the white h
 test('snaps the forbidden marker to the illegal intersection instead of the pointer', async ({ page }) => {
   await startGame(page);
 
-  await point(page, '0,0').click();
-  await point(page, '4,3').click();
-  await point(page, '0,1').click();
-  await point(page, '3,4').click();
-  await point(page, '0,2').click();
-  await point(page, '5,4').click();
-  await point(page, '0,3').click();
-  await point(page, '4,5').click();
+  await playPoint(page, '0,0');
+  await playPoint(page, '4,3');
+  await playPoint(page, '0,1');
+  await playPoint(page, '3,4');
+  await playPoint(page, '0,2');
+  await playPoint(page, '5,4');
+  await playPoint(page, '0,3');
+  await playPoint(page, '4,5');
 
   const forbiddenPoint = point(page, '4,4');
   const rightPoint = point(page, '5,4');
+  await expect(forbiddenPoint).toBeVisible();
+  await expect(rightPoint).toBeVisible();
   const forbiddenBox = await forbiddenPoint.boundingBox();
   const rightBox = await rightPoint.boundingBox();
   if (!forbiddenBox || !rightBox) throw new Error('Expected board hit targets to be visible');

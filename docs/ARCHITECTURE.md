@@ -905,6 +905,10 @@ Persist-worthy изменения включают как минимум при�
 
 Storage adapter дополнительно должен отказываться считать более низкую revision более новой, если его backend допускает конкурирующие writes.
 
+Для browser-backed `localStorage` проверка revision принадлежит самому persistence adapter. Для одного game id весь критический участок `read existing → compare sessionRevision → write` выполняется под одним exclusive cross-tab lock. Если stored revision выше incoming revision, запись не выполняется; равная либо более высокая incoming revision может быть записана. Lock identity привязана к game id/storage key, поэтому разные game ids не должны сериализоваться друг с другом.
+
+Конкретный browser locking primitive остаётся infrastructure detail `LocalStorageGameRepository` и не протаскивается в `GameSession`, `GameEngine` или UI. Ошибка чтения, malformed/corrupted existing envelope либо revision, которую нельзя безопасно сравнить, не трактуется как доказательство, что incoming snapshot новее: adapter обязан fail-closed и не заменять existing value заведомо более старой записью.
+
 ## 16.3. PreferencesStorage
 
 Cross-game `UserPreferences` хранятся через отдельную логическую storage boundary `PreferencesStorage` или эквивалентный отдельный namespace с тем же смыслом.

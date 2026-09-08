@@ -102,6 +102,7 @@ test('0.2 production Cube flow: New Game, seam capture, history, zoom, resume an
     'right:1:0',
   ]) {
     await hit(page, point).click();
+    await expect(stone(page, point)).toHaveCount(1);
   }
   await expect(stone(page, 'front:1:3')).toHaveCount(0);
   await expectSixBoards(page);
@@ -158,6 +159,9 @@ test('0.2 production Cube flow: New Game, seam capture, history, zoom, resume an
     const selectedStatusCount = await statuses.locator('button[aria-pressed="true"]').count();
     if (selectedStatusCount > 0) continue;
     await statuses.getByRole('button', { name: 'Alive' }).click();
+    await expect(progress).toContainText(
+      `Resolved ${initialResolved + 1} of ${groupTotal}`,
+    );
     resolvedOneGroup = true;
     break;
   }
@@ -176,9 +180,12 @@ test('0.2 production Cube flow: New Game, seam capture, history, zoom, resume an
   );
   for (const pointId of visibleStonePointIds) {
     await hit(page, pointId).click();
-    await page.getByRole('group', { name: 'Selected group status' })
-      .getByRole('button', { name: 'Alive' })
-      .click();
+    const alive = page.getByRole('group', { name: 'Selected group status' })
+      .getByRole('button', { name: 'Alive' });
+    if ((await alive.getAttribute('aria-pressed')) !== 'true') {
+      await alive.click();
+      await expect(alive).toHaveAttribute('aria-pressed', 'true');
+    }
   }
 
   await expect(page.getByRole('button', { name: 'Finish scoring' })).toBeEnabled();

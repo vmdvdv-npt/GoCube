@@ -191,6 +191,7 @@ test('normalizes committed komi and remembers the normalized value for the next 
   for (const [input, expected] of cases) {
     await page.getByLabel('Komi').fill(input);
     await page.getByRole('button', { name: 'Start game' }).click();
+    await expect(page.locator('.torus-game')).toBeVisible();
 
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Continue saved game?' })).toBeVisible();
