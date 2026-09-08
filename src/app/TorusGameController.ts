@@ -73,6 +73,10 @@ export class TorusGameController {
     return this.gameplay.subscribeEndgameReviewReady(listener);
   }
 
+  resumeRestoredEndgame(): Promise<void> {
+    return this.gameplay.resumeRestoredEndgame();
+  }
+
   cancelFinalAnalysis(): void {
     this.gameplay.cancelFinalAnalysis();
   }
