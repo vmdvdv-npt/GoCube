@@ -37,10 +37,7 @@ class BlockingFirstPerNameLock implements LocalStorageExclusiveLock {
     });
   }
 
-  async runExclusive<T>(
-    name: string,
-    task: () => T | Promise<T>,
-  ): Promise<T> {
+  async runExclusive<T>(name: string, task: () => T): Promise<T> {
     const previous = this.tails.get(name) ?? Promise.resolve();
     let releaseCurrent!: () => void;
     const current = new Promise<void>((resolve) => {
@@ -56,7 +53,7 @@ class BlockingFirstPerNameLock implements LocalStorageExclusiveLock {
         this.firstEnteredResolve();
         await this.firstGate;
       }
-      return await task();
+      return task();
     } finally {
       releaseCurrent();
       if (this.tails.get(name) === tail) {
@@ -75,10 +72,28 @@ interface RevisionState {
   readonly marker: string;
 }
 
+interface WrappedRevisionState {
+  readonly version: 2;
+  readonly snapshot: RevisionState;
+}
+
 const savedGame = (id: string, sessionRevision: number, marker: string) => ({
   id,
   savedAt: `2026-09-08T00:00:${String(sessionRevision).padStart(2, '0')}.000Z`,
   state: { sessionRevision, marker } satisfies RevisionState,
+});
+
+const wrappedSavedGame = (
+  id: string,
+  sessionRevision: number,
+  marker: string,
+) => ({
+  id,
+  savedAt: `2026-09-08T00:00:${String(sessionRevision).padStart(2, '0')}.000Z`,
+  state: {
+    version: 2 as const,
+    snapshot: { sessionRevision, marker },
+  } satisfies WrappedRevisionState,
 });
 
 describe('LocalStorageGameRepository', () => {
@@ -135,6 +150,41 @@ describe('LocalStorageGameRepository', () => {
 
     expect(JSON.parse(storage.values.get('test:game:current') ?? 'null')).toEqual(
       newer,
+    );
+  });
+
+  it('allows an equal incoming revision to replace the stored value', async () => {
+    const storage = new MemoryStorage();
+    storage.values.set(
+      'test:game:current',
+      JSON.stringify(savedGame('current', 12, 'older-payload')),
+    );
+    const repository = new LocalStorageGameRepository<RevisionState>(
+      'test:game:',
+      storage,
+    );
+    const equalRevision = savedGame('current', 12, 'replacement-payload');
+
+    await repository.save(equalRevision);
+
+    expect(JSON.parse(storage.values.get('test:game:current') ?? 'null')).toEqual(
+      equalRevision,
+    );
+  });
+
+  it('compares the session revision inside the production application save envelope', async () => {
+    const storage = new MemoryStorage();
+    const stored = wrappedSavedGame('current', 12, 'newer');
+    storage.values.set('test:game:current', JSON.stringify(stored));
+    const repository = new LocalStorageGameRepository<WrappedRevisionState>(
+      'test:game:',
+      storage,
+    );
+
+    await repository.save(wrappedSavedGame('current', 11, 'stale'));
+
+    expect(JSON.parse(storage.values.get('test:game:current') ?? 'null')).toEqual(
+      stored,
     );
   });
 
