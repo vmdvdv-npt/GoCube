@@ -88,14 +88,15 @@ const inProcessExclusiveLock: LocalStorageExclusiveLock = {
 
 const browserExclusiveLock: LocalStorageExclusiveLock = {
   async runExclusive<T>(name: string, task: () => T | Promise<T>): Promise<T> {
-    if (typeof navigator === 'undefined') {
+    if (typeof window === 'undefined') {
       // Headless/unit-test environments have no tabs. Keep repository instances
       // serialized in-process without introducing browser APIs into core code.
       return inProcessExclusiveLock.runExclusive(name, task);
     }
 
-    const locks = (navigator as Navigator & { readonly locks?: BrowserLockManager })
-      .locks;
+    const locks = (
+      navigator as unknown as { readonly locks?: BrowserLockManager }
+    ).locks;
     if (!locks) {
       // A browser without a cross-context lock primitive cannot safely perform
       // read -> compare -> write against localStorage. Fail closed instead of
@@ -136,18 +137,7 @@ export class LocalStorageGameRepository<TState = unknown>
           );
         }
 
-        const recoveredRevision = isRecord(parsed)
-          ? inspectSessionRevision(parsed.state)
-          : ({ kind: 'missing' } as const);
-
         if (!isSavedGame<TState>(parsed) || parsed.id !== game.id) {
-          if (
-            recoveredRevision.kind === 'valid' &&
-            recoveredRevision.value > incomingRevision
-          ) {
-            return;
-          }
-
           throw new Error(
             `Cannot safely replace corrupted saved game ${game.id}`,
           );
