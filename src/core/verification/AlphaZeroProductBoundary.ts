@@ -6,6 +6,7 @@ import type { CaptureCounts, RuleSet, StoneColor } from '../game/types';
 export const PRODUCT_BOUNDARY_SCHEMA = 'gocube-product-boundary-v1' as const;
 export const PRODUCT_BOUNDARY_ACTION_CONTRACT = 'gocube-action-point-id-pass-v1' as const;
 export const PRODUCT_BOUNDARY_F0_CONTRACT = 'gocube-f0-integrated-freeze-v1' as const;
+export const PRODUCT_BOUNDARY_SOURCE_REPO = 'vmdvdv-npt/gocube-alphazero' as const;
 
 export type ProductBoundaryTopology = 'cube' | 'torus';
 
@@ -382,16 +383,39 @@ const parseFixture = (value: unknown, index: number): ProductBoundaryFixture => 
   const context = `fixtures[${index}]`;
   const fixtureId = stringValue(required(input, 'fixture_id', context), `${context}.fixture_id`);
   const sourceVerificationId = stringValue(required(input, 'source_verification_id', context), `${context}.source_verification_id`);
-  if (required(input, 'source_verification_status', context) !== 'verified') return fail(context, 'V2 accepts only verified V1 sources');
+  const sourceVerificationStatus = stringValue(
+    required(input, 'source_verification_status', context),
+    `${context}.source_verification_status`,
+  );
+  if (sourceVerificationStatus !== 'verified') return fail(`${context}.source_verification_status`, 'V2 accepts only verified V1 sources');
   const provenanceInput = record(required(input, 'provenance', context), `${context}.provenance`);
+  const sourceRepo = stringValue(
+    required(provenanceInput, 'source_repo', `${context}.provenance`),
+    `${context}.provenance.source_repo`,
+  );
+  if (sourceRepo !== PRODUCT_BOUNDARY_SOURCE_REPO) return fail(`${context}.provenance.source_repo`, 'unsupported source repository');
+  const f0ContractId = stringValue(
+    required(provenanceInput, 'f0_contract_id', `${context}.provenance`),
+    `${context}.provenance.f0_contract_id`,
+  );
+  if (f0ContractId !== PRODUCT_BOUNDARY_F0_CONTRACT) return fail(`${context}.provenance.f0_contract_id`, 'unsupported F0 contract');
+  const v1FixtureId = stringValue(
+    required(provenanceInput, 'v1_fixture_id', `${context}.provenance`),
+    `${context}.provenance.v1_fixture_id`,
+  );
+  const v1Status = stringValue(
+    required(provenanceInput, 'v1_status', `${context}.provenance`),
+    `${context}.provenance.v1_status`,
+  );
+  if (v1Status !== 'verified') return fail(`${context}.provenance.v1_status`, 'must be verified');
+  if (v1FixtureId !== sourceVerificationId) return fail(context, 'source verification IDs disagree');
+  if (sourceVerificationStatus !== v1Status) return fail(context, 'source verification statuses disagree');
   const provenance = Object.freeze({
-    sourceRepo: stringValue(required(provenanceInput, 'source_repo', `${context}.provenance`), `${context}.provenance.source_repo`),
-    f0ContractId: stringValue(required(provenanceInput, 'f0_contract_id', `${context}.provenance`), `${context}.provenance.f0_contract_id`),
-    v1FixtureId: stringValue(required(provenanceInput, 'v1_fixture_id', `${context}.provenance`), `${context}.provenance.v1_fixture_id`),
+    sourceRepo,
+    f0ContractId,
+    v1FixtureId,
     v1Status: 'verified' as const,
   });
-  if (provenance.v1FixtureId !== sourceVerificationId) return fail(context, 'source verification IDs disagree');
-  if (provenance.f0ContractId !== PRODUCT_BOUNDARY_F0_CONTRACT) return fail(context, 'unsupported F0 contract');
 
   const kind = topologyKind(required(input, 'topology', context), `${context}.topology`);
   const size = integerValue(required(input, 'size', context), `${context}.size`, 2);

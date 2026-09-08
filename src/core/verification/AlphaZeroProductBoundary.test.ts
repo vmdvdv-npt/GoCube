@@ -94,6 +94,33 @@ describe('AlphaZero product-boundary contract', () => {
     expect(() => parseAlphaZeroProductBoundaryDocument(wrongPassCount)).toThrow(/must equal 2/);
   });
 
+  it('fails closed on a tampered provenance source repository', () => {
+    const tampered = structuredClone(rawBoundaryDocument);
+    tampered.fixtures[0]!.provenance.source_repo = 'some-other/repository';
+
+    expect(() => parseAlphaZeroProductBoundaryDocument(tampered)).toThrow(
+      /source_repo|source repository|unsupported/i,
+    );
+  });
+
+  it('fails closed on a tampered V1 provenance status', () => {
+    const tampered = structuredClone(rawBoundaryDocument);
+    tampered.fixtures[0]!.provenance.v1_status = 'unverified';
+
+    expect(() => parseAlphaZeroProductBoundaryDocument(tampered)).toThrow(
+      /verified|v1_status|provenance/i,
+    );
+  });
+
+  it('fails closed when duplicate V1 provenance IDs disagree', () => {
+    const tampered = structuredClone(rawBoundaryDocument);
+    tampered.fixtures[0]!.source_verification_id = 'different-v1-fixture';
+
+    expect(() => parseAlphaZeroProductBoundaryDocument(tampered)).toThrow(
+      /source verification IDs disagree|v1_fixture_id|source_verification_id/i,
+    );
+  });
+
   it('parses the generated corpus and proves every Cube4 PointId mapping/adjacency entry', () => {
     expect(boundaryFixtures).toHaveLength(23);
     const cube = boundaryFixtures.filter((fixture) => fixture.topology === 'cube');
