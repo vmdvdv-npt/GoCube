@@ -582,13 +582,14 @@ export class GameSession {
 
   private async startEndgameReview(state: GameState): Promise<void> {
     const groups = this.groupsForClassification(state);
+    const topology = this.engine.logicalTopology();
     let proposal: EndgameProposal;
 
     try {
       proposal = await this.config.endgameClassifier.analyze(
         Object.freeze({
           state,
-          topology: this.engine.logicalTopology(),
+          topology,
           groups,
         }),
       );
