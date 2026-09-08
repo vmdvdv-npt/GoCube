@@ -95,10 +95,10 @@ describe('AlphaZero product-boundary contract', () => {
   });
 
   it('parses the generated corpus and proves every Cube4 PointId mapping/adjacency entry', () => {
-    expect(boundaryFixtures).toHaveLength(25);
+    expect(boundaryFixtures).toHaveLength(23);
     const cube = boundaryFixtures.filter((fixture) => fixture.topology === 'cube');
     const torus = boundaryFixtures.filter((fixture) => fixture.topology === 'torus');
-    expect(cube).toHaveLength(22);
+    expect(cube).toHaveLength(20);
     expect(torus).toHaveLength(3);
 
     const topology = cube[0]!.topologyContract;

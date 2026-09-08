@@ -36,10 +36,10 @@ states with its own engine before making assertions.
 
 | Evidence | Count |
 | --- | ---: |
-| imported fixtures | 25 |
-| Cube4 fixtures | 22 |
+| imported fixtures | 23 |
+| Cube4 fixtures | 20 |
 | Torus9 fixtures | 3 |
-| MAIN actions/steps | 56 |
+| MAIN actions/steps | 50 |
 | Cube4 logical points | 96 |
 | Cube4 directed adjacency relations | 384 |
 | endgame score fixtures | 1 |

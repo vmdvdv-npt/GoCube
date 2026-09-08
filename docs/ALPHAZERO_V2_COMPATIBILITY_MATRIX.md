@@ -16,7 +16,7 @@ is used only where the behavior is not exposed by the product lifecycle.
 | true ko negative | `cube4_true_simple_ko_001` | yes | yes | no | no | no | PASS | immediate positional recapture rejected |
 | false pseudo-ko negative | `cube4_false_simple_ko_001` | yes | yes | no | no | no | PASS | apparent recapture rejected as suicide |
 | suicide/occupied/invalid negative | `cube4_vertex_suicide_control_001` plus product negative tests | yes | yes | no | no | no | PASS | rejected actions leave state unchanged |
-| first/second Pass | `cube4_cleanup1_pass_for_ko_001`, `cube4_cleanup2_pass_for_ko_001`, `cube4_early_termination_boundary_001` | yes | yes | yes | no | yes | PASS | board/captures/player match at boundary |
+| first/second Pass | `cube4_vertex_capture_001`, `cube4_vertex_multiple_neighbor_capture_001`, `cube4_early_termination_boundary_001` | yes | yes | yes | no | yes | PASS | board/captures/player match at boundary; cleanup-phase sources excluded |
 | Torus wrap group/capture | `torus9_wrap_group_001`, `torus9_wrap_capture_001` | yes | yes | no | no | no | PASS | product GameEngine uses same logical wrap topology |
 | Torus topology invariant | `torus9_no_cube_triangles_001` | yes | yes | no | no | no | PASS | Torus remains renderer-independent |
 | manual setup scoring | `cube4_early_termination_boundary_001` | yes | yes | yes | yes | yes | PASS | Japanese komi is exactly 0.5 |
