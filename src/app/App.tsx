@@ -32,7 +32,7 @@ type TopologyPreviewTransition = Readonly<{
   direction: TopologyPreviewDirection;
 }>;
 
-const DEFAULT_KOMI = 7.5;
+const DEFAULT_KOMI = 0.5;
 
 const sizesForMode = (mode: GameMode): readonly GameSize[] =>
   mode === 'cube-2d' ? CUBE_UI_SIZES : TORUS_SIZES;
