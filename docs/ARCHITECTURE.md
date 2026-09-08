@@ -582,7 +582,8 @@ Spatial mapping **не заменяет** `Topology.getNeighbors(pointId)` ка�
 - `push(state/action)`;
 - `undo()`;
 - `redo()`;
-- `canUndo/canRedo`;
+- `canUndo()`;
+- `canRedo()`;
 - `current()`;
 - получить минимальный `SimpleKoContext` для следующего domain action;
 - serialize/restore past/current/redo timeline.
