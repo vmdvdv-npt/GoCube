@@ -225,7 +225,9 @@ describe('LocalStorageGameRepository', () => {
       storage,
     );
 
-    await repository.save(savedGame('current', 11, 'stale'));
+    await expect(
+      repository.save(savedGame('current', 11, 'stale')),
+    ).rejects.toThrow('Cannot safely replace corrupted saved game');
 
     expect(storage.values.get('test:game:current')).toBe(corrupted);
   });
