@@ -133,35 +133,18 @@
   align-items: center;
   min-height: 34px;
   gap: 10px;
-  padding: 2px 4px;
+  padding: 4px 8px;
   cursor: pointer;
-  font-size: 0;
+  line-height: 1.25;
 }
 
-/* Show move numbers first, then duplicate regions, matching the compact sidebar layout. */
-.torus-duplicates-control label:nth-child(2) {
-  order: 1;
-}
-
-.torus-duplicates-control label:nth-child(1) {
-  order: 2;
-  margin-top: 8px;
-  padding-top: 10px;
+.torus-duplicates-control label + label {
   border-top: 1px solid rgb(255 255 255 / 7%);
 }
 
-.torus-duplicates-control label:nth-child(2)::after {
-  content: 'Move numbers';
-  color: #9a9a9a;
-  font-size: 13px;
-  line-height: 1.25;
-}
-
-.torus-duplicates-control label:nth-child(1)::after {
-  content: 'Show duplicate regions';
-  color: #9a9a9a;
-  font-size: 13px;
-  line-height: 1.25;
+.torus-duplicates-control input[type='checkbox'] {
+  flex: 0 0 auto;
+  margin: 0;
 }
 
 /* Pass is the primary full-width action. Redo and Undo share the row below it. */
