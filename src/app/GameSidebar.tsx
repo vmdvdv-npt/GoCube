@@ -115,7 +115,7 @@ export function GameSidebar({
             <input
               type="checkbox"
               checked={showDuplicateRegions}
-              onChange={(event) => onShowDuplicateRegionsChange(event.target.checked)}
+              onChange={(event) => onShowDuplicateRegionsChange?.(event.target.checked)}
             />
             <span>Show duplicate regions</span>
           </label>
