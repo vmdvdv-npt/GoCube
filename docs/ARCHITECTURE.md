@@ -59,6 +59,7 @@
 36. Presentation layer имеет явный animation mode `normal | disabled`; режим анимации не читается `GameEngine`/`GameState` и не меняет domain result.
 37. Torus/Cube topology-specific controllers не владеют независимыми копиями общего gameplay/endgame lifecycle: один shared application facade координирует `GameEngine`, `GameSession`, scoring/classifier, request-scoped Final Proof lifetime, history commands, endgame/result projections и disposal; mode-specific controllers остаются тонкими configuration/compatibility adapters.
 38. Lifetime обычного игрового controller определяется application-owned identity текущего `activeGame`, а не mount/unmount конкретного React/renderer view; временное исчезновение Game view не уничтожает controller и не отменяет его активный Final Proof Search.
+39. Persistence trust boundary охватывает **весь** `GameSessionSnapshot`, а не только `GameState`: session-level endgame/result metadata после чтения storage считается недоверенной до проверки относительно соответствующего authoritative `GameState`/`Topology`; persisted `FinalScore` является derived data и принимается только после доказательства эквивалентности свежему результату выбранной `ScoringStrategy` для проверенной classification/state.
 
 Стрелка `A → B` в этом документе означает: `A` использует контракт `B` или передаёт ему данные/команду. Она не означает наследование.
 
@@ -362,6 +363,15 @@ UI не должен знать, local или remote execution использу�
 - монотонный `sessionRevision`;
 - schema/version metadata;
 - `PlayerSlot` или эквивалентные session-level player identifiers, если они используются.
+
+`GameSessionSnapshot` после чтения storage является недоверенным **целиком**. Успешная runtime-проверка вложенных `GameState` не делает автоматически доверенными session-level metadata. До создания/restoration `GameSession` действуют следующие правила:
+
+- `EndgameReviewState.groups[].points` проверяются относительно `Topology` и связанного history/redo `GameState`: каждая point существует, занята stone и набор review groups покрывает ровно все фактические logical stone groups без partial/merged/duplicate/extra groups;
+- persisted `EndgameClassification` проходит тот же exact logical-group identity check, а `status`/`source` проходят runtime validation; unfinished state не может иметь final classification;
+- persisted `FinalScore` не является самостоятельным authoritative источником истины: для `FINISHED` state он принимается только если существует проверенная полная classification и свежий вызов configured `ScoringStrategy` для этого state/classification/komi даёт семантически тот же `FinalScore`;
+- те же проверки применяются к metadata каждого сохранённого Redo entry, а не только current state;
+- finished legacy snapshot, у которого нет classification, необходимой для независимой проверки persisted `FinalScore`, восстанавливается fail-closed, а не принимается по одним итоговым числам;
+- ошибка этой trust boundary должна возникать при restore до передачи metadata в Presentation/Renderer и до позднего использования group points как заведомо stone points.
 
 `PlayerSlot` может иметь внутренний id и цвет без требования аккаунта. Будущая привязка аккаунта относится к session/infrastructure layer и не должна менять правила Go.
 
@@ -868,7 +878,7 @@ Animation layer принимает `DomainEvents`/`ViewEvents` и создаёт
 
 Если код использует имя `GameRepository`, оно должно быть либо alias/adapter с тем же единственным application responsibility, либо мигрировано к одному каноническому storage boundary; нельзя поддерживать две конкурирующие абстракции, которые обе претендуют на владение persistence партии.
 
-Сохраняется `GameSessionSnapshot` или эквивалентный envelope, содержащий всё необходимое для exact restoration, включая History redo-future, partial `EndgameReviewState` и связанные result metadata.
+Сохраняется `GameSessionSnapshot` или эквивалентный envelope, содержащий всё необходимое для exact restoration, включая History redo-future, partial `EndgameReviewState` и связанные result metadata. При `load()` весь envelope проходит единый trust boundary из §7.3 до того, как session-level metadata становятся доступны History/Presentation.
 
 Обязательный persistence invariant:
 
@@ -1152,6 +1162,11 @@ Headless tests обязаны проверять без SVG/DOM/Three.js:
 
 - serialize → save → load → semantic equality;
 - corrupted/old data handling;
+- runtime rejection session-level endgame metadata, если persisted review/classification group points не соответствуют ровно logical stone groups связанного current/redo `GameState`;
+- runtime rejection malformed classification status/source и inconsistent partial-review metadata до их передачи presentation layer;
+- persisted `FinalScore` проверяется authoritative rescoring из validated `GameState + EndgameClassification + configured ScoringStrategy`; tampered/stale result отклоняется;
+- finished legacy snapshot без classification, необходимой для проверки `FinalScore`, fail-closed;
+- те же endgame/result trust-boundary checks обязательны для сохранённого Redo future;
 - schema migration tests при изменении формата;
 - regression `Undo → save → load → Redo`;
 - partial `EndgameReviewState` переживает save/load без потери пользовательских решений;
@@ -1553,6 +1568,7 @@ Oracle disagreement не означает автоматически bug GoCube.
 - дублировать общий `GameSession`/scoring/endgame/Final Proof/disposal lifecycle в отдельных Torus/Cube controllers вместо shared application facade;
 - привязывать `dispose()` application-owned gameplay controller к unmount конкретного Torus/Cube/renderer view или отменять активный Final Proof из-за временного перехода на другой application screen;
 - трактовать `phase = endgame` при `endgameReview = null` как пустой/полностью resolved review или разрешать на этом основании `Finish scoring`;
+- доверять persisted `EndgameReviewState`, `EndgameClassification` или `FinalScore` после проверки только вложенного `GameState`; session-level metadata обязана пройти полный restore trust boundary до Presentation/Renderer;
 - хранить visual duplicates как игровые stones/points;
 - использовать screen coordinates как logical identity;
 - выводить `PointId` из DOM/SVG/CSS/canvas/Three.js ids;
@@ -1630,6 +1646,7 @@ Oracle disagreement не означает автоматически bug GoCube.
 23. Transport DTO runtime-валидирован до использования и использует canonical `PointId`, а не внешний action index?
 24. Можно ли заменить HTTP transport другой реализацией `AlphaZeroGateway` без изменения replay/domain core?
 25. Lifetime controller привязан к реальному application owner, а не к временно смонтированному view, и pending async review явно отличается от отсутствующего/пустого resolved review?
+26. После чтения storage проверен ли весь `GameSessionSnapshot`, включая exact group identity review/classification и независимую проверку persisted `FinalScore` через configured scorer, до передачи этих данных presentation layer?
 
 Если ответ показывает нарушение границы, сначала исправляется architecture/adapter contract, затем реализуется функция.
 
@@ -1655,6 +1672,7 @@ Oracle disagreement не означает автоматически bug GoCube.
 - `EndgameReviewState` хранит partial/ручные решения до полного resolution;
 - только полный `EndgameClassification` передаётся в `ScoringStrategy`;
 - `ScoringStrategy` создаёт `FinalScore`;
+- после `GameStorage.load()` весь session envelope остаётся untrusted, пока current/redo `GameState`, exact logical group identity review/classification и derived `FinalScore` не пройдут единый restore boundary;
 - seeded generators и independent oracle adapters помогают тестировать core только внутри test infrastructure и не становятся частью authoritative gameplay/runtime UI;
 - Development Workspace отдельно получает external AlphaZero actions через `AlphaZeroGateway`, создаёт ephemeral replay session и отправляет каждый move назад через обычный controller/`GameSession`/`GameEngine`;
 - AlphaZero не владеет board state, а compatibility disagreement останавливает replay и становится diagnostic;

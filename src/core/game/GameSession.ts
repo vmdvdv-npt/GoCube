@@ -27,7 +27,10 @@ import {
   type GameSessionRedoEntrySnapshot,
   type GameSessionSnapshot,
 } from '../persistence/GameSessionSnapshot';
-import { assertSerializedSnapshotGameStates } from '../persistence/GameSessionSnapshotValidation';
+import {
+  assertSerializedSnapshotGameStates,
+  assertSerializedSnapshotSessionMetadata,
+} from '../persistence/GameSessionSnapshotValidation';
 import type { FinalScore, ScoringStrategy } from '../scoring/Scoring';
 import type { PointId } from '../topology/Topology';
 import {
@@ -725,6 +728,13 @@ export class GameSession {
     if (snapshot.komi !== config.komi) {
       throw new Error(`Saved komi mismatch: expected ${config.komi}, got ${snapshot.komi}`);
     }
+
+    assertSerializedSnapshotSessionMetadata(
+      snapshot,
+      engine.logicalTopology(),
+      config.scoringStrategy,
+      config.komi,
+    );
 
     GameSession.assertStateMetadata(
       snapshot.history[snapshot.history.length - 1]!,

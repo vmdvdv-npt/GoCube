@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { EndgameClassifier } from '../endgame/EndgameClassifier';
+import type {
+  EndgameAnalysisContext,
+  EndgameClassifier,
+} from '../endgame/EndgameClassifier';
 import type { GameSessionSnapshot } from '../persistence/GameSessionSnapshot';
 import { ChineseScoring } from '../scoring/ChineseScoring';
 import { TorusTopology } from '../topology/TorusTopology';
@@ -10,22 +13,50 @@ const emptyClassifier: EndgameClassifier = Object.freeze({
   analyze: async () => Object.freeze([]),
 });
 
+const unresolvedClassifier: EndgameClassifier = Object.freeze({
+  analyze: async ({ groups }: EndgameAnalysisContext) =>
+    Object.freeze(
+      groups.map((points) =>
+        Object.freeze({
+          points: Object.freeze([...points]),
+          status: 'unresolved' as const,
+        }),
+      ),
+    ),
+});
+
+const deadClassifier: EndgameClassifier = Object.freeze({
+  analyze: async ({ groups }: EndgameAnalysisContext) =>
+    Object.freeze(
+      groups.map((points) =>
+        Object.freeze({
+          points: Object.freeze([...points]),
+          status: 'dead' as const,
+          source: 'automatic' as const,
+        }),
+      ),
+    ),
+});
+
 type MutableState = Record<string, unknown>;
 type MutableSnapshot = {
   history: MutableState[];
   redo?: Array<{
     state: MutableState;
     endgameReview?: unknown;
-    endgameClassification: unknown;
-    finalScore: unknown;
+    endgameClassification?: unknown;
+    finalScore?: unknown;
   }>;
+  endgameReview?: unknown;
+  endgameClassification?: unknown;
+  finalScore?: unknown;
 };
 
-const setup = () => {
+const setup = (endgameClassifier: EndgameClassifier = emptyClassifier) => {
   const topology = new TorusTopology(9);
   const engine = new GameEngine(topology);
   const config: GameSessionConfig = Object.freeze({
-    endgameClassifier: emptyClassifier,
+    endgameClassifier,
     scoringStrategy: new ChineseScoring(topology),
     boardSize: 9,
     komi: 7.5,
@@ -51,6 +82,22 @@ const boardOf = (state: MutableState): Record<string, unknown> => {
     throw new Error('Expected board object');
   }
   return board as Record<string, unknown>;
+};
+
+const groupsOf = (value: unknown): Array<Record<string, unknown>> => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('Expected metadata object');
+  }
+  const groups = (value as Record<string, unknown>).groups;
+  if (!Array.isArray(groups)) throw new Error('Expected groups array');
+  return groups as Array<Record<string, unknown>>;
+};
+
+const scoreOf = (value: unknown): Record<string, unknown> => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('Expected score object');
+  }
+  return value as Record<string, unknown>;
 };
 
 describe('GameSession persisted GameState validation', () => {
@@ -162,5 +209,151 @@ describe('GameSession persisted GameState validation', () => {
     expect(() =>
       GameSession.fromSnapshot(engine, config, copy as unknown as GameSessionSnapshot),
     ).toThrow('Saved Redo state 0 has invalid occupancy');
+  });
+});
+
+describe('GameSession persisted session metadata validation', () => {
+  it('rejects an endgame review point that is not a stone in the associated state', async () => {
+    const { engine, config } = setup(unresolvedClassifier);
+    const session = new GameSession(engine, config);
+    await session.execute({ type: 'place-stone', point: '0,0' });
+    await session.execute({ type: 'pass' });
+    await session.execute({ type: 'pass' });
+
+    const copy = structuredClone(session.snapshot()) as unknown as MutableSnapshot;
+    groupsOf(copy.endgameReview)[0]!.points = ['1,1'];
+
+    expect(() =>
+      GameSession.fromSnapshot(engine, config, copy as unknown as GameSessionSnapshot),
+    ).toThrow('contains a point that is not a stone: 1,1');
+  });
+
+  it('rejects a partial persisted group even when every listed point is a stone', async () => {
+    const { engine, config } = setup(unresolvedClassifier);
+    const session = new GameSession(engine, config);
+    await session.execute({ type: 'place-stone', point: '0,0' });
+    await session.execute({ type: 'place-stone', point: '4,4' });
+    await session.execute({ type: 'place-stone', point: '0,1' });
+    await session.execute({ type: 'pass' });
+    await session.execute({ type: 'pass' });
+
+    const copy = structuredClone(session.snapshot()) as unknown as MutableSnapshot;
+    const blackGroup = groupsOf(copy.endgameReview).find((group) =>
+      Array.isArray(group.points) && group.points.includes('0,0'),
+    );
+    if (!blackGroup) throw new Error('Expected black endgame group');
+    blackGroup.points = ['0,0'];
+
+    expect(() =>
+      GameSession.fromSnapshot(engine, config, copy as unknown as GameSessionSnapshot),
+    ).toThrow('does not match all logical stone groups exactly once');
+  });
+
+  it('rejects an endgame classification that does not describe the finished board groups', async () => {
+    const { engine, config } = setup(deadClassifier);
+    const session = new GameSession(engine, config);
+    await session.execute({ type: 'place-stone', point: '0,0' });
+    await session.execute({ type: 'pass' });
+    await session.execute({ type: 'pass' });
+    await session.finishEndgameReview();
+
+    const copy = structuredClone(session.snapshot()) as unknown as MutableSnapshot;
+    if (!Array.isArray(copy.endgameClassification)) {
+      throw new Error('Expected endgame classification');
+    }
+    (copy.endgameClassification[0] as Record<string, unknown>).points = ['1,1'];
+
+    expect(() =>
+      GameSession.fromSnapshot(engine, config, copy as unknown as GameSessionSnapshot),
+    ).toThrow('contains a point that is not a stone: 1,1');
+  });
+
+  it('rejects malformed persisted classification status and source', async () => {
+    const { engine, config } = setup(deadClassifier);
+    const session = new GameSession(engine, config);
+    await session.execute({ type: 'place-stone', point: '0,0' });
+    await session.execute({ type: 'pass' });
+    await session.execute({ type: 'pass' });
+    await session.finishEndgameReview();
+
+    const invalidStatus = structuredClone(session.snapshot()) as unknown as MutableSnapshot;
+    const invalidSource = structuredClone(session.snapshot()) as unknown as MutableSnapshot;
+    if (!Array.isArray(invalidStatus.endgameClassification)) {
+      throw new Error('Expected endgame classification');
+    }
+    if (!Array.isArray(invalidSource.endgameClassification)) {
+      throw new Error('Expected endgame classification');
+    }
+    (invalidStatus.endgameClassification[0] as Record<string, unknown>).status = 'unknown';
+    (invalidSource.endgameClassification[0] as Record<string, unknown>).source = 'storage';
+
+    expect(() =>
+      GameSession.fromSnapshot(
+        engine,
+        config,
+        invalidStatus as unknown as GameSessionSnapshot,
+      ),
+    ).toThrow('has invalid status');
+    expect(() =>
+      GameSession.fromSnapshot(
+        engine,
+        config,
+        invalidSource as unknown as GameSessionSnapshot,
+      ),
+    ).toThrow('has invalid source');
+  });
+
+  it('rejects a persisted FinalScore that differs from authoritative rescoring', async () => {
+    const { engine, config } = setup(deadClassifier);
+    const session = new GameSession(engine, config);
+    await session.execute({ type: 'place-stone', point: '0,0' });
+    await session.execute({ type: 'pass' });
+    await session.execute({ type: 'pass' });
+    await session.finishEndgameReview();
+
+    const copy = structuredClone(session.snapshot()) as unknown as MutableSnapshot;
+    const score = scoreOf(copy.finalScore);
+    score.black = (score.black as number) + 100;
+    score.winner = 'black';
+
+    expect(() =>
+      GameSession.fromSnapshot(engine, config, copy as unknown as GameSessionSnapshot),
+    ).toThrow('Saved FinalScore for current saved state does not match recomputed score');
+  });
+
+  it('validates endgame/result metadata in the Redo future too', async () => {
+    const { engine, config } = setup(deadClassifier);
+    const session = new GameSession(engine, config);
+    await session.execute({ type: 'place-stone', point: '0,0' });
+    await session.execute({ type: 'pass' });
+    await session.execute({ type: 'pass' });
+    await session.finishEndgameReview();
+    await session.executeSessionCommand({ type: 'undo' });
+
+    const copy = structuredClone(session.snapshot()) as unknown as MutableSnapshot;
+    const redo = copy.redo?.[0];
+    if (!redo) throw new Error('Expected finished Redo entry');
+    const score = scoreOf(redo.finalScore);
+    score.margin = (score.margin as number) + 1;
+
+    expect(() =>
+      GameSession.fromSnapshot(engine, config, copy as unknown as GameSessionSnapshot),
+    ).toThrow('Saved FinalScore for saved Redo state 0 does not match recomputed score');
+  });
+
+  it('fails closed for legacy finished snapshots that lack authoritative classification', async () => {
+    const { engine, config } = setup(deadClassifier);
+    const session = new GameSession(engine, config);
+    await session.execute({ type: 'place-stone', point: '0,0' });
+    await session.execute({ type: 'pass' });
+    await session.execute({ type: 'pass' });
+    await session.finishEndgameReview();
+
+    const copy = structuredClone(session.snapshot()) as unknown as MutableSnapshot;
+    copy.endgameClassification = null;
+
+    expect(() =>
+      GameSession.fromSnapshot(engine, config, copy as unknown as GameSessionSnapshot),
+    ).toThrow('Finished current saved state must include endgame classification');
   });
 });
