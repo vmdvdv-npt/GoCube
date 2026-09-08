@@ -18,7 +18,6 @@ import {
   setEndgameReviewDecision as updateEndgameReviewDecision,
   type EndgameReviewState,
 } from '../endgame/EndgameReviewState';
-import { validateEndgameGroup } from '../endgame/ManualEndgameClassifier';
 import { LinearHistory } from '../history/LinearHistory';
 import type { GameRepository } from '../persistence/GameRepository';
 import { OrderedGameSaveCoordinator } from '../persistence/OrderedGameSaveCoordinator';
@@ -306,7 +305,6 @@ export class GameSession {
       snapshot.endgameClassification,
     );
     session.sessionRevision = snapshot.sessionRevision ?? 0;
-    session.assertSnapshotIntegrity(snapshot);
     return session;
   }
 
@@ -454,12 +452,7 @@ export class GameSession {
     }
     if (this.currentEndgameReview) return;
 
-    try {
-      await this.startEndgameReview(state);
-    } catch (error) {
-      if (this.history.current() !== state) throw error;
-      this.currentEndgameReview = this.unresolvedEndgameReview(state);
-    }
+    await this.startEndgameReview(state);
     await this.persist();
   }
 
@@ -522,15 +515,7 @@ export class GameSession {
       });
     }
 
-    try {
-      await this.startEndgameReview(state);
-    } catch (error) {
-      // The second Pass is already an accepted domain action.  A classifier
-      // failure must leave that boundary intact and expose every real group
-      // for manual review instead of turning the failure into a rejected Pass.
-      if (this.history.current() !== state) throw error;
-      this.currentEndgameReview = this.unresolvedEndgameReview(state);
-    }
+    await this.startEndgameReview(state);
     await this.persist();
 
     return Object.freeze({
@@ -619,14 +604,6 @@ export class GameSession {
     }
 
     this.currentEndgameReview = createEndgameReviewState(proposal);
-  }
-
-  private unresolvedEndgameReview(state: GameState): EndgameReviewState {
-    return createEndgameReviewState(
-      this.groupsForClassification(state).map((points) =>
-        Object.freeze({ points, status: 'unresolved' as const }),
-      ),
-    );
   }
 
   private async completeEndgame(
@@ -848,71 +825,6 @@ export class GameSession {
     }
     if (finalScore && (finalScore.ruleSet !== ruleSet || finalScore.komi !== komi)) {
       throw new Error(`Saved FinalScore for ${label} does not match saved game configuration`);
-    }
-  }
-  private assertSnapshotIntegrity(snapshot: GameSessionSnapshot): void {
-    const currentState = this.history.current();
-    this.assertStateSemantics(
-      currentState,
-      this.currentEndgameReview,
-      this.currentEndgameClassification,
-      this.currentFinalScore,
-      'current saved state',
-    );
-
-    for (const entry of snapshot.redo ?? []) {
-      this.assertStateSemantics(
-        entry.state,
-        reviewFromSnapshot(entry.endgameReview),
-        cloneEndgameClassification(entry.endgameClassification),
-        cloneFinalScore(entry.finalScore),
-        'saved Redo state',
-      );
-    }
-  }
-
-  private assertStateSemantics(
-    state: GameState,
-    review: EndgameReviewState | null,
-    classification: EndgameClassification | null,
-    finalScore: FinalScore | null,
-    label: string,
-  ): void {
-    if (review) {
-      const expected = this.groupsForClassification(state).map((points) => endgameGroupId(points)).sort();
-      const actual = review.groups.map((group) => {
-        validateEndgameGroup(state.board, this.engine.logicalTopology(), group.points);
-        return endgameGroupId(group.points);
-      }).sort();
-      if (actual.length !== expected.length || actual.some((id, index) => id !== expected[index])) {
-        throw new Error(`${label} endgame review does not match authoritative stone groups`);
-      }
-    }
-
-    if (classification) {
-      const expected = this.groupsForClassification(state).map((points) => endgameGroupId(points)).sort();
-      const seen = new Set<string>();
-      const actual = classification.map((group) => {
-        if (!isGroupStatus(group.status) || (group.source !== 'automatic' && group.source !== 'user')) {
-          throw new Error(`${label} has invalid endgame classification metadata`);
-        }
-        validateEndgameGroup(state.board, this.engine.logicalTopology(), group.points);
-        const id = endgameGroupId(group.points);
-        if (seen.has(id)) throw new Error(`${label} contains duplicate classified group ${id}`);
-        seen.add(id);
-        return id;
-      }).sort();
-      if (actual.length !== expected.length || actual.some((id, index) => id !== expected[index])) {
-        throw new Error(`${label} endgame classification does not match authoritative stone groups`);
-      }
-    }
-
-    if (state.phase === 'finished') {
-      if (!classification || !finalScore) throw new Error(`Finished ${label} is missing authoritative result metadata`);
-      const freshScore = this.config.scoringStrategy.score(state, classification, this.config.komi);
-      if (JSON.stringify(freshScore) !== JSON.stringify(finalScore)) {
-        throw new Error(`Saved FinalScore for ${label} does not match fresh scoring`);
-      }
     }
   }
 }
