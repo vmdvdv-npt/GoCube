@@ -425,7 +425,7 @@ Cross-game preferences не входят в `GameSessionSnapshot`.
 
 `UserPreferences` — отдельные межпартийные данные, которые продукт явно решил запоминать между партиями.
 
-- Они не являются `GameState`, `History`, `GameSessionSnapshot` или текущий `ViewState`.
+- Они не являются `GameState`, `History`, `GameSessionSnapshot` или текущим `ViewState`.
 - Набор реально сохраняемых preferences определяется только `GAME_CUBE_GO.md`; архитектура не вводит новую preference автоматически только потому, что значение технически можно сохранить.
 - Удаление/замена текущего game save не должно автоматически удалять preferences.
 - Preferences могут влиять на initial New Game draft или начальное presentation state, но после создания партии rule-relevant settings партии принадлежат её session configuration.
