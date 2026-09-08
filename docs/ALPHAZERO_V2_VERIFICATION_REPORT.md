@@ -38,13 +38,13 @@ states with its own engine before making assertions.
 
 | Evidence | Count |
 | --- | ---: |
-| imported fixtures | 23 |
-| Cube4 fixtures | 20 |
+| imported fixtures | 24 |
+| Cube4 fixtures | 21 |
 | Torus9 fixtures | 3 |
-| MAIN actions/steps | 50 |
+| MAIN actions/steps | 52 |
 | Cube4 logical points | 96 |
 | Cube4 directed adjacency relations | 384 |
-| endgame score fixtures | 1 |
+| endgame score fixtures | 2 |
 | product negative action classes | 4 |
 | fallback cases | 2 |
 
@@ -65,15 +65,16 @@ The automated V2 product suite covers:
 - Cube seam/vertex and Torus wrap fixtures;
 - occupied, suicide, true-ko and unknown-point rejection without mutation;
 - accepted-second-Pass atomicity for classifier exceptions and invalid proposals;
-- manual review completion and exact Japanese `FinalScore` for the verified
-  empty setup fixture;
+- manual review completion and exact Japanese `FinalScore` for both the
+  verified empty setup and a non-empty Cube4 two-eye fixture, including
+  territory, stone, capture, prisoner and dead-stone components;
 - repository snapshot round-trip and fresh-score validation;
 - rejection of partial/non-stone groups and tampered `FinalScore` metadata.
 
 The representative browser smoke exercises the same product boundary shape
-through Cube 2D UI: empty verified setup, two Passes, manual review entry and
-Japanese result `White wins by 0.5`.  Core integration tests remain the primary
-evidence; browser clicks are not used for differential rule assertions.
+through Cube 2D UI: one real Cube4 group, two Passes, explicit `Alive` review
+and a Japanese result.  Core integration tests remain the primary evidence;
+browser clicks are not used for differential rule assertions.
 
 ## Intentional difference registry
 

@@ -122,10 +122,10 @@ describe('AlphaZero product-boundary contract', () => {
   });
 
   it('parses the generated corpus and proves every Cube4 PointId mapping/adjacency entry', () => {
-    expect(boundaryFixtures).toHaveLength(23);
+    expect(boundaryFixtures).toHaveLength(24);
     const cube = boundaryFixtures.filter((fixture) => fixture.topology === 'cube');
     const torus = boundaryFixtures.filter((fixture) => fixture.topology === 'torus');
-    expect(cube).toHaveLength(20);
+    expect(cube).toHaveLength(21);
     expect(torus).toHaveLength(3);
 
     const topology = cube[0]!.topologyContract;
@@ -148,23 +148,47 @@ describe('AlphaZero product-boundary contract', () => {
   });
 
   it('reaches the V1-verified final score through the product manual lifecycle', async () => {
-    const fixture = boundaryFixtures.find((candidate) => candidate.expectedFinalScore !== null);
-    expect(fixture).toBeDefined();
-    if (!fixture || !fixture.expectedFinalScore) return;
+    const scoreFixtures = boundaryFixtures.filter((candidate) => candidate.expectedFinalScore !== null);
+    expect(scoreFixtures).toHaveLength(2);
+    expect(scoreFixtures.some((fixture) => fixture.fixtureId === 'cube4_nonempty_two_eye_score_001')).toBe(true);
 
-    const topology = new CubeTopology(fixture.size);
-    const replay = await replayAlphaZeroFixture(new GameEngine(topology), fixture);
-    await replay.session.finishEndgameReview();
-    const score = replay.session.finalScore();
-    expect(score).not.toBeNull();
-    expect({
-      rule_set: score?.ruleSet,
-      black: score?.black,
-      white: score?.white,
-      komi: score?.komi,
-      winner: score?.winner,
-      margin: score?.margin,
-    }).toEqual(fixture.expectedFinalScore);
+    for (const fixture of scoreFixtures) {
+      const topology = fixture.topology === 'cube'
+        ? new CubeTopology(fixture.size)
+        : new TorusTopology(fixture.size as 9 | 13 | 19);
+      const replay = await replayAlphaZeroFixture(new GameEngine(topology), fixture);
+      const expectedGroups = fixture.expectedEndgameClassification;
+      const review = replay.session.endgameReview();
+      expect(review?.groups).toHaveLength(expectedGroups.length);
+
+      for (const expectedGroup of expectedGroups) {
+        const actualGroup = review?.groups.find((group) =>
+          group.points.length === expectedGroup.points.length &&
+          group.points.every((point) => expectedGroup.points.includes(point)),
+        );
+        expect(actualGroup, fixture.fixtureId).toBeDefined();
+        await replay.session.setEndgameReviewDecision(expectedGroup.points, expectedGroup.status);
+      }
+
+      await replay.session.finishEndgameReview();
+      const score = replay.session.finalScore();
+      expect(score, fixture.fixtureId).not.toBeNull();
+      if (!score || !fixture.expectedFinalScore) continue;
+
+      expect({
+        rule_set: score.ruleSet,
+        black: score.black,
+        white: score.white,
+        komi: score.komi,
+        territory: score.territory,
+        stones_on_board: score.stonesOnBoard,
+        captures: [score.captures.black, score.captures.white],
+        prisoners: score.prisoners ? [score.prisoners.black, score.prisoners.white] : null,
+        dead_stones: score.deadStones,
+        winner: score.winner,
+        margin: score.margin,
+      }).toMatchObject(fixture.expectedFinalScore);
+    }
   });
 
   it('rejects occupied, suicide, simple-ko and unknown-point actions without mutation', async () => {
