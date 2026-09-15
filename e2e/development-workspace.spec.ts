@@ -10,7 +10,7 @@ const checkpoint = {
   topology: 'cube',
   size: 4,
   ruleSet: 'chinese',
-  komi: 7.5,
+  komi: 0.5,
 } as const;
 
 const normalMoves: readonly GeneratedMove[] = [
@@ -25,14 +25,14 @@ const normalMoves: readonly GeneratedMove[] = [
 ];
 
 const normalResult: GeneratedResult = {
-  winner: 'white',
+  winner: 'black',
   fallbackCount: 3,
   score: {
     ruleSet: 'chinese',
     black: 5,
-    white: 8.5,
-    komi: 7.5,
-    winner: 'white',
+    white: 1.5,
+    komi: 0.5,
+    winner: 'black',
     margin: 3.5,
   },
 };
@@ -144,8 +144,8 @@ test('Development Workspace replays generated Cube game without changing normal 
   await expect(replayControls).toHaveCSS('display', 'flex');
 
   const alphaResult = page.locator('.development-result-card').filter({ hasText: 'AlphaZero result' });
-  await expect(alphaResult).toContainText('WinnerWhite');
-  await expect(alphaResult).toContainText('ScoreB 5 · W 8.5');
+  await expect(alphaResult).toContainText('WinnerBlack');
+  await expect(alphaResult).toContainText('ScoreB 5 · W 1.5');
   await expect(alphaResult).toContainText('Margin3.5');
   await expect(alphaResult).toContainText('fallbackCount3');
   const goCubeResult = page.locator('.development-result-card').filter({ hasText: 'GoCube result' });
@@ -207,9 +207,9 @@ test('Development replay explicitly flags AlphaZero and GoCube result mismatch',
       fallbackCount: 0,
       score: {
         ruleSet: 'chinese',
-        black: 8,
-        white: 7.5,
-        komi: 7.5,
+        black: 1,
+        white: 0.5,
+        komi: 0.5,
         winner: 'black',
         margin: 0.5,
       },
@@ -225,7 +225,7 @@ test('Development replay explicitly flags AlphaZero and GoCube result mismatch',
 
   const goCubeResult = page.locator('.development-result-card').filter({ hasText: 'GoCube result' });
   await expect(goCubeResult).toContainText('WinnerWhite');
-  await expect(goCubeResult).toContainText('ScoreB 0 · W 7.5');
+  await expect(goCubeResult).toContainText('ScoreB 0 · W 0.5');
   await expect(page.getByText('Results differ', { exact: true })).toBeVisible();
 });
 

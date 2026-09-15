@@ -1332,7 +1332,9 @@ Generation разрешена только для совместимых Black/W
 - presentation;
 - endgame UI.
 
-Отдельная схематическая developer board не используется.
+Для Torus используется штатное Torus 2D representation с его обычными board, stones, captures, navigation, zoom/pan, presentation и endgame UI.
+
+Отдельная схематическая developer board и отдельный AlphaZero-specific renderer не используются.
 
 Generated game не должна изменяться от navigation/zoom/pan и не должна иметь вторую альтернативную visual board model.
 
@@ -1374,6 +1376,8 @@ Animation mode не должен менять logical state, captures, очер�
 
 Development Workspace используется как compatibility feedback loop между AlphaZero и GoCube.
 
+Каждый generated move обязательно содержит `moveNumber`. Первый move имеет номер `1`; далее номера идут строго последовательно без пропусков и дублей. Нарушение этой последовательности отклоняется при runtime validation до применения replay.
+
 Если generated move не может быть принят GoCube, replay немедленно:
 
 - останавливается;
@@ -1383,16 +1387,16 @@ Development Workspace используется как compatibility feedback loo
 
 Diagnostic содержит минимум:
 
-- move number;
+- реальный `moveNumber` из generated sequence;
 - expected player/color;
 - action / canonical `PointId` для placement;
 - rejection или mismatch reason.
 
 Если color generated move не совпадает с текущим player GoCube, применяется то же stop/pause behavior.
 
-Если topology, size, rules или komi generated game не соответствуют developer game, replay не начинается.
+Если topology, size, rules или komi generated game не соответствуют выбранным checkpoints/developer game, replay не начинается.
 
-Если AlphaZero передал captured points и они не совпадают с фактическим GoCube capture result, replay останавливается как compatibility failure.
+Если AlphaZero передал `captured: PointId[]`, GoCube сначала самостоятельно применяет move через свои обычные правила и определяет captures. AlphaZero не командует GoCube снимать эти stones. Переданный список используется только как независимая контрольная информация; при несовпадении конкретных `PointId` replay останавливается как compatibility failure на соответствующем `moveNumber`.
 
 ## 42.7. Seeking и history
 
@@ -1406,11 +1410,22 @@ Replay navigation не хранит отдельную board occupancy.
 
 ## 42.8. Endgame в developer replay
 
-Если generated game заканчивается двумя последовательными Pass, GoCube штатно переходит в обычный assisted/manual endgame flow.
+Если generated game заканчивается двумя последовательными Pass, GoCube штатно переходит в обычный assisted/manual endgame flow соответствующей topology.
 
 - Existing assisted classifier не обходится.
-- Alive/dead/seki annotations и controls остаются теми же, что в обычной Cube 2D партии.
+- Alive/dead/seki annotations и controls остаются теми же, что в обычной партии соответствующего Cube/Torus representation.
 - Workspace не завершает manual/assisted review автоматически только ради replay.
 - `Finish scoring` остаётся явным действием по обычным правилам endgame review.
 
-Таким образом уже первая версия Development Workspace пригодна для визуального исследования endgame и сравнения AlphaZero sequence с существующим поведением GoCube.
+Таким образом Development Workspace пригоден для визуального исследования endgame и сравнения AlphaZero sequence с существующим поведением GoCube независимо от поддерживаемой topology.
+
+## 42.9. Universal AlphaZero replay contract
+
+Protocol V1 остаётся компактным data contract: metadata партии, последовательность numbered `place(pointId)`/`pass` actions, optional `captured: PointId[]` и result/diagnostics. Полная board occupancy после каждого хода не передаётся и двусторонняя синхронизация board state не создаётся.
+
+- Cube и Torus используют один и тот же replay algorithm и одинаковые `Previous` / `Next` / `Play` / seek semantics.
+- Topology определяет только выбор уже существующей GoCube game/presentation implementation; она не меняет смысл replay sequence.
+- Каждый action проходит обычный GoCube `GameSession / GameEngine` path. Именно GoCube определяет legality, captures, current player, Simple Ko, suicide, Pass, phase transitions и scoring/endgame semantics.
+- AlphaZero не мутирует `GameState`, не владеет отдельной authoritative board model и не передаёт occupancy напрямую Renderer.
+- Developer Workspace может показывать checkpoint metadata, generated result, AlphaZero score, независимо рассчитанный GoCube score и compatibility diagnostics, но эти diagnostics не становятся источником игровых правил.
+- Обычная сохранённая пользовательская партия не изменяется developer replay.

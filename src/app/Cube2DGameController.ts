@@ -48,7 +48,7 @@ export class Cube2DGameController {
       topology: this.topology,
       boardSize: this.size,
       ruleSet: snapshot?.ruleSet ?? options.ruleSet ?? 'chinese',
-      komi: snapshot?.komi ?? options.komi ?? 7.5,
+      komi: snapshot?.komi ?? options.komi ?? 0.5,
       persistence: options.persistence,
       snapshot,
     });

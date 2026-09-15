@@ -4,18 +4,20 @@ import { ChineseScoring } from '../../core/scoring/ChineseScoring';
 import { JapaneseScoring } from '../../core/scoring/JapaneseScoring';
 import type { FinalScore } from '../../core/scoring/Scoring';
 import type { PointId } from '../../core/topology/Topology';
-import {
-  Cube2DGameController,
-  type Cube2DEndgameDecisions,
-  type Cube2DGameActionResult,
-} from '../Cube2DGameController';
+import type { SharedGameActionResult } from '../GameSessionControllerFacade';
 import type {
   AlphaZeroAction,
   AlphaZeroGeneratedGame,
   AlphaZeroGeneratedMove,
 } from './AlphaZeroGateway';
+import {
+  createDeveloperReplayController,
+  type DeveloperReplayController,
+  type DeveloperReplayControllerBinding,
+  type DeveloperReplayFinalScoreListener,
+} from './DeveloperReplayController';
 
-const emptyActionResult = (controller: Cube2DGameController): Cube2DGameActionResult =>
+const emptyActionResult = (controller: DeveloperReplayController): SharedGameActionResult =>
   Object.freeze({
     accepted: true,
     reason: null,
@@ -32,25 +34,6 @@ const samePointSet = (left: readonly PointId[], right: readonly PointId[]): bool
   return left.every((point) => rightSet.has(point));
 };
 
-type FinalScoreListener = (score: FinalScore | null) => void;
-
-class DeveloperCube2DGameController extends Cube2DGameController {
-  private finalScoreListener: FinalScoreListener | null = null;
-
-  setFinalScoreListener(listener: FinalScoreListener | null): void {
-    this.finalScoreListener = listener;
-    listener?.(this.viewModel().finalScore ?? null);
-  }
-
-  override async finishEndgame(
-    decisions?: Cube2DEndgameDecisions,
-  ): Promise<Cube2DGameActionResult> {
-    const result = await super.finishEndgame(decisions);
-    this.finalScoreListener?.(result.viewModel.finalScore ?? null);
-    return result;
-  }
-}
-
 export class DeveloperReplayCompatibilityError extends Error {
   constructor(
     readonly moveNumber: number,
@@ -66,35 +49,25 @@ export class DeveloperReplayCompatibilityError extends Error {
 }
 
 export class DeveloperReplaySession {
-  readonly controller: Cube2DGameController;
+  readonly binding: DeveloperReplayControllerBinding;
+  readonly controller: DeveloperReplayController;
   readonly game: AlphaZeroGeneratedGame;
 
-  private readonly developmentController: DeveloperCube2DGameController;
   private appliedMoves = 0;
   private forwardFrontier = 0;
   private inFlight = false;
-  private finalScoreListener: FinalScoreListener | null = null;
+  private finalScoreListener: DeveloperReplayFinalScoreListener | null = null;
 
   constructor(game: AlphaZeroGeneratedGame) {
-    if (game.topology !== 'cube') {
-      throw new Error(
-        `Development Workspace V1 replay supports Cube 2D games; received ${game.topology}.`,
-      );
-    }
-
     this.game = game;
-    this.developmentController = new DeveloperCube2DGameController({
-      size: game.size,
-      ruleSet: game.ruleSet,
-      komi: game.komi,
-    });
-    this.controller = this.developmentController;
+    this.binding = createDeveloperReplayController(game);
+    this.controller = this.binding.controller;
     this.assertMetadataMatchesController();
   }
 
-  setFinalScoreListener(listener: FinalScoreListener | null): void {
+  setFinalScoreListener(listener: DeveloperReplayFinalScoreListener | null): void {
     this.finalScoreListener = listener;
-    this.developmentController.setFinalScoreListener(
+    this.controller.setFinalScoreListener(
       listener
         ? (score) => listener(score ?? this.diagnosticScore())
         : null,
@@ -109,7 +82,7 @@ export class DeveloperReplaySession {
   diagnosticScore(): FinalScore | null {
     const viewModel = this.controller.viewModel();
     if (viewModel.finalScore) return viewModel.finalScore;
-    if (viewModel.phase !== 'endgame') return null;
+    if (viewModel.phase !== 'endgame' || !this.controller.endgameReviewReady()) return null;
     if (this.controller.nextUnresolvedEndgameGroupId() !== null) return null;
 
     const decisions = this.controller.endgameDecisions();
@@ -153,11 +126,11 @@ export class DeveloperReplaySession {
     return this.appliedMoves < this.totalMoves;
   }
 
-  current(): Cube2DGameActionResult {
+  current(): SharedGameActionResult {
     return emptyActionResult(this.controller);
   }
 
-  async previous(): Promise<Cube2DGameActionResult> {
+  async previous(): Promise<SharedGameActionResult> {
     return this.serial(async () => {
       if (!this.canPrevious) return this.current();
       const result = await this.controller.undo();
@@ -170,11 +143,11 @@ export class DeveloperReplaySession {
     });
   }
 
-  async next(): Promise<Cube2DGameActionResult> {
+  async next(): Promise<SharedGameActionResult> {
     return this.serial(() => this.nextInternal());
   }
 
-  async seek(targetMove: number): Promise<Cube2DGameActionResult> {
+  async seek(targetMove: number): Promise<SharedGameActionResult> {
     if (!Number.isSafeInteger(targetMove) || targetMove < 0 || targetMove > this.totalMoves) {
       throw new RangeError(`Replay target must be an integer between 0 and ${this.totalMoves}.`);
     }
@@ -197,15 +170,15 @@ export class DeveloperReplaySession {
     });
   }
 
-  async jumpToStart(): Promise<Cube2DGameActionResult> {
+  async jumpToStart(): Promise<SharedGameActionResult> {
     return this.seek(0);
   }
 
-  async jumpToEnd(): Promise<Cube2DGameActionResult> {
+  async jumpToEnd(): Promise<SharedGameActionResult> {
     return this.seek(this.totalMoves);
   }
 
-  private async nextInternal(): Promise<Cube2DGameActionResult> {
+  private async nextInternal(): Promise<SharedGameActionResult> {
     if (!this.canNext) return this.current();
 
     if (this.appliedMoves < this.forwardFrontier) {
@@ -230,7 +203,7 @@ export class DeveloperReplaySession {
     return result;
   }
 
-  private async applyGeneratedMove(move: AlphaZeroGeneratedMove): Promise<Cube2DGameActionResult> {
+  private async applyGeneratedMove(move: AlphaZeroGeneratedMove): Promise<SharedGameActionResult> {
     const currentPlayer = this.controller.viewModel().currentPlayer;
     if (currentPlayer !== move.color) {
       throw new DeveloperReplayCompatibilityError(
@@ -279,7 +252,7 @@ export class DeveloperReplaySession {
       snapshot.komi !== this.game.komi
     ) {
       throw new Error(
-        `Generated game metadata does not match developer session: cube ${this.game.size} / ${this.game.ruleSet} / komi ${this.game.komi}.`,
+        `Generated game metadata does not match developer session: ${this.game.topology} ${this.game.size} / ${this.game.ruleSet} / komi ${this.game.komi}.`,
       );
     }
   }
