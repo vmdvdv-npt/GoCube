@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FinalScore, ScoreWinner } from '../../core/scoring/Scoring';
 import type { AnimationMode } from '../../presentation/AnimationMode';
-import { Cube2DGame } from '../Cube2DGame';
-import type { Cube2DGameActionResult } from '../Cube2DGameController';
+import type { SharedGameActionResult } from '../GameSessionControllerFacade';
 import {
   type AlphaZeroCheckpointDescriptor,
   type AlphaZeroGateway,
@@ -14,6 +13,10 @@ import {
   DeveloperReplayCompatibilityError,
   DeveloperReplaySession,
 } from './DeveloperReplaySession';
+import {
+  DeveloperReplayPresentation,
+  type DeveloperReplayExternalAction,
+} from './DeveloperReplayPresentation';
 import { HttpAlphaZeroClient } from './HttpAlphaZeroClient';
 import { ReplayControls, type ReplaySpeed } from './ReplayControls';
 import './development-workspace.css';
@@ -24,11 +27,6 @@ export interface DevelopmentWorkspaceProps {
 }
 
 type ConnectionState = 'checking' | 'available' | 'unavailable';
-
-type ExternalReplayAction = Readonly<{
-  sequence: number;
-  result: Cube2DGameActionResult;
-}>;
 
 type DevelopmentSettings = Readonly<{
   blackCheckpointId?: string;
@@ -71,12 +69,11 @@ const persistDevelopmentSettings = (patch: DevelopmentSettings): void => {
   }
 };
 
-const latestCubeCheckpoint = (
+const latestCheckpoint = (
   checkpoints: readonly AlphaZeroCheckpointDescriptor[],
 ): AlphaZeroCheckpointDescriptor | undefined => {
   let latest: AlphaZeroCheckpointDescriptor | undefined;
   for (const checkpoint of checkpoints) {
-    if (checkpoint.topology !== 'cube') continue;
     if (!latest || checkpoint.iteration > latest.iteration) latest = checkpoint;
   }
   return latest;
@@ -85,7 +82,7 @@ const latestCubeCheckpoint = (
 const checkpointLabel = (checkpoint: AlphaZeroCheckpointDescriptor): string =>
   `${checkpoint.runName} · iter ${checkpoint.iteration} · ${checkpoint.topology} ${checkpoint.size}×${checkpoint.size}`;
 
-const checkpointCompatibilityError = (
+export const checkpointCompatibilityError = (
   black: AlphaZeroCheckpointDescriptor | null,
   white: AlphaZeroCheckpointDescriptor | null,
 ): string | null => {
@@ -94,11 +91,10 @@ const checkpointCompatibilityError = (
   if (black.size !== white.size) return 'Checkpoint board size does not match.';
   if (black.ruleSet !== white.ruleSet) return 'Checkpoint rules do not match.';
   if (black.komi !== white.komi) return 'Checkpoint komi does not match.';
-  if (black.topology !== 'cube') return 'Development Workspace V1 replay currently requires Cube checkpoints.';
   return null;
 };
 
-const generatedGameCompatibilityError = (
+export const generatedGameCompatibilityError = (
   game: AlphaZeroGeneratedGame,
   black: AlphaZeroCheckpointDescriptor,
   white: AlphaZeroCheckpointDescriptor,
@@ -159,7 +155,7 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<ReplaySpeed>(1);
   const [diagnostic, setDiagnostic] = useState<string | null>(null);
-  const [externalAction, setExternalAction] = useState<ExternalReplayAction | null>(null);
+  const [externalAction, setExternalAction] = useState<DeveloperReplayExternalAction | null>(null);
   const [seekAnimationDisabled, setSeekAnimationDisabled] = useState(false);
   const actionSequenceRef = useRef(0);
   const operationInFlightRef = useRef(false);
@@ -187,19 +183,15 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
       setConnection('available');
       setServiceLabel(`${health.service} ${health.version} · protocol v${health.protocolVersion}`);
       setCheckpoints(availableCheckpoints);
-      const fallback = latestCubeCheckpoint(availableCheckpoints) ?? availableCheckpoints[0];
+      const fallback = latestCheckpoint(availableCheckpoints) ?? availableCheckpoints[0];
       if (fallback) {
         setBlackCheckpointId((current) =>
-          availableCheckpoints.some(
-            (checkpoint) => checkpoint.id === current && checkpoint.topology === 'cube',
-          )
+          availableCheckpoints.some((checkpoint) => checkpoint.id === current)
             ? current
             : fallback.id,
         );
         setWhiteCheckpointId((current) =>
-          availableCheckpoints.some(
-            (checkpoint) => checkpoint.id === current && checkpoint.topology === 'cube',
-          )
+          availableCheckpoints.some((checkpoint) => checkpoint.id === current)
             ? current
             : fallback.id,
         );
@@ -232,14 +224,14 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
     return () => replay.setFinalScoreListener(null);
   }, [replay]);
 
-  const publishAction = (session: DeveloperReplaySession, result: Cube2DGameActionResult): void => {
+  const publishAction = (session: DeveloperReplaySession, result: SharedGameActionResult): void => {
     actionSequenceRef.current += 1;
     setExternalAction(Object.freeze({ sequence: actionSequenceRef.current, result }));
     setPosition(session.position);
   };
 
   const runReplayOperation = async (
-    operation: (session: DeveloperReplaySession) => Promise<Cube2DGameActionResult>,
+    operation: (session: DeveloperReplaySession) => Promise<SharedGameActionResult>,
     options: { readonly pause: boolean; readonly disableAnimation: boolean },
   ): Promise<void> => {
     const session = replay;
@@ -489,18 +481,14 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
 
         <section className="development-workspace__game" aria-label="Generated game replay">
           {replay ? (
-            <Cube2DGame
-              controller={replay.controller}
-              onRequestNewGame={() => undefined}
-              gameplayReadOnly
-              newGameDisabled
+            <DeveloperReplayPresentation
+              replay={replay}
               animationMode={animationMode}
               externalAction={externalAction}
-              ownsController
             />
           ) : (
             <div className="development-workspace__empty-board">
-              <p>Generate a Cube game to replay it on the GoCube renderer.</p>
+              <p>Generate a game to replay it on the GoCube renderer.</p>
             </div>
           )}
         </section>

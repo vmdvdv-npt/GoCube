@@ -7,6 +7,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import type { GroupStatus } from '../core/endgame/EndgameClassifier';
+import type { AnimationMode } from '../presentation/AnimationMode';
 import {
   endgameGroupForPoint,
   type EndgameGroupRenderState,
@@ -113,11 +114,20 @@ const rejectionLabel = (reason: TorusGameActionResult['reason']): string | null 
 const statusLabel = (status: GroupStatus): string =>
   status === 'alive' ? 'Alive' : status === 'dead' ? 'Dead' : 'Seki';
 
+export interface TorusExternalAction {
+  readonly sequence: number;
+  readonly result: TorusGameActionResult;
+}
+
 export interface TorusGameProps {
   readonly controller: TorusGameController;
   readonly onRequestNewGame: () => void;
   readonly initialShowDuplicateRegions: boolean;
   readonly onShowDuplicateRegionsPreferenceChange: (visible: boolean) => void;
+  readonly gameplayReadOnly?: boolean;
+  readonly newGameDisabled?: boolean;
+  readonly animationMode?: AnimationMode;
+  readonly externalAction?: TorusExternalAction | null;
 }
 
 export function TorusGame({
@@ -125,6 +135,10 @@ export function TorusGame({
   onRequestNewGame,
   initialShowDuplicateRegions,
   onShowDuplicateRegionsPreferenceChange,
+  gameplayReadOnly = false,
+  newGameDisabled = false,
+  animationMode = 'normal',
+  externalAction = null,
 }: TorusGameProps) {
   const initialViewModel = controller.viewModel();
   const [viewModel, setViewModel] = useState(() => initialViewModel);
@@ -155,6 +169,7 @@ export function TorusGame({
   const actionInFlight = useRef(false);
   const previewedMovePointRef = useRef<string | null>(null);
   const viewZoomRef = useRef(1);
+  const lastExternalActionSequenceRef = useRef<number | null>(null);
 
   const constrainViewPan = useCallback(
     (candidate: DragPanOffset): DragPanOffset => {
@@ -211,6 +226,36 @@ export function TorusGame({
   const canFinishEndgame =
     viewModel.phase === 'endgame' && controller.canFinishEndgame();
 
+  const applyResult = useCallback((result: TorusGameActionResult): void => {
+    previewedMovePointRef.current = null;
+    rendererRef.current?.setMovePreview(null);
+    setViewModel(result.viewModel);
+    setFeedback(result.accepted ? null : rejectionLabel(result.reason));
+    setResultOpen(result.viewModel.phase === 'finished' && Boolean(result.viewModel.finalScore));
+
+    if (
+      result.viewModel.phase !== 'playing' ||
+      result.viewModel.consecutivePasses === 0
+    ) {
+      setPassGuardUntil(null);
+    }
+
+    if (result.viewModel.phase === 'endgame') {
+      const nextGroups = controller.endgameGroups();
+      setEndgameGroups(nextGroups);
+      setHoveredGroupId(null);
+      setSelectedGroupId((current) =>
+        current && nextGroups.some((group) => group.id === current)
+          ? current
+          : controller.nextUnresolvedEndgameGroupId(),
+      );
+    } else {
+      setEndgameGroups([]);
+      setHoveredGroupId(null);
+      setSelectedGroupId(null);
+    }
+  }, [controller]);
+
   useEffect(() => {
     panOffsetRef.current = dragPan.offset;
   }, [dragPan.offset]);
@@ -226,6 +271,7 @@ export function TorusGame({
     previewedMovePointRef.current = null;
     viewZoomRef.current = 1;
     panOffsetRef.current = Object.freeze({ x: 0, y: 0 });
+    lastExternalActionSequenceRef.current = null;
     dragPan.reset();
     const nextViewModel = controller.viewModel();
     setViewModel(nextViewModel);
@@ -257,6 +303,17 @@ export function TorusGame({
         : controller.nextUnresolvedEndgameGroupId(),
     );
   }), [controller]);
+
+  useEffect(() => {
+    if (
+      !externalAction ||
+      lastExternalActionSequenceRef.current === externalAction.sequence
+    ) {
+      return;
+    }
+    lastExternalActionSequenceRef.current = externalAction.sequence;
+    applyResult(externalAction.result);
+  }, [applyResult, externalAction]);
 
   useEffect(() => {
     dragPan.reconstrain();
@@ -410,36 +467,6 @@ export function TorusGame({
     return () => observer.disconnect();
   }, [controller, showDuplicateRegions, showMoveNumbers, viewModel]);
 
-  const applyResult = (result: TorusGameActionResult): void => {
-    previewedMovePointRef.current = null;
-    rendererRef.current?.setMovePreview(null);
-    setViewModel(result.viewModel);
-    setFeedback(result.accepted ? null : rejectionLabel(result.reason));
-    setResultOpen(result.viewModel.phase === 'finished' && Boolean(result.viewModel.finalScore));
-
-    if (
-      result.viewModel.phase !== 'playing' ||
-      result.viewModel.consecutivePasses === 0
-    ) {
-      setPassGuardUntil(null);
-    }
-
-    if (result.viewModel.phase === 'endgame') {
-      const nextGroups = controller.endgameGroups();
-      setEndgameGroups(nextGroups);
-      setHoveredGroupId(null);
-      setSelectedGroupId((current) =>
-        current && nextGroups.some((group) => group.id === current)
-          ? current
-          : controller.nextUnresolvedEndgameGroupId(),
-      );
-    } else {
-      setEndgameGroups([]);
-      setHoveredGroupId(null);
-      setSelectedGroupId(null);
-    }
-  };
-
   const groupAtClientPosition = (
     event: ReactMouseEvent<SVGSVGElement>,
   ): TorusEndgameGroup | null => {
@@ -508,7 +535,7 @@ export function TorusGame({
       return;
     }
 
-    if (viewModel.phase !== 'playing') return;
+    if (gameplayReadOnly || viewModel.phase !== 'playing') return;
 
     const renderer = rendererRef.current;
     if (!renderer) return;
@@ -561,7 +588,7 @@ export function TorusGame({
 
     if (viewModel.phase === 'playing') {
       if (hoveredGroupId !== null) setHoveredGroupId(null);
-      if (!renderer || actionInFlight.current) {
+      if (gameplayReadOnly || !renderer || actionInFlight.current) {
         previewedMovePointRef.current = null;
         renderer?.setMovePreview(null);
         return;
@@ -628,6 +655,7 @@ export function TorusGame({
 
   const handlePass = async (): Promise<void> => {
     if (
+      gameplayReadOnly ||
       actionInFlight.current ||
       viewModel.phase !== 'playing' ||
       passGuardRemainingMs > 0
@@ -653,7 +681,7 @@ export function TorusGame({
   };
 
   const handleUndo = async (): Promise<void> => {
-    if (actionInFlight.current) return;
+    if (gameplayReadOnly || actionInFlight.current) return;
 
     actionInFlight.current = true;
     try {
@@ -664,7 +692,7 @@ export function TorusGame({
   };
 
   const handleRedo = async (): Promise<void> => {
-    if (actionInFlight.current) return;
+    if (gameplayReadOnly || actionInFlight.current) return;
 
     actionInFlight.current = true;
     try {
@@ -686,6 +714,7 @@ export function TorusGame({
       applyResult(Object.freeze({
         accepted: true,
         reason: null,
+        captured: Object.freeze([]),
         viewModel: controller.viewModel(),
       }));
       setSelectedGroupId(group.id);
@@ -791,7 +820,12 @@ export function TorusGame({
     viewZoom !== 1 || dragPan.offset.x !== 0 || dragPan.offset.y !== 0;
 
   return (
-    <section ref={gameRef} className="torus-game" aria-label="Torus 2D game">
+    <section
+      ref={gameRef}
+      className="torus-game"
+      aria-label="Torus 2D game"
+      data-animation-mode={animationMode}
+    >
       <GameSidebar
         size={controller.size}
         viewModel={viewModel}
@@ -799,15 +833,16 @@ export function TorusGame({
         onShowMoveNumbersChange={setShowMoveNumbers}
         showDuplicateRegions={showDuplicateRegions}
         onShowDuplicateRegionsChange={handleShowDuplicateRegionsChange}
-        passDisabled={viewModel.phase !== 'playing' || passGuardActive}
-        canRedo={controller.canRedo()}
-        canUndo={controller.canUndo()}
+        passDisabled={gameplayReadOnly || viewModel.phase !== 'playing' || passGuardActive}
+        canRedo={!gameplayReadOnly && controller.canRedo()}
+        canUndo={!gameplayReadOnly && controller.canUndo()}
         onPass={() => void handlePass()}
         onRedo={() => void handleRedo()}
         onUndo={() => void handleUndo()}
         gameResultAvailable={Boolean(gameResult && !resultOpen)}
         onOpenGameResult={() => setResultOpen(true)}
         onRequestNewGame={onRequestNewGame}
+        newGameDisabled={newGameDisabled}
         endgame={endgamePanel}
         feedback={feedback}
       />
