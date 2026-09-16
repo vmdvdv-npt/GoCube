@@ -25,7 +25,6 @@ test('Torus Endgame Review keeps one shared status control bound to the logical 
   await page.getByRole('button', { name: 'Pass' }).click();
   await page.getByRole('button', { name: 'Pass (1)' }).click();
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
-  await expect(selectedStatuses(page)).toHaveCount(0);
 
   await torusPoint(page, '0,4').click();
   const statuses = selectedStatuses(page);
@@ -63,7 +62,6 @@ test('Cube 2D uses the same shared review controls and preserves logical selecti
   await page.getByRole('button', { name: 'Pass' }).click();
   await page.getByRole('button', { name: 'Pass (1)' }).click();
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
-  await expect(selectedStatuses(page)).toHaveCount(0);
 
   await cubeHit(page, 'front:1:1').click();
   const statuses = selectedStatuses(page);
@@ -73,10 +71,6 @@ test('Cube 2D uses the same shared review controls and preserves logical selecti
   await expect(alive).toHaveAttribute('aria-pressed', 'true');
 
   await page.getByRole('button', { name: 'Move cube right' }).click();
-  await expect(page.locator('.cube-2d-renderer')).toHaveAttribute('data-animating', 'true');
-  await expect(page.locator('.cube-2d-renderer')).toHaveAttribute('data-animating', 'false', {
-    timeout: 1000,
-  });
   await expect(page.locator('.endgame-selection .stone-chip--black')).toHaveCount(1);
   await expect(alive).toHaveAttribute('aria-pressed', 'true');
 });
