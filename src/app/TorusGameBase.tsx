@@ -1,18 +1,15 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import type { GroupStatus } from '../core/endgame/EndgameClassifier';
 import type { AnimationMode } from '../presentation/AnimationMode';
-import {
-  endgameGroupForPoint,
-  type EndgameGroupRenderState,
-} from '../presentation/EndgameGroupPresentation';
+import { endgameGroupForPoint } from '../presentation/EndgameGroupPresentation';
 import { finalBoardViewModel } from '../presentation/EndgameTerritoryPresentation';
+import { EndgameReviewControls } from './EndgameReviewControls';
 import { GameResultDialog } from './GameResultDialog';
 import { GameSidebar } from './GameSidebar';
 import './manual-endgame.css';
@@ -33,8 +30,8 @@ import {
   type TorusGameActionResult,
 } from './TorusGameController';
 import { useDragPan, type DragPanOffset } from './useDragPan';
+import { useEndgameReview } from './useEndgameReview';
 
-const ENDGAME_STATUSES: readonly GroupStatus[] = ['alive', 'dead', 'seki'];
 const TORUS_ZOOM_MIN = 0.7;
 const TORUS_ZOOM_MAX = 2.5;
 const TORUS_ZOOM_WHEEL_SENSITIVITY = 0.0015;
@@ -111,9 +108,6 @@ const rejectionLabel = (reason: TorusGameActionResult['reason']): string | null 
   }
 };
 
-const statusLabel = (status: GroupStatus): string =>
-  status === 'alive' ? 'Alive' : status === 'dead' ? 'Dead' : 'Seki';
-
 export interface TorusExternalAction {
   readonly sequence: number;
   readonly result: TorusGameActionResult;
@@ -142,18 +136,8 @@ export function TorusGame({
 }: TorusGameProps) {
   const initialViewModel = controller.viewModel();
   const [viewModel, setViewModel] = useState(() => initialViewModel);
+  const endgame = useEndgameReview(controller, { onReviewReady: setViewModel });
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [endgameGroups, setEndgameGroups] = useState<readonly TorusEndgameGroup[]>(() =>
-    initialViewModel.phase === 'endgame' ? controller.endgameGroups() : [],
-  );
-  const decisions = controller.endgameDecisions();
-  const endgameReviewReady =
-    viewModel.phase === 'endgame' && controller.endgameReviewReady();
-  const endgameTerritory = endgameReviewReady ? controller.endgameTerritory() : new Map();
-  const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(() =>
-    initialViewModel.phase === 'endgame' ? controller.nextUnresolvedEndgameGroupId() : null,
-  );
   const [resultOpen, setResultOpen] = useState(
     () => initialViewModel.phase === 'finished',
   );
@@ -192,8 +176,8 @@ export function TorusGame({
   const clearPanHover = useCallback((): void => {
     previewedMovePointRef.current = null;
     rendererRef.current?.setMovePreview(null);
-    setHoveredGroupId(null);
-  }, []);
+    endgame.setHoveredGroupId(null);
+  }, [endgame.setHoveredGroupId]);
 
   const dragPan = useDragPan({
     constrain: constrainViewPan,
@@ -202,36 +186,13 @@ export function TorusGame({
   });
   const panOffsetRef = useRef<DragPanOffset>(dragPan.offset);
 
-  const renderGroups = useMemo<readonly EndgameGroupRenderState[]>(
-    () =>
-      endgameGroups.map((group) =>
-        Object.freeze({
-          ...group,
-          status: decisions[group.id] ?? null,
-        }),
-      ),
-    [decisions, endgameGroups],
-  );
-
-  const selectedGroup = useMemo(
-    () => endgameGroups.find((group) => group.id === selectedGroupId) ?? null,
-    [endgameGroups, selectedGroupId],
-  );
-
-  const manualGroupIds = endgameReviewReady ? controller.endgameManualGroupIds() : [];
-  const automaticClassifiedCount = endgameReviewReady
-    ? Math.max(0, endgameGroups.length - manualGroupIds.length)
-    : 0;
-  const resolvedCount = endgameGroups.filter((group) => Boolean(decisions[group.id])).length;
-  const canFinishEndgame =
-    viewModel.phase === 'endgame' && controller.canFinishEndgame();
-
   const applyResult = useCallback((result: TorusGameActionResult): void => {
     previewedMovePointRef.current = null;
     rendererRef.current?.setMovePreview(null);
     setViewModel(result.viewModel);
     setFeedback(result.accepted ? null : rejectionLabel(result.reason));
     setResultOpen(result.viewModel.phase === 'finished' && Boolean(result.viewModel.finalScore));
+    endgame.sync(result.viewModel);
 
     if (
       result.viewModel.phase !== 'playing' ||
@@ -239,32 +200,11 @@ export function TorusGame({
     ) {
       setPassGuardUntil(null);
     }
-
-    if (result.viewModel.phase === 'endgame') {
-      const nextGroups = controller.endgameGroups();
-      setEndgameGroups(nextGroups);
-      setHoveredGroupId(null);
-      setSelectedGroupId((current) =>
-        current && nextGroups.some((group) => group.id === current)
-          ? current
-          : controller.nextUnresolvedEndgameGroupId(),
-      );
-    } else {
-      setEndgameGroups([]);
-      setHoveredGroupId(null);
-      setSelectedGroupId(null);
-    }
-  }, [controller]);
+  }, [endgame.sync]);
 
   useEffect(() => {
     panOffsetRef.current = dragPan.offset;
   }, [dragPan.offset]);
-
-  useEffect(() => {
-    if (viewModel.phase !== 'endgame' && selectedGroupId !== null) {
-      setSelectedGroupId(null);
-    }
-  }, [selectedGroupId, viewModel.phase]);
 
   useEffect(() => {
     rendererRef.current = null;
@@ -276,33 +216,13 @@ export function TorusGame({
     const nextViewModel = controller.viewModel();
     setViewModel(nextViewModel);
     setFeedback(null);
-    setHoveredGroupId(null);
-    setSelectedGroupId(
-      nextViewModel.phase === 'endgame' ? controller.nextUnresolvedEndgameGroupId() : null,
-    );
+    endgame.sync(nextViewModel);
     setShowMoveNumbers(false);
     setViewZoom(1);
     setPassGuardUntil(null);
     setPassGuardRemainingMs(0);
     setResultOpen(nextViewModel.phase === 'finished');
-    setEndgameGroups(
-      nextViewModel.phase === 'endgame' ? controller.endgameGroups() : [],
-    );
-  }, [controller, dragPan.reset]);
-
-  useEffect(() => controller.subscribeEndgameReviewReady(() => {
-    const nextViewModel = controller.viewModel();
-    if (nextViewModel.phase !== 'endgame') return;
-    const nextGroups = controller.endgameGroups();
-    setViewModel(nextViewModel);
-    setEndgameGroups(nextGroups);
-    setHoveredGroupId(null);
-    setSelectedGroupId((current) =>
-      current && nextGroups.some((group) => group.id === current)
-        ? current
-        : controller.nextUnresolvedEndgameGroupId(),
-    );
-  }), [controller]);
+  }, [controller, dragPan.reset, endgame.sync]);
 
   useEffect(() => {
     if (
@@ -392,19 +312,11 @@ export function TorusGame({
     rendererRef.current = renderer;
     const displayViewModel = finalBoardViewModel(viewModel);
 
-    // The legacy renderer expansion is deliberately kept disabled. The opt-in
-    // duplicate view is now a separate one-line, non-interactive edge overlay.
+    // The opt-in duplicate view is a separate one-line, non-interactive edge overlay.
     renderer.setDuplicateRegionsVisible(false);
-    renderer.setEndgameOverlay(
-      viewModel.phase === 'endgame'
-        ? {
-            groups: renderGroups,
-            hoveredGroupId,
-            selectedGroupId,
-          }
-        : null,
+    renderer.setEndgamePresentation(
+      viewModel.phase === 'endgame' ? endgame.presentation : null,
     );
-    renderer.setEndgameTerritory(viewModel.phase === 'endgame' ? endgameTerritory : null);
     renderer.render(displayViewModel);
     renderTorus2DEdgeDuplicates(
       svg,
@@ -416,10 +328,7 @@ export function TorusGame({
     renderTorus2DStoneAnnotations(svg, viewModel, showMoveNumbers);
   }, [
     controller,
-    endgameTerritory,
-    hoveredGroupId,
-    renderGroups,
-    selectedGroupId,
+    endgame.presentation,
     showDuplicateRegions,
     showMoveNumbers,
     viewModel,
@@ -486,7 +395,7 @@ export function TorusGame({
         ?.closest('[data-logical-point-id]')
         ?.getAttribute('data-logical-point-id');
     if (directPointId) {
-      const directGroup = endgameGroupForPoint(endgameGroups, directPointId);
+      const directGroup = endgameGroupForPoint(endgame.groups, directPointId);
       if (directGroup) return directGroup;
     }
 
@@ -498,13 +407,8 @@ export function TorusGame({
       return null;
     }
 
-    const lineGroupId = renderer.endgameGroupFromClientPosition(client.x, client.y);
-    if (lineGroupId) {
-      return endgameGroups.find((group) => group.id === lineGroupId) ?? null;
-    }
-
     const point = renderer.pointFromClientPosition(client.x, client.y);
-    return point ? endgameGroupForPoint(endgameGroups, point) : null;
+    return point ? endgameGroupForPoint(endgame.groups, point) : null;
   };
 
   const handleBoardClick = async (
@@ -529,8 +433,8 @@ export function TorusGame({
     if (viewModel.phase === 'endgame') {
       const group = groupAtClientPosition(event);
       if (group) {
-        setSelectedGroupId(group.id);
-        setHoveredGroupId(group.id);
+        endgame.setSelectedGroupId(group.id);
+        endgame.setHoveredGroupId(group.id);
       }
       return;
     }
@@ -566,7 +470,7 @@ export function TorusGame({
     if (dragPan.dragging) {
       previewedMovePointRef.current = null;
       renderer?.setMovePreview(null);
-      if (hoveredGroupId !== null) setHoveredGroupId(null);
+      if (endgame.hoveredGroupId !== null) endgame.setHoveredGroupId(null);
       return;
     }
 
@@ -582,12 +486,12 @@ export function TorusGame({
     ) {
       previewedMovePointRef.current = null;
       renderer?.setMovePreview(null);
-      if (hoveredGroupId !== null) setHoveredGroupId(null);
+      if (endgame.hoveredGroupId !== null) endgame.setHoveredGroupId(null);
       return;
     }
 
     if (viewModel.phase === 'playing') {
-      if (hoveredGroupId !== null) setHoveredGroupId(null);
+      if (endgame.hoveredGroupId !== null) endgame.setHoveredGroupId(null);
       if (gameplayReadOnly || !renderer || actionInFlight.current) {
         previewedMovePointRef.current = null;
         renderer?.setMovePreview(null);
@@ -629,21 +533,21 @@ export function TorusGame({
     previewedMovePointRef.current = null;
     renderer?.setMovePreview(null);
     if (viewModel.phase !== 'endgame') {
-      if (hoveredGroupId !== null) setHoveredGroupId(null);
+      if (endgame.hoveredGroupId !== null) endgame.setHoveredGroupId(null);
       return;
     }
 
     const group = groupAtClientPosition(event);
     const nextHoveredGroupId = group?.id ?? null;
-    if (nextHoveredGroupId !== hoveredGroupId) {
-      setHoveredGroupId(nextHoveredGroupId);
+    if (nextHoveredGroupId !== endgame.hoveredGroupId) {
+      endgame.setHoveredGroupId(nextHoveredGroupId);
     }
   };
 
   const handleBoardMouseLeave = (): void => {
     previewedMovePointRef.current = null;
     rendererRef.current?.setMovePreview(null);
-    if (hoveredGroupId !== null) setHoveredGroupId(null);
+    if (endgame.hoveredGroupId !== null) endgame.setHoveredGroupId(null);
   };
 
   const handlePan = (direction: Torus2DPanDirection): void => {
@@ -703,32 +607,28 @@ export function TorusGame({
   };
 
   const setGroupStatus = async (
-    group: TorusEndgameGroup,
+    groupId: string,
     status: GroupStatus,
   ): Promise<void> => {
     if (actionInFlight.current || viewModel.phase !== 'endgame') return;
 
     actionInFlight.current = true;
     try {
-      await controller.setEndgameDecision(group.id, status);
-      applyResult(Object.freeze({
-        accepted: true,
-        reason: null,
-        captured: Object.freeze([]),
-        viewModel: controller.viewModel(),
-      }));
-      setSelectedGroupId(group.id);
+      await endgame.setDecision(groupId, status);
+      setViewModel(controller.viewModel());
+      setFeedback(null);
     } catch (error) {
       setFeedback(
         error instanceof Error ? error.message : 'Endgame decision could not be saved.',
       );
+      endgame.sync(controller.viewModel());
     } finally {
       actionInFlight.current = false;
     }
   };
 
   const finishEndgame = async (): Promise<void> => {
-    if (actionInFlight.current || !canFinishEndgame) return;
+    if (actionInFlight.current || !endgame.canFinish) return;
     actionInFlight.current = true;
     try {
       applyResult(await controller.finishEndgame());
@@ -744,71 +644,18 @@ export function TorusGame({
 
   const endgamePanel =
     viewModel.phase === 'endgame' ? (
-      <section className="endgame-panel" aria-labelledby="endgame-title">
-        <div>
-          <h2 id="endgame-title">Assisted endgame review</h2>
-          <p>
-            Click any stone to select its whole group. You can change Alive, Dead, or Seki even when the status was proposed automatically.
-          </p>
-        </div>
-
-        {!endgameReviewReady ? (
-          <p className="endgame-empty">Final analysis is still completing.</p>
-        ) : endgameGroups.length > 0 ? (
-          <>
-            <div className="endgame-progress" aria-live="polite">
-              Resolved {resolvedCount} of {endgameGroups.length}
-              {automaticClassifiedCount > 0 ? ` · ${automaticClassifiedCount} automatic proposals` : ''}
-            </div>
-
-            {selectedGroup ? (
-              <div className="endgame-selection">
-                <div className="endgame-selection__identity">
-                  <span
-                    className={`stone-chip stone-chip--${selectedGroup.color}`}
-                    aria-hidden="true"
-                  />
-                  <div>
-                    <strong>Selected group</strong>
-                    <span>
-                      {selectedGroup.points.length} {selectedGroup.points.length === 1 ? 'stone' : 'stones'}
-                    </span>
-                  </div>
-                </div>
-                <div
-                  className="endgame-statuses"
-                  role="group"
-                  aria-label="Selected group status"
-                >
-                  {ENDGAME_STATUSES.map((status) => (
-                    <button
-                      type="button"
-                      key={status}
-                      className={decisions[selectedGroup.id] === status ? 'is-selected' : undefined}
-                      aria-pressed={decisions[selectedGroup.id] === status}
-                      onClick={() => void setGroupStatus(selectedGroup, status)}
-                    >
-                      {statusLabel(status)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <p className="endgame-empty">Click a stone to review or change its group status.</p>
-            )}
-          </>
-        ) : (
-          <p className="endgame-empty">There are no stone groups to review.</p>
-        )}
-        <button
-          type="button"
-          className="endgame-finish"
-          disabled={!canFinishEndgame}
-          onClick={() => void finishEndgame()}
-        >
-          Finish scoring
-        </button>
-      </section>
+      <EndgameReviewControls
+        titleId="endgame-title"
+        reviewReady={endgame.reviewReady}
+        groups={endgame.groups}
+        decisions={endgame.decisions}
+        selectedGroup={endgame.selectedGroup}
+        resolvedCount={endgame.resolvedCount}
+        automaticClassified={endgame.automaticClassified}
+        canFinish={endgame.canFinish}
+        onDecision={setGroupStatus}
+        onFinish={finishEndgame}
+      />
     ) : null;
 
   const handleShowDuplicateRegionsChange = (visible: boolean): void => {
