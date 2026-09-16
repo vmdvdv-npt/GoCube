@@ -14,9 +14,10 @@ import {
 } from '../renderer2d/Cube2DRenderer';
 import { Cube2DGameController } from './Cube2DGameController';
 import { Cube2DVisualEffects } from './Cube2DVisualEffects';
+import { EndgameReviewControls } from './EndgameReviewControls';
 import { GameResultDialog } from './GameResultDialog';
 import { GameSidebar } from './GameSidebar';
-import { CUBE_ENDGAME_STATUSES, cubeEndgameStatusLabel, useCube2DGame, type Cube2DExternalAction } from './useCube2DGame';
+import { useCube2DGame, type Cube2DExternalAction } from './useCube2DGame';
 import { useDragPan, type DragPanOffset } from './useDragPan';
 import { useGameControllerLifecycle } from './useGameControllerLifecycle';
 import './manual-endgame.css';
@@ -139,53 +140,18 @@ export function Cube2DGame({
   };
 
   const endgamePanel = g.vm.phase === 'endgame' ? (
-    <section className="endgame-panel" aria-labelledby="cube-endgame-title">
-      <div>
-        <h2 id="cube-endgame-title">Assisted endgame review</h2>
-        <p>Click any stone to select its whole group. You can change Alive, Dead, or Seki even when the status was proposed automatically.</p>
-      </div>
-      {!g.endgameReviewReady ? (
-        <p className="endgame-empty">Final analysis is still completing.</p>
-      ) : g.groups.length ? (
-        <>
-          <div className="endgame-progress" aria-live="polite">
-            Resolved {g.resolvedCount} of {g.groups.length}
-            {g.automaticClassified > 0 ? ` · ${g.automaticClassified} automatic proposals` : ''}
-          </div>
-          {g.selected ? (
-            <div className="endgame-selection">
-              <div className="endgame-selection__identity">
-                <span className={`stone-chip stone-chip--${g.selected.color}`} aria-hidden="true" />
-                <div>
-                  <strong>Selected group</strong>
-                  <span>{g.selected.points.length} {g.selected.points.length === 1 ? 'stone' : 'stones'}</span>
-                </div>
-              </div>
-              <div className="endgame-statuses" role="group" aria-label="Selected group status">
-                {CUBE_ENDGAME_STATUSES.map((status) => (
-                  <button
-                    type="button"
-                    key={status}
-                    className={g.decisions[g.selected!.id] === status ? 'is-selected' : undefined}
-                    aria-pressed={g.decisions[g.selected!.id] === status}
-                    onClick={() => void g.setDecision(g.selected!.id, status)}
-                  >
-                    {cubeEndgameStatusLabel(status)}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <p className="endgame-empty">Click a stone to review or change its group status.</p>
-          )}
-        </>
-      ) : (
-        <p className="endgame-empty">There are no stone groups to review.</p>
-      )}
-      <button type="button" className="endgame-finish" disabled={!g.canFinishEndgame} onClick={() => void g.finishEndgame()}>
-        Finish scoring
-      </button>
-    </section>
+    <EndgameReviewControls
+      titleId="cube-endgame-title"
+      reviewReady={g.endgameReviewReady}
+      groups={g.groups}
+      decisions={g.decisions}
+      selectedGroup={g.selected}
+      resolvedCount={g.resolvedCount}
+      automaticClassified={g.automaticClassified}
+      canFinish={g.canFinishEndgame}
+      onDecision={g.setDecision}
+      onFinish={g.finishEndgame}
+    />
   ) : null;
 
   return (
@@ -288,12 +254,8 @@ export function Cube2DGame({
                 layout={g.layout}
                 layoutCellSize={layoutCellSize}
                 finalScore={g.vm.finalScore}
-                provisionalTerritory={g.endgameTerritory}
                 finalClassification={g.finalClassification}
-                endgameGroups={g.groups}
-                decisions={g.decisions}
-                selectedGroupId={g.selectedGroup}
-                hoveredGroupId={g.hoveredGroup}
+                endgamePresentation={g.vm.phase === 'endgame' ? g.endgamePresentation : null}
                 capturedStones={g.capturedEffects}
               />
             </div>
