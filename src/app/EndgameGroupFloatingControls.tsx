@@ -6,8 +6,6 @@ import type { EndgameGroupPresentation } from '../presentation/EndgameGroupPrese
 import type { SharedEndgameDecisions } from './GameSessionControllerFacade';
 import './endgame-group-floating-controls.css';
 
-export type EndgameFloatingSurface = 'torus' | 'cube';
-
 type Bounds = Readonly<{
   left: number;
   top: number;
@@ -28,17 +26,16 @@ type PositionedControl = Readonly<{
 const ENDGAME_STATUSES: readonly GroupStatus[] = Object.freeze(['alive', 'dead', 'seki']);
 const CONTROL_GAP_PX = 10;
 const VIEWPORT_INSET_PX = 8;
+const RENDERED_STONE_SELECTOR = [
+  '.cube-2d-stone[data-logical-point-id][data-occupancy]',
+  '.torus-board__stone[data-logical-point-id][data-occupancy][data-copy-role="primary"]',
+].join(', ');
 
 const statusLabel = (status: GroupStatus): string =>
   status === 'alive' ? 'Alive' : status === 'dead' ? 'Dead' : 'Seki';
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
-
-const stoneSelector = (surface: EndgameFloatingSurface): string =>
-  surface === 'cube'
-    ? '.cube-2d-stone[data-logical-point-id][data-occupancy]'
-    : '.torus-board__stone[data-logical-point-id][data-occupancy][data-copy-role="primary"]';
 
 const rectToBounds = (rect: DOMRect): Bounds =>
   Object.freeze({
@@ -109,12 +106,11 @@ const availableGameBounds = (): Bounds | null => {
 };
 
 const visibleStoneBounds = (
-  surface: EndgameFloatingSurface,
   available: Bounds,
   excludedPointIds: ReadonlySet<PointId>,
 ): readonly Bounds[] =>
   Object.freeze(
-    [...document.querySelectorAll<Element>(stoneSelector(surface))].flatMap((element) => {
+    [...document.querySelectorAll<Element>(RENDERED_STONE_SELECTOR)].flatMap((element) => {
       const pointId = element.getAttribute('data-logical-point-id');
       if (!pointId || excludedPointIds.has(pointId)) return [];
       const rect = element.getBoundingClientRect();
@@ -125,13 +121,12 @@ const visibleStoneBounds = (
   );
 
 const groupBounds = (
-  surface: EndgameFloatingSurface,
   pointIds: ReadonlySet<PointId>,
   available: Bounds,
 ): Bounds | null => {
   const rawRects: Bounds[] = [];
 
-  for (const element of document.querySelectorAll<Element>(stoneSelector(surface))) {
+  for (const element of document.querySelectorAll<Element>(RENDERED_STONE_SELECTOR)) {
     const pointId = element.getAttribute('data-logical-point-id');
     if (!pointId || !pointIds.has(pointId)) continue;
     const rect = element.getBoundingClientRect();
@@ -282,7 +277,6 @@ const positionControl = (
 };
 
 export interface EndgameGroupFloatingControlsProps {
-  readonly surface: EndgameFloatingSurface;
   readonly selectedGroup: EndgameGroupPresentation | null;
   readonly decisions: SharedEndgameDecisions;
   readonly onDecision: (groupId: string, status: GroupStatus) => void | Promise<void>;
@@ -296,7 +290,6 @@ export interface EndgameGroupFloatingControlsProps {
  * so the control follows zoom, pan and topology-specific navigation.
  */
 export function EndgameGroupFloatingControls({
-  surface,
   selectedGroup,
   decisions,
   onDecision,
@@ -317,7 +310,7 @@ export function EndgameGroupFloatingControls({
         return;
       }
 
-      const group = groupBounds(surface, selectedPointIds, available);
+      const group = groupBounds(selectedPointIds, available);
       const controlRect = control.getBoundingClientRect();
       if (!group || controlRect.width <= 0 || controlRect.height <= 0) {
         control.style.visibility = 'hidden';
@@ -330,7 +323,7 @@ export function EndgameGroupFloatingControls({
         available,
         controlRect.width,
         controlRect.height,
-        visibleStoneBounds(surface, available, selectedPointIds),
+        visibleStoneBounds(available, selectedPointIds),
       );
       control.style.left = `${position.left.toFixed(1)}px`;
       control.style.top = `${position.top.toFixed(1)}px`;
@@ -343,7 +336,7 @@ export function EndgameGroupFloatingControls({
     return () => {
       if (frame !== null) cancelAnimationFrame(frame);
     };
-  }, [selectedGroup, surface]);
+  }, [selectedGroup]);
 
   if (!selectedGroup || typeof document === 'undefined') return null;
 
