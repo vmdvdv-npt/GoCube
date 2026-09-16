@@ -4,7 +4,6 @@ set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PARENT="$(dirname -- "$ROOT")"
 ALPHAZERO_ROOT="${GOCUBE_ALPHAZERO_DIR:-$PARENT/gocube-alphazero}"
-ALPHAZERO_LAUNCHER="$ALPHAZERO_ROOT/dev-gocube"
 ALPHAZERO_PYTHON="$ALPHAZERO_ROOT/.venv/bin/python"
 ALPHAZERO_URL="http://127.0.0.1:8765"
 GOCUBE_URL="http://127.0.0.1:5173"
@@ -16,7 +15,6 @@ fail() {
 }
 
 [[ -d "$ALPHAZERO_ROOT" ]] || fail "sibling AlphaZero repository not found at $ALPHAZERO_ROOT"
-[[ -x "$ALPHAZERO_LAUNCHER" ]] || fail "missing executable $ALPHAZERO_LAUNCHER (pull the latest gocube-alphazero main)"
 [[ -x "$ALPHAZERO_PYTHON" ]] || fail "missing executable $ALPHAZERO_PYTHON"
 command -v npm >/dev/null 2>&1 || fail "npm is not available on PATH"
 
@@ -71,10 +69,13 @@ trap 'exit 143' TERM
 if service_healthy; then
   echo "GoCube dev launcher: reusing AlphaZero service at $ALPHAZERO_URL"
 else
-  echo "GoCube dev launcher: starting AlphaZero from $ALPHAZERO_ROOT"
+  echo "GoCube dev launcher: starting AlphaZero Protocol V1 from $ALPHAZERO_ROOT"
   (
     cd "$ALPHAZERO_ROOT"
-    exec "$ALPHAZERO_LAUNCHER"
+    exec "$ALPHAZERO_PYTHON" -m alphazero.envs.gocube.integration.server \
+      --checkpoint-dir "$ALPHAZERO_ROOT/runs" \
+      --host 127.0.0.1 \
+      --port 8765
   ) &
   ALPHAZERO_PID=$!
 
@@ -107,4 +108,4 @@ echo "GoCube dev launcher: Ctrl+C stops this development session"
   sleep 0.8
   open_browser "$GOCUBE_URL"
 ) &
-npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+npm run dev:ui -- --host 127.0.0.1 --port 5173 --strictPort
