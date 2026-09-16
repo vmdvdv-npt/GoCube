@@ -1,10 +1,11 @@
 import type { CSSProperties } from 'react';
 import type { EndgameClassification } from '../core/endgame/EndgameClassifier';
 import type { FinalScore } from '../core/scoring/Scoring';
-import type { PointId } from '../core/topology/Topology';
-import type {
-  EndgamePresentationModel,
-  EndgamePresentationShape,
+import {
+  ENDGAME_TERRITORY_MARKER_RADIUS_FRACTION,
+  ENDGAME_TERRITORY_MARKER_STYLES,
+  type EndgamePresentationModel,
+  type EndgamePresentationShape,
 } from '../presentation/EndgamePresentation';
 import type { Cube2DLayout } from '../presentation/cube/Cube2DLayout';
 import {
@@ -87,7 +88,10 @@ export function Cube2DVisualEffects({
   const contourSpacing = step * contentScale;
   const stoneRadius = step * 0.39 * contentScale;
   const contourWidth = endgameContourStrokeWidth(contourSpacing, stoneRadius);
-  const territoryRadius = Math.max(1.25, step * 0.115 * contentScale);
+  const territoryRadius = Math.max(
+    1.25,
+    step * ENDGAME_TERRITORY_MARKER_RADIUS_FRACTION * contentScale,
+  );
   const effectsStyle: EffectsStyle = { '--cube-2d-cell-size': `${layoutCellSize}px` };
   const captureArtworkPrefix = 'cube-2d-capture-artwork';
 
@@ -111,6 +115,7 @@ export function Cube2DVisualEffects({
             {board.points.map((point) => {
               const owner = effects.territory.get(point.pointId);
               if (!owner) return null;
+              const markerStyle = ENDGAME_TERRITORY_MARKER_STYLES[owner];
               const center = CUBE_2D_SVG_SIZE / 2;
               const displayX = center + (point.x - center) * contentScale;
               const displayY = center + (point.y - center) * contentScale;
@@ -121,9 +126,9 @@ export function Cube2DVisualEffects({
                   cx={displayX}
                   cy={displayY}
                   r={territoryRadius}
-                  fill={owner === 'black' ? '#111111' : '#ffffff'}
-                  stroke={owner === 'white' ? 'rgb(40 40 40 / 36%)' : 'none'}
-                  strokeWidth={owner === 'white' ? 0.55 : 0}
+                  fill={markerStyle.fill}
+                  stroke={markerStyle.stroke ?? 'none'}
+                  strokeWidth={markerStyle.stroke ? 0.55 : 0}
                   data-logical-point-id={point.pointId}
                   data-territory={owner}
                 />
