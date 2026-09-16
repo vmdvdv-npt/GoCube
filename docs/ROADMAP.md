@@ -43,7 +43,7 @@
 
 Версия **0.2 Cube 2D завершена и принята** по границе `0.2 integration / regression acceptance`.
 
-Активная разрабатываемая версия — **0.3 Automatic/Assisted alive-dead-seki**. Checkpoints **0.3.01 Library/Reuse Review и contract alignment**, **0.3.02 Deterministic Endgame Test Lab**, **0.3.03 Differential Oracles и Local AI Lab**, **0.3.04 Automatic Alive core**, **0.3.05 Automatic Dead core**, **0.3.06 Obvious/Proven Seki**, **0.3.07 Assisted Review Integration** и **0.3.08 Stress / Differential Hardening** завершены. Следующий активный checkpoint — **0.3 integration / regression acceptance**.
+Активная разрабатываемая версия — **0.3 Automatic/Assisted alive-dead-seki**. Checkpoints **0.3.01 Library/Reuse Review и contract alignment**, **0.3.02 Deterministic Endgame Test Infrastructure**, **0.3.03 Differential Oracles и Local AI Verification**, **0.3.04 Automatic Alive core**, **0.3.05 Automatic Dead core**, **0.3.06 Obvious/Proven Seki**, **0.3.07 Assisted Review Integration** и **0.3.08 Stress / Differential Hardening** завершены. Следующий активный checkpoint — **0.3 integration / regression acceptance**.
 
 ---
 
@@ -146,7 +146,7 @@
 - работа классификатора как с TorusTopology, так и с CubeTopology через общий topology-neutral contract;
 - ручной fallback для недоказанных или спорных случаев;
 - deterministic test-position generation для массовой проверки endgame logic;
-- developer test lab для воспроизведения, прогона и сравнения сгенерированных позиций;
+- automated deterministic replay/verification infrastructure для воспроизведения, прогона и сравнения test positions без пользовательского runtime Test Case/Test ID UI;
 - differential/oracle validation infrastructure, включая опциональный локальный AI-analysis path, не являющийся production dependency;
 - regression/fixture/property/stress coverage endgame-classification для обеих topology.
 
@@ -162,13 +162,13 @@ Cube 3D в 0.3 не входит. Cube-партии по-прежнему ста
    - завершить reuse review кандидатов для alive/dead/seki и test oracles;
    - привести фактический endgame flow к proposal/review boundary с возможностью `unresolved`, не меняя scoring formula и не привязывая classifier к конкретному UI.
 
-2. **0.3.02 — Deterministic Endgame Test Lab**
+2. **0.3.02 — Deterministic Endgame Test Infrastructure**
    - создать воспроизводимый генератор legal game/endgame positions;
    - создать генератор небольших life-and-death/seki patterns;
    - добавить topology-stress размещения для Torus seams и Cube edges/corners;
    - каждый generated case обязан иметь стабильный seed/fixture replay.
 
-3. **0.3.03 — Differential Oracles и Local AI Lab**
+3. **0.3.03 — Differential Oracles и Local AI Verification**
    - подключить независимые reference/oracle paths для тех классов позиций, где сравнение корректно;
    - добавить опциональную локальную analysis infrastructure для мощного desktop-компьютера разработчика;
    - production game не должна зависеть от наличия локального AI, внешней сети или стороннего сервиса.

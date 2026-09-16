@@ -77,9 +77,9 @@
 
 `GameSession → EndgameClassifier → EndgameReviewState → EndgameClassification → ScoringStrategy → FinalScore`
 
-Для optional developer verification 0.3 используется отдельный внешний путь, не входящий в production correctness chain:
+Для optional developer verification 0.3 используется отдельный внешний automated path, не входящий в production correctness chain:
 
-`Developer Test Lab → Oracle Adapter / LocalAnalysisClient → external oracle or CubeGoLocalAnalysisBridge → diagnostic result`
+`Automated acceptance / differential harness → Oracle Adapter / LocalAnalysisClient → external oracle or CubeGoLocalAnalysisBridge → diagnostic result`
 
 После получения полного результата `GameSession` запрашивает у доменной границы переход текущего `GameState` из `ENDGAME_REVIEW` в `FINISHED`; он не меняет phase напрямую.
 
@@ -1088,41 +1088,11 @@ Fixture может содержать:
 
 Один формат используется для Torus и Cube; topology-specific fixtures расширяют библиотеку, а не создают параллельные несовместимые test systems.
 
-## 19.10. Developer/debug renderer
+## 19.10. Automated developer verification boundary
 
-В development build существует диагностический renderer/mode, способный показывать internal mappings без создания отдельной игровой логики.
+В актуальной 0.3 interactive Endgame Test Lab не является частью runtime application. Developer verification выполняется через automated test/acceptance harnesses, deterministic fixtures/generators и optional oracle/local-analysis adapters.
 
-Он может отображать:
-
-- `PointId`;
-- logical neighbors;
-- group id/composition;
-- liberties;
-- connected empty regions;
-- territory/debug classification;
-- Cube face/layout/orientation mapping;
-- Cube presentation slot/view-intent mapping;
-- Torus passive-copy → source `PointId` mapping.
-
-Debug renderer не является пользовательской функцией и не определяет correctness.
-
-### 19.10.1. Endgame Test Lab
-
-0.3 developer mode расширяет diagnostic tooling до `Endgame Test Lab` или эквивалента с тем же смыслом. Это не часть обычного пользовательского gameplay UI.
-
-Lab должен позволять без ручной расстановки каждого stone:
-
-- сгенерировать позицию выбранным generator kind;
-- задать/увидеть seed и в точности воспроизвести case;
-- прогнать project classifier;
-- при доступности прогнать один или несколько oracle adapters;
-- при доступности локального bridge запросить KataGo/local AI analysis;
-- показать automatic/resolved/unresolved statuses и расхождения;
-- открыть конкретный failed seed повторно для ручного исследования.
-
-Предусматриваются как минимум логические presets `Quick`, `Full`, `Deep` или эквивалентные уровни объёма. Конкретные counts/time budgets являются test configuration, а не архитектурным инвариантом. Deep local run может использовать значительно больше desktop CPU/GPU, чем обязательный CI gate.
-
-Lab не является источником истины: он оркестрирует generators, classifier и independent diagnostics.
+Эта infrastructure остаётся вне production correctness chain и не добавляет пользовательский Test Case/Test ID runtime, compatibility replay surface или скрытый replacement generator. Воспроизводимость дефектов обеспечивается stable seed/fixture metadata и постоянными automated regression tests.
 
 # 20. Library / Reuse Policy
 
