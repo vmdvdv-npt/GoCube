@@ -20,19 +20,21 @@ Install JavaScript dependencies once:
 npm ci
 ```
 
-For ordinary GoCube-only development:
+Normal local development starts the complete GoCube + AlphaZero Development Workspace stack:
 
 ```bash
 npm run dev
 ```
 
-For the local GoCube + AlphaZero Development Workspace, keep `GoCube/` and `gocube-alphazero/` as sibling directories and run from the GoCube checkout:
+Keep `GoCube/` and `gocube-alphazero/` as sibling directories. The unified launcher starts or reuses the canonical AlphaZero Protocol V1 service from the sibling checkout, waits until `http://127.0.0.1:8765/v1/health` is ready, then starts GoCube on port 5173 and opens it in the browser. `Ctrl+C` stops the AlphaZero process started by that launcher. An alternate AlphaZero checkout can be supplied with `GOCUBE_ALPHAZERO_DIR=/path/to/gocube-alphazero npm run dev`.
+
+To start only the Vite UI without AlphaZero, for example for isolated frontend work:
 
 ```bash
-./dev
+npm run dev:ui
 ```
 
-The unified launcher starts/reuses the local AlphaZero Protocol V1 service, waits until it is ready, then starts GoCube on port 5173 and opens it in the browser. `Ctrl+C` stops the AlphaZero process started by that launcher. An alternate AlphaZero checkout can be supplied with `GOCUBE_ALPHAZERO_DIR=/path/to/gocube-alphazero ./dev`.
+The `./dev` launcher remains directly executable and is equivalent to the unified `npm run dev` workflow.
 
 Validation:
 
