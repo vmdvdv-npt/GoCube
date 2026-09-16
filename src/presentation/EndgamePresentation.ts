@@ -10,6 +10,8 @@ import {
 import { buildEndgameSekiRegions } from './EndgameSekiPresentation';
 import type { EndgameTerritoryOwner } from './EndgameTerritoryPresentation';
 
+export type { EndgamePresentationStatus } from './EndgameGroupPresentation';
+
 export interface EndgamePresentationStyle {
   readonly contourVisible: boolean;
   readonly contourColor: string | null;
@@ -44,6 +46,21 @@ export const ENDGAME_PRESENTATION_STYLES: Readonly<
     maskColor: null,
     maskOpacity: 0,
   }),
+});
+
+export interface EndgameTerritoryMarkerStyle {
+  readonly fill: string;
+  readonly stroke: string | null;
+}
+
+/** Geometry adapters convert this relative semantic size into their own coordinate units. */
+export const ENDGAME_TERRITORY_MARKER_RADIUS_FRACTION = 0.115;
+
+export const ENDGAME_TERRITORY_MARKER_STYLES: Readonly<
+  Record<EndgameTerritoryOwner, EndgameTerritoryMarkerStyle>
+> = Object.freeze({
+  black: Object.freeze({ fill: '#111111', stroke: null }),
+  white: Object.freeze({ fill: '#ffffff', stroke: 'rgb(40 40 40 / 36%)' }),
 });
 
 export interface EndgamePresentationGroup extends EndgameGroupRenderState {
@@ -177,12 +194,14 @@ export const buildEndgamePresentation = ({
   if (!sekiStyle.contourColor || !sekiStyle.maskColor) {
     throw new Error('Seki presentation style requires contour and mask colors');
   }
+  const sekiContourColor = sekiStyle.contourColor;
+  const sekiMaskColor = sekiStyle.maskColor;
   const sekiRegions: readonly EndgamePresentationSekiRegion[] = Object.freeze(
     rawSekiRegions.map((region) => Object.freeze({
       ...region,
       status: 'seki' as const,
-      contourColor: sekiStyle.contourColor!,
-      maskColor: sekiStyle.maskColor!,
+      contourColor: sekiContourColor,
+      maskColor: sekiMaskColor,
       maskOpacity: sekiStyle.maskOpacity,
       selected: region.groupIds.some((groupId) => groupId === selectedGroupId),
       hovered: region.groupIds.some((groupId) => groupId === hoveredGroupId),
