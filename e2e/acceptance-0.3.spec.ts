@@ -40,12 +40,17 @@ test('0.3 acceptance: Torus assisted fallback survives reload and completes scor
 
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
   await expect(page.locator('.endgame-progress')).toHaveText('Resolved 1 of 2');
-  await expect(page.locator('.endgame-selection .stone-chip--white')).toHaveCount(1);
+  await expect(statuses).toHaveCount(0);
+
+  // Review decisions are persisted; transient presentation selection is not.
+  await torusPoint(page, '0,0').click();
+  await expect(statuses.getByRole('button', { name: 'Alive', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
 
   await torusPoint(page, '4,4').click();
-  await page.getByRole('group', { name: 'Selected group status' })
-    .getByRole('button', { name: 'Seki', exact: true })
-    .click();
+  await statuses.getByRole('button', { name: 'Seki', exact: true }).click();
 
   await expect(page.locator('.endgame-progress')).toHaveText('Resolved 2 of 2');
   await expect(page.getByRole('dialog')).toHaveCount(0);
