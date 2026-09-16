@@ -1,11 +1,10 @@
-import type { GroupStatus } from '../core/endgame/EndgameClassifier';
 import { compareEndgamePointIds } from '../core/endgame/EndgameGroupIdentity';
 import type { StoneColor } from '../core/game/types';
 import type { PointId, Topology } from '../core/topology/Topology';
 
 export { endgameGroupId } from '../core/endgame/EndgameGroupIdentity';
 
-export type EndgameVisualStatus = GroupStatus | 'unknown';
+export type EndgamePresentationStatus = 'alive' | 'dead' | 'seki' | 'unresolved';
 
 export interface EndgameGroupEdge {
   readonly from: PointId;
@@ -19,8 +18,9 @@ export interface EndgameGroupPresentation {
   readonly edges: readonly EndgameGroupEdge[];
 }
 
+/** Renderer-facing group state. Missing decisions are normalized before this boundary. */
 export interface EndgameGroupRenderState extends EndgameGroupPresentation {
-  readonly status: EndgameVisualStatus | null;
+  readonly status: EndgamePresentationStatus;
 }
 
 export const buildEndgameGroupEdges = (
