@@ -21,7 +21,6 @@ export interface EndgameReviewController {
   endgameDecisions(): SharedEndgameDecisions;
   endgameTerritory(): ReadonlyMap<PointId, EndgameTerritoryOwner>;
   endgameManualGroupIds(): readonly string[];
-  nextUnresolvedEndgameGroupId(): string | null;
   canFinishEndgame(): boolean;
   setEndgameDecision(groupId: string, status: GroupStatus): Promise<void>;
   subscribeEndgameReviewReady(listener: EndgameReviewReadyListener): () => void;
@@ -44,9 +43,7 @@ export function useEndgameReview(
   const [decisions, setDecisions] = useState<SharedEndgameDecisions>(() =>
     initial.phase === 'endgame' ? controller.endgameDecisions() : {},
   );
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(() =>
-    initial.phase === 'endgame' ? controller.nextUnresolvedEndgameGroupId() : null,
-  );
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
   const [reviewReady, setReviewReady] = useState(
     initial.phase === 'endgame' && controller.endgameReviewReady(),
@@ -88,9 +85,7 @@ export function useEndgameReview(
     setManualGroupIds(ready ? controller.endgameManualGroupIds() : []);
     setCanFinish(controller.canFinishEndgame());
     setSelectedGroupId((current) =>
-      current && nextGroups.some((group) => group.id === current)
-        ? current
-        : controller.nextUnresolvedEndgameGroupId(),
+      current && nextGroups.some((group) => group.id === current) ? current : null,
     );
   }, [controller]);
 
