@@ -127,10 +127,7 @@ export function Cube2DPreview() {
             layout={g.layout}
             finalScore={g.vm.finalScore}
             finalClassification={g.finalClassification}
-            endgameGroups={g.groups}
-            decisions={g.decisions}
-            selectedGroupId={g.selectedGroup}
-            hoveredGroupId={g.hoveredGroup}
+            endgamePresentation={g.endgamePresentation}
             capturedStones={g.capturedEffects}
           />
         </div>
