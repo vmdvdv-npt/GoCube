@@ -28,11 +28,6 @@ export function EndgameReviewControls({
   onDecision,
   onFinish,
 }: EndgameReviewControlsProps) {
-  const surface =
-    typeof document !== 'undefined' && document.querySelector('.cube-2d-game')
-      ? 'cube'
-      : 'torus';
-
   return (
     <>
       <section className="endgame-panel" aria-labelledby={titleId}>
@@ -68,7 +63,6 @@ export function EndgameReviewControls({
       </section>
 
       <EndgameGroupFloatingControls
-        surface={surface}
         selectedGroup={reviewReady ? selectedGroup : null}
         decisions={decisions}
         onDecision={onDecision}
