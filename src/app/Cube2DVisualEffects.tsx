@@ -1,14 +1,12 @@
 import type { CSSProperties } from 'react';
-import type { EndgameClassification, GroupStatus } from '../core/endgame/EndgameClassifier';
+import type { EndgameClassification } from '../core/endgame/EndgameClassifier';
 import type { FinalScore } from '../core/scoring/Scoring';
-import { CubeTopology } from '../core/topology/CubeTopology';
-import type { PointId, Topology } from '../core/topology/Topology';
-import type {
-  EndgameGroupPresentation,
-  EndgameGroupRenderState,
-  EndgameVisualStatus,
-} from '../presentation/EndgameGroupPresentation';
-import { buildEndgameSekiRegions } from '../presentation/EndgameSekiPresentation';
+import {
+  ENDGAME_TERRITORY_MARKER_RADIUS_FRACTION,
+  ENDGAME_TERRITORY_MARKER_STYLES,
+  type EndgamePresentationModel,
+  type EndgamePresentationShape,
+} from '../presentation/EndgamePresentation';
 import type { Cube2DLayout } from '../presentation/cube/Cube2DLayout';
 import {
   CUBE_2D_CAPTURE_FLIGHT_MS,
@@ -36,12 +34,8 @@ interface Cube2DVisualEffectsProps {
   readonly layout: Cube2DLayout;
   readonly layoutCellSize?: number;
   readonly finalScore: FinalScore | null;
-  readonly provisionalTerritory?: ReadonlyMap<PointId, 'black' | 'white'>;
   readonly finalClassification?: EndgameClassification | null;
-  readonly endgameGroups?: readonly EndgameGroupPresentation[];
-  readonly decisions?: Readonly<Partial<Record<string, GroupStatus>>>;
-  readonly selectedGroupId?: string | null;
-  readonly hoveredGroupId?: string | null;
+  readonly endgamePresentation?: EndgamePresentationModel | null;
   readonly capturedStones?: readonly CapturedStoneEffect[];
 }
 
@@ -50,78 +44,9 @@ type EffectsStyle = CSSProperties & {
 };
 
 type BoardPoint = ReturnType<typeof createCube2DRenderModel>['boards'][number]['points'][number];
-type GroupShape = Pick<EndgameGroupPresentation, 'points' | 'edges'>;
-type ContourStatus = 'dead' | 'seki' | 'unresolved';
-type StoneColor = EndgameGroupPresentation['color'];
-type ContourBundle = Readonly<{
-  status: ContourStatus;
-  color: StoneColor;
-  groupIds: readonly string[];
-  shape: GroupShape;
-}>;
-
-const contourStatus = (status: EndgameVisualStatus | null): ContourStatus | null => {
-  if (status === 'alive') return null;
-  if (status === 'dead') return 'dead';
-  if (status === 'seki') return 'seki';
-  return 'unresolved';
-};
-
-const contourColor = (status: ContourStatus): string => {
-  if (status === 'dead') return '#e52b2b';
-  if (status === 'seki') return '#80878f';
-  return '#f8cf4d';
-};
-
-const mergedContourShape = (
-  groups: readonly GroupShape[],
-  topology: Topology,
-): GroupShape => {
-  const points = [...new Set(groups.flatMap((group) => group.points))];
-  const pointSet = new Set(points);
-  const edges = new Map<string, Readonly<{ from: PointId; to: PointId }>>();
-
-  for (const from of points) {
-    for (const to of topology.neighbors(from)) {
-      if (!pointSet.has(to) || from === to) continue;
-      const first = from < to ? from : to;
-      const second = from < to ? to : from;
-      const key = `${first}\u0000${second}`;
-      if (!edges.has(key)) edges.set(key, Object.freeze({ from: first, to: second }));
-    }
-  }
-
-  return Object.freeze({
-    points: Object.freeze(points),
-    edges: Object.freeze([...edges.values()]),
-  });
-};
-
-const contourBundles = (
-  groups: readonly EndgameGroupRenderState[],
-  topology: Topology,
-): readonly ContourBundle[] =>
-  Object.freeze(
-    (['dead', 'unresolved', 'seki'] as const).flatMap((status) =>
-      (['black', 'white'] as const).flatMap((color) => {
-        const matching = groups.filter(
-          (group) => contourStatus(group.status) === status && group.color === color,
-        );
-        if (matching.length === 0) return [];
-        return [
-          Object.freeze({
-            status,
-            color,
-            groupIds: Object.freeze(matching.map((group) => group.id)),
-            shape: mergedContourShape(matching, topology),
-          }),
-        ];
-      }),
-    ),
-  );
 
 const contourPathForBoard = (
-  shape: GroupShape,
+  shape: EndgamePresentationShape,
   boardPoints: readonly BoardPoint[],
   step: number,
   contentScale: number,
@@ -146,48 +71,27 @@ export function Cube2DVisualEffects({
   layout,
   layoutCellSize = CUBE_2D_BASE_CELL_SIZE,
   finalScore,
-  provisionalTerritory = new Map(),
   finalClassification = null,
-  endgameGroups = [],
-  decisions = {},
-  selectedGroupId = null,
-  hoveredGroupId = null,
+  endgamePresentation = null,
   capturedStones = [],
 }: Cube2DVisualEffectsProps) {
   const renderModel = createCube2DRenderModel(layout);
   const effects = createCube2DVisualEffectsModel({
     finalScore,
-    provisionalTerritory,
+    provisionalTerritory: endgamePresentation?.territory,
     finalClassification,
-    endgameGroups,
-    decisions,
-    selectedGroupId,
-    hoveredGroupId,
     capturedStones,
   });
-  const groupStates: readonly EndgameGroupRenderState[] = Object.freeze(
-    endgameGroups.map((group) => {
-      const firstPointId = group.points[0];
-      const status = firstPointId
-        ? effects.pointStatuses.get(firstPointId)?.groupStatus ?? null
-        : null;
-      return Object.freeze({ ...group, status });
-    }),
-  );
-  const topology = new CubeTopology(renderModel.size);
-  const sekiRegions = buildEndgameSekiRegions(groupStates, topology);
-  const sekiGroupIds = new Set(sekiRegions.flatMap((region) => region.groupIds));
-  const regularBundles = contourBundles(
-    groupStates.filter((group) => !sekiGroupIds.has(group.id)),
-    topology,
-  );
   const size = renderModel.size;
   const step = CUBE_2D_SVG_SIZE / size;
   const contentScale = cube2DContentScale(size);
   const contourSpacing = step * contentScale;
   const stoneRadius = step * 0.39 * contentScale;
   const contourWidth = endgameContourStrokeWidth(contourSpacing, stoneRadius);
-  const territoryRadius = Math.max(1.25, step * 0.115 * contentScale);
+  const territoryRadius = Math.max(
+    1.25,
+    step * ENDGAME_TERRITORY_MARKER_RADIUS_FRACTION * contentScale,
+  );
   const effectsStyle: EffectsStyle = { '--cube-2d-cell-size': `${layoutCellSize}px` };
   const captureArtworkPrefix = 'cube-2d-capture-artwork';
 
@@ -211,6 +115,7 @@ export function Cube2DVisualEffects({
             {board.points.map((point) => {
               const owner = effects.territory.get(point.pointId);
               if (!owner) return null;
+              const markerStyle = ENDGAME_TERRITORY_MARKER_STYLES[owner];
               const center = CUBE_2D_SVG_SIZE / 2;
               const displayX = center + (point.x - center) * contentScale;
               const displayY = center + (point.y - center) * contentScale;
@@ -221,9 +126,9 @@ export function Cube2DVisualEffects({
                   cx={displayX}
                   cy={displayY}
                   r={territoryRadius}
-                  fill={owner === 'black' ? '#111111' : '#ffffff'}
-                  stroke={owner === 'white' ? 'rgb(40 40 40 / 36%)' : 'none'}
-                  strokeWidth={owner === 'white' ? 0.55 : 0}
+                  fill={markerStyle.fill}
+                  stroke={markerStyle.stroke ?? 'none'}
+                  strokeWidth={markerStyle.stroke ? 0.55 : 0}
                   data-logical-point-id={point.pointId}
                   data-territory={owner}
                 />
@@ -232,23 +137,23 @@ export function Cube2DVisualEffects({
           </g>
 
           <g className="cube-2d-effects__groups">
-            {regularBundles.map((bundle) => {
-              const path = contourPathForBoard(bundle.shape, board.points, step, contentScale);
+            {endgamePresentation?.contours.map((contour) => {
+              const path = contourPathForBoard(contour, board.points, step, contentScale);
               if (!path) return null;
               return (
                 <g
-                  key={`bundle:${bundle.status}:${bundle.color}`}
-                  className={`cube-2d-group-contour cube-2d-group-contour--${bundle.status}`}
-                  data-endgame-group-ids={bundle.groupIds.join(' ')}
-                  data-group-status={bundle.status}
-                  data-group-color={bundle.color}
+                  key={`bundle:${contour.status}:${contour.color}`}
+                  className={`cube-2d-group-contour cube-2d-group-contour--${contour.status}${contour.selected ? ' is-selected' : ''}${contour.hovered ? ' is-hovered' : ''}`}
+                  data-endgame-group-ids={contour.groupIds.join(' ')}
+                  data-group-status={contour.status}
+                  data-group-color={contour.color}
                   pointerEvents="none"
                 >
                   <path
                     className="cube-2d-group-contour__outline-source"
                     d={path}
                     fill="none"
-                    stroke={contourColor(bundle.status)}
+                    stroke={contour.contourColor}
                     strokeWidth={contourWidth}
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -257,15 +162,13 @@ export function Cube2DVisualEffects({
               );
             })}
 
-            {sekiRegions.map((region) => {
+            {endgamePresentation?.sekiRegions.map((region) => {
               const path = contourPathForBoard(region, board.points, step, contentScale);
               if (!path) return null;
-              const selected = selectedGroupId !== null && region.groupIds.includes(selectedGroupId);
-              const hovered = hoveredGroupId !== null && region.groupIds.includes(hoveredGroupId);
               return (
                 <g
                   key={`seki-region:${region.id}`}
-                  className={`cube-2d-group-contour cube-2d-group-contour--seki${selected ? ' is-selected' : ''}${hovered ? ' is-hovered' : ''}`}
+                  className={`cube-2d-group-contour cube-2d-group-contour--seki${region.selected ? ' is-selected' : ''}${region.hovered ? ' is-hovered' : ''}`}
                   data-endgame-seki-region-id={region.id}
                   data-endgame-group-ids={region.groupIds.join(' ')}
                   data-group-status="seki"
@@ -274,15 +177,15 @@ export function Cube2DVisualEffects({
                   <path
                     className="cube-2d-seki-mask"
                     d={path}
-                    fill="#80878f"
+                    fill={region.maskColor}
                     fillRule="evenodd"
-                    opacity={0.6}
+                    opacity={region.maskOpacity}
                   />
                   <path
                     className="cube-2d-group-contour__outline-source"
                     d={path}
                     fill="none"
-                    stroke="#80878f"
+                    stroke={region.contourColor}
                     strokeWidth={contourWidth}
                     strokeLinecap="round"
                     strokeLinejoin="round"

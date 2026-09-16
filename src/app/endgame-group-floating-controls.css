@@ -1,15 +1,3 @@
-.endgame-selection {
-  display: contents;
-}
-
-.endgame-selection__identity {
-  display: none !important;
-}
-
-.endgame-selection > .endgame-statuses:not([data-floating-endgame-control='true']) {
-  display: none;
-}
-
 .endgame-statuses[data-floating-endgame-control='true'] {
   position: fixed;
   z-index: 1000;

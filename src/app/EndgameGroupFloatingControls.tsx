@@ -1,16 +1,10 @@
 import { useEffect, useRef } from 'react';
-import type { PointId, Topology } from '../core/topology/Topology';
-import { CubeTopology } from '../core/topology/CubeTopology';
-import { TORUS_SIZES, TorusTopology, type TorusSize } from '../core/topology/TorusTopology';
+import { createPortal } from 'react-dom';
+import type { GroupStatus } from '../core/endgame/EndgameClassifier';
+import type { PointId } from '../core/topology/Topology';
+import type { EndgameGroupPresentation } from '../presentation/EndgameGroupPresentation';
+import type { SharedEndgameDecisions } from './GameSessionControllerFacade';
 import './endgame-group-floating-controls.css';
-
-type SurfaceMode = 'torus' | 'cube';
-type StoneColor = 'black' | 'white';
-
-type GroupSelection = Readonly<{
-  mode: SurfaceMode;
-  pointIds: readonly PointId[];
-}>;
 
 type Bounds = Readonly<{
   left: number;
@@ -29,102 +23,19 @@ type PositionedControl = Readonly<{
   placement: Placement;
 }>;
 
+const ENDGAME_STATUSES: readonly GroupStatus[] = Object.freeze(['alive', 'dead', 'seki']);
 const CONTROL_GAP_PX = 10;
 const VIEWPORT_INSET_PX = 8;
+const RENDERED_STONE_SELECTOR = [
+  '.cube-2d-stone[data-logical-point-id][data-occupancy]',
+  '.torus-board__stone[data-logical-point-id][data-occupancy][data-copy-role="primary"]',
+].join(', ');
+
+const statusLabel = (status: GroupStatus): string =>
+  status === 'alive' ? 'Alive' : status === 'dead' ? 'Dead' : 'Seki';
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
-
-const surfaceMode = (): SurfaceMode =>
-  document.querySelector('.cube-2d-game') ? 'cube' : 'torus';
-
-const stoneSelector = (mode: SurfaceMode): string =>
-  mode === 'cube'
-    ? '.cube-2d-stone[data-logical-point-id][data-occupancy]'
-    : '.torus-board__stone[data-logical-point-id][data-occupancy][data-copy-role="primary"]';
-
-const hitTargetSelector = (mode: SurfaceMode): string =>
-  mode === 'cube'
-    ? '.cube-2d-hit-area[data-point-id]'
-    : '.torus-board__hit-target[data-logical-point-id][data-copy-role="primary"]';
-
-const occupancyForMode = (mode: SurfaceMode): ReadonlyMap<PointId, StoneColor> => {
-  const occupancy = new Map<PointId, StoneColor>();
-  for (const element of document.querySelectorAll<Element>(stoneSelector(mode))) {
-    const pointId = element.getAttribute('data-logical-point-id');
-    const color = element.getAttribute('data-occupancy');
-    if (!pointId || (color !== 'black' && color !== 'white')) continue;
-    occupancy.set(pointId, color);
-  }
-  return occupancy;
-};
-
-const cubeSize = (): number | null => {
-  const value = Number(
-    document.querySelector('.cube-2d-renderer')?.getAttribute('data-cube-size'),
-  );
-  return Number.isSafeInteger(value) && value >= 2 ? value : null;
-};
-
-const torusSize = (): TorusSize | null => {
-  const primaryPointCount = document.querySelectorAll(
-    '.torus-board__hit-target[data-copy-role="primary"]',
-  ).length;
-  const value = Math.round(Math.sqrt(primaryPointCount));
-  return TORUS_SIZES.includes(value as TorusSize) ? (value as TorusSize) : null;
-};
-
-const topologyForMode = (mode: SurfaceMode): Topology | null => {
-  if (mode === 'cube') {
-    const size = cubeSize();
-    return size === null ? null : new CubeTopology(size);
-  }
-
-  const size = torusSize();
-  return size === null ? null : new TorusTopology(size);
-};
-
-const logicalGroupForPoint = (pointId: PointId): GroupSelection | null => {
-  if (!document.querySelector('.endgame-panel')) return null;
-
-  const mode = surfaceMode();
-  const occupancy = occupancyForMode(mode);
-  const color = occupancy.get(pointId);
-  const topology = topologyForMode(mode);
-  if (!color || !topology?.has(pointId)) return null;
-
-  const points: PointId[] = [];
-  const visited = new Set<PointId>();
-  const queue: PointId[] = [pointId];
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current || visited.has(current)) continue;
-    visited.add(current);
-    if (occupancy.get(current) !== color) continue;
-    points.push(current);
-
-    for (const neighbor of topology.neighbors(current)) {
-      if (!visited.has(neighbor) && occupancy.get(neighbor) === color) queue.push(neighbor);
-    }
-  }
-
-  return points.length > 0
-    ? Object.freeze({ mode, pointIds: Object.freeze(points) })
-    : null;
-};
-
-const pointIdFromClick = (target: EventTarget | null): PointId | null => {
-  if (!(target instanceof Element)) return null;
-  const element = target.closest(
-    '[data-logical-point-id], .cube-2d-hit-area[data-point-id]',
-  );
-  return (
-    element?.getAttribute('data-logical-point-id') ??
-    element?.getAttribute('data-point-id') ??
-    null
-  );
-};
 
 const rectToBounds = (rect: DOMRect): Bounds =>
   Object.freeze({
@@ -175,15 +86,13 @@ const availableGameBounds = (): Bounds | null => {
   const gameRect = game.getBoundingClientRect();
   const sidebarRect = document.querySelector<HTMLElement>('.game-summary')?.getBoundingClientRect();
   const columnGap = Number.parseFloat(getComputedStyle(game).columnGap || '0') || 0;
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
   const left = Math.max(
     VIEWPORT_INSET_PX,
     sidebarRect ? sidebarRect.right + columnGap : gameRect.left,
   );
   const top = Math.max(VIEWPORT_INSET_PX, gameRect.top);
-  const right = Math.min(viewportWidth - VIEWPORT_INSET_PX, gameRect.right);
-  const bottom = Math.min(viewportHeight - VIEWPORT_INSET_PX, gameRect.bottom);
+  const right = Math.min(window.innerWidth - VIEWPORT_INSET_PX, gameRect.right);
+  const bottom = Math.min(window.innerHeight - VIEWPORT_INSET_PX, gameRect.bottom);
 
   if (right <= left || bottom <= top) return null;
   return Object.freeze({
@@ -196,9 +105,14 @@ const availableGameBounds = (): Bounds | null => {
   });
 };
 
-const visibleStoneBounds = (mode: SurfaceMode, available: Bounds): readonly Bounds[] =>
+const visibleStoneBounds = (
+  available: Bounds,
+  excludedPointIds: ReadonlySet<PointId>,
+): readonly Bounds[] =>
   Object.freeze(
-    [...document.querySelectorAll<Element>(stoneSelector(mode))].flatMap((element) => {
+    [...document.querySelectorAll<Element>(RENDERED_STONE_SELECTOR)].flatMap((element) => {
+      const pointId = element.getAttribute('data-logical-point-id');
+      if (!pointId || excludedPointIds.has(pointId)) return [];
       const rect = element.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return [];
       const visible = intersectBounds(rectToBounds(rect), available);
@@ -206,31 +120,13 @@ const visibleStoneBounds = (mode: SurfaceMode, available: Bounds): readonly Boun
     }),
   );
 
-const interactionObstacleBounds = (
-  selection: GroupSelection,
+const groupBounds = (
+  pointIds: ReadonlySet<PointId>,
   available: Bounds,
-): readonly Bounds[] => {
-  const occupancy = occupancyForMode(selection.mode);
-  const selectedPoints = new Set(selection.pointIds);
-  const hitAreas = [...document.querySelectorAll<Element>(hitTargetSelector(selection.mode))].flatMap(
-    (element) => {
-      const pointId =
-        element.getAttribute('data-logical-point-id') ?? element.getAttribute('data-point-id');
-      if (!pointId || selectedPoints.has(pointId) || !occupancy.has(pointId)) return [];
-      const rect = element.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return [];
-      const visible = intersectBounds(rectToBounds(rect), available);
-      return visible ? [visible] : [];
-    },
-  );
-  return Object.freeze([...visibleStoneBounds(selection.mode, available), ...hitAreas]);
-};
-
-const groupBounds = (selection: GroupSelection, available: Bounds): Bounds | null => {
-  const pointIds = new Set(selection.pointIds);
+): Bounds | null => {
   const rawRects: Bounds[] = [];
 
-  for (const element of document.querySelectorAll<Element>(stoneSelector(selection.mode))) {
+  for (const element of document.querySelectorAll<Element>(RENDERED_STONE_SELECTOR)) {
     const pointId = element.getAttribute('data-logical-point-id');
     if (!pointId || !pointIds.has(pointId)) continue;
     const rect = element.getBoundingClientRect();
@@ -380,117 +276,96 @@ const positionControl = (
   return Object.freeze({ placement: best.placement, left: best.left, top: best.top });
 };
 
-const clearFloatingState = (control: HTMLElement): void => {
-  control.removeAttribute('data-floating-endgame-control');
-  control.removeAttribute('data-placement');
-  control.removeAttribute('data-group-point-count');
-  control.removeAttribute('data-testid');
-  control.style.removeProperty('left');
-  control.style.removeProperty('top');
-  control.style.removeProperty('visibility');
-};
-
-const hideAllFloatingControls = (): void => {
-  for (const control of document.querySelectorAll<HTMLElement>(
-    '.endgame-statuses[data-floating-endgame-control="true"]',
-  )) {
-    clearFloatingState(control);
-  }
-};
-
-const syncFloatingControl = (selection: GroupSelection): boolean => {
-  if (!document.querySelector('.endgame-panel')) return false;
-  const control = document.querySelector<HTMLElement>(
-    '.endgame-selection .endgame-statuses',
-  );
-  const available = availableGameBounds();
-  if (!control || !available) return false;
-
-  control.setAttribute('data-floating-endgame-control', 'true');
-  control.setAttribute('data-testid', 'endgame-group-control');
-  control.setAttribute('data-group-point-count', String(selection.pointIds.length));
-  if (control.getAttribute('data-floating-wheel-guard') !== 'true') {
-    control.setAttribute('data-floating-wheel-guard', 'true');
-    control.addEventListener('wheel', (event) => event.stopPropagation());
-  }
-
-  control.style.visibility = 'hidden';
-  const controlRect = control.getBoundingClientRect();
-  const group = groupBounds(selection, available);
-  if (!group || controlRect.width <= 0 || controlRect.height <= 0) {
-    control.style.visibility = 'visible';
-    return true;
-  }
-
-  const position = positionControl(
-    group,
-    available,
-    controlRect.width,
-    controlRect.height,
-    interactionObstacleBounds(selection, available),
-  );
-  control.style.left = `${position.left.toFixed(1)}px`;
-  control.style.top = `${position.top.toFixed(1)}px`;
-  control.setAttribute('data-placement', position.placement);
-  control.style.visibility = 'visible';
-  return true;
-};
+export interface EndgameGroupFloatingControlsProps {
+  readonly selectedGroup: EndgameGroupPresentation | null;
+  readonly decisions: SharedEndgameDecisions;
+  readonly onDecision: (groupId: string, status: GroupStatus) => void | Promise<void>;
+}
 
 /**
- * Presentation-only bridge that spatially attaches the existing Endgame Review
- * status controls to the logical group selected on the board. The real buttons
- * stay owned by TorusGameBase/Cube2DGame, so controller, autosave and manual
- * override semantics remain unchanged.
+ * Screen-space group-local endgame controls.
+ *
+ * Logical identity comes exclusively from the shared review state. DOM is used
+ * only to measure the current renderer projection of those already-known PointIds
+ * so the control follows zoom, pan and topology-specific navigation.
  */
-export function EndgameGroupFloatingControls() {
-  const selectionRef = useRef<GroupSelection | null>(null);
-  const frameRef = useRef<number | null>(null);
+export function EndgameGroupFloatingControls({
+  selectedGroup,
+  decisions,
+  onDecision,
+}: EndgameGroupFloatingControlsProps) {
+  const controlRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const stopTracking = (): void => {
-      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
-      frameRef.current = null;
-      selectionRef.current = null;
-      hideAllFloatingControls();
-    };
+    if (!selectedGroup) return undefined;
 
-    const track = (): void => {
-      const selection = selectionRef.current;
-      if (!selection || !syncFloatingControl(selection)) {
-        stopTracking();
-        return;
-      }
-      frameRef.current = requestAnimationFrame(track);
-    };
+    const selectedPointIds = new Set<PointId>(selectedGroup.points);
+    let frame: number | null = null;
 
-    const startTracking = (): void => {
-      if (frameRef.current !== null) return;
-      frameRef.current = requestAnimationFrame(track);
-    };
-
-    const handleDocumentClick = (event: MouseEvent): void => {
-      const target = event.target;
-      if (
-        target instanceof Element &&
-        target.closest('.endgame-statuses[data-floating-endgame-control="true"]')
-      ) {
+    const syncPosition = (): void => {
+      const control = controlRef.current;
+      const available = availableGameBounds();
+      if (!control || !available) {
+        frame = requestAnimationFrame(syncPosition);
         return;
       }
 
-      const pointId = pointIdFromClick(target);
-      if (!pointId) return;
-      const selection = logicalGroupForPoint(pointId);
-      if (!selection) return;
-      selectionRef.current = selection;
-      startTracking();
+      const group = groupBounds(selectedPointIds, available);
+      const controlRect = control.getBoundingClientRect();
+      if (!group || controlRect.width <= 0 || controlRect.height <= 0) {
+        control.style.visibility = 'hidden';
+        frame = requestAnimationFrame(syncPosition);
+        return;
+      }
+
+      const position = positionControl(
+        group,
+        available,
+        controlRect.width,
+        controlRect.height,
+        visibleStoneBounds(available, selectedPointIds),
+      );
+      control.style.left = `${position.left.toFixed(1)}px`;
+      control.style.top = `${position.top.toFixed(1)}px`;
+      control.style.visibility = 'visible';
+      control.dataset.placement = position.placement;
+      frame = requestAnimationFrame(syncPosition);
     };
 
-    document.addEventListener('click', handleDocumentClick);
+    frame = requestAnimationFrame(syncPosition);
     return () => {
-      document.removeEventListener('click', handleDocumentClick);
-      stopTracking();
+      if (frame !== null) cancelAnimationFrame(frame);
     };
-  }, []);
+  }, [selectedGroup]);
 
-  return null;
+  if (!selectedGroup || typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div
+      ref={controlRef}
+      className="endgame-statuses"
+      role="group"
+      aria-label="Selected group status"
+      data-testid="endgame-group-control"
+      data-floating-endgame-control="true"
+      data-group-point-count={selectedGroup.points.length}
+      style={{ visibility: 'hidden' }}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+      onWheel={(event) => event.stopPropagation()}
+    >
+      {ENDGAME_STATUSES.map((status) => (
+        <button
+          type="button"
+          key={status}
+          className={decisions[selectedGroup.id] === status ? 'is-selected' : undefined}
+          aria-pressed={decisions[selectedGroup.id] === status}
+          onClick={() => void onDecision(selectedGroup.id, status)}
+        >
+          {statusLabel(status)}
+        </button>
+      ))}
+    </div>,
+    document.body,
+  );
 }

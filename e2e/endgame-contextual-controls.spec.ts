@@ -67,6 +67,8 @@ test('Torus Endgame Review shows one screen-space status control beside the clic
   await seki.click();
   await expect(seki).toHaveAttribute('aria-pressed', 'true');
   await expect(control).toHaveCount(1);
+  await expect(page.locator('.torus-board__endgame-lines')).toHaveCount(0);
+  await expect(page.locator('.torus-board__group-contour--seki')).toHaveCount(1);
 
   const seamControlBox = await control.boundingBox();
   await torusPoint(page, '4,0').click();
