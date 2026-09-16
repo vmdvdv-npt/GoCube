@@ -70,7 +70,7 @@ const contourStatus = (status: EndgameVisualStatus | null): ContourStatus | null
 const contourColor = (status: ContourStatus): string => {
   if (status === 'dead') return '#e52b2b';
   if (status === 'seki') return '#80878f';
-  return '#a8e85e';
+  return '#f8cf4d';
 };
 
 const mergedContourShape = (
