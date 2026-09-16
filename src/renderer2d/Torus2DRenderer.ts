@@ -36,6 +36,9 @@ const setAttributes = (
   for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
 };
 
+const canonicalCellCoordinate = (value: number): number =>
+  Object.is(value, -0) ? 0 : value;
+
 export interface Torus2DEndgameContourCell {
   readonly column: number;
   readonly row: number;
@@ -50,7 +53,10 @@ export const torus2DEndgameContourCells = (
   return Object.freeze(
     scene.visualPoints.flatMap((point) =>
       pointIds.has(point.logicalPointId)
-        ? [Object.freeze({ column: point.visualColumn, row: point.visualRow })]
+        ? [Object.freeze({
+            column: canonicalCellCoordinate(point.visualColumn),
+            row: canonicalCellCoordinate(point.visualRow),
+          })]
         : [],
     ),
   );
