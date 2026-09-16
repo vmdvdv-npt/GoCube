@@ -1,9 +1,11 @@
 export * from './Torus2DRendererBase';
 
 import type { PointId } from '../core/topology/Topology';
-import type {
-  EndgamePresentationModel,
-  EndgamePresentationShape,
+import {
+  ENDGAME_TERRITORY_MARKER_RADIUS_FRACTION,
+  ENDGAME_TERRITORY_MARKER_STYLES,
+  type EndgamePresentationModel,
+  type EndgamePresentationShape,
 } from '../presentation/EndgamePresentation';
 import type { GameViewModel } from '../presentation/PresentationModel';
 import {
@@ -34,16 +36,31 @@ const setAttributes = (
   for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
 };
 
+export interface Torus2DEndgameContourCell {
+  readonly column: number;
+  readonly row: number;
+}
+
+/** Torus-only adapter: logical presentation shape -> current wrapped scene cells. */
+export const torus2DEndgameContourCells = (
+  scene: Torus2DScene,
+  shape: EndgamePresentationShape,
+): readonly Torus2DEndgameContourCell[] => {
+  const pointIds = new Set(shape.points);
+  return Object.freeze(
+    scene.visualPoints.flatMap((point) =>
+      pointIds.has(point.logicalPointId)
+        ? [Object.freeze({ column: point.visualColumn, row: point.visualRow })]
+        : [],
+    ),
+  );
+};
+
 const contourPathForScene = (
   scene: Torus2DScene,
   shape: EndgamePresentationShape,
 ): string => {
-  const pointIds = new Set(shape.points);
-  const cells = scene.visualPoints.flatMap((point) =>
-    pointIds.has(point.logicalPointId)
-      ? [{ column: point.visualColumn, row: point.visualRow }]
-      : [],
-  );
+  const cells = torus2DEndgameContourCells(scene, shape);
   if (cells.length === 0) return '';
 
   return buildEndgameContourPath(cells, {
@@ -158,18 +175,22 @@ export class Torus2DRenderer extends BaseTorus2DRenderer {
     if (territory && territory.size > 0) {
       const territoryLayer = document.createElementNS(SVG_NS, 'g');
       territoryLayer.setAttribute('class', 'torus-board__endgame-territory');
-      const dotRadius = Math.max(4, scene.spacing * 0.115);
+      const dotRadius = Math.max(
+        4,
+        scene.spacing * ENDGAME_TERRITORY_MARKER_RADIUS_FRACTION,
+      );
       for (const [pointId, owner] of territory) {
         const point = pointsById.get(pointId);
         if (!point) continue;
+        const markerStyle = ENDGAME_TERRITORY_MARKER_STYLES[owner];
         const dot = document.createElementNS(SVG_NS, 'circle');
         setAttributes(dot, {
           cx: String(point.x),
           cy: String(point.y),
           r: String(dotRadius),
-          fill: owner === 'black' ? '#111111' : '#ffffff',
-          stroke: owner === 'white' ? 'rgb(40 40 40 / 36%)' : 'none',
-          'stroke-width': owner === 'white' ? '1' : '0',
+          fill: markerStyle.fill,
+          stroke: markerStyle.stroke ?? 'none',
+          'stroke-width': markerStyle.stroke ? '1' : '0',
           'data-logical-point-id': pointId,
           'data-territory-owner': owner,
           class: `torus-board__territory-dot torus-board__territory-dot--${owner}`,
