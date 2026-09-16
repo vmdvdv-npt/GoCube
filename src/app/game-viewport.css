@@ -42,6 +42,10 @@
   transition: transform 120ms ease-out;
 }
 
+.torus-game[data-animation-mode='disabled'] .torus-board__capture-effects {
+  display: none;
+}
+
 .cube-2d-game__board-shell {
   align-self: stretch;
   justify-self: stretch;

@@ -1,21 +1,20 @@
 import type { GroupStatus } from '../core/endgame/EndgameClassifier';
 import type { FinalProofSearchProgressSource } from '../core/endgame/FinalProofSearchRunController';
-import type {
-  GameSessionPersistenceConfig,
-  GameSessionRejectionReason,
-} from '../core/game/GameSession';
+import type { GameSessionPersistenceConfig } from '../core/game/GameSession';
 import type { RuleSet } from '../core/game/types';
 import type { GameSessionSnapshot } from '../core/persistence/GameSessionSnapshot';
 import type { PointId } from '../core/topology/Topology';
 import { TORUS_SIZES, TorusTopology, type TorusSize } from '../core/topology/TorusTopology';
-import type { EndgameGroupPresentation } from '../presentation/EndgameGroupPresentation';
 import type { EndgameTerritoryOwner } from '../presentation/EndgameTerritoryPresentation';
 import type { GameResultViewModel } from '../presentation/GameResultModel';
 import type { GameViewModel } from '../presentation/PresentationModel';
 import {
   GameSessionControllerFacade,
   type EndgameReviewReadyListener,
+  type SharedEndgameDecisions,
+  type SharedEndgameGroup,
   type SharedGameActionResult,
+  type SharedMoveAvailability,
 } from './GameSessionControllerFacade';
 
 export interface TorusGameControllerOptions {
@@ -26,25 +25,17 @@ export interface TorusGameControllerOptions {
   readonly snapshot?: GameSessionSnapshot;
 }
 
-export interface TorusGameActionResult {
-  readonly accepted: boolean;
-  readonly reason: GameSessionRejectionReason | null;
-  readonly viewModel: GameViewModel;
-}
-
-export interface TorusMoveAvailability {
-  readonly allowed: boolean;
-  readonly reason: GameSessionRejectionReason | null;
-}
-
-export type TorusEndgameGroup = EndgameGroupPresentation;
-export type TorusEndgameDecisions = Readonly<Partial<Record<string, GroupStatus>>>;
+export type TorusGameActionResult = SharedGameActionResult;
+export type TorusMoveAvailability = SharedMoveAvailability;
+export type TorusEndgameGroup = SharedEndgameGroup;
+export type TorusEndgameDecisions = SharedEndgameDecisions;
 
 const isTorusSize = (value: number): value is TorusSize =>
   TORUS_SIZES.some((size) => size === value);
 
 export class TorusGameController {
   readonly size: TorusSize;
+  readonly topology: TorusTopology;
   private readonly gameplay: GameSessionControllerFacade;
 
   constructor(options: TorusGameControllerOptions = {}) {
@@ -55,11 +46,12 @@ export class TorusGameController {
     }
 
     this.size = requestedSize;
+    this.topology = new TorusTopology(this.size);
     this.gameplay = new GameSessionControllerFacade({
-      topology: new TorusTopology(this.size),
+      topology: this.topology,
       boardSize: this.size,
       ruleSet: snapshot?.ruleSet ?? options.ruleSet ?? 'chinese',
-      komi: snapshot?.komi ?? options.komi ?? 7.5,
+      komi: snapshot?.komi ?? options.komi ?? 0.5,
       persistence: options.persistence,
       snapshot,
     });
@@ -141,31 +133,23 @@ export class TorusGameController {
     return this.gameplay.moveAvailability(point);
   }
 
-  async placeStone(point: PointId): Promise<TorusGameActionResult> {
-    return this.present(await this.gameplay.placeStone(point));
+  placeStone(point: PointId): Promise<TorusGameActionResult> {
+    return this.gameplay.placeStone(point);
   }
 
-  async pass(): Promise<TorusGameActionResult> {
-    return this.present(await this.gameplay.pass());
+  pass(): Promise<TorusGameActionResult> {
+    return this.gameplay.pass();
   }
 
-  async finishEndgame(): Promise<TorusGameActionResult> {
-    return this.present(await this.gameplay.finishEndgame());
+  finishEndgame(): Promise<TorusGameActionResult> {
+    return this.gameplay.finishEndgame();
   }
 
-  async undo(): Promise<TorusGameActionResult> {
-    return this.present(await this.gameplay.undo());
+  undo(): Promise<TorusGameActionResult> {
+    return this.gameplay.undo();
   }
 
-  async redo(): Promise<TorusGameActionResult> {
-    return this.present(await this.gameplay.redo());
-  }
-
-  private present(result: SharedGameActionResult): TorusGameActionResult {
-    return Object.freeze({
-      accepted: result.accepted,
-      reason: result.reason,
-      viewModel: result.viewModel,
-    });
+  redo(): Promise<TorusGameActionResult> {
+    return this.gameplay.redo();
   }
 }

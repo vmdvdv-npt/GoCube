@@ -1320,19 +1320,13 @@ Generation разрешена только для совместимых Black/W
 
 ## 42.3. Replay area
 
-После успешной generation партия открывается на настоящем существующем игровом представлении GoCube.
+После успешной generation партия открывается на настоящем существующем игровом представлении GoCube, соответствующем topology generated game.
 
-Для Cube используется штатный Cube 2D renderer и его обычные:
+Для Cube используется штатный Cube 2D renderer и его обычные faces, stones, captures, navigation, zoom/pan, presentation и endgame UI.
 
-- faces;
-- stones;
-- captures;
-- navigation;
-- zoom/pan;
-- presentation;
-- endgame UI.
+Для Torus используется штатный Torus 2D renderer и его обычные board, stones, captures, navigation, zoom/pan, presentation и endgame UI.
 
-Отдельная схематическая developer board не используется.
+Отдельная схематическая developer board или AlphaZero-specific renderer не используется.
 
 Generated game не должна изменяться от navigation/zoom/pan и не должна иметь вторую альтернативную visual board model.
 
@@ -1406,11 +1400,11 @@ Replay navigation не хранит отдельную board occupancy.
 
 ## 42.8. Endgame в developer replay
 
-Если generated game заканчивается двумя последовательными Pass, GoCube штатно переходит в обычный assisted/manual endgame flow.
+Если generated game заканчивается двумя последовательными Pass, GoCube штатно переходит в обычный assisted/manual endgame flow соответствующей Cube 2D или Torus 2D партии.
 
 - Existing assisted classifier не обходится.
-- Alive/dead/seki annotations и controls остаются теми же, что в обычной Cube 2D партии.
+- Alive/dead/seki annotations и controls остаются теми же, что в обычном представлении выбранной topology.
 - Workspace не завершает manual/assisted review автоматически только ради replay.
 - `Finish scoring` остаётся явным действием по обычным правилам endgame review.
 
-Таким образом уже первая версия Development Workspace пригодна для визуального исследования endgame и сравнения AlphaZero sequence с существующим поведением GoCube.
+Таким образом Development Workspace пригоден для визуального исследования endgame и сравнения AlphaZero sequence с существующим поведением GoCube на поддерживаемых topology.
