@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import type { EndgamePresentationShape } from '../presentation/EndgamePresentation';
 import type { GameViewModel, GameViewPoint } from '../presentation/PresentationModel';
-import type { EndgameGroupRenderState } from '../presentation/EndgameGroupPresentation';
+import { buildEndgameContourPath } from './EndgameContourGeometry';
 import {
-  buildTorus2DEndgameSegments,
   buildTorus2DScene,
-  endgameGroupFromTorusViewBoxPosition,
-  endgameLineStyle,
-  TORUS_ENDGAME_LINE_WIDTH_PX,
+  torus2DEndgameContourCells,
   type Torus2DSize,
 } from './Torus2DRenderer';
 
@@ -40,211 +38,114 @@ const viewModel = (
   };
 };
 
-const overlay = (
-  group: EndgameGroupRenderState,
-  hoveredGroupId: string | null = null,
-  selectedGroupId: string | null = null,
-) => ({ groups: [group], hoveredGroupId, selectedGroupId });
+const shape = (points: readonly string[]): EndgamePresentationShape => ({
+  points,
+  edges: [],
+});
 
-describe('Torus2DRenderer manual endgame geometry', () => {
-  it('draws a normal connected group through the centers of every real adjacency', () => {
-    const source = viewModel(9, { '3,4': 'black', '4,4': 'black', '5,4': 'black' });
-    const scene = buildTorus2DScene(source, 9);
-    const group: EndgameGroupRenderState = {
-      id: 'line',
-      points: ['3,4', '4,4', '5,4'],
-      color: 'black',
-      edges: [
-        { from: '3,4', to: '4,4' },
-        { from: '4,4', to: '5,4' },
-      ],
-      status: 'alive',
-    };
+const pathFor = (
+  scene: ReturnType<typeof buildTorus2DScene>,
+  points: readonly string[],
+): string => buildEndgameContourPath(torus2DEndgameContourCells(scene, shape(points)), {
+  originX: scene.padding,
+  originY: scene.padding,
+  spacing: scene.spacing,
+});
 
-    const segments = buildTorus2DEndgameSegments(scene, overlay(group));
-    expect(segments).toHaveLength(2);
-    expect(segments.every((segment) => segment.y1 === segment.y2)).toBe(true);
-    expect(segments.every((segment) => Math.abs(segment.x2 - segment.x1) === scene.spacing)).toBe(true);
+const moveCount = (path: string): number => path.match(/M /g)?.length ?? 0;
+
+describe('Torus2DRenderer endgame contour geometry', () => {
+  it('maps one logical group to the current Torus scene cells without semantic styling', () => {
+    const scene = buildTorus2DScene(
+      viewModel(9, { '3,4': 'black', '4,4': 'black', '5,4': 'black' }),
+      9,
+    );
+
+    expect(torus2DEndgameContourCells(scene, shape(['3,4', '4,4', '5,4']))).toEqual([
+      { column: 3, row: 4 },
+      { column: 4, row: 4 },
+      { column: 5, row: 4 },
+    ]);
+    expect(moveCount(pathFor(scene, ['3,4', '4,4', '5,4']))).toBe(1);
   });
 
-  it('draws a single stone from one stone edge through its center to the other edge', () => {
-    const source = viewModel(9, { '4,4': 'white' });
-    const scene = buildTorus2DScene(source, 9);
-    const group: EndgameGroupRenderState = {
-      id: 'single',
-      points: ['4,4'],
-      color: 'white',
-      edges: [],
-      status: 'alive',
-    };
+  it('cuts a horizontal wrap group at the current visual seam', () => {
+    const scene = buildTorus2DScene(
+      viewModel(9, { '0,4': 'black', '8,4': 'black' }),
+      9,
+    );
 
-    const [segment] = buildTorus2DEndgameSegments(scene, overlay(group));
-    const stone = scene.points.find((point) => point.logicalPointId === '4,4')!;
-    expect(segment).toMatchObject({
-      x1: stone.x - scene.stoneRadius,
-      y1: stone.y,
-      x2: stone.x + scene.stoneRadius,
-      y2: stone.y,
-    });
+    expect(torus2DEndgameContourCells(scene, shape(['0,4', '8,4']))).toEqual([
+      { column: 0, row: 4 },
+      { column: 8, row: 4 },
+    ]);
+    expect(moveCount(pathFor(scene, ['0,4', '8,4']))).toBe(2);
   });
 
-  it('draws exactly one center-to-center segment for two neighboring stones', () => {
-    const source = viewModel(9, { '4,4': 'black', '5,4': 'black' });
-    const scene = buildTorus2DScene(source, 9);
-    const group: EndgameGroupRenderState = {
-      id: 'pair',
-      points: ['4,4', '5,4'],
-      color: 'black',
-      edges: [{ from: '4,4', to: '5,4' }],
-      status: 'dead',
-    };
+  it('cuts a vertical wrap group at the current visual seam', () => {
+    const scene = buildTorus2DScene(
+      viewModel(9, { '4,0': 'white', '4,8': 'white' }),
+      9,
+    );
 
-    expect(buildTorus2DEndgameSegments(scene, overlay(group))).toHaveLength(1);
+    expect(torus2DEndgameContourCells(scene, shape(['4,0', '4,8']))).toEqual([
+      { column: 4, row: 0 },
+      { column: 4, row: 8 },
+    ]);
+    expect(moveCount(pathFor(scene, ['4,0', '4,8']))).toBe(2);
   });
 
-  it('renders every branch of a branching group', () => {
-    const source = viewModel(9, {
-      '4,4': 'black',
-      '3,4': 'black',
-      '5,4': 'black',
-      '4,3': 'black',
-      '4,5': 'black',
-    });
-    const scene = buildTorus2DScene(source, 9);
-    const group: EndgameGroupRenderState = {
-      id: 'branch',
-      points: ['4,4', '3,4', '5,4', '4,3', '4,5'],
-      color: 'black',
-      edges: [
-        { from: '3,4', to: '4,4' },
-        { from: '4,3', to: '4,4' },
-        { from: '4,4', to: '4,5' },
-        { from: '4,4', to: '5,4' },
-      ],
-      status: 'seki',
-    };
+  it('cuts a corner-wrapping logical group into the visible corner pieces', () => {
+    const occupied = {
+      '0,0': 'black',
+      '8,0': 'black',
+      '0,8': 'black',
+      '8,8': 'black',
+    } as const;
+    const scene = buildTorus2DScene(viewModel(9, occupied), 9);
+    const points = Object.keys(occupied);
 
-    expect(buildTorus2DEndgameSegments(scene, overlay(group))).toHaveLength(4);
+    expect(torus2DEndgameContourCells(scene, shape(points))).toEqual([
+      { column: 0, row: 0 },
+      { column: 8, row: 0 },
+      { column: 0, row: 8 },
+      { column: 8, row: 8 },
+    ]);
+    expect(moveCount(pathFor(scene, points))).toBe(4);
   });
 
-  it('splits a horizontal seam connection instead of drawing across the whole board', () => {
+  it('keeps the same logical group while pan/view offsets change its scene geometry', () => {
     const source = viewModel(9, { '0,4': 'black', '8,4': 'black' });
-    const scene = buildTorus2DScene(source, 9);
-    const group: EndgameGroupRenderState = {
-      id: 'horizontal-seam',
-      points: ['0,4', '8,4'],
-      color: 'black',
-      edges: [{ from: '0,4', to: '8,4' }],
-      status: 'dead',
-    };
+    const initial = buildTorus2DScene(source, 9, { offsetX: 0, offsetY: 0 });
+    const shifted = buildTorus2DScene(source, 9, { offsetX: 1, offsetY: 0 });
+    const group = shape(['0,4', '8,4']);
 
-    const segments = buildTorus2DEndgameSegments(scene, overlay(group));
-    expect(segments).toHaveLength(2);
-    expect(
-      segments.every((segment) => Math.abs(segment.x2 - segment.x1) === scene.spacing / 2),
-    ).toBe(true);
+    expect(torus2DEndgameContourCells(initial, group)).toEqual([
+      { column: 0, row: 4 },
+      { column: 8, row: 4 },
+    ]);
+    expect(torus2DEndgameContourCells(shifted, group)).toEqual([
+      { column: 7, row: 4 },
+      { column: 8, row: 4 },
+    ]);
+    expect(moveCount(pathFor(shifted, group.points))).toBe(1);
   });
 
-  it('splits a vertical seam connection instead of drawing across the whole board', () => {
-    const source = viewModel(9, { '4,0': 'white', '4,8': 'white' });
-    const scene = buildTorus2DScene(source, 9);
-    const group: EndgameGroupRenderState = {
-      id: 'vertical-seam',
-      points: ['4,0', '4,8'],
-      color: 'white',
-      edges: [{ from: '4,0', to: '4,8' }],
-      status: 'alive',
-    };
+  it('maps logical groups into every enabled wrapped duplicate copy', () => {
+    const scene = buildTorus2DScene(
+      viewModel(9, { '0,0': 'black' }),
+      9,
+      { offsetX: 0, offsetY: 0 },
+      true,
+    );
+    const cells = torus2DEndgameContourCells(scene, shape(['0,0']));
 
-    const segments = buildTorus2DEndgameSegments(scene, overlay(group));
-    expect(segments).toHaveLength(2);
-    expect(
-      segments.every((segment) => Math.abs(segment.y2 - segment.y1) === scene.spacing / 2),
-    ).toBe(true);
-  });
-
-  it('uses the same geometry for hover as a weaker temporary line', () => {
-    const source = viewModel(9, { '4,4': 'black', '5,4': 'black' });
-    const scene = buildTorus2DScene(source, 9);
-    const group: EndgameGroupRenderState = {
-      id: 'hovered',
-      points: ['4,4', '5,4'],
-      color: 'black',
-      edges: [{ from: '4,4', to: '5,4' }],
-      status: null,
-    };
-
-    const segments = buildTorus2DEndgameSegments(scene, overlay(group, group.id));
-    expect(segments).toHaveLength(1);
-    expect(segments[0]?.temporary).toBe(true);
-    expect(endgameLineStyle(null, 'black', true).opacity).toBeLessThan(1);
-  });
-
-  it('hit-tests an already drawn line back to its semantic group id', () => {
-    const source = viewModel(9, { '4,4': 'black', '5,4': 'black' });
-    const scene = buildTorus2DScene(source, 9);
-    const group: EndgameGroupRenderState = {
-      id: 'clickable',
-      points: ['4,4', '5,4'],
-      color: 'black',
-      edges: [{ from: '4,4', to: '5,4' }],
-      status: 'alive',
-    };
-
-    const [segment] = buildTorus2DEndgameSegments(scene, overlay(group));
-    expect(
-      endgameGroupFromTorusViewBoxPosition(
-        [segment!],
-        (segment!.x1 + segment!.x2) / 2,
-        (segment!.y1 + segment!.y2) / 2,
-      ),
-    ).toBe(group.id);
-  });
-
-  it('uses an exact 2 px endgame line', () => {
-    expect(TORUS_ENDGAME_LINE_WIDTH_PX).toBe(2);
-  });
-
-  it('maps Alive/Dead/Seki/Unknown to the required solid/dashed colors', () => {
-    expect(endgameLineStyle('alive', 'black', false)).toMatchObject({
-      stroke: '#ffffff',
-      strokeDasharray: null,
-    });
-    expect(endgameLineStyle('alive', 'white', false)).toMatchObject({
-      stroke: '#111111',
-      strokeDasharray: null,
-    });
-    expect(endgameLineStyle('dead', 'black', false)).toMatchObject({
-      stroke: '#d32f2f',
-      strokeDasharray: null,
-    });
-    expect(endgameLineStyle('seki', 'white', false)).toMatchObject({
-      stroke: '#7a7a7a',
-      strokeDasharray: null,
-    });
-    expect(endgameLineStyle('unknown', 'black', false).strokeDasharray).not.toBeNull();
-  });
-
-  it('renders synchronized line copies in duplicate regions', () => {
-    const source = viewModel(9, { '0,4': 'black', '8,4': 'black' });
-    const scene = buildTorus2DScene(source, 9, { offsetX: 0, offsetY: 0 }, true);
-    const group: EndgameGroupRenderState = {
-      id: 'duplicates',
-      points: ['0,4', '8,4'],
-      color: 'black',
-      edges: [{ from: '0,4', to: '8,4' }],
-      status: 'dead',
-    };
-
-    const segments = buildTorus2DEndgameSegments(scene, overlay(group));
-    expect(segments.length).toBeGreaterThan(1);
-    expect(segments.every((segment) => segment.groupId === group.id)).toBe(true);
-    expect(segments.every((segment) => segment.status === 'dead')).toBe(true);
-    expect(
-      segments.every((segment) =>
-        Math.abs(segment.x2 - segment.x1) <= scene.spacing &&
-        Math.abs(segment.y2 - segment.y1) <= scene.spacing,
-      ),
-    ).toBe(true);
+    expect(cells).toHaveLength(4);
+    expect(cells).toEqual(expect.arrayContaining([
+      { column: 0, row: 0 },
+      { column: 9, row: 0 },
+      { column: 0, row: 9 },
+      { column: 9, row: 9 },
+    ]));
   });
 });
