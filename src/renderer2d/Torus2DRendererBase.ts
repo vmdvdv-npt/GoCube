@@ -546,9 +546,11 @@ export const endgameLineStyle = (
       ? '#d32f2f'
       : status === 'seki'
         ? '#7a7a7a'
-        : groupColor === 'black'
-          ? '#ffffff'
-          : '#111111';
+        : status === null || status === 'unknown'
+          ? '#f8cf4d'
+          : groupColor === 'black'
+            ? '#ffffff'
+            : '#111111';
 
   return Object.freeze({
     stroke,
