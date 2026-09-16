@@ -41,9 +41,13 @@ test('assisted endgame keeps every logical group editable until explicit scoring
 
   // Clicking either stone of the seam-connected black group selects the same group.
   await point(page, '0,4').click();
-  await expect(page.locator('.endgame-selection .stone-chip--black')).toHaveCount(1);
   const statuses = page.getByRole('group', { name: 'Selected group status' });
-  await statuses.getByRole('button', { name: 'Seki', exact: true }).click();
+  await expect(statuses).toBeVisible();
+  await expect(statuses).toHaveAttribute('data-group-point-count', '2');
+  const alive = statuses.getByRole('button', { name: 'Alive', exact: true });
+  const dead = statuses.getByRole('button', { name: 'Dead', exact: true });
+  const seki = statuses.getByRole('button', { name: 'Seki', exact: true });
+  await seki.click();
 
   await expect(page.getByText('Resolved 1 of 2')).toBeVisible();
   await expect(page.locator('.torus-board__group-contour--seki')).toHaveCount(1);
@@ -52,8 +56,9 @@ test('assisted endgame keeps every logical group editable until explicit scoring
     .toHaveAttribute('stroke', '#80878f');
 
   await point(page, '4,4').click();
-  await expect(page.locator('.endgame-selection .stone-chip--white')).toHaveCount(1);
-  await statuses.getByRole('button', { name: 'Alive', exact: true }).click();
+  await expect(seki).toHaveAttribute('aria-pressed', 'false');
+  await alive.click();
+  await expect(alive).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByText('Resolved 2 of 2')).toBeVisible();
 
   // Resolving the last group no longer ends review. A previously resolved group
@@ -62,8 +67,9 @@ test('assisted endgame keeps every logical group editable until explicit scoring
   await expect(finish).toBeEnabled();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await point(page, '8,4').click();
-  await expect(page.locator('.endgame-selection .stone-chip--black')).toHaveCount(1);
-  await statuses.getByRole('button', { name: 'Dead', exact: true }).click();
+  await expect(seki).toHaveAttribute('aria-pressed', 'true');
+  await dead.click();
+  await expect(dead).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.torus-board__group-contour--dead')).toHaveCount(1);
   await expect(page.locator('.torus-board__group-contour--dead .torus-board__group-contour-source'))
     .toHaveAttribute('stroke', '#e52b2b');
