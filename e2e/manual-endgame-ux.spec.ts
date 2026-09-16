@@ -26,7 +26,7 @@ test('assisted endgame keeps every logical group editable until explicit scoring
   await expect(page.getByText('Resolved 0 of 2')).toBeVisible();
 
   // Same-status groups of opposite stone colors keep separate contours so the
-  // black/white boundary remains visible even though both contours are salad-green.
+  // black/white boundary remains visible. Semantic unresolved styling is shared.
   const unresolvedContours = page.locator('.torus-board__group-contour--unresolved');
   await expect(unresolvedContours).toHaveCount(2);
   await expect(
@@ -35,6 +35,9 @@ test('assisted endgame keeps every logical group editable until explicit scoring
   await expect(
     page.locator('.torus-board__group-contour--unresolved[data-endgame-color="white"]'),
   ).toHaveCount(1);
+  await expect(
+    unresolvedContours.locator('.torus-board__group-contour-source').first(),
+  ).toHaveAttribute('stroke', '#f8cf4d');
 
   // Clicking either stone of the seam-connected black group selects the same group.
   await point(page, '0,4').click();
@@ -45,6 +48,8 @@ test('assisted endgame keeps every logical group editable until explicit scoring
   await expect(page.getByText('Resolved 1 of 2')).toBeVisible();
   await expect(page.locator('.torus-board__group-contour--seki')).toHaveCount(1);
   await expect(page.locator('.torus-board__seki-mask')).toHaveAttribute('opacity', '0.6');
+  await expect(page.locator('.torus-board__group-contour--seki .torus-board__group-contour-source'))
+    .toHaveAttribute('stroke', '#80878f');
 
   await point(page, '4,4').click();
   await expect(page.locator('.endgame-selection .stone-chip--white')).toHaveCount(1);
@@ -60,6 +65,8 @@ test('assisted endgame keeps every logical group editable until explicit scoring
   await expect(page.locator('.endgame-selection .stone-chip--black')).toHaveCount(1);
   await statuses.getByRole('button', { name: 'Dead', exact: true }).click();
   await expect(page.locator('.torus-board__group-contour--dead')).toHaveCount(1);
+  await expect(page.locator('.torus-board__group-contour--dead .torus-board__group-contour-source'))
+    .toHaveAttribute('stroke', '#e52b2b');
   await expect(page.locator('.torus-board__group-contour--seki')).toHaveCount(0);
 
   // Duplicate-region display remains an independent option during endgame and is off by default.
