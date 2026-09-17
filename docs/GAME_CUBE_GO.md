@@ -1294,6 +1294,8 @@ Transition короткий и мягкий; физически точная fol
 - connection status локального AlphaZero service;
 - topology;
 - size;
+- `Show closed lineages`;
+- `Board filter`;
 - `Black checkpoint`;
 - `White checkpoint`;
 - `MCTS simulations`;
@@ -1307,6 +1309,10 @@ Transition короткий и мягкий; физически точная fol
 - обычная игра GoCube продолжает работать независимо от этого состояния.
 
 Checkpoint выбирается по стабильной identity, а не по отображаемому filesystem path.
+
+`Board filter` строится динамически из реально загруженных checkpoint descriptors по уникальным парам topology + size. В списке всегда есть `All boards`; остальные варианты показываются как `Cube N×N`, `Torus N×N` и аналогично для других доступных topology.
+
+`Black checkpoint` и `White checkpoint` используют один общий набор видимых checkpoints: сначала применяется lifecycle visibility (`ACTIVE` либо также закрытые lineages при включённом `Show closed lineages`), затем выбранный `Board filter`. Если смена board filter скрывает текущий checkpoint, соответствующий selector автоматически переходит на последний checkpoint из нового filtered list; при пустом результате selection сбрасывается.
 
 Разрешён self-play: один и тот же checkpoint можно выбрать за Black и White.
 

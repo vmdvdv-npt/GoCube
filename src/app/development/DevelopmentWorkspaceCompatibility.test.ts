@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { AlphaZeroCheckpointDescriptor, AlphaZeroGeneratedGame } from './AlphaZeroGateway';
 import {
+  ALL_BOARDS_FILTER,
+  boardFilterOptionsFromCheckpoints,
   checkpointCompatibilityError,
+  checkpointIdWithFallback,
   generatedGameCompatibilityError,
+  visibleCheckpointsForFilters,
   visibleCheckpointsForLifecycle,
 } from './DevelopmentWorkspace';
 
@@ -50,6 +54,62 @@ describe('Development Workspace checkpoint compatibility', () => {
       'archived',
       'discarded',
     ]);
+  });
+
+  it('builds unique board filter options from loaded checkpoints', () => {
+    const checkpoints = [
+      checkpoint({ id: 'cube-4-a', topology: 'cube', size: 4 }),
+      checkpoint({ id: 'cube-4-b', topology: 'cube', size: 4 }),
+      checkpoint({ id: 'torus-9', topology: 'torus', size: 9 }),
+      checkpoint({ id: 'cube-5', topology: 'cube', size: 5 }),
+    ];
+
+    expect(boardFilterOptionsFromCheckpoints(checkpoints)).toEqual([
+      { value: ALL_BOARDS_FILTER, label: 'All boards' },
+      { value: 'cube:4', label: 'Cube 4×4' },
+      { value: 'torus:9', label: 'Torus 9×9' },
+      { value: 'cube:5', label: 'Cube 5×5' },
+    ]);
+  });
+
+  it('filters checkpoints by board topology and size', () => {
+    const checkpoints = [
+      checkpoint({ id: 'cube-4', topology: 'cube', size: 4 }),
+      checkpoint({ id: 'torus-9-a', topology: 'torus', size: 9 }),
+      checkpoint({ id: 'torus-9-b', topology: 'torus', size: 9 }),
+    ];
+
+    expect(visibleCheckpointsForFilters(checkpoints, true, 'torus:9').map((item) => item.id)).toEqual([
+      'torus-9-a',
+      'torus-9-b',
+    ]);
+  });
+
+  it('combines closed-lineage visibility with the board filter', () => {
+    const checkpoints = [
+      checkpoint({ id: 'torus-active', topology: 'torus', size: 9, lineageStatus: 'ACTIVE' }),
+      checkpoint({ id: 'torus-archived', topology: 'torus', size: 9, lineageStatus: 'ARCHIVED' }),
+      checkpoint({ id: 'cube-active', topology: 'cube', size: 4, lineageStatus: 'ACTIVE' }),
+    ];
+
+    expect(visibleCheckpointsForFilters(checkpoints, false, 'torus:9').map((item) => item.id)).toEqual([
+      'torus-active',
+    ]);
+    expect(visibleCheckpointsForFilters(checkpoints, true, 'torus:9').map((item) => item.id)).toEqual([
+      'torus-active',
+      'torus-archived',
+    ]);
+  });
+
+  it('falls back to the last visible checkpoint when the current selection is filtered out', () => {
+    const visible = [
+      checkpoint({ id: 'torus-9-a', topology: 'torus', size: 9 }),
+      checkpoint({ id: 'torus-9-b', topology: 'torus', size: 9 }),
+    ];
+
+    expect(checkpointIdWithFallback('cube-hidden', visible)).toBe('torus-9-b');
+    expect(checkpointIdWithFallback('torus-9-a', visible)).toBe('torus-9-a');
+    expect(checkpointIdWithFallback('anything', [])).toBe('');
   });
 
   it('accepts compatible Cube/Cube checkpoints', () => {

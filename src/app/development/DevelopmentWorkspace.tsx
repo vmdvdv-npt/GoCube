@@ -87,6 +87,62 @@ export const visibleCheckpointsForLifecycle = (
     ? checkpoints
     : checkpoints.filter((checkpoint) => (checkpoint.lineageStatus ?? 'ACTIVE') === 'ACTIVE');
 
+export const ALL_BOARDS_FILTER = 'all' as const;
+
+export type BoardFilterValue =
+  | typeof ALL_BOARDS_FILTER
+  | `${AlphaZeroCheckpointDescriptor['topology']}:${number}`;
+
+export type BoardFilterOption = Readonly<{
+  value: BoardFilterValue;
+  label: string;
+}>;
+
+const boardFilterValueForCheckpoint = (
+  checkpoint: AlphaZeroCheckpointDescriptor,
+): BoardFilterValue => `${checkpoint.topology}:${checkpoint.size}` as BoardFilterValue;
+
+const boardFilterLabel = (checkpoint: AlphaZeroCheckpointDescriptor): string => {
+  const topology = `${checkpoint.topology.charAt(0).toUpperCase()}${checkpoint.topology.slice(1)}`;
+  return `${topology} ${checkpoint.size}×${checkpoint.size}`;
+};
+
+export const boardFilterOptionsFromCheckpoints = (
+  checkpoints: readonly AlphaZeroCheckpointDescriptor[],
+): readonly BoardFilterOption[] => {
+  const seen = new Set<BoardFilterValue>();
+  const options: BoardFilterOption[] = [
+    Object.freeze({ value: ALL_BOARDS_FILTER, label: 'All boards' }),
+  ];
+
+  for (const checkpoint of checkpoints) {
+    const value = boardFilterValueForCheckpoint(checkpoint);
+    if (seen.has(value)) continue;
+    seen.add(value);
+    options.push(Object.freeze({ value, label: boardFilterLabel(checkpoint) }));
+  }
+
+  return options;
+};
+
+export const visibleCheckpointsForFilters = (
+  checkpoints: readonly AlphaZeroCheckpointDescriptor[],
+  showClosedLineages: boolean,
+  boardFilter: BoardFilterValue,
+): readonly AlphaZeroCheckpointDescriptor[] =>
+  visibleCheckpointsForLifecycle(checkpoints, showClosedLineages).filter(
+    (checkpoint) =>
+      boardFilter === ALL_BOARDS_FILTER || boardFilterValueForCheckpoint(checkpoint) === boardFilter,
+  );
+
+export const checkpointIdWithFallback = (
+  currentId: string,
+  visibleCheckpoints: readonly AlphaZeroCheckpointDescriptor[],
+): string => {
+  if (visibleCheckpoints.some((checkpoint) => checkpoint.id === currentId)) return currentId;
+  return visibleCheckpoints[visibleCheckpoints.length - 1]?.id ?? '';
+};
+
 const checkpointLabel = (checkpoint: AlphaZeroCheckpointDescriptor): string => {
   const lifecycleStatus = checkpoint.lineageStatus ?? 'ACTIVE';
   const status = lifecycleStatus === 'ACTIVE' ? '' : ` · ${lifecycleStatus}`;
@@ -156,6 +212,7 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
   const [serviceLabel, setServiceLabel] = useState('Checking AlphaZero…');
   const [checkpoints, setCheckpoints] = useState<readonly AlphaZeroCheckpointDescriptor[]>([]);
   const [showClosedLineages, setShowClosedLineages] = useState(false);
+  const [boardFilter, setBoardFilter] = useState<BoardFilterValue>(ALL_BOARDS_FILTER);
   const [blackCheckpointId, setBlackCheckpointId] = useState(initialSettings.blackCheckpointId ?? '');
   const [whiteCheckpointId, setWhiteCheckpointId] = useState(initialSettings.whiteCheckpointId ?? '');
   const [mctsSimulations, setMctsSimulations] = useState(initialSettings.mctsSimulations ?? 100);
@@ -172,39 +229,38 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
   const actionSequenceRef = useRef(0);
   const operationInFlightRef = useRef(false);
 
-  const activeCheckpoints = useMemo(
-    () => visibleCheckpointsForLifecycle(checkpoints, false),
+  const boardFilterOptions = useMemo(
+    () => boardFilterOptionsFromCheckpoints(checkpoints),
     [checkpoints],
   );
   const visibleCheckpoints = useMemo(
-    () => visibleCheckpointsForLifecycle(checkpoints, showClosedLineages),
-    [checkpoints, showClosedLineages],
+    () => visibleCheckpointsForFilters(checkpoints, showClosedLineages, boardFilter),
+    [boardFilter, checkpoints, showClosedLineages],
   );
   const blackCheckpoint = useMemo(
-    () => checkpoints.find((checkpoint) => checkpoint.id === blackCheckpointId) ?? null,
-    [blackCheckpointId, checkpoints],
+    () => visibleCheckpoints.find((checkpoint) => checkpoint.id === blackCheckpointId) ?? null,
+    [blackCheckpointId, visibleCheckpoints],
   );
   const whiteCheckpoint = useMemo(
-    () => checkpoints.find((checkpoint) => checkpoint.id === whiteCheckpointId) ?? null,
-    [checkpoints, whiteCheckpointId],
+    () => visibleCheckpoints.find((checkpoint) => checkpoint.id === whiteCheckpointId) ?? null,
+    [visibleCheckpoints, whiteCheckpointId],
   );
   const compatibilityError = checkpointCompatibilityError(blackCheckpoint, whiteCheckpoint);
   const resultMismatch = alphaZeroResult && goCubeScore
     ? scoresDiffer(alphaZeroResult, goCubeScore)
     : null;
 
-  const selectActiveFallback = (): void => {
-    const fallback = latestCheckpoint(activeCheckpoints) ?? activeCheckpoints[0];
-    setBlackCheckpointId((current) =>
-      activeCheckpoints.some((checkpoint) => checkpoint.id === current)
-        ? current
-        : fallback?.id ?? '',
+  const selectFilteredFallback = (
+    nextShowClosedLineages: boolean,
+    nextBoardFilter: BoardFilterValue,
+  ): void => {
+    const filteredCheckpoints = visibleCheckpointsForFilters(
+      checkpoints,
+      nextShowClosedLineages,
+      nextBoardFilter,
     );
-    setWhiteCheckpointId((current) =>
-      activeCheckpoints.some((checkpoint) => checkpoint.id === current)
-        ? current
-        : fallback?.id ?? '',
-    );
+    setBlackCheckpointId((current) => checkpointIdWithFallback(current, filteredCheckpoints));
+    setWhiteCheckpointId((current) => checkpointIdWithFallback(current, filteredCheckpoints));
   };
 
   const checkConnection = async (): Promise<void> => {
@@ -214,19 +270,28 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
     try {
       const health = await gateway.health();
       const availableCheckpoints = await gateway.listCheckpoints();
-      const activeAvailableCheckpoints = visibleCheckpointsForLifecycle(availableCheckpoints, false);
+      const availableBoardOptions = boardFilterOptionsFromCheckpoints(availableCheckpoints);
+      const nextBoardFilter = availableBoardOptions.some((option) => option.value === boardFilter)
+        ? boardFilter
+        : ALL_BOARDS_FILTER;
+      const visibleAvailableCheckpoints = visibleCheckpointsForFilters(
+        availableCheckpoints,
+        showClosedLineages,
+        nextBoardFilter,
+      );
       setConnection('available');
       setServiceLabel(`${health.service} ${health.version} · protocol v${health.protocolVersion}`);
       setCheckpoints(availableCheckpoints);
-      const fallback = latestCheckpoint(activeAvailableCheckpoints) ?? activeAvailableCheckpoints[0];
+      setBoardFilter(nextBoardFilter);
+      const fallback = latestCheckpoint(visibleAvailableCheckpoints) ?? visibleAvailableCheckpoints[0];
       if (fallback) {
         setBlackCheckpointId((current) =>
-          activeAvailableCheckpoints.some((checkpoint) => checkpoint.id === current)
+          visibleAvailableCheckpoints.some((checkpoint) => checkpoint.id === current)
             ? current
             : fallback.id,
         );
         setWhiteCheckpointId((current) =>
-          activeAvailableCheckpoints.some((checkpoint) => checkpoint.id === current)
+          visibleAvailableCheckpoints.some((checkpoint) => checkpoint.id === current)
             ? current
             : fallback.id,
         );
@@ -238,6 +303,7 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
       setConnection('unavailable');
       setServiceLabel('AlphaZero unavailable');
       setCheckpoints([]);
+      setBoardFilter(ALL_BOARDS_FILTER);
       setBlackCheckpointId('');
       setWhiteCheckpointId('');
       setDiagnostic(errorMessage(error));
@@ -400,7 +466,7 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
                   onChange={(event) => {
                     const checked = event.target.checked;
                     setShowClosedLineages(checked);
-                    if (!checked) selectActiveFallback();
+                    selectFilteredFallback(checked, boardFilter);
                   }}
                 />{' '}
                 Show closed lineages
@@ -408,6 +474,23 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
             </div>
 
             <div className="development-alpha-zero__grid">
+              <label>
+                Board filter
+                <select
+                  value={boardFilter}
+                  disabled={connection !== 'available' || generating}
+                  onChange={(event) => {
+                    const value = event.target.value as BoardFilterValue;
+                    setBoardFilter(value);
+                    selectFilteredFallback(showClosedLineages, value);
+                  }}
+                >
+                  {boardFilterOptions.map((option) => (
+                    <option value={option.value} key={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+
               <label>
                 Black checkpoint
                 <select
