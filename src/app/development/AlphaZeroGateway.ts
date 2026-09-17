@@ -22,7 +22,8 @@ export interface AlphaZeroCheckpointDescriptor {
   readonly size: number;
   readonly ruleSet: RuleSet;
   readonly komi: number;
-  readonly lineageStatus: AlphaZeroLineageStatus;
+  /** Additive Protocol V1 field. Missing legacy values are treated as ACTIVE. */
+  readonly lineageStatus?: AlphaZeroLineageStatus;
 }
 
 export interface AlphaZeroPlaceAction {
