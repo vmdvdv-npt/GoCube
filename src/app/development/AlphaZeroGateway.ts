@@ -6,6 +6,7 @@ export const ALPHAZERO_PROTOCOL_VERSION = 1 as const;
 export const ALPHAZERO_DEFAULT_BASE_URL = 'http://127.0.0.1:8765';
 
 export type AlphaZeroTopology = 'cube' | 'torus';
+export type AlphaZeroLineageStatus = 'ACTIVE' | 'ARCHIVED' | 'DISCARDED';
 
 export interface AlphaZeroHealth {
   readonly protocolVersion: typeof ALPHAZERO_PROTOCOL_VERSION;
@@ -21,6 +22,7 @@ export interface AlphaZeroCheckpointDescriptor {
   readonly size: number;
   readonly ruleSet: RuleSet;
   readonly komi: number;
+  readonly lineageStatus: AlphaZeroLineageStatus;
 }
 
 export interface AlphaZeroPlaceAction {
