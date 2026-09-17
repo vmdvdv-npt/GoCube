@@ -85,10 +85,11 @@ export const visibleCheckpointsForLifecycle = (
 ): readonly AlphaZeroCheckpointDescriptor[] =>
   showClosedLineages
     ? checkpoints
-    : checkpoints.filter((checkpoint) => checkpoint.lineageStatus === 'ACTIVE');
+    : checkpoints.filter((checkpoint) => (checkpoint.lineageStatus ?? 'ACTIVE') === 'ACTIVE');
 
 const checkpointLabel = (checkpoint: AlphaZeroCheckpointDescriptor): string => {
-  const status = checkpoint.lineageStatus === 'ACTIVE' ? '' : ` · ${checkpoint.lineageStatus}`;
+  const lifecycleStatus = checkpoint.lineageStatus ?? 'ACTIVE';
+  const status = lifecycleStatus === 'ACTIVE' ? '' : ` · ${lifecycleStatus}`;
   return `${checkpoint.runName} · iter ${checkpoint.iteration} · ${checkpoint.topology} ${checkpoint.size}×${checkpoint.size}${status}`;
 };
 
