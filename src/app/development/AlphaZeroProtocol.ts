@@ -111,6 +111,7 @@ const lineageStatusValue = (
   context: string,
 ): AlphaZeroLineageStatus => {
   const value = record[key];
+  if (value === undefined) return 'ACTIVE';
   if (value !== 'ACTIVE' && value !== 'ARCHIVED' && value !== 'DISCARDED') {
     return protocolError(`${context}.${key} must be "ACTIVE", "ARCHIVED", or "DISCARDED".`);
   }
