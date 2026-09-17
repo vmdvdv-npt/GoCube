@@ -12,6 +12,7 @@ import {
   type AlphaZeroGeneratedGameResult,
   type AlphaZeroGeneratedMove,
   type AlphaZeroHealth,
+  type AlphaZeroLineageStatus,
   type AlphaZeroTopology,
 } from './AlphaZeroGateway';
 
@@ -100,6 +101,18 @@ const topologyValue = (
   const value = record[key];
   if (value !== 'cube' && value !== 'torus') {
     return protocolError(`${context}.${key} must be "cube" or "torus".`);
+  }
+  return value;
+};
+
+const lineageStatusValue = (
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+  context: string,
+): AlphaZeroLineageStatus => {
+  const value = record[key];
+  if (value !== 'ACTIVE' && value !== 'ARCHIVED' && value !== 'DISCARDED') {
+    return protocolError(`${context}.${key} must be "ACTIVE", "ARCHIVED", or "DISCARDED".`);
   }
   return value;
 };
@@ -206,6 +219,7 @@ const parseCheckpoint = (value: unknown, context: string): AlphaZeroCheckpointDe
     size,
     ruleSet: ruleSetValue(record, 'ruleSet', context),
     komi: normalizedKomi(record, 'komi', context),
+    lineageStatus: lineageStatusValue(record, 'lineageStatus', context),
   });
 };
 
