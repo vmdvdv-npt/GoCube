@@ -79,8 +79,19 @@ const latestCheckpoint = (
   return latest;
 };
 
-const checkpointLabel = (checkpoint: AlphaZeroCheckpointDescriptor): string =>
-  `${checkpoint.runName} · iter ${checkpoint.iteration} · ${checkpoint.topology} ${checkpoint.size}×${checkpoint.size}`;
+export const visibleCheckpointsForLifecycle = (
+  checkpoints: readonly AlphaZeroCheckpointDescriptor[],
+  showClosedLineages: boolean,
+): readonly AlphaZeroCheckpointDescriptor[] =>
+  showClosedLineages
+    ? checkpoints
+    : checkpoints.filter((checkpoint) => (checkpoint.lineageStatus ?? 'ACTIVE') === 'ACTIVE');
+
+const checkpointLabel = (checkpoint: AlphaZeroCheckpointDescriptor): string => {
+  const lifecycleStatus = checkpoint.lineageStatus ?? 'ACTIVE';
+  const status = lifecycleStatus === 'ACTIVE' ? '' : ` · ${lifecycleStatus}`;
+  return `${checkpoint.runName} · iter ${checkpoint.iteration} · ${checkpoint.topology} ${checkpoint.size}×${checkpoint.size}${status}`;
+};
 
 export const checkpointCompatibilityError = (
   black: AlphaZeroCheckpointDescriptor | null,
@@ -144,6 +155,7 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
   const [connection, setConnection] = useState<ConnectionState>('checking');
   const [serviceLabel, setServiceLabel] = useState('Checking AlphaZero…');
   const [checkpoints, setCheckpoints] = useState<readonly AlphaZeroCheckpointDescriptor[]>([]);
+  const [showClosedLineages, setShowClosedLineages] = useState(false);
   const [blackCheckpointId, setBlackCheckpointId] = useState(initialSettings.blackCheckpointId ?? '');
   const [whiteCheckpointId, setWhiteCheckpointId] = useState(initialSettings.whiteCheckpointId ?? '');
   const [mctsSimulations, setMctsSimulations] = useState(initialSettings.mctsSimulations ?? 100);
@@ -160,6 +172,14 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
   const actionSequenceRef = useRef(0);
   const operationInFlightRef = useRef(false);
 
+  const activeCheckpoints = useMemo(
+    () => visibleCheckpointsForLifecycle(checkpoints, false),
+    [checkpoints],
+  );
+  const visibleCheckpoints = useMemo(
+    () => visibleCheckpointsForLifecycle(checkpoints, showClosedLineages),
+    [checkpoints, showClosedLineages],
+  );
   const blackCheckpoint = useMemo(
     () => checkpoints.find((checkpoint) => checkpoint.id === blackCheckpointId) ?? null,
     [blackCheckpointId, checkpoints],
@@ -173,6 +193,20 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
     ? scoresDiffer(alphaZeroResult, goCubeScore)
     : null;
 
+  const selectActiveFallback = (): void => {
+    const fallback = latestCheckpoint(activeCheckpoints) ?? activeCheckpoints[0];
+    setBlackCheckpointId((current) =>
+      activeCheckpoints.some((checkpoint) => checkpoint.id === current)
+        ? current
+        : fallback?.id ?? '',
+    );
+    setWhiteCheckpointId((current) =>
+      activeCheckpoints.some((checkpoint) => checkpoint.id === current)
+        ? current
+        : fallback?.id ?? '',
+    );
+  };
+
   const checkConnection = async (): Promise<void> => {
     setConnection('checking');
     setServiceLabel('Checking AlphaZero…');
@@ -180,18 +214,19 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
     try {
       const health = await gateway.health();
       const availableCheckpoints = await gateway.listCheckpoints();
+      const activeAvailableCheckpoints = visibleCheckpointsForLifecycle(availableCheckpoints, false);
       setConnection('available');
       setServiceLabel(`${health.service} ${health.version} · protocol v${health.protocolVersion}`);
       setCheckpoints(availableCheckpoints);
-      const fallback = latestCheckpoint(availableCheckpoints) ?? availableCheckpoints[0];
+      const fallback = latestCheckpoint(activeAvailableCheckpoints) ?? activeAvailableCheckpoints[0];
       if (fallback) {
         setBlackCheckpointId((current) =>
-          availableCheckpoints.some((checkpoint) => checkpoint.id === current)
+          activeAvailableCheckpoints.some((checkpoint) => checkpoint.id === current)
             ? current
             : fallback.id,
         );
         setWhiteCheckpointId((current) =>
-          availableCheckpoints.some((checkpoint) => checkpoint.id === current)
+          activeAvailableCheckpoints.some((checkpoint) => checkpoint.id === current)
             ? current
             : fallback.id,
         );
@@ -356,6 +391,22 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
               </button>
             </div>
 
+            <div className="development-alpha-zero__status">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={showClosedLineages}
+                  disabled={connection !== 'available' || generating}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    setShowClosedLineages(checked);
+                    if (!checked) selectActiveFallback();
+                  }}
+                />{' '}
+                Show closed lineages
+              </label>
+            </div>
+
             <div className="development-alpha-zero__grid">
               <label>
                 Black checkpoint
@@ -369,7 +420,7 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
                   }}
                 >
                   <option value="">Select checkpoint</option>
-                  {checkpoints.map((checkpoint) => (
+                  {visibleCheckpoints.map((checkpoint) => (
                     <option value={checkpoint.id} key={checkpoint.id}>{checkpointLabel(checkpoint)}</option>
                   ))}
                 </select>
@@ -387,7 +438,7 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
                   }}
                 >
                   <option value="">Select checkpoint</option>
-                  {checkpoints.map((checkpoint) => (
+                  {visibleCheckpoints.map((checkpoint) => (
                     <option value={checkpoint.id} key={checkpoint.id}>{checkpointLabel(checkpoint)}</option>
                   ))}
                 </select>

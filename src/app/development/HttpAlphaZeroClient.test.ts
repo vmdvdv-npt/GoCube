@@ -30,6 +30,7 @@ describe('HttpAlphaZeroClient', () => {
         checkpoints: [{
           id: 'cube4-1', runName: 'cube4', iteration: 1, topology: 'cube', size: 4,
           ruleSet: 'chinese', komi: 7.5, terminalAdjudicator: 'gocube-conservative-area-v1',
+          lineageStatus: 'ACTIVE',
         }],
       });
     };

@@ -13,6 +13,7 @@ const checkpoint = {
   size: 4,
   ruleSet: 'chinese',
   komi: 7.5,
+  lineageStatus: 'ACTIVE',
 } as const;
 
 const generatedGameBase = {
@@ -45,6 +46,21 @@ describe('AlphaZero protocol V1', () => {
       protocolVersion: 1,
       checkpoints: [{ ...checkpoint, size: 1 }],
     })).toThrow(/size/i);
+  });
+
+  it('accepts archived and discarded lineage status and rejects unknown status', () => {
+    expect(parseAlphaZeroCheckpointList({
+      protocolVersion: 1,
+      checkpoints: [
+        { ...checkpoint, id: 'archived', lineageStatus: 'ARCHIVED' },
+        { ...checkpoint, id: 'discarded', lineageStatus: 'DISCARDED' },
+      ],
+    }).map((item) => item.lineageStatus)).toEqual(['ARCHIVED', 'DISCARDED']);
+
+    expect(() => parseAlphaZeroCheckpointList({
+      protocolVersion: 1,
+      checkpoints: [{ ...checkpoint, lineageStatus: 'CLOSED' }],
+    })).toThrow(/lineageStatus/i);
   });
 
   it('accepts a generated game with canonical Cube PointIds', () => {

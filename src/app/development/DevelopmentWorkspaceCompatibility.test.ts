@@ -3,6 +3,7 @@ import type { AlphaZeroCheckpointDescriptor, AlphaZeroGeneratedGame } from './Al
 import {
   checkpointCompatibilityError,
   generatedGameCompatibilityError,
+  visibleCheckpointsForLifecycle,
 } from './DevelopmentWorkspace';
 
 const checkpoint = (
@@ -15,6 +16,7 @@ const checkpoint = (
   size: 4,
   ruleSet: 'chinese',
   komi: 0.5,
+  lineageStatus: 'ACTIVE',
   ...overrides,
 });
 
@@ -35,6 +37,21 @@ const generatedGame = (
 });
 
 describe('Development Workspace checkpoint compatibility', () => {
+  it('shows only active lineages by default and all statuses when closed lineages are enabled', () => {
+    const checkpoints = [
+      checkpoint({ id: 'active', lineageStatus: 'ACTIVE' }),
+      checkpoint({ id: 'archived', lineageStatus: 'ARCHIVED' }),
+      checkpoint({ id: 'discarded', lineageStatus: 'DISCARDED' }),
+    ];
+
+    expect(visibleCheckpointsForLifecycle(checkpoints, false).map((item) => item.id)).toEqual(['active']);
+    expect(visibleCheckpointsForLifecycle(checkpoints, true).map((item) => item.id)).toEqual([
+      'active',
+      'archived',
+      'discarded',
+    ]);
+  });
+
   it('accepts compatible Cube/Cube checkpoints', () => {
     const black = checkpoint({ id: 'cube-black' });
     const white = checkpoint({ id: 'cube-white' });
