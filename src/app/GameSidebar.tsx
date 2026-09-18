@@ -5,34 +5,204 @@ import type { GameViewModel } from '../presentation/PresentationModel';
 import { useFinalAnalysisProgressSource } from './FinalAnalysisProgressContext';
 
 export interface GameSidebarProps {
-  readonly size: number; readonly viewModel: GameViewModel;
-  readonly showMoveNumbers: boolean; readonly onShowMoveNumbersChange: (visible: boolean) => void;
-  readonly showDuplicateRegions?: boolean; readonly onShowDuplicateRegionsChange?: (visible: boolean) => void; readonly duplicateRegionsDisabled?: boolean;
-  readonly passDisabled: boolean; readonly canRedo: boolean; readonly canUndo: boolean;
-  readonly onPass: () => void; readonly onRedo: () => void; readonly onUndo: () => void;
-  readonly gameResultAvailable: boolean; readonly onOpenGameResult: () => void; readonly onRequestNewGame: () => void;
-  readonly newGameDisabled?: boolean; readonly endgame?: ReactNode; readonly feedback?: string | null;
+  readonly size: number;
+  readonly viewModel: GameViewModel;
+  readonly showMoveNumbers: boolean;
+  readonly onShowMoveNumbersChange: (visible: boolean) => void;
+  readonly showDuplicateRegions?: boolean;
+  readonly onShowDuplicateRegionsChange?: (visible: boolean) => void;
+  readonly duplicateRegionsDisabled?: boolean;
+  readonly passDisabled: boolean;
+  readonly canRedo: boolean;
+  readonly canUndo: boolean;
+  readonly onPass: () => void;
+  readonly onRedo: () => void;
+  readonly onUndo: () => void;
+  readonly gameResultAvailable: boolean;
+  readonly onOpenGameResult: () => void;
+  readonly onRequestNewGame: () => void;
+  readonly newGameDisabled?: boolean;
+  readonly endgame?: ReactNode;
+  readonly feedback?: string | null;
   readonly finalAnalysisProgressSource?: FinalProofSearchProgressSource;
   readonly turnLabelOverride?: string | null;
   readonly retryBotTurn?: (() => void) | null;
 }
 
-export function GameSidebar({ size, viewModel, showMoveNumbers, onShowMoveNumbersChange, showDuplicateRegions, onShowDuplicateRegionsChange, duplicateRegionsDisabled = false, passDisabled, canRedo, canUndo, onPass, onRedo, onUndo, gameResultAvailable, onOpenGameResult, onRequestNewGame, newGameDisabled = false, endgame = null, feedback = null, finalAnalysisProgressSource, turnLabelOverride = null, retryBotTurn = null }: GameSidebarProps) {
+export function GameSidebar({
+  size,
+  viewModel,
+  showMoveNumbers,
+  onShowMoveNumbersChange,
+  showDuplicateRegions,
+  onShowDuplicateRegionsChange,
+  duplicateRegionsDisabled = false,
+  passDisabled,
+  canRedo,
+  canUndo,
+  onPass,
+  onRedo,
+  onUndo,
+  gameResultAvailable,
+  onOpenGameResult,
+  onRequestNewGame,
+  newGameDisabled = false,
+  endgame = null,
+  feedback = null,
+  finalAnalysisProgressSource,
+  turnLabelOverride = null,
+  retryBotTurn = null,
+}: GameSidebarProps) {
   const contextualProgressSource = useFinalAnalysisProgressSource();
   const progressSource = finalAnalysisProgressSource ?? contextualProgressSource;
-  const [finalAnalysisProgress, setFinalAnalysisProgress] = useState<FinalProofSearchProgress | null>(() => progressSource?.current() ?? null);
-  useEffect(() => { setFinalAnalysisProgress(progressSource?.current() ?? null); if (!progressSource) return undefined; return progressSource.subscribe(setFinalAnalysisProgress); }, [progressSource]);
+  const [finalAnalysisProgress, setFinalAnalysisProgress] =
+    useState<FinalProofSearchProgress | null>(() => progressSource?.current() ?? null);
 
-  const stageLabel = finalAnalysisProgress ? 'Analyzing final position…' : turnLabelOverride ?? (viewModel.phase === 'playing' ? `${viewModel.currentPlayer === 'black' ? 'Black' : 'White'} to move` : viewModel.phase === 'endgame' ? 'Classify groups' : 'Game finished');
-  const analysisDetail = finalAnalysisProgress ? (finalAnalysisProgress.groupsTotal > 0 ? `Analyzed ${finalAnalysisProgress.groupsCompleted} of ${finalAnalysisProgress.groupsTotal} groups · ${finalAnalysisProgress.currentTierName.replaceAll('-', ' ')} · ${finalAnalysisProgress.exploredNodes.toLocaleString()} nodes` : 'Static proofs resolved the position; final verification is completing.') : null;
-  const duplicateRegionsAvailable = !duplicateRegionsDisabled && showDuplicateRegions !== undefined && onShowDuplicateRegionsChange !== undefined;
+  useEffect(() => {
+    setFinalAnalysisProgress(progressSource?.current() ?? null);
+    if (!progressSource) return undefined;
+    return progressSource.subscribe(setFinalAnalysisProgress);
+  }, [progressSource]);
 
-  return <>
-    <div className="game-summary" aria-live="polite"><div className="turn-indicator">{viewModel.phase === 'playing' && !finalAnalysisProgress && !turnLabelOverride ? <span className={`stone-chip stone-chip--${viewModel.currentPlayer}`} aria-hidden="true" /> : null}<strong>{stageLabel}</strong></div><div className="game-statistics"><span>{size}×{size}</span><span>Move {viewModel.moveNumber}</span><span className="capture-stat capture-stat--black" aria-label={`Black stones captured: ${viewModel.captures.white}`}><i className="capture-stat__stone capture-stat__stone--black" aria-hidden="true" /><strong className="capture-stat__count">{viewModel.captures.white}</strong></span><span className="capture-stat capture-stat--white" aria-label={`White stones captured: ${viewModel.captures.black}`}><i className="capture-stat__stone capture-stat__stone--white" aria-hidden="true" /><strong className="capture-stat__count">{viewModel.captures.black}</strong></span><span>{viewModel.ruleSet === 'chinese' ? 'Chinese' : 'Japanese'} rules</span><span>Komi {viewModel.komi}</span></div></div>
-    <div className="torus-duplicates-control" role="group" aria-label="Board display options"><label><input type="checkbox" checked={showMoveNumbers} onChange={(event) => onShowMoveNumbersChange(event.target.checked)} /><span>Move numbers</span></label>{duplicateRegionsAvailable ? <label><input type="checkbox" checked={showDuplicateRegions} onChange={(event) => onShowDuplicateRegionsChange?.(event.target.checked)} /><span>Show duplicate regions</span></label> : null}</div>
-    {analysisDetail ? <p className="game-feedback final-proof-progress" role="status" aria-live="polite">{analysisDetail}</p> : null}
-    {endgame}
-    <div className="game-controls"><button className="pass-control" type="button" onClick={onPass} disabled={passDisabled || Boolean(finalAnalysisProgress)}>{viewModel.phase === 'playing' && viewModel.consecutivePasses === 1 ? 'Pass (1)' : 'Pass'}</button><div className="history-controls" role="group" aria-label="Move history controls"><button type="button" onClick={onRedo} disabled={!canRedo || Boolean(finalAnalysisProgress)}>Redo</button><button type="button" onClick={onUndo} disabled={!canUndo || Boolean(finalAnalysisProgress)}>Undo</button></div>{retryBotTurn ? <button type="button" onClick={retryBotTurn}>Retry</button> : null}{gameResultAvailable ? <button className="game-result-control" type="button" onClick={onOpenGameResult}>Game result</button> : null}<button className="new-game-control" type="button" onClick={onRequestNewGame} disabled={newGameDisabled || Boolean(finalAnalysisProgress)}>New game</button></div>
-    {feedback ? <p className="game-feedback">{feedback}</p> : null}
-  </>;
+  const stageLabel = finalAnalysisProgress
+    ? 'Analyzing final position…'
+    : turnLabelOverride ??
+      (viewModel.phase === 'playing'
+        ? `${viewModel.currentPlayer === 'black' ? 'Black' : 'White'} to move`
+        : viewModel.phase === 'endgame'
+          ? 'Classify groups'
+          : 'Game finished');
+
+  const analysisDetail = finalAnalysisProgress
+    ? finalAnalysisProgress.groupsTotal > 0
+      ? `Analyzed ${finalAnalysisProgress.groupsCompleted} of ${finalAnalysisProgress.groupsTotal} groups · ${finalAnalysisProgress.currentTierName.replaceAll('-', ' ')} · ${finalAnalysisProgress.exploredNodes.toLocaleString()} nodes`
+      : 'Static proofs resolved the position; final verification is completing.'
+    : null;
+
+  const duplicateRegionsAvailable =
+    !duplicateRegionsDisabled &&
+    showDuplicateRegions !== undefined &&
+    onShowDuplicateRegionsChange !== undefined;
+
+  return (
+    <>
+      <div className="game-summary" aria-live="polite">
+        <div className="turn-indicator">
+          {viewModel.phase === 'playing' && !finalAnalysisProgress && !turnLabelOverride ? (
+            <span
+              className={`stone-chip stone-chip--${viewModel.currentPlayer}`}
+              aria-hidden="true"
+            />
+          ) : null}
+          <strong>{stageLabel}</strong>
+        </div>
+        <div className="game-statistics">
+          <span>{size}×{size}</span>
+          <span>Move {viewModel.moveNumber}</span>
+          <span
+            className="capture-stat capture-stat--black"
+            aria-label={`Black stones captured: ${viewModel.captures.white}`}
+          >
+            <i className="capture-stat__stone capture-stat__stone--black" aria-hidden="true" />
+            <strong className="capture-stat__count">{viewModel.captures.white}</strong>
+          </span>
+          <span
+            className="capture-stat capture-stat--white"
+            aria-label={`White stones captured: ${viewModel.captures.black}`}
+          >
+            <i className="capture-stat__stone capture-stat__stone--white" aria-hidden="true" />
+            <strong className="capture-stat__count">{viewModel.captures.black}</strong>
+          </span>
+          <span>{viewModel.ruleSet === 'chinese' ? 'Chinese' : 'Japanese'} rules</span>
+          <span>Komi {viewModel.komi}</span>
+        </div>
+      </div>
+
+      <div
+        className="torus-duplicates-control"
+        role="group"
+        aria-label="Board display options"
+      >
+        <label>
+          <input
+            type="checkbox"
+            checked={showMoveNumbers}
+            onChange={(event) => onShowMoveNumbersChange(event.target.checked)}
+          />
+          <span>Move numbers</span>
+        </label>
+        {duplicateRegionsAvailable ? (
+          <label>
+            <input
+              type="checkbox"
+              checked={showDuplicateRegions}
+              onChange={(event) => onShowDuplicateRegionsChange?.(event.target.checked)}
+            />
+            <span>Show duplicate regions</span>
+          </label>
+        ) : null}
+      </div>
+
+      {analysisDetail ? (
+        <p className="game-feedback final-proof-progress" role="status" aria-live="polite">
+          {analysisDetail}
+        </p>
+      ) : null}
+
+      {endgame}
+
+      <div className="game-controls">
+        <button
+          className="pass-control"
+          type="button"
+          onClick={onPass}
+          disabled={passDisabled || Boolean(finalAnalysisProgress)}
+        >
+          {viewModel.phase === 'playing' && viewModel.consecutivePasses === 1
+            ? 'Pass (1)'
+            : 'Pass'}
+        </button>
+
+        <div className="history-controls" role="group" aria-label="Move history controls">
+          <button
+            type="button"
+            onClick={onRedo}
+            disabled={!canRedo || Boolean(finalAnalysisProgress)}
+          >
+            Redo
+          </button>
+          <button
+            type="button"
+            onClick={onUndo}
+            disabled={!canUndo || Boolean(finalAnalysisProgress)}
+          >
+            Undo
+          </button>
+        </div>
+
+        {retryBotTurn ? (
+          <button type="button" onClick={retryBotTurn}>
+            Retry
+          </button>
+        ) : null}
+
+        {gameResultAvailable ? (
+          <button className="game-result-control" type="button" onClick={onOpenGameResult}>
+            Game result
+          </button>
+        ) : null}
+
+        <button
+          className="new-game-control"
+          type="button"
+          onClick={onRequestNewGame}
+          disabled={newGameDisabled || Boolean(finalAnalysisProgress)}
+        >
+          New game
+        </button>
+      </div>
+
+      {feedback ? <p className="game-feedback">{feedback}</p> : null}
+    </>
+  );
 }
