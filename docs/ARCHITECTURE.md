@@ -93,6 +93,10 @@
 
 `AlphaZero generated move → DeveloperReplaySession → GameSession → GameEngine → GameState → Presentation/Renderer`
 
+Stateless bot-turn orchestration для настоящей партии также остаётся application-level и возвращает proposal в тот же authoritative path:
+
+`GameSession authoritative History → AlphaZeroPosition projection → BotTurnCoordinator → AlphaZeroGateway.selectMove() → proposed action → BotTurnCoordinator → GameSession → GameEngine`
+
 Отдельный test-only verification path не входит в runtime/application graph:
 
 `Deterministic fixture → classifier → DifferentialOracleAdapter/reference result → test assertion/diagnostic`
@@ -978,6 +982,16 @@ Stateless move-selection boundary имеет вид:
 `GoCube position/history → AlphaZeroGateway.selectMove() → external AlphaZero service → proposed place(pointId) | pass`
 
 `requestId` создаётся и принадлежит вызывающему application layer; gateway использует его только как opaque correlation identity и не придаёт ему игрового смысла. Возвращённый proposed action после transport/runtime validation всё ещё не является authoritative gameplay mutation: сам вызов `selectMove()` не меняет `GameSession` или `GameState`, а последующее применение такого action обязано проходить через обычный authoritative `GameSession → GameEngine` path. Формирование authoritative `GameSession history → Protocol V1 history` является отдельной application orchestration boundary и не переносится в transport client.
+
+Для хода бота над настоящей пользовательской `GameSession` application-level orchestration принадлежит `BotTurnCoordinator` (или эквивалентному узкому компоненту) и имеет полный путь:
+
+`GameSession authoritative History → AlphaZeroPosition projection → BotTurnCoordinator → AlphaZeroGateway.selectMove() → proposed action → BotTurnCoordinator → GameSession → GameEngine`
+
+`AlphaZeroPosition` каждый раз заново выводится из текущего authoritative `GameSessionSnapshot/History`; постоянные параллельные `botBoard`, `botHistory`, `botGameState` или `AlphaZeroSession` не создаются. Инференс action между соседними `GameState` является одним reusable pure primitive, общим с transition-semantic validation persisted History: неизменившаяся board означает `pass`, иначе placement определяется единственной canonical `PointId`, изменившейся `empty → цвет делавшего ход`; captures не передаются как отдельный bot-history state.
+
+Асинхронный `selectMove()` обязан быть защищён от stale response на application boundary. Перед запросом coordinator сохраняет identity owning controller/session, `sessionRevision`, текущие `moveNumber` и `currentPlayer`; после ответа он повторно доказывает ту же позицию перед mutation. `requestId` остаётся только correlation id и сам по себе не является доказательством актуальности позиции. Любой Undo, другая accepted mutation, замена controller/session или выход позиции из `playing` делает ответ stale/cancelled и запрещает применять `placeStone`/`pass`.
+
+После проверки актуальности response color обязан совпадать с authoritative `currentPlayer`. `place(pointId)` и `pass` применяются только через существующий controller/`GameSession`; если GoCube отвергает transport-valid proposal, это compatibility/integration failure без исправления хода, force-apply или автоматического fallback Pass. Ошибка AlphaZero, включая `position_invalid`, не меняет `GameSession`. Второй последовательный bot Pass использует обычный `GameSession → GameEngine → ENDGAME_REVIEW` flow; после выхода из `playing` следующий bot move не запрашивается. Различие текущего GoCube Simple Ko и внешней AlphaZero positional-superko validation остаётся transport/integration compatibility boundary и не меняет правила GoCube.
 
 Health capabilities являются additive Protocol V1 metadata: наличие `selectMove: true` позволяет application layer явно определить поддержку stateless move selection, а legacy health без `capabilities` остаётся допустимым для уже существующих Development Workspace операций.
 
