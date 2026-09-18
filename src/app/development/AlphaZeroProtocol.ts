@@ -7,12 +7,15 @@ import {
   ALPHAZERO_PROTOCOL_VERSION,
   AlphaZeroGatewayError,
   type AlphaZeroAction,
+  type AlphaZeroCapabilities,
   type AlphaZeroCheckpointDescriptor,
   type AlphaZeroGeneratedGame,
   type AlphaZeroGeneratedGameResult,
   type AlphaZeroGeneratedMove,
   type AlphaZeroHealth,
   type AlphaZeroLineageStatus,
+  type AlphaZeroSelectedMove,
+  type AlphaZeroSelectMoveRequest,
   type AlphaZeroTopology,
 } from './AlphaZeroGateway';
 
@@ -197,12 +200,29 @@ const pointIdValue = (
   return value;
 };
 
+const parseCapabilities = (value: unknown): AlphaZeroCapabilities | undefined => {
+  if (value === undefined) return undefined;
+  const record = asRecord(value, 'health.capabilities');
+  if (typeof record.generateGame !== 'boolean') {
+    return protocolError('health.capabilities.generateGame must be a boolean.');
+  }
+  if (typeof record.selectMove !== 'boolean') {
+    return protocolError('health.capabilities.selectMove must be a boolean.');
+  }
+  return Object.freeze({
+    generateGame: record.generateGame,
+    selectMove: record.selectMove,
+  });
+};
+
 export const parseAlphaZeroHealth = (value: unknown): AlphaZeroHealth => {
   const record = asRecord(value, 'health');
+  const capabilities = parseCapabilities(record.capabilities);
   return Object.freeze({
     protocolVersion: protocolVersion(record, 'health'),
     service: requiredString(record, 'service', 'health'),
     version: requiredString(record, 'version', 'health'),
+    ...(capabilities === undefined ? {} : { capabilities }),
   });
 };
 
@@ -392,4 +412,75 @@ export const parseAlphaZeroGeneratedGame = (value: unknown): AlphaZeroGeneratedG
     ...(result === undefined || result === null ? {} : { result }),
   };
   return Object.freeze(game);
+};
+
+export const parseAlphaZeroSelectedMove = (
+  value: unknown,
+  request: AlphaZeroSelectMoveRequest,
+): AlphaZeroSelectedMove => {
+  const record = asRecord(value, 'selectedMove');
+  const responseRequestId = requiredString(record, 'requestId', 'selectedMove');
+  if (responseRequestId !== request.requestId) {
+    return protocolError(
+      `selectedMove.requestId must match requestId "${request.requestId}".`,
+    );
+  }
+
+  const responseCheckpointId = requiredString(record, 'checkpointId', 'selectedMove');
+  if (responseCheckpointId !== request.checkpointId) {
+    return protocolError(
+      `selectedMove.checkpointId must match checkpointId "${request.checkpointId}".`,
+    );
+  }
+
+  const mctsSimulations = safeInteger(record, 'mctsSims', 'selectedMove', 1);
+  if (mctsSimulations !== request.mctsSimulations) {
+    return protocolError(
+      `selectedMove.mctsSims must be ${request.mctsSimulations}; received ${mctsSimulations}.`,
+    );
+  }
+
+  const expectedMoveNumber = request.position.moves.length + 1;
+  const moveNumber = safeInteger(record, 'moveNumber', 'selectedMove', 1);
+  if (moveNumber !== expectedMoveNumber) {
+    return protocolError(
+      `selectedMove.moveNumber must be ${expectedMoveNumber}; received ${moveNumber}.`,
+    );
+  }
+
+  const topology = topologyFor(
+    request.position.topology,
+    request.position.size,
+    'selectMoveRequest.position',
+  );
+  const searchRecord = asRecord(record.search, 'selectedMove.search');
+  const searchSimulations = safeInteger(
+    searchRecord,
+    'simulations',
+    'selectedMove.search',
+    1,
+  );
+  if (searchSimulations !== request.mctsSimulations) {
+    return protocolError(
+      `selectedMove.search.simulations must be ${request.mctsSimulations}; received ${searchSimulations}.`,
+    );
+  }
+
+  return Object.freeze({
+    protocolVersion: protocolVersion(record, 'selectedMove'),
+    requestId: responseRequestId,
+    checkpointId: responseCheckpointId,
+    mctsSimulations,
+    moveNumber,
+    color: colorValue(record, 'color', 'selectedMove'),
+    action: parseAction(record.action, topology, 'selectedMove.action'),
+    search: Object.freeze({
+      simulations: searchSimulations,
+      implementationId: requiredString(
+        searchRecord,
+        'implementationId',
+        'selectedMove.search',
+      ),
+    }),
+  });
 };
