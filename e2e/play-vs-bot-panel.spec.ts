@@ -97,11 +97,24 @@ test('Play vs bot launcher is a four-zone panel and starts with the selected mod
   await expect(play).toBeDisabled();
   await mcts.fill('128');
 
-  await panel.getByRole('button', { name: 'Choose model', exact: true }).click();
+  const chooseModel = panel.getByRole('button', { name: 'Choose model', exact: true });
+  await chooseModel.click();
   const dialog = page.getByRole('dialog', { name: 'AlphaZero' });
-  await expect(dialog.getByText('Connected', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('CONNECTED', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
   await expect(dialog.getByLabel('Bot checkpoint')).toHaveValue(checkpoint.id);
+  await expect(dialog.getByRole('button', { name: 'Start game', exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'OK', exact: true })).toBeEnabled();
+  expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(chooseModel).toBeVisible();
+  await expect(play).toBeDisabled();
+
+  await chooseModel.click();
+  await expect(dialog.getByText('CONNECTED', { exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'OK', exact: true }).click();
 
   await expect(panel.getByRole('button', { name: 'M93 · Torus 9×9', exact: true })).toBeVisible();
   await expect(play).toBeEnabled();
