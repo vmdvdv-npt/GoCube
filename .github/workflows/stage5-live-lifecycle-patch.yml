@@ -1,0 +1,168 @@
+name: Stage 5 live lifecycle patch
+
+on:
+  push:
+    branches:
+      - codex/alphazero-live-acceptance-stage5
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'chore: apply Stage 5 live lifecycle patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: codex/alphazero-live-acceptance-stage5
+      - name: Extend live AlphaZero lifecycle acceptance
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('e2e/alphazero-live.spec.ts')
+          text = path.read_text()
+          marker = "transport failure exposes Retry and retry reaches the real service"
+          if marker in text:
+              raise SystemExit('Live lifecycle tests already present')
+
+          insertion = r'''
+
+  test('transport failure exposes Retry and retry reaches the real service with the same history', async ({
+    page,
+    request,
+  }) => {
+    const checkpoint = await discoverCompatibleCheckpoint(request);
+    const mctsSimulations = liveMctsSimulations();
+    const moveUrl = `${alphaZeroBaseUrl()}/v1/move`;
+    let failedRequest: MoveRequest | null = null;
+    let failNextPost = true;
+
+    await page.route(moveUrl, async (route) => {
+      const intercepted = route.request();
+      if (intercepted.method() !== 'POST' || !failNextPost) {
+        await route.continue();
+        return;
+      }
+      failNextPost = false;
+      failedRequest = intercepted.postDataJSON() as MoveRequest;
+      await route.abort('connectionfailed');
+    });
+
+    await startBotGame(page, checkpoint, mctsSimulations, 'Black');
+    await primaryHit(page, '0,0').click();
+
+    await expect(primaryStone(page, '0,0')).toHaveCount(1);
+    await expect(turnIndicator(page)).toContainText('Bot move failed.', { timeout: 20_000 });
+    const retry = page.getByRole('button', { name: 'Retry', exact: true });
+    await expect(retry).toBeVisible();
+    await expect.poll(() => failedRequest !== null).toBe(true);
+
+    const failed = failedRequest;
+    if (!failed) throw new Error('Expected the first live /v1/move request to be intercepted.');
+    expect(failed.position.moves).toEqual([
+      { moveNumber: 1, color: 'black', action: { type: 'place', pointId: '0,0' } },
+    ]);
+
+    await page.unroute(moveUrl);
+    const retryRequestPromise = page.waitForRequest(isMoveRequest, { timeout: 75_000 });
+    const retryResponsePromise = page.waitForResponse(isMoveResponse, { timeout: 75_000 });
+    await retry.click();
+
+    const retryRequest = (await retryRequestPromise).postDataJSON() as MoveRequest;
+    expect(retryRequest.position.moves).toEqual(failed.position.moves);
+    expect(retryRequest.checkpointId).toBe(failed.checkpointId);
+    expect(retryRequest.mctsSims).toBe(failed.mctsSims);
+
+    const retryResponse = await retryResponsePromise;
+    expect(retryResponse.ok()).toBe(true);
+    const retryBody = (await retryResponse.json()) as MoveResponse;
+    assertRealMoveResponse(retryBody, retryRequest, 'white');
+    await expect(turnIndicator(page)).toContainText('Black to move', { timeout: 75_000 });
+    await expect(retry).toHaveCount(0);
+  });
+
+  test('a completed real MCTS response cannot mutate a new game after the old runtime is invalidated', async ({
+    page,
+    request,
+  }) => {
+    const checkpoint = await discoverCompatibleCheckpoint(request);
+    const mctsSimulations = liveMctsSimulations();
+    const moveUrl = `${alphaZeroBaseUrl()}/v1/move`;
+    let releaseResponse!: () => void;
+    const responseRelease = new Promise<void>((resolve) => { releaseResponse = resolve; });
+    let backendReady!: () => void;
+    const backendCompleted = new Promise<void>((resolve) => { backendReady = resolve; });
+    let liveRequest: MoveRequest | null = null;
+    let liveResponseBody: MoveResponse | null = null;
+    let liveStatus: number | null = null;
+
+    await page.route(moveUrl, async (route) => {
+      const intercepted = route.request();
+      if (intercepted.method() !== 'POST') {
+        await route.continue();
+        return;
+      }
+
+      liveRequest = intercepted.postDataJSON() as MoveRequest;
+      const backendResponse = await route.fetch({ timeout: 75_000 });
+      liveStatus = backendResponse.status();
+      const body = await backendResponse.body();
+      liveResponseBody = JSON.parse(body.toString('utf-8')) as MoveResponse;
+      const headers = backendResponse.headers();
+      backendReady();
+      await responseRelease;
+      await route.fulfill({ status: liveStatus, headers, body });
+    });
+
+    await startBotGame(page, checkpoint, mctsSimulations, 'Black');
+    await primaryHit(page, '0,0').click();
+    await expect(primaryStone(page, '0,0')).toHaveCount(1);
+    await expect(turnIndicator(page)).toContainText('Computer is thinking…');
+
+    await backendCompleted;
+    if (liveStatus !== 200 || !liveRequest || !liveResponseBody) {
+      releaseResponse();
+      throw new Error(`Expected a successful real /v1/move response before invalidation, got ${liveStatus}.`);
+    }
+    assertRealMoveResponse(liveResponseBody, liveRequest, 'white');
+
+    await primaryHit(page, '1,0').click();
+    await expect(primaryStone(page, '1,0')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'New game', exact: true }).click();
+    const confirmation = page.getByRole('dialog', { name: 'Start a new game?' });
+    await confirmation.getByRole('button', { name: 'New Game', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Play vs bot' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Start game', exact: true }).click();
+    await expect(turnIndicator(page)).toContainText('Black to move');
+    await expect(page.locator('.torus-board__stone[data-copy-role="primary"]')).toHaveCount(0);
+
+    releaseResponse();
+    await page.unroute(moveUrl);
+    await page.waitForTimeout(250);
+
+    await expect(page.locator('.torus-board__stone[data-copy-role="primary"]')).toHaveCount(0);
+    await expect(turnIndicator(page)).toContainText('Black to move');
+    await expect(page.getByText('Computer is thinking…', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Bot move failed.', { exact: true })).toHaveCount(0);
+  });
+'''
+
+          needle = '\n});\n'
+          index = text.rfind(needle)
+          if index < 0:
+              raise SystemExit('Could not find final test.describe terminator')
+          path.write_text(text[:index] + insertion + text[index:])
+          PY
+      - name: Commit lifecycle coverage and remove helper workflow
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/stage5-live-lifecycle-patch.yml
+          git add e2e/alphazero-live.spec.ts
+          git config user.name vmdvdv-npt
+          git config user.email vmdvdv@gmail.com
+          git commit -m "test: extend live AlphaZero lifecycle acceptance"
+          git push origin HEAD:codex/alphazero-live-acceptance-stage5
