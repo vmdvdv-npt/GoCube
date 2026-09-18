@@ -79,8 +79,9 @@ export class BotGameOrchestrator {
   constructor(options: BotGameOrchestratorOptions) {
     this.humanColor = options.humanColor;
     this.botColor = oppositeColor(options.humanColor);
+    const controllerSource = options.controller;
     this.resolveController =
-      typeof options.controller === 'function' ? options.controller : () => options.controller;
+      typeof controllerSource === 'function' ? controllerSource : () => controllerSource;
 
     this.botTurnCoordinator = new BotTurnCoordinator({
       gateway: options.gateway,
