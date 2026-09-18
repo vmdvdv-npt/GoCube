@@ -1408,6 +1408,8 @@ Isolation coverage обязана доказывать, что opening/using/exi
 
 E2E использует mocked AlphaZero transport и реальный GoCube application path/Renderer. CI не требует реально запущенного Python AlphaZero service. Отдельный E2E проверяет compatibility failure и отсутствие application crash.
 
+Отдельный opt-in live-service smoke является acceptance-инструментом поверх той же Playwright/browser boundary и не входит в обязательный CI gate. Он запускается явно командой `npm run test:alphazero-live`, обязан использовать реальный `/v1/health`, `/v1/checkpoints` и `/v1/move`, выбирать compatible checkpoint только по descriptor metadata и доказывать реальный Human-vs-Bot browser path с neural MCTS и authoritative History. Если live smoke запрошен явно, недоступный или несовместимый AlphaZero service является failure, а не skip. При обычном CI этот spec остаётся skipped и не требует GPU/Python service.
+
 # 20. Library / Reuse Policy
 
 Library/Reuse Review является техническим gate. `ROADMAP.md` определяет, **когда** он проводится; этот раздел определяет **как** оценивать reuse.
