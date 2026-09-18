@@ -1,43 +1,22 @@
 import type { StoneColor } from '../core/game/types';
 import type { PointId } from '../core/topology/Topology';
-import type { CubeSize } from '../core/topology/CubeTopology';
-import type { TorusSize } from '../core/topology/TorusTopology';
 import {
   BotGameOrchestrator,
   type BotGameOrchestratorState,
   type BotGamePresentationEvent,
 } from './BotGameOrchestrator';
-import { Cube2DGameController } from './Cube2DGameController';
-import type { ActiveGame, NewGameSettings } from './GameApplication';
+import type { ActiveGame } from './GameApplication';
+import type { GameInteractionBoundary } from './GameInteractionBoundary';
 import type { SharedGameActionResult } from './GameSessionControllerFacade';
-import { TorusGameController } from './TorusGameController';
 import type { AlphaZeroGateway } from './development/AlphaZeroGateway';
-
-export const createEphemeralGame = (settings: NewGameSettings): ActiveGame =>
-  settings.gameMode === 'cube-2d'
-    ? Object.freeze({
-        gameMode: 'cube-2d' as const,
-        controller: new Cube2DGameController({
-          size: settings.size as CubeSize,
-          ruleSet: settings.ruleSet,
-          komi: settings.komi,
-        }),
-      })
-    : Object.freeze({
-        gameMode: 'torus-2d' as const,
-        controller: new TorusGameController({
-          size: settings.size as TorusSize,
-          ruleSet: settings.ruleSet,
-          komi: settings.komi,
-        }),
-      });
 
 export type BotRuntimeEvent = BotGamePresentationEvent;
 
 export interface BotRuntime {
-  orchestrator: BotGameOrchestrator;
-  controller: ActiveGame['controller'];
-  presentationController: ActiveGame['controller'];
+  readonly identity: number;
+  readonly orchestrator: BotGameOrchestrator;
+  readonly controller: ActiveGame['controller'];
+  readonly interaction: GameInteractionBoundary;
   state(): BotGameOrchestratorState;
 }
 
@@ -47,6 +26,7 @@ type PendingHumanPresentation = Readonly<{
 }>;
 
 export const createBotRuntime = (options: {
+  identity: number;
   activeGame: ActiveGame;
   gateway: AlphaZeroGateway;
   humanColor: StoneColor;
@@ -54,7 +34,15 @@ export const createBotRuntime = (options: {
   mctsSimulations: number;
   onEvent: (event: BotRuntimeEvent) => void;
 }): BotRuntime => {
-  const { activeGame, gateway, humanColor, checkpointId, mctsSimulations, onEvent } = options;
+  const {
+    identity,
+    activeGame,
+    gateway,
+    humanColor,
+    checkpointId,
+    mctsSimulations,
+    onEvent,
+  } = options;
   const controller = activeGame.controller;
   let pendingHumanPresentation: PendingHumanPresentation | null = null;
 
@@ -80,6 +68,11 @@ export const createBotRuntime = (options: {
     action: () => Promise<SharedGameActionResult>,
   ): Promise<SharedGameActionResult> =>
     new Promise((resolve, reject) => {
+      if (pendingHumanPresentation) {
+        reject(new Error('A human presentation action is already in flight'));
+        return;
+      }
+
       pendingHumanPresentation = Object.freeze({ resolve, reject });
       void action()
         .then((result) => {
@@ -96,27 +89,19 @@ export const createBotRuntime = (options: {
         });
     });
 
-  const presentationController = new Proxy(controller as object, {
-    get(target, property, receiver) {
-      if (property === 'placeStone') {
-        return (point: PointId) =>
-          runHumanPresentationAction(() => orchestrator.humanPlaceStone(point));
-      }
-      if (property === 'pass') {
-        return () => runHumanPresentationAction(() => orchestrator.humanPass());
-      }
-      if (property === 'canUndo' || property === 'canRedo') return () => false;
-      const value = Reflect.get(target, property, receiver) as unknown;
-      return typeof value === 'function'
-        ? (value as (...args: unknown[]) => unknown).bind(target)
-        : value;
-    },
-  }) as ActiveGame['controller'];
+  const interaction: GameInteractionBoundary = Object.freeze({
+    placeStone: (point: PointId) =>
+      runHumanPresentationAction(() => orchestrator.humanPlaceStone(point)),
+    pass: () => runHumanPresentationAction(() => orchestrator.humanPass()),
+    canUndo: () => false,
+    canRedo: () => false,
+  });
 
-  return {
+  return Object.freeze({
+    identity,
     orchestrator,
     controller,
-    presentationController,
+    interaction,
     state: () => orchestrator.state(),
-  };
+  });
 };
