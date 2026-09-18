@@ -10,6 +10,14 @@ import {
   AlphaZeroGatewayError,
 } from './AlphaZeroGateway';
 import {
+  ALL_BOARDS_FILTER,
+  boardFilterOptionsFromCheckpoints,
+  checkpointIdWithFallback,
+  checkpointLabel,
+  visibleCheckpointsForFilters,
+  type BoardFilterValue,
+} from './AlphaZeroCheckpointSelection';
+import {
   DeveloperReplayCompatibilityError,
   DeveloperReplaySession,
 } from './DeveloperReplaySession';
@@ -48,7 +56,8 @@ const readDevelopmentSettings = (): DevelopmentSettings => {
       ...(typeof parsed.whiteCheckpointId === 'string'
         ? { whiteCheckpointId: parsed.whiteCheckpointId }
         : {}),
-      ...(Number.isSafeInteger(parsed.mctsSimulations) && Number(parsed.mctsSimulations) >= 1
+      ...(Number.isSafeInteger(parsed.mctsSimulations) &&
+      Number(parsed.mctsSimulations) >= 1
         ? { mctsSimulations: Number(parsed.mctsSimulations) }
         : {}),
     };
@@ -79,76 +88,6 @@ const latestCheckpoint = (
   return latest;
 };
 
-export const visibleCheckpointsForLifecycle = (
-  checkpoints: readonly AlphaZeroCheckpointDescriptor[],
-  showClosedLineages: boolean,
-): readonly AlphaZeroCheckpointDescriptor[] =>
-  showClosedLineages
-    ? checkpoints
-    : checkpoints.filter((checkpoint) => (checkpoint.lineageStatus ?? 'ACTIVE') === 'ACTIVE');
-
-export const ALL_BOARDS_FILTER = 'all' as const;
-
-export type BoardFilterValue =
-  | typeof ALL_BOARDS_FILTER
-  | `${AlphaZeroCheckpointDescriptor['topology']}:${number}`;
-
-export type BoardFilterOption = Readonly<{
-  value: BoardFilterValue;
-  label: string;
-}>;
-
-const boardFilterValueForCheckpoint = (
-  checkpoint: AlphaZeroCheckpointDescriptor,
-): BoardFilterValue => `${checkpoint.topology}:${checkpoint.size}` as BoardFilterValue;
-
-const boardFilterLabel = (checkpoint: AlphaZeroCheckpointDescriptor): string => {
-  const topology = `${checkpoint.topology.charAt(0).toUpperCase()}${checkpoint.topology.slice(1)}`;
-  return `${topology} ${checkpoint.size}×${checkpoint.size}`;
-};
-
-export const boardFilterOptionsFromCheckpoints = (
-  checkpoints: readonly AlphaZeroCheckpointDescriptor[],
-): readonly BoardFilterOption[] => {
-  const seen = new Set<BoardFilterValue>();
-  const options: BoardFilterOption[] = [
-    Object.freeze({ value: ALL_BOARDS_FILTER, label: 'All boards' }),
-  ];
-
-  for (const checkpoint of checkpoints) {
-    const value = boardFilterValueForCheckpoint(checkpoint);
-    if (seen.has(value)) continue;
-    seen.add(value);
-    options.push(Object.freeze({ value, label: boardFilterLabel(checkpoint) }));
-  }
-
-  return options;
-};
-
-export const visibleCheckpointsForFilters = (
-  checkpoints: readonly AlphaZeroCheckpointDescriptor[],
-  showClosedLineages: boolean,
-  boardFilter: BoardFilterValue,
-): readonly AlphaZeroCheckpointDescriptor[] =>
-  visibleCheckpointsForLifecycle(checkpoints, showClosedLineages).filter(
-    (checkpoint) =>
-      boardFilter === ALL_BOARDS_FILTER || boardFilterValueForCheckpoint(checkpoint) === boardFilter,
-  );
-
-export const checkpointIdWithFallback = (
-  currentId: string,
-  visibleCheckpoints: readonly AlphaZeroCheckpointDescriptor[],
-): string => {
-  if (visibleCheckpoints.some((checkpoint) => checkpoint.id === currentId)) return currentId;
-  return visibleCheckpoints[visibleCheckpoints.length - 1]?.id ?? '';
-};
-
-const checkpointLabel = (checkpoint: AlphaZeroCheckpointDescriptor): string => {
-  const lifecycleStatus = checkpoint.lineageStatus ?? 'ACTIVE';
-  const status = lifecycleStatus === 'ACTIVE' ? '' : ` · ${lifecycleStatus}`;
-  return `${checkpoint.runName} · iter ${checkpoint.iteration} · ${checkpoint.topology} ${checkpoint.size}×${checkpoint.size}${status}`;
-};
-
 export const checkpointCompatibilityError = (
   black: AlphaZeroCheckpointDescriptor | null,
   white: AlphaZeroCheckpointDescriptor | null,
@@ -167,13 +106,27 @@ export const generatedGameCompatibilityError = (
   white: AlphaZeroCheckpointDescriptor,
   requestedSims: number,
 ): string | null => {
-  if (game.blackCheckpoint !== black.id) return 'Generated game Black checkpoint does not match the request.';
-  if (game.whiteCheckpoint !== white.id) return 'Generated game White checkpoint does not match the request.';
-  if (game.topology !== black.topology) return 'Generated game topology does not match the selected checkpoints.';
-  if (game.size !== black.size) return 'Generated game size does not match the selected checkpoints.';
-  if (game.ruleSet !== black.ruleSet) return 'Generated game rules do not match the selected checkpoints.';
-  if (game.komi !== black.komi) return 'Generated game komi does not match the selected checkpoints.';
-  if (game.mctsSimulations !== requestedSims) return 'Generated game MCTS simulation count does not match the request.';
+  if (game.blackCheckpoint !== black.id) {
+    return 'Generated game Black checkpoint does not match the request.';
+  }
+  if (game.whiteCheckpoint !== white.id) {
+    return 'Generated game White checkpoint does not match the request.';
+  }
+  if (game.topology !== black.topology) {
+    return 'Generated game topology does not match the selected checkpoints.';
+  }
+  if (game.size !== black.size) {
+    return 'Generated game size does not match the selected checkpoints.';
+  }
+  if (game.ruleSet !== black.ruleSet) {
+    return 'Generated game rules do not match the selected checkpoints.';
+  }
+  if (game.komi !== black.komi) {
+    return 'Generated game komi does not match the selected checkpoints.';
+  }
+  if (game.mctsSimulations !== requestedSims) {
+    return 'Generated game MCTS simulation count does not match the request.';
+  }
   return null;
 };
 
@@ -200,8 +153,14 @@ const scoresDiffer = (
   alphaZero.score.white !== goCube.white ||
   alphaZero.score.margin !== goCube.margin;
 
-export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: DevelopmentWorkspaceProps) {
-  const gateway = useMemo(() => providedGateway ?? new HttpAlphaZeroClient(), [providedGateway]);
+export function DevelopmentWorkspace({
+  onBack,
+  gateway: providedGateway,
+}: DevelopmentWorkspaceProps) {
+  const gateway = useMemo(
+    () => providedGateway ?? new HttpAlphaZeroClient(),
+    [providedGateway],
+  );
   const initialSettingsRef = useRef<DevelopmentSettings | undefined>(undefined);
   if (initialSettingsRef.current === undefined) {
     initialSettingsRef.current = readDevelopmentSettings();
@@ -213,18 +172,26 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
   const [checkpoints, setCheckpoints] = useState<readonly AlphaZeroCheckpointDescriptor[]>([]);
   const [showClosedLineages, setShowClosedLineages] = useState(false);
   const [boardFilter, setBoardFilter] = useState<BoardFilterValue>(ALL_BOARDS_FILTER);
-  const [blackCheckpointId, setBlackCheckpointId] = useState(initialSettings.blackCheckpointId ?? '');
-  const [whiteCheckpointId, setWhiteCheckpointId] = useState(initialSettings.whiteCheckpointId ?? '');
-  const [mctsSimulations, setMctsSimulations] = useState(initialSettings.mctsSimulations ?? 100);
+  const [blackCheckpointId, setBlackCheckpointId] = useState(
+    initialSettings.blackCheckpointId ?? '',
+  );
+  const [whiteCheckpointId, setWhiteCheckpointId] = useState(
+    initialSettings.whiteCheckpointId ?? '',
+  );
+  const [mctsSimulations, setMctsSimulations] = useState(
+    initialSettings.mctsSimulations ?? 100,
+  );
   const [generating, setGenerating] = useState(false);
   const [replay, setReplay] = useState<DeveloperReplaySession | null>(null);
-  const [alphaZeroResult, setAlphaZeroResult] = useState<AlphaZeroGeneratedGameResult | null>(null);
+  const [alphaZeroResult, setAlphaZeroResult] =
+    useState<AlphaZeroGeneratedGameResult | null>(null);
   const [goCubeScore, setGoCubeScore] = useState<FinalScore | null>(null);
   const [position, setPosition] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<ReplaySpeed>(1);
   const [diagnostic, setDiagnostic] = useState<string | null>(null);
-  const [externalAction, setExternalAction] = useState<DeveloperReplayExternalAction | null>(null);
+  const [externalAction, setExternalAction] =
+    useState<DeveloperReplayExternalAction | null>(null);
   const [seekAnimationDisabled, setSeekAnimationDisabled] = useState(false);
   const actionSequenceRef = useRef(0);
   const operationInFlightRef = useRef(false);
@@ -245,10 +212,12 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
     () => visibleCheckpoints.find((checkpoint) => checkpoint.id === whiteCheckpointId) ?? null,
     [visibleCheckpoints, whiteCheckpointId],
   );
-  const compatibilityError = checkpointCompatibilityError(blackCheckpoint, whiteCheckpoint);
-  const resultMismatch = alphaZeroResult && goCubeScore
-    ? scoresDiffer(alphaZeroResult, goCubeScore)
-    : null;
+  const compatibilityError = checkpointCompatibilityError(
+    blackCheckpoint,
+    whiteCheckpoint,
+  );
+  const resultMismatch =
+    alphaZeroResult && goCubeScore ? scoresDiffer(alphaZeroResult, goCubeScore) : null;
 
   const selectFilteredFallback = (
     nextShowClosedLineages: boolean,
@@ -259,8 +228,12 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
       nextShowClosedLineages,
       nextBoardFilter,
     );
-    setBlackCheckpointId((current) => checkpointIdWithFallback(current, filteredCheckpoints));
-    setWhiteCheckpointId((current) => checkpointIdWithFallback(current, filteredCheckpoints));
+    setBlackCheckpointId((current) =>
+      checkpointIdWithFallback(current, filteredCheckpoints),
+    );
+    setWhiteCheckpointId((current) =>
+      checkpointIdWithFallback(current, filteredCheckpoints),
+    );
   };
 
   const checkConnection = async (): Promise<void> => {
@@ -271,7 +244,9 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
       const health = await gateway.health();
       const availableCheckpoints = await gateway.listCheckpoints();
       const availableBoardOptions = boardFilterOptionsFromCheckpoints(availableCheckpoints);
-      const nextBoardFilter = availableBoardOptions.some((option) => option.value === boardFilter)
+      const nextBoardFilter = availableBoardOptions.some(
+        (option) => option.value === boardFilter,
+      )
         ? boardFilter
         : ALL_BOARDS_FILTER;
       const visibleAvailableCheckpoints = visibleCheckpointsForFilters(
@@ -280,10 +255,13 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
         nextBoardFilter,
       );
       setConnection('available');
-      setServiceLabel(`${health.service} ${health.version} · protocol v${health.protocolVersion}`);
+      setServiceLabel(
+        `${health.service} ${health.version} · protocol v${health.protocolVersion}`,
+      );
       setCheckpoints(availableCheckpoints);
       setBoardFilter(nextBoardFilter);
-      const fallback = latestCheckpoint(visibleAvailableCheckpoints) ?? visibleAvailableCheckpoints[0];
+      const fallback =
+        latestCheckpoint(visibleAvailableCheckpoints) ?? visibleAvailableCheckpoints[0];
       if (fallback) {
         setBlackCheckpointId((current) =>
           visibleAvailableCheckpoints.some((checkpoint) => checkpoint.id === current)
@@ -325,7 +303,10 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
     return () => replay.setFinalScoreListener(null);
   }, [replay]);
 
-  const publishAction = (session: DeveloperReplaySession, result: SharedGameActionResult): void => {
+  const publishAction = (
+    session: DeveloperReplaySession,
+    result: SharedGameActionResult,
+  ): void => {
     actionSequenceRef.current += 1;
     setExternalAction(Object.freeze({ sequence: actionSequenceRef.current, result }));
     setPosition(session.position);
@@ -390,7 +371,9 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
       setReplay(session);
       setPosition(0);
       actionSequenceRef.current += 1;
-      setExternalAction(Object.freeze({ sequence: actionSequenceRef.current, result: session.current() }));
+      setExternalAction(
+        Object.freeze({ sequence: actionSequenceRef.current, result: session.current() }),
+      );
     } catch (error) {
       setDiagnostic(errorMessage(error));
     } finally {
@@ -409,7 +392,8 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
     const timer = window.setTimeout(() => {
       if (operationInFlightRef.current) return;
       operationInFlightRef.current = true;
-      void replay.next()
+      void replay
+        .next()
         .then((result) => {
           publishAction(replay, result);
           if (replay.position >= replay.totalMoves) setPlaying(false);
@@ -437,22 +421,37 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
           <p className="development-workspace__kicker">Developer tools</p>
           <h1>Development Workspace</h1>
         </div>
-        <button type="button" onClick={onBack}>Back to GoCube</button>
+        <button type="button" onClick={onBack}>
+          Back to GoCube
+        </button>
       </header>
 
       <div className="development-workspace__content">
         <aside className="development-workspace__sidebar">
-          <section className="development-alpha-zero" aria-labelledby="development-alpha-zero-title">
+          <section
+            className="development-alpha-zero"
+            aria-labelledby="development-alpha-zero-title"
+          >
             <div className="development-alpha-zero__heading">
               <h2 id="development-alpha-zero-title">AlphaZero</h2>
-              <span className={`development-alpha-zero__connection development-alpha-zero__connection--${connection}`}>
-                {connection === 'available' ? 'Connected' : connection === 'checking' ? 'Checking' : 'Offline'}
+              <span
+                className={`development-alpha-zero__connection development-alpha-zero__connection--${connection}`}
+              >
+                {connection === 'available'
+                  ? 'Connected'
+                  : connection === 'checking'
+                    ? 'Checking'
+                    : 'Offline'}
               </span>
             </div>
 
             <div className="development-alpha-zero__status">
               <span aria-live="polite">{serviceLabel}</span>
-              <button type="button" disabled={connection === 'checking' || generating} onClick={() => void checkConnection()}>
+              <button
+                type="button"
+                disabled={connection === 'checking' || generating}
+                onClick={() => void checkConnection()}
+              >
                 Retry
               </button>
             </div>
@@ -486,7 +485,9 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
                   }}
                 >
                   {boardFilterOptions.map((option) => (
-                    <option value={option.value} key={option.value}>{option.label}</option>
+                    <option value={option.value} key={option.value}>
+                      {option.label}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -504,7 +505,9 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
                 >
                   <option value="">Select checkpoint</option>
                   {visibleCheckpoints.map((checkpoint) => (
-                    <option value={checkpoint.id} key={checkpoint.id}>{checkpointLabel(checkpoint)}</option>
+                    <option value={checkpoint.id} key={checkpoint.id}>
+                      {checkpointLabel(checkpoint)}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -522,7 +525,9 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
                 >
                   <option value="">Select checkpoint</option>
                   {visibleCheckpoints.map((checkpoint) => (
-                    <option value={checkpoint.id} key={checkpoint.id}>{checkpointLabel(checkpoint)}</option>
+                    <option value={checkpoint.id} key={checkpoint.id}>
+                      {checkpointLabel(checkpoint)}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -558,7 +563,9 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
               <button
                 type="button"
                 className="development-alpha-zero__generate"
-                disabled={connection !== 'available' || generating || Boolean(compatibilityError)}
+                disabled={
+                  connection !== 'available' || generating || Boolean(compatibilityError)
+                }
                 onClick={() => void generate()}
               >
                 {generating ? 'Generating…' : 'Generate game'}
@@ -567,7 +574,10 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
           </section>
 
           {replay ? (
-            <section className="development-result-comparison" aria-labelledby="development-result-comparison-title">
+            <section
+              className="development-result-comparison"
+              aria-labelledby="development-result-comparison-title"
+            >
               <div className="development-result-comparison__heading">
                 <h3 id="development-result-comparison-title">Result comparison</h3>
                 {resultMismatch !== null ? (
@@ -584,10 +594,24 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
                 <h4>AlphaZero result</h4>
                 {alphaZeroResult ? (
                   <dl>
-                    <div><dt>Winner</dt><dd>{winnerLabel(alphaZeroResult.winner)}</dd></div>
-                    <div><dt>Score</dt><dd>B {alphaZeroResult.score.black} · W {alphaZeroResult.score.white}</dd></div>
-                    <div><dt>Margin</dt><dd>{alphaZeroResult.score.margin}</dd></div>
-                    <div><dt>fallbackCount</dt><dd>{alphaZeroResult.fallbackCount}</dd></div>
+                    <div>
+                      <dt>Winner</dt>
+                      <dd>{winnerLabel(alphaZeroResult.winner)}</dd>
+                    </div>
+                    <div>
+                      <dt>Score</dt>
+                      <dd>
+                        B {alphaZeroResult.score.black} · W {alphaZeroResult.score.white}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Margin</dt>
+                      <dd>{alphaZeroResult.score.margin}</dd>
+                    </div>
+                    <div>
+                      <dt>fallbackCount</dt>
+                      <dd>{alphaZeroResult.fallbackCount}</dd>
+                    </div>
                   </dl>
                 ) : (
                   <p>Result diagnostics are not present in this AlphaZero response.</p>
@@ -598,18 +622,31 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
                 <h4>GoCube result</h4>
                 {goCubeScore ? (
                   <dl>
-                    <div><dt>Winner</dt><dd>{winnerLabel(goCubeScore.winner)}</dd></div>
-                    <div><dt>Score</dt><dd>B {goCubeScore.black} · W {goCubeScore.white}</dd></div>
+                    <div>
+                      <dt>Winner</dt>
+                      <dd>{winnerLabel(goCubeScore.winner)}</dd>
+                    </div>
+                    <div>
+                      <dt>Score</dt>
+                      <dd>
+                        B {goCubeScore.black} · W {goCubeScore.white}
+                      </dd>
+                    </div>
                   </dl>
                 ) : (
-                  <p>Pending endgame review. Finish scoring in GoCube to compare final results.</p>
+                  <p>
+                    Pending endgame review. Finish scoring in GoCube to compare final
+                    results.
+                  </p>
                 )}
               </article>
             </section>
           ) : null}
 
           {diagnostic ? (
-            <p className="development-workspace__diagnostic" role="alert">{diagnostic}</p>
+            <p className="development-workspace__diagnostic" role="alert">
+              {diagnostic}
+            </p>
           ) : null}
         </aside>
 
@@ -634,12 +671,37 @@ export function DevelopmentWorkspace({ onBack, gateway: providedGateway }: Devel
         playing={playing}
         speed={speed}
         disabled={!replay || replayBusy}
-        onJumpStart={() => void runReplayOperation((session) => session.jumpToStart(), { pause: true, disableAnimation: true })}
-        onPrevious={() => void runReplayOperation((session) => session.previous(), { pause: true, disableAnimation: true })}
+        onJumpStart={() =>
+          void runReplayOperation((session) => session.jumpToStart(), {
+            pause: true,
+            disableAnimation: true,
+          })
+        }
+        onPrevious={() =>
+          void runReplayOperation((session) => session.previous(), {
+            pause: true,
+            disableAnimation: true,
+          })
+        }
         onTogglePlay={() => setPlaying((current) => !current)}
-        onNext={() => void runReplayOperation((session) => session.next(), { pause: true, disableAnimation: true })}
-        onJumpEnd={() => void runReplayOperation((session) => session.jumpToEnd(), { pause: true, disableAnimation: true })}
-        onSeek={(target) => void runReplayOperation((session) => session.seek(target), { pause: true, disableAnimation: true })}
+        onNext={() =>
+          void runReplayOperation((session) => session.next(), {
+            pause: true,
+            disableAnimation: true,
+          })
+        }
+        onJumpEnd={() =>
+          void runReplayOperation((session) => session.jumpToEnd(), {
+            pause: true,
+            disableAnimation: true,
+          })
+        }
+        onSeek={(target) =>
+          void runReplayOperation((session) => session.seek(target), {
+            pause: true,
+            disableAnimation: true,
+          })
+        }
         onSpeedChange={setSpeed}
       />
     </main>
