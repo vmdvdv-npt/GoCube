@@ -160,12 +160,11 @@ export function PlayVsBotLauncher({
           size={settings.size}
           ruleSet={settings.ruleSet}
           komi={settings.komi}
-          onSelectionChange={setSelectedCheckpoint}
+          initialCheckpointId={selectedCheckpoint?.id}
           onCancel={() => setDialogOpen(false)}
-          onStart={(checkpoint) => {
+          onConfirm={(checkpoint) => {
             setSelectedCheckpoint(checkpoint);
             setDialogOpen(false);
-            startBotGame(checkpoint);
           }}
         />
       ) : null}
