@@ -11,12 +11,9 @@ import {
 import { assertSerializedSnapshotGameStates } from '../core/persistence/GameSessionSnapshotValidation';
 import { CubeTopology, type CubeSize } from '../core/topology/CubeTopology';
 import { TORUS_SIZES, TorusTopology, type TorusSize } from '../core/topology/TorusTopology';
-import {
-  isCubeUiSize,
-  type CubeUiSize,
-} from './CubeGameConfig';
-import { LocalStorageGameRepository } from './persistence/LocalStorageGameRepository';
+import { isCubeUiSize, type CubeUiSize } from './CubeGameConfig';
 import { Cube2DGameController } from './Cube2DGameController';
+import { LocalStorageGameRepository } from './persistence/LocalStorageGameRepository';
 import { TorusGameController } from './TorusGameController';
 
 export const CURRENT_GAME_ID = 'current';
@@ -49,6 +46,12 @@ export interface ApplicationSavedState {
   readonly sessionId?: string;
   readonly snapshot: GameSessionSnapshot;
 }
+
+type SessionPersistenceConfig = Readonly<{
+  repository: GameRepository<GameSessionSnapshot>;
+  gameId: string;
+  now: () => string;
+}>;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -83,7 +86,10 @@ const hasValidStateMetadata = (
 ): boolean => {
   if (!isRecord(state) || !isPhase(state.phase)) return false;
   if (state.phase === 'finished') return isRecord(finalScore);
-  return (endgameClassification === null || endgameClassification === undefined) && finalScore === null;
+  return (
+    (endgameClassification === null || endgameClassification === undefined) &&
+    finalScore === null
+  );
 };
 
 const hasValidRedo = (redo: unknown): boolean =>
@@ -185,27 +191,10 @@ export class GameApplication {
   async createNewGame(settings: NewGameSettings): Promise<ActiveGame> {
     this.assertSettings(settings);
     const sessionId = this.createSessionId();
-    const persistence = this.persistenceConfig(settings.gameMode, sessionId);
-
-    const active: ActiveGame = settings.gameMode === 'cube-2d'
-      ? Object.freeze({
-          gameMode: 'cube-2d',
-          controller: new Cube2DGameController({
-            size: settings.size as CubeSize,
-            ruleSet: settings.ruleSet,
-            komi: settings.komi,
-            persistence,
-          }),
-        })
-      : Object.freeze({
-          gameMode: 'torus-2d',
-          controller: new TorusGameController({
-            size: settings.size as TorusSize,
-            ruleSet: settings.ruleSet,
-            komi: settings.komi,
-            persistence,
-          }),
-        });
+    const active = this.createGame(
+      settings,
+      this.persistenceConfig(settings.gameMode, sessionId),
+    );
 
     await this.repository.activate({
       id: CURRENT_GAME_ID,
@@ -220,6 +209,16 @@ export class GameApplication {
     return active;
   }
 
+  /**
+   * Creates a normal authoritative GameSession/controller without attaching the
+   * application autosave boundary. Used by ephemeral application modes such as
+   * Play vs bot and developer replay-style flows.
+   */
+  createEphemeralGame(settings: NewGameSettings): ActiveGame {
+    this.assertSettings(settings);
+    return this.createGame(settings);
+  }
+
   async restoreSavedGame(): Promise<ActiveGame | null> {
     const saved = await this.readSavedGame();
     if (!saved) return null;
@@ -228,27 +227,28 @@ export class GameApplication {
     const persistence = this.persistenceConfig(gameMode, sessionId);
 
     try {
-      const active: ActiveGame = gameMode === 'cube-2d'
-        ? Object.freeze({
-            gameMode,
-            controller: new Cube2DGameController({
-              size: snapshot.boardSize as CubeSize,
-              ruleSet: snapshot.ruleSet,
-              komi: snapshot.komi,
-              persistence,
-              snapshot,
-            }),
-          })
-        : Object.freeze({
-            gameMode,
-            controller: new TorusGameController({
-              size: snapshot.boardSize as TorusSize,
-              ruleSet: snapshot.ruleSet,
-              komi: snapshot.komi,
-              persistence,
-              snapshot,
-            }),
-          });
+      const active: ActiveGame =
+        gameMode === 'cube-2d'
+          ? Object.freeze({
+              gameMode,
+              controller: new Cube2DGameController({
+                size: snapshot.boardSize as CubeSize,
+                ruleSet: snapshot.ruleSet,
+                komi: snapshot.komi,
+                persistence,
+                snapshot,
+              }),
+            })
+          : Object.freeze({
+              gameMode,
+              controller: new TorusGameController({
+                size: snapshot.boardSize as TorusSize,
+                ruleSet: snapshot.ruleSet,
+                komi: snapshot.komi,
+                persistence,
+                snapshot,
+              }),
+            });
 
       await active.controller.resumeRestoredEndgame();
       return active;
@@ -262,7 +262,35 @@ export class GameApplication {
     await this.repository.remove(CURRENT_GAME_ID);
   }
 
-  private persistenceConfig(gameMode: GameMode, sessionId: string | undefined) {
+  private createGame(
+    settings: NewGameSettings,
+    persistence?: SessionPersistenceConfig,
+  ): ActiveGame {
+    return settings.gameMode === 'cube-2d'
+      ? Object.freeze({
+          gameMode: 'cube-2d' as const,
+          controller: new Cube2DGameController({
+            size: settings.size as CubeSize,
+            ruleSet: settings.ruleSet,
+            komi: settings.komi,
+            ...(persistence ? { persistence } : {}),
+          }),
+        })
+      : Object.freeze({
+          gameMode: 'torus-2d' as const,
+          controller: new TorusGameController({
+            size: settings.size as TorusSize,
+            ruleSet: settings.ruleSet,
+            komi: settings.komi,
+            ...(persistence ? { persistence } : {}),
+          }),
+        });
+  }
+
+  private persistenceConfig(
+    gameMode: GameMode,
+    sessionId: string | undefined,
+  ): SessionPersistenceConfig {
     return Object.freeze({
       repository: new ApplicationSessionRepository(this.repository, gameMode, sessionId),
       gameId: CURRENT_GAME_ID,
