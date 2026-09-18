@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import type { AlphaZeroSelectMoveRequest } from './AlphaZeroGateway';
 import {
   parseAlphaZeroCheckpointList,
   parseAlphaZeroGeneratedGame,
   parseAlphaZeroHealth,
+  parseAlphaZeroSelectedMove,
 } from './AlphaZeroProtocol';
 
 const checkpoint = {
@@ -27,6 +29,33 @@ const generatedGameBase = {
   mctsSimulations: 100,
 } as const;
 
+const torusMoveRequest: AlphaZeroSelectMoveRequest = {
+  requestId: 'request-1',
+  checkpointId: 'torus9-m88',
+  mctsSimulations: 128,
+  position: {
+    topology: 'torus',
+    size: 9,
+    ruleSet: 'chinese',
+    komi: 0.5,
+    moves: [],
+  },
+};
+
+const selectedMoveBase = {
+  protocolVersion: 1,
+  requestId: 'request-1',
+  checkpointId: 'torus9-m88',
+  mctsSims: 128,
+  moveNumber: 1,
+  color: 'black',
+  action: { type: 'place', pointId: '0,0' },
+  search: {
+    simulations: 128,
+    implementationId: 'sequential-puct-v1',
+  },
+} as const;
+
 describe('AlphaZero protocol V1', () => {
   it('accepts valid health data', () => {
     expect(parseAlphaZeroHealth({ protocolVersion: 1, service: 'gocube-alphazero', version: '0.1' })).toEqual({
@@ -34,6 +63,30 @@ describe('AlphaZero protocol V1', () => {
       service: 'gocube-alphazero',
       version: '0.1',
     });
+  });
+
+  it('accepts health capabilities and keeps legacy health compatible', () => {
+    expect(parseAlphaZeroHealth({
+      protocolVersion: 1,
+      service: 'gocube-alphazero',
+      version: 'cuda',
+      capabilities: { generateGame: true, selectMove: true },
+    }).capabilities).toEqual({ generateGame: true, selectMove: true });
+
+    expect(parseAlphaZeroHealth({
+      protocolVersion: 1,
+      service: 'gocube-alphazero',
+      version: 'cpu',
+    }).capabilities).toBeUndefined();
+  });
+
+  it('rejects malformed health capabilities', () => {
+    expect(() => parseAlphaZeroHealth({
+      protocolVersion: 1,
+      service: 'gocube-alphazero',
+      version: 'cpu',
+      capabilities: { generateGame: true, selectMove: 'yes' },
+    })).toThrow(/selectMove/i);
   });
 
   it('rejects an unsupported protocol version', () => {
@@ -202,5 +255,101 @@ describe('AlphaZero protocol V1', () => {
       ...generatedGameBase,
       moves: [{ moveNumber: 1, color: 'green', action: { type: 'pass' } }],
     })).toThrow(/color/i);
+  });
+
+  it('parses a valid Torus selected place move', () => {
+    expect(parseAlphaZeroSelectedMove(selectedMoveBase, torusMoveRequest)).toEqual({
+      protocolVersion: 1,
+      requestId: 'request-1',
+      checkpointId: 'torus9-m88',
+      mctsSimulations: 128,
+      moveNumber: 1,
+      color: 'black',
+      action: { type: 'place', pointId: '0,0' },
+      search: { simulations: 128, implementationId: 'sequential-puct-v1' },
+    });
+  });
+
+  it('parses a valid selected pass move', () => {
+    expect(parseAlphaZeroSelectedMove({
+      ...selectedMoveBase,
+      action: { type: 'pass' },
+    }, torusMoveRequest).action).toEqual({ type: 'pass' });
+  });
+
+  it('validates canonical Cube PointIds for selected moves', () => {
+    const cubeRequest: AlphaZeroSelectMoveRequest = {
+      ...torusMoveRequest,
+      position: { ...torusMoveRequest.position, topology: 'cube', size: 4 },
+    };
+    expect(parseAlphaZeroSelectedMove({
+      ...selectedMoveBase,
+      action: { type: 'place', pointId: 'front:0:0' },
+    }, cubeRequest).action).toEqual({ type: 'place', pointId: 'front:0:0' });
+    expect(() => parseAlphaZeroSelectedMove(selectedMoveBase, cubeRequest)).toThrow(/PointId/i);
+  });
+
+  it('validates canonical Torus PointIds for selected moves', () => {
+    expect(() => parseAlphaZeroSelectedMove({
+      ...selectedMoveBase,
+      action: { type: 'place', pointId: 'front:0:0' },
+    }, torusMoveRequest)).toThrow(/PointId/i);
+  });
+
+  it('rejects selected move identity and numbering mismatches as protocol errors', () => {
+    for (const response of [
+      { ...selectedMoveBase, requestId: 'wrong-request' },
+      { ...selectedMoveBase, checkpointId: 'wrong-checkpoint' },
+      { ...selectedMoveBase, moveNumber: 2 },
+    ]) {
+      try {
+        parseAlphaZeroSelectedMove(response, torusMoveRequest);
+        throw new Error('expected protocol validation failure');
+      } catch (error) {
+        expect(error).toMatchObject({ kind: 'protocol' });
+      }
+    }
+  });
+
+  it('rejects invalid selected move color and action', () => {
+    expect(() => parseAlphaZeroSelectedMove({
+      ...selectedMoveBase,
+      color: 'green',
+    }, torusMoveRequest)).toThrow(/color/i);
+    expect(() => parseAlphaZeroSelectedMove({
+      ...selectedMoveBase,
+      action: { type: 'resign' },
+    }, torusMoveRequest)).toThrow(/action\.type/i);
+  });
+
+  it('rejects selected move simulation mismatches and empty implementation id', () => {
+    expect(() => parseAlphaZeroSelectedMove({
+      ...selectedMoveBase,
+      mctsSims: 64,
+    }, torusMoveRequest)).toThrow(/mctsSims/i);
+    expect(() => parseAlphaZeroSelectedMove({
+      ...selectedMoveBase,
+      search: { ...selectedMoveBase.search, simulations: 64 },
+    }, torusMoveRequest)).toThrow(/search\.simulations/i);
+    expect(() => parseAlphaZeroSelectedMove({
+      ...selectedMoveBase,
+      search: { ...selectedMoveBase.search, implementationId: '' },
+    }, torusMoveRequest)).toThrow(/implementationId/i);
+  });
+
+  it('uses history length to validate selected move numbering', () => {
+    const request: AlphaZeroSelectMoveRequest = {
+      ...torusMoveRequest,
+      position: {
+        ...torusMoveRequest.position,
+        moves: [{ moveNumber: 1, color: 'black', action: { type: 'pass' } }],
+      },
+    };
+    expect(parseAlphaZeroSelectedMove({
+      ...selectedMoveBase,
+      moveNumber: 2,
+      color: 'white',
+      action: { type: 'pass' },
+    }, request).moveNumber).toBe(2);
   });
 });
