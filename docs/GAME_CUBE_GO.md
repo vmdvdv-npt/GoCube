@@ -1499,9 +1499,25 @@ Dialog использует тот же тёмный visual language GoCube, о�
 
 ## 43.6. Undo/Redo и endgame
 
-На протяжении всей Play vs bot партии `Undo` и `Redo` disabled. Это ограничение не меняет Human-vs-Human режим.
+В `Play vs bot` существующие `Undo` и `Redo` работают на уровне **одного решения человека**, а не одного отдельного history-step. Их внешний вид остаётся тем же; disabled-state отражает реальную доступность bot-aware Undo/Redo. Пока выполняется сама операция Undo/Redo, повторный click не должен запускать вторую конкурирующую операцию.
 
-Pass использует обычные правила партии. Если human/bot последовательность приводит ко второму Pass, AlphaZero больше не запрашивается, а игра переходит в штатный assisted/manual endgame review, scoring и result flow без отдельного bot-endgame режима.
+Один `Undo` возвращает позицию к моменту непосредственно перед последним действием человека:
+
+- если bot response уже был принят и применён, одним нажатием отменяются и human action, и следующий bot action;
+- если bot ещё думает, отменяется уже принятое human action; поздний ответ на старый запрос не должен изменить восстановленную позицию, и новый bot request автоматически не запускается;
+- если human action был принят, а bot move завершился ошибкой, Undo отменяет human action, очищает состояние `Bot move failed.` / `Retry` и возвращает обычный human turn.
+
+`Redo` восстанавливает отменённое человеческое решение:
+
+- если в redo-future уже существуют и human action, и готовый bot action, восстанавливается та же пара без нового вычисления bot move;
+- если redo-future содержит только human action, например после Undo во время bot-thinking или после failed bot turn, Redo восстанавливает human action и запускает обычный новый bot turn;
+- новое принятое human action после Undo очищает redo-future по обычным правилам линейной истории.
+
+Если человек играет White, opening Black move бота не является самостоятельным человеческим решением и отдельно не отменяется. До первого human action Undo недоступен. После последовательности `Bot B1 → Human W1 → Bot B2` один Undo оставляет `Bot B1` и возвращает White to move.
+
+Эта семантика `Play vs bot` не меняет обычный Human-vs-Human Undo/Redo.
+
+Pass использует обычные правила партии. Если human/bot последовательность приводит ко второму Pass, AlphaZero больше не запрашивается, а игра переходит в штатный assisted/manual endgame review, scoring и result flow без отдельного bot-endgame режима. Bot-aware Undo/Redo должны восстанавливать такие уже существующие history states теми же правилами, не создавая отдельного endgame path для бота.
 
 ## 43.7. Ephemeral semantics и выход из партии
 

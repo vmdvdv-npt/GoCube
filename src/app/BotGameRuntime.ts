@@ -93,8 +93,10 @@ export const createBotRuntime = (options: {
     placeStone: (point: PointId) =>
       runHumanPresentationAction(() => orchestrator.humanPlaceStone(point)),
     pass: () => runHumanPresentationAction(() => orchestrator.humanPass()),
-    canUndo: () => false,
-    canRedo: () => false,
+    undo: () => orchestrator.undoHumanTurn(),
+    redo: () => orchestrator.redoHumanTurn(),
+    canUndo: () => orchestrator.canUndo(),
+    canRedo: () => orchestrator.canRedo(),
   });
 
   return Object.freeze({

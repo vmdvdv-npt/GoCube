@@ -184,6 +184,45 @@ test.describe('Play vs bot acceptance', () => {
     await expect(turnIndicator(page)).toContainText('Black to move');
   });
 
+  test('Undo and Redo restore one complete human decision without another bot request', async ({
+    page,
+  }) => {
+    const requests: MoveRequest[] = [];
+    await installBotService(page, async (route, request) => {
+      requests.push(request);
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        body: JSON.stringify(
+          selectedMoveBody(request, { type: 'place', pointId: '1,0' }, 'white'),
+        ),
+      });
+    });
+
+    await startBotGame(page, 'Black');
+    await primaryHit(page, '0,0').click();
+    await expect(primaryStone(page, '0,0')).toHaveCount(1);
+    await expect(primaryStone(page, '1,0')).toHaveCount(1);
+    await expect.poll(() => requests.length).toBe(1);
+
+    const undo = page.getByRole('button', { name: 'Undo', exact: true });
+    const redo = page.getByRole('button', { name: 'Redo', exact: true });
+    await expect(undo).toBeEnabled();
+    await undo.click();
+
+    await expect(primaryStone(page, '0,0')).toHaveCount(0);
+    await expect(primaryStone(page, '1,0')).toHaveCount(0);
+    await expect(turnIndicator(page)).toContainText('Black to move');
+    await expect(redo).toBeEnabled();
+
+    await redo.click();
+
+    await expect(primaryStone(page, '0,0')).toHaveCount(1);
+    await expect(primaryStone(page, '1,0')).toHaveCount(1);
+    await expect(turnIndicator(page)).toContainText('Black to move');
+    expect(requests).toHaveLength(1);
+  });
+
   test('Human White automatically receives the opening Black bot move', async ({ page }) => {
     const pending = deferred<MoveAction>();
     let openingRequest: MoveRequest | null = null;
