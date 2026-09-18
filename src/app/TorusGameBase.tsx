@@ -515,6 +515,15 @@ export function TorusGame({
       }
 
       const availability = controller.moveAvailability(hit.logicalPointId);
+      endgame.setHoveredGroupId(null);
+      setHoveredPoint(hit.logicalPointId);
+      setHoverStatus(
+        availability.allowed
+          ? 'allowed'
+          : availability.reason === 'occupied'
+            ? 'occupied'
+            : 'forbidden',
+      );
       if (availability.allowed) {
         previewedMovePointRef.current = hit.logicalPointId;
         renderer.setMovePreview({
@@ -594,22 +603,22 @@ export function TorusGame({
   };
 
   const handleUndo = async (): Promise<void> => {
-    if (gameplayReadOnly || actionInFlight.current) return;
+    if (actionInFlight.current) return;
 
     actionInFlight.current = true;
     try {
-      applyResult(await controller.undo());
+      applyResult(await interaction.undo());
     } finally {
       actionInFlight.current = false;
     }
   };
 
   const handleRedo = async (): Promise<void> => {
-    if (gameplayReadOnly || actionInFlight.current) return;
+    if (actionInFlight.current) return;
 
     actionInFlight.current = true;
     try {
-      applyResult(await controller.redo());
+      applyResult(await interaction.redo());
     } finally {
       actionInFlight.current = false;
     }
@@ -690,8 +699,8 @@ export function TorusGame({
         showDuplicateRegions={showDuplicateRegions}
         onShowDuplicateRegionsChange={handleShowDuplicateRegionsChange}
         passDisabled={gameplayReadOnly || viewModel.phase !== 'playing' || passGuardActive}
-        canRedo={!gameplayReadOnly && interaction.canRedo()}
-        canUndo={!gameplayReadOnly && interaction.canUndo()}
+        canRedo={interaction.canRedo()}
+        canUndo={interaction.canUndo()}
         onPass={() => void handlePass()}
         onRedo={() => void handleRedo()}
         onUndo={() => void handleUndo()}
