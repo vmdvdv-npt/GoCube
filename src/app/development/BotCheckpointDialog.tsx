@@ -66,9 +66,11 @@ export function BotCheckpointDialog(props: BotCheckpointDialogProps) {
   const publishSelection = (
     nextId: string,
     available: readonly AlphaZeroCheckpointDescriptor[] = checkpoints,
+    selectMoveAvailable = connection === 'available' && capable,
   ): void => {
     setCheckpointId(nextId);
-    onSelectionChange?.(available.find((checkpoint) => checkpoint.id === nextId) ?? null);
+    const checkpoint = available.find((candidate) => candidate.id === nextId) ?? null;
+    onSelectionChange?.(selectMoveAvailable ? checkpoint : null);
   };
 
   const refresh = async () => {
@@ -76,22 +78,27 @@ export function BotCheckpointDialog(props: BotCheckpointDialogProps) {
     setDiagnostic(null);
     try {
       const [health, available] = await Promise.all([gateway.health(), gateway.listCheckpoints()]);
+      const selectMoveAvailable = health.capabilities?.selectMove === true;
       setConnection('available');
-      setCapable(health.capabilities?.selectMove === true);
+      setCapable(selectMoveAvailable);
       setCheckpoints(available);
       const options = boardFilterOptionsFromCheckpoints(available);
       const nextFilter = options.some((option) => option.value === preferredFilter) ? preferredFilter : 'all';
       setBoardFilter(nextFilter);
       const filtered = visibleCheckpointsForFilters(available, showClosed, nextFilter);
-      publishSelection(checkpointIdWithFallback(checkpointId, filtered), available);
-      if (health.capabilities?.selectMove !== true) {
+      publishSelection(
+        checkpointIdWithFallback(checkpointId, filtered),
+        available,
+        selectMoveAvailable,
+      );
+      if (!selectMoveAvailable) {
         setDiagnostic('Interactive move selection is not supported by this AlphaZero service.');
       }
     } catch (error) {
       setConnection('unavailable');
       setCapable(false);
       setCheckpoints([]);
-      publishSelection('', []);
+      publishSelection('', [], false);
       setDiagnostic(error instanceof Error ? error.message : 'AlphaZero unavailable');
     }
   };
