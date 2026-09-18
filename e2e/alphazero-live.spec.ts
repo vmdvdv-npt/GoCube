@@ -1,4 +1,12 @@
-import { expect, test, type APIRequestContext, type Page, type Request, type Response } from '@playwright/test';
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type APIResponse,
+  type Page,
+  type Request,
+  type Response,
+} from '@playwright/test';
 
 type MoveAction =
   | Readonly<{ type: 'place'; pointId: string }>
@@ -67,7 +75,7 @@ const asRecord = (value: unknown): Readonly<Record<string, unknown>> | null =>
     ? (value as Readonly<Record<string, unknown>>)
     : null;
 
-const liveGet = async (request: APIRequestContext, path: string): Promise<Response> => {
+const liveGet = async (request: APIRequestContext, path: string): Promise<APIResponse> => {
   const baseUrl = alphaZeroBaseUrl();
   try {
     return await request.get(`${baseUrl}${path}`, { timeout: 5_000 });
@@ -116,7 +124,7 @@ const discoverCompatibleCheckpoint = async (
     const status = checkpoint.lineageStatus;
     if (
       typeof checkpoint.id !== 'string' ||
-      !checkpoint.id ||
+      checkpoint.id.length === 0 ||
       !Number.isSafeInteger(checkpoint.iteration) ||
       checkpoint.topology !== 'torus' ||
       checkpoint.size !== 9 ||
@@ -318,8 +326,7 @@ test.describe('Play vs bot live AlphaZero acceptance', () => {
     const firstResponsePromise = page.waitForResponse(isMoveResponse, { timeout: 75_000 });
     await primaryHit(page, '0,0').click();
 
-    const firstRequest = await firstRequestPromise;
-    const firstRequestBody = firstRequest.postDataJSON() as MoveRequest;
+    const firstRequestBody = (await firstRequestPromise).postDataJSON() as MoveRequest;
     expect(firstRequestBody).toMatchObject({
       protocolVersion: 1,
       checkpointId: checkpoint.id,
