@@ -153,6 +153,31 @@
   white-space: nowrap;
 }
 
+@supports (color-scheme: dark) {
+  .bot-checkpoint-dialog__field select {
+    color-scheme: dark;
+  }
+
+  .bot-checkpoint-dialog__field select option,
+  .bot-checkpoint-dialog__field select optgroup {
+    background: #2d333a;
+    color: #eef3f7;
+  }
+}
+
+@supports not (color-scheme: dark) {
+  .bot-checkpoint-dialog__field select {
+    background: ButtonFace;
+    color: ButtonText;
+  }
+
+  .bot-checkpoint-dialog__field select option,
+  .bot-checkpoint-dialog__field select optgroup {
+    background: Canvas;
+    color: CanvasText;
+  }
+}
+
 .bot-checkpoint-dialog__field select:focus {
   border-color: rgb(160 169 178 / 62%);
   box-shadow: 0 0 0 2px rgb(147 158 168 / 10%);
