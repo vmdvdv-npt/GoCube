@@ -125,11 +125,13 @@ const startBotGame = async (
       .getByRole('button', { name: 'White', exact: true })
       .click();
   }
-  await page.getByRole('button', { name: 'Choose model', exact: true }).click();
+  const panel = page.locator('.play-vs-bot-card');
+  await panel.getByRole('button', { name: 'Choose model', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'AlphaZero' });
-  await expect(dialog.getByText('Connected', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('CONNECTED', { exact: true })).toBeVisible();
   await expect(dialog.getByLabel('Bot checkpoint')).toHaveValue(checkpoint.id);
-  await dialog.getByRole('button', { name: 'Start game' }).click();
+  await dialog.getByRole('button', { name: 'OK', exact: true }).click();
+  await panel.getByRole('button', { name: 'Play vs bot', exact: true }).click();
   await expect(page.getByRole('region', { name: /game/i }).or(page.locator('.torus-game'))).toBeVisible();
 };
 
