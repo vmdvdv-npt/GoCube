@@ -1,0 +1,54 @@
+name: One-off bot architecture documentation
+
+on:
+  push:
+    branches:
+      - codex/play-vs-bot-ui-stage4
+
+permissions:
+  contents: write
+
+jobs:
+  patch-architecture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/play-vs-bot-ui-stage4
+          fetch-depth: 0
+
+      - name: Update canonical architecture and remove one-off workflow
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('docs/ARCHITECTURE.md')
+          text = path.read_text(encoding='utf-8')
+
+          module_anchor = "`human action → GameSession → BotGameOrchestrator → BotTurnCoordinator → AlphaZeroGateway → BotTurnCoordinator → GameSession → GameEngine`\n"
+          module_insert = """`human action → GameSession → BotGameOrchestrator → BotTurnCoordinator → AlphaZeroGateway → BotTurnCoordinator → GameSession → GameEngine`\n\nPresentation-facing dispatch для обычной и Human-vs-Bot партии проходит через явную interaction boundary:\n\n`Presentation → GameInteractionBoundary → ordinary controller/GameSession`\n\nили для bot game:\n\n`Presentation → GameInteractionBoundary → BotGameOrchestrator → BotTurnCoordinator → AlphaZeroGateway → BotTurnCoordinator → GameSession → BotGamePresentationEvent → Presentation`\n"""
+          if module_anchor not in text:
+              raise SystemExit('module map anchor not found')
+          text = text.replace(module_anchor, module_insert, 1)
+
+          detail_anchor = "Если human либо bot Pass переводит authoritative session из `playing` в `endgame`, orchestrator не запускает следующий AlphaZero request и полностью передаёт дальнейший lifecycle существующему endgame flow; отдельного bot-endgame engine/state нет.\n\nHealth capabilities являются additive Protocol V1 metadata:"
+          detail_insert = """Если human либо bot Pass переводит authoritative session из `playing` в `endgame`, orchestrator не запускает следующий AlphaZero request и полностью передаёт дальнейший lifecycle существующему endgame flow; отдельного bot-endgame engine/state нет.\n\nPresentation не вызывает bot-specific controller напрямую. Для dispatch пользовательских `placeStone`/`pass` используется явный `GameInteractionBoundary`: в обычной партии он делегирует существующему controller, а в Human-vs-Bot партии — `BotGameOrchestrator`. Boundary не владеет `GameState`, History, captures или turn state и не является второй gameplay model.\n\n`BotGamePresentationEvent` является только bridge для уже authoritative результатов и lifecycle notification. После принятого human action orchestrator публикует `human-action-accepted` с реальным controller action result **до** ожидания следующего MCTS, поэтому presentation может немедленно отобразить человеческий ход, пока headless contract `humanPlaceStone()`/`humanPass()` по-прежнему дожидается завершения автоматически следующего bot turn. После успешного применения bot proposal через `GameSession → GameEngine` отдельно публикуется `bot-action-accepted` с тем же authoritative action-result contract. `state-changed` сообщает только orchestration lifecycle. Ни одно presentation event не становится источником board/history truth и не разрешает UI реконструировать captures или domain transition самостоятельно.\n\nApplication layer владеет отдельной `botRuntime` identity/generation поверх controller/session stale proof. Presentation event принимается только если identity события совпадает с identity текущего активного runtime. Замена или закрытие bot runtime сначала инвалидирует эту identity; любой поздний `human-action-accepted`, `bot-action-accepted`, `state-changed` или error callback предыдущего runtime игнорируется и не имеет права менять новый renderer/sidebar/presentation state. Эта presentation fencing дополняет, а не заменяет stale protection `BotTurnCoordinator`, которая отдельно запрещает mutation неактуальной `GameSession`.\n\nEphemeral Human-vs-Bot controller создаётся через application-owned `GameApplication.createEphemeralGame(settings)` (или эквивалентную общую factory boundary), а не прямым topology-specific construction в React/bot runtime. Factory создаёт обычные authoritative `GameSession` и topology controller с теми же rules/classifier/scoring contracts, но без persistence config; такой runtime не пишет `CURRENT_GAME_ID` и не запускает normal autosave. Persistent New Game и ephemeral modes используют общий internal controller factory, различаясь только подключением persistence boundary.\n\nHealth capabilities являются additive Protocol V1 metadata:"""
+          if detail_anchor not in text:
+              raise SystemExit('bot architecture detail anchor not found')
+          text = text.replace(detail_anchor, detail_insert, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          rm .github/workflows/bot-architecture-oneoff.yml
+
+      - name: Commit canonical architecture update
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/ARCHITECTURE.md .github/workflows/bot-architecture-oneoff.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "docs: document bot presentation runtime"
+          git push origin HEAD:codex/play-vs-bot-ui-stage4
