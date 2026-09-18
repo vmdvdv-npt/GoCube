@@ -599,7 +599,7 @@ Spatial mapping **не заменяет** `Topology.getNeighbors(pointId)` ка�
 
 Persistence должен сохранять redo-future. После `Undo → save/load` следующий Redo должен оставаться доступным и детерминированно восстанавливать тот же snapshot.
 
-Если current/redo state связан с `EndgameReviewState`, `EndgameClassification` или `FinalScore`, соответствующая session-level metadata сохраняется вместе с timeline/session envelope так, чтобы exact restoration не зависел от Renderer.
+Если current/redo state связан с `EndgameReviewState`, `EndgameClassification` или `FinalScore`, соответствующая session-level metadata сохраняется вместе с timeline/session envelope так, чтобы exact restoration не зависело от Renderer.
 
 # 12. EndgameClassifier, EndgameReviewState и ScoringStrategy
 
@@ -970,13 +970,22 @@ V1 gateway поддерживает минимум:
 
 - `health()`;
 - `listCheckpoints()`;
-- `generateGame()`.
+- `generateGame()`;
+- `selectMove()`.
+
+Stateless move-selection boundary имеет вид:
+
+`GoCube position/history → AlphaZeroGateway.selectMove() → external AlphaZero service → proposed place(pointId) | pass`
+
+`requestId` создаётся и принадлежит вызывающему application layer; gateway использует его только как opaque correlation identity и не придаёт ему игрового смысла. Возвращённый proposed action после transport/runtime validation всё ещё не является authoritative gameplay mutation: сам вызов `selectMove()` не меняет `GameSession` или `GameState`, а последующее применение такого action обязано проходить через обычный authoritative `GameSession → GameEngine` path. Формирование authoritative `GameSession history → Protocol V1 history` является отдельной application orchestration boundary и не переносится в transport client.
+
+Health capabilities являются additive Protocol V1 metadata: наличие `selectMove: true` позволяет application layer явно определить поддержку stateless move selection, а legacy health без `capabilities` остаётся допустимым для уже существующих Development Workspace операций.
 
 Transport использует versioned JSON contract с `protocolVersion: 1`. Checkpoint descriptor содержит stable id и game compatibility metadata; UI не получает filesystem path как identity. Сервис конвертирует собственный AlphaZero action index в канонический GoCube `PointId` до отправки move через transport.
 
 Внешний JSON валидируется до использования: protocol version, required fields, finite numbers, topology, size, rules, komi, checkpoint metadata, move numbering, color/action variants, canonical `PointId` и optional captured points. Unchecked type assertion не заменяет runtime validation.
 
-`AlphaZeroGateway` предоставляет generated action sequence и diagnostics, но не `GameState` authority. Запрещено передавать готовую board occupancy в Renderer или напрямую мутировать `GameState` по данным AlphaZero.
+`AlphaZeroGateway` предоставляет generated action sequence, stateless proposed actions и diagnostics, но не `GameState` authority. Запрещено передавать готовую board occupancy в Renderer или напрямую мутировать `GameState` по данным AlphaZero.
 
 `DeveloperReplaySession` создаёт обычный controller/`GameSession` без persistence config. Такая ephemeral session использует тот же `GameEngine`, `Topology`, `AssistedEndgameClassifier`, scoring и History, что обычная локальная партия, но не имеет права писать в `CURRENT_GAME_ID = "current"` или запускать normal autosave.
 
@@ -993,7 +1002,7 @@ Backward/forward seeking использует session History: назад — Un
 
 Compatibility failure является application diagnostic и содержит достаточный context для локализации расхождения: move number, expected color/current player, action/PointId и rejection/mismatch reason. После failure replay прекращает forward execution, но приложение и обычная сохранённая партия остаются работоспособными.
 
-Future методы вроде position analysis, policy/value и best move добавляются на `AlphaZeroGateway`/соседних developer contracts без переноса AI dependencies в domain core.
+Future методы вроде position analysis и policy/value добавляются на `AlphaZeroGateway`/соседних developer contracts без переноса AI dependencies в domain core.
 
 # 18. Основные потоки данных
 
