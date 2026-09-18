@@ -65,10 +65,27 @@ test('Play vs bot launcher is a four-zone panel and starts with the selected mod
   await page.getByLabel('Komi').fill('0.5');
 
   const panel = page.locator('.play-vs-bot-card');
+  const newGameCard = page.locator('.new-game-form');
+  const startGame = newGameCard.getByRole('button', { name: 'Start game', exact: true });
+  const play = panel.getByRole('button', { name: 'Play vs bot', exact: true });
+
   await expect(panel).toBeVisible();
   await expect(panel.getByRole('heading', { name: 'Play as' })).toBeVisible();
   await expect(panel.getByRole('heading', { name: 'Difficulty' })).toBeVisible();
   await expect(panel.getByRole('heading', { name: 'Model' })).toBeVisible();
+
+  const [panelBox, newGameBox, playBox, startGameBox] = await Promise.all([
+    panel.boundingBox(),
+    newGameCard.boundingBox(),
+    play.boundingBox(),
+    startGame.boundingBox(),
+  ]);
+  expect(panelBox).not.toBeNull();
+  expect(newGameBox).not.toBeNull();
+  expect(playBox).not.toBeNull();
+  expect(startGameBox).not.toBeNull();
+  expect(Math.abs(panelBox!.width - newGameBox!.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(playBox!.height - startGameBox!.height)).toBeLessThanOrEqual(1);
 
   const black = panel.getByRole('button', { name: 'Black', exact: true });
   await expect(black).toHaveAttribute('aria-pressed', 'true');
@@ -77,7 +94,7 @@ test('Play vs bot launcher is a four-zone panel and starts with the selected mod
   await expect(mcts).toHaveValue('128');
   await mcts.fill('0');
   await expect(panel.getByRole('button', { name: 'Choose model', exact: true })).toBeDisabled();
-  await expect(panel.getByRole('button', { name: 'Play vs bot', exact: true })).toBeDisabled();
+  await expect(play).toBeDisabled();
   await mcts.fill('128');
 
   await panel.getByRole('button', { name: 'Choose model', exact: true }).click();
@@ -87,7 +104,6 @@ test('Play vs bot launcher is a four-zone panel and starts with the selected mod
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
 
   await expect(panel.getByRole('button', { name: 'M93 · Torus 9×9', exact: true })).toBeVisible();
-  const play = panel.getByRole('button', { name: 'Play vs bot', exact: true });
   await expect(play).toBeEnabled();
   await play.click();
 
