@@ -23,7 +23,10 @@ export type BotGameActionBlockReason =
   | 'not-bot-turn'
   | 'not-playing'
   | 'retry-required'
-  | 'retry-unavailable';
+  | 'retry-unavailable'
+  | 'history-operation'
+  | 'undo-unavailable'
+  | 'redo-unavailable';
 
 export class BotGameActionBlockedError extends Error {
   readonly name = 'BotGameActionBlockedError';
@@ -51,11 +54,35 @@ export interface BotGameOrchestratorOptions extends AlphaZeroPositionProjectionO
   readonly onPresentationEvent?: (event: BotGamePresentationEvent) => void;
 }
 
+type BotHistoryController = BotTurnGameController & Readonly<{
+  canUndo: () => boolean;
+  canRedo: () => boolean;
+  undo: () => Promise<BotTurnControllerActionResult>;
+  redo: () => Promise<BotTurnControllerActionResult>;
+}>;
+
+type ActiveBotTurn = Readonly<{
+  promise: Promise<BotTurnResult>;
+}>;
+
 const currentState = (controller: BotTurnGameController) => {
   const snapshot = controller.snapshot();
   const state = snapshot.history[snapshot.history.length - 1];
   if (!state) throw new Error('GameSession history must contain a current state');
   return state;
+};
+
+const historyController = (controller: BotTurnGameController): BotHistoryController => {
+  const candidate = controller as Partial<BotHistoryController>;
+  if (
+    typeof candidate.canUndo !== 'function' ||
+    typeof candidate.canRedo !== 'function' ||
+    typeof candidate.undo !== 'function' ||
+    typeof candidate.redo !== 'function'
+  ) {
+    throw new Error('Bot game controller must expose authoritative GameSession history commands');
+  }
+  return controller as BotHistoryController;
 };
 
 const oppositeColor = (color: StoneColor): StoneColor => (color === 'black' ? 'white' : 'black');
@@ -66,7 +93,8 @@ export class BotGameOrchestrator {
 
   private readonly resolveController: () => BotTurnGameController;
   private readonly botTurnCoordinator: BotTurnCoordinator;
-  private readonly inFlightByController = new WeakMap<BotTurnGameController, Promise<BotTurnResult>>();
+  private readonly inFlightByController = new WeakMap<BotTurnGameController, ActiveBotTurn>();
+  private readonly historyOperationByController = new WeakSet<BotTurnGameController>();
   private failureController: BotTurnGameController | null = null;
   private failure: unknown | null = null;
 
@@ -102,6 +130,118 @@ export class BotGameOrchestrator {
   lastError(): unknown | null {
     const controller = this.resolveController();
     return this.failureController === controller ? this.failure : null;
+  }
+
+  canUndo(): boolean {
+    const controller = this.resolveController();
+    if (this.historyOperationByController.has(controller)) return false;
+    return this.undoStepsForCurrentHumanDecision(controller) > 0;
+  }
+
+  canRedo(): boolean {
+    const controller = this.resolveController();
+    if (this.historyOperationByController.has(controller)) return false;
+
+    const snapshot = controller.snapshot();
+    const state = snapshot.history.at(-1);
+    if (!state || state.phase !== 'playing' || state.currentPlayer !== this.humanColor) {
+      return false;
+    }
+    return Boolean(snapshot.redo?.length) && historyController(controller).canRedo();
+  }
+
+  async undoHumanTurn(): Promise<BotTurnControllerActionResult> {
+    const controller = this.resolveController();
+    if (this.historyOperationByController.has(controller)) {
+      throw new BotGameActionBlockedError(
+        'history-operation',
+        'A bot-aware history operation is already in progress',
+      );
+    }
+
+    const steps = this.undoStepsForCurrentHumanDecision(controller);
+    if (steps === 0) {
+      throw new BotGameActionBlockedError(
+        'undo-unavailable',
+        'There is no human decision available to undo',
+      );
+    }
+
+    const history = historyController(controller);
+    this.historyOperationByController.add(controller);
+    // The authoritative Undo below mutates GameSession immediately. Releasing the
+    // logical request slot lets a later Redo start a fresh request without waiting
+    // for a response that is now guaranteed to be stale by position identity.
+    this.inFlightByController.delete(controller);
+    this.clearFailure(controller);
+
+    try {
+      let result: BotTurnControllerActionResult | null = null;
+      for (let step = 0; step < steps; step += 1) {
+        result = await history.undo();
+        if (!result.accepted) {
+          throw new BotGameActionBlockedError(
+            'undo-unavailable',
+            `Authoritative GameSession rejected bot-aware Undo${result.reason ? ` (${result.reason})` : ''}`,
+          );
+        }
+      }
+
+      if (!result) throw new Error('Bot-aware Undo did not execute any history step');
+      this.publish({ type: 'state-changed', state: this.state() });
+      return result;
+    } finally {
+      this.historyOperationByController.delete(controller);
+    }
+  }
+
+  async redoHumanTurn(): Promise<BotTurnControllerActionResult> {
+    const controller = this.resolveController();
+    if (this.historyOperationByController.has(controller)) {
+      throw new BotGameActionBlockedError(
+        'history-operation',
+        'A bot-aware history operation is already in progress',
+      );
+    }
+    if (!this.canRedo()) {
+      throw new BotGameActionBlockedError(
+        'redo-unavailable',
+        'There is no human decision available to redo',
+      );
+    }
+
+    const history = historyController(controller);
+    this.historyOperationByController.add(controller);
+    this.clearFailure(controller);
+
+    try {
+      const humanResult = await history.redo();
+      if (!humanResult.accepted) return humanResult;
+      if (this.resolveController() !== controller) return humanResult;
+
+      const afterHuman = currentState(controller);
+      if (afterHuman.phase !== 'playing' || afterHuman.currentPlayer !== this.botColor) {
+        this.publish({ type: 'state-changed', state: this.state() });
+        return humanResult;
+      }
+
+      // When the bot response already exists in GameSession redo-future, restore
+      // it directly. AlphaZero must not be called again for an already-played pair.
+      if (history.canRedo()) {
+        const botResult = await history.redo();
+        if (!botResult.accepted) return botResult;
+        this.publish({ type: 'state-changed', state: this.state() });
+        return botResult;
+      }
+
+      // Interrupted/failed turns only have the human state in redo-future. Start
+      // the ordinary bot path, but return the restored human state immediately so
+      // presentation does not wait for MCTS before showing Redo.
+      void this.runBotTurn(controller, false).catch(() => undefined);
+      return humanResult;
+    } finally {
+      this.historyOperationByController.delete(controller);
+    }
   }
 
   async start(): Promise<BotTurnResult | null> {
@@ -159,12 +299,36 @@ export class BotGameOrchestrator {
     }
   }
 
+  private clearFailure(controller: BotTurnGameController): void {
+    if (this.failureController !== controller) return;
+    this.failureController = null;
+    this.failure = null;
+  }
+
+  private undoStepsForCurrentHumanDecision(controller: BotTurnGameController): 0 | 1 | 2 {
+    const history = controller.snapshot().history;
+    const lastActionOwner = history.at(-2)?.currentPlayer;
+    if (lastActionOwner === this.humanColor) return 1;
+
+    const previousActionOwner = history.at(-3)?.currentPlayer;
+    if (lastActionOwner === this.botColor && previousActionOwner === this.humanColor) {
+      return 2;
+    }
+    return 0;
+  }
+
   private async performHumanAction(
     action: (controller: BotTurnGameController) => Promise<BotTurnControllerActionResult>,
   ): Promise<BotTurnControllerActionResult> {
     const controller = this.resolveController();
     const state = currentState(controller);
 
+    if (this.historyOperationByController.has(controller)) {
+      throw new BotGameActionBlockedError(
+        'history-operation',
+        'Human input is blocked while a history operation is in progress',
+      );
+    }
     if (this.inFlightByController.has(controller)) {
       throw new BotGameActionBlockedError(
         'bot-thinking',
@@ -238,23 +402,28 @@ export class BotGameOrchestrator {
       );
     }
 
-    if (this.failureController === controller) {
-      this.failureController = null;
-      this.failure = null;
-    }
+    this.clearFailure(controller);
 
-    const pending = this.botTurnCoordinator.playBotTurn();
-    this.inFlightByController.set(controller, pending);
+    const pendingPromise = this.botTurnCoordinator.playBotTurn();
+    const activeTurn = Object.freeze({ promise: pendingPromise });
+    this.inFlightByController.set(controller, activeTurn);
     this.publish({ type: 'state-changed', state: 'bot-thinking' });
 
     try {
-      const result = await pending;
-      if (result.status === 'applied' && this.resolveController() === controller) {
+      const result = await pendingPromise;
+      if (
+        result.status === 'applied' &&
+        this.resolveController() === controller &&
+        this.inFlightByController.get(controller) === activeTurn
+      ) {
         this.publish({ type: 'bot-action-accepted', result: result.result });
       }
       return result;
     } catch (error) {
-      if (this.resolveController() === controller) {
+      if (
+        this.resolveController() === controller &&
+        this.inFlightByController.get(controller) === activeTurn
+      ) {
         const latest = currentState(controller);
         if (latest.phase === 'playing' && latest.currentPlayer === this.botColor) {
           this.failureController = controller;
@@ -265,11 +434,11 @@ export class BotGameOrchestrator {
       if (propagateFailure) throw error;
       return null;
     } finally {
-      if (this.inFlightByController.get(controller) === pending) {
+      if (this.inFlightByController.get(controller) === activeTurn) {
         this.inFlightByController.delete(controller);
-      }
-      if (this.resolveController() === controller) {
-        this.publish({ type: 'state-changed', state: this.state() });
+        if (this.resolveController() === controller) {
+          this.publish({ type: 'state-changed', state: this.state() });
+        }
       }
     }
   }
