@@ -193,21 +193,11 @@ export function Cube2DGame({
           Boolean(g.transition) ||
           g.captureAnimating
         }
-        canRedo={
-          !gameplayReadOnly &&
-          !g.transition &&
-          !g.captureAnimating &&
-          interaction.canRedo()
-        }
-        canUndo={
-          !gameplayReadOnly &&
-          !g.transition &&
-          !g.captureAnimating &&
-          interaction.canUndo()
-        }
+        canRedo={!g.transition && !g.captureAnimating && interaction.canRedo()}
+        canUndo={!g.transition && !g.captureAnimating && interaction.canUndo()}
         onPass={() => void g.pass()}
-        onRedo={() => void g.run(() => controller.redo())}
-        onUndo={() => void g.run(() => controller.undo())}
+        onRedo={() => void g.run(() => interaction.redo())}
+        onUndo={() => void g.run(() => interaction.undo())}
         gameResultAvailable={Boolean(g.result && !g.resultOpen)}
         onOpenGameResult={() => g.setResultOpen(true)}
         onRequestNewGame={onRequestNewGame}
