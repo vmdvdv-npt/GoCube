@@ -44,4 +44,20 @@ describe('GameApplication persistence edge cases', () => {
     const restored = await new GameApplication(repo, undefined, () => 'unused').restoreSavedGame();
     expect(restored?.gameMode).toBe('torus-2d');
   });
+
+  it('creates an ephemeral authoritative game without CURRENT_GAME_ID persistence', async () => {
+    const repo = new Repo();
+    const app = new GameApplication(repo, undefined, () => 'must-not-be-used');
+    const active = app.createEphemeralGame({
+      gameMode: 'torus-2d',
+      size: 9,
+      ruleSet: 'chinese',
+      komi: 0.5,
+    });
+
+    expect(repo.saved).toBeNull();
+    expect(await active.controller.placeStone('0,0')).toMatchObject({ accepted: true });
+    expect(repo.saved).toBeNull();
+    await expect(app.findSavedGame()).resolves.toBeNull();
+  });
 });

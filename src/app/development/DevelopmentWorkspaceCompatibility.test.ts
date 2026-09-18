@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import type { AlphaZeroCheckpointDescriptor, AlphaZeroGeneratedGame } from './AlphaZeroGateway';
+import type {
+  AlphaZeroCheckpointDescriptor,
+  AlphaZeroGeneratedGame,
+} from './AlphaZeroGateway';
 import {
   ALL_BOARDS_FILTER,
   boardFilterOptionsFromCheckpoints,
-  checkpointCompatibilityError,
   checkpointIdWithFallback,
-  generatedGameCompatibilityError,
   visibleCheckpointsForFilters,
   visibleCheckpointsForLifecycle,
+} from './AlphaZeroCheckpointSelection';
+import {
+  checkpointCompatibilityError,
+  generatedGameCompatibilityError,
 } from './DevelopmentWorkspace';
 
 const checkpoint = (
@@ -48,7 +53,9 @@ describe('Development Workspace checkpoint compatibility', () => {
       checkpoint({ id: 'discarded', lineageStatus: 'DISCARDED' }),
     ];
 
-    expect(visibleCheckpointsForLifecycle(checkpoints, false).map((item) => item.id)).toEqual(['active']);
+    expect(visibleCheckpointsForLifecycle(checkpoints, false).map((item) => item.id)).toEqual([
+      'active',
+    ]);
     expect(visibleCheckpointsForLifecycle(checkpoints, true).map((item) => item.id)).toEqual([
       'active',
       'archived',
@@ -79,26 +86,39 @@ describe('Development Workspace checkpoint compatibility', () => {
       checkpoint({ id: 'torus-9-b', topology: 'torus', size: 9 }),
     ];
 
-    expect(visibleCheckpointsForFilters(checkpoints, true, 'torus:9').map((item) => item.id)).toEqual([
-      'torus-9-a',
-      'torus-9-b',
-    ]);
+    expect(
+      visibleCheckpointsForFilters(checkpoints, true, 'torus:9').map((item) => item.id),
+    ).toEqual(['torus-9-a', 'torus-9-b']);
   });
 
   it('combines closed-lineage visibility with the board filter', () => {
     const checkpoints = [
-      checkpoint({ id: 'torus-active', topology: 'torus', size: 9, lineageStatus: 'ACTIVE' }),
-      checkpoint({ id: 'torus-archived', topology: 'torus', size: 9, lineageStatus: 'ARCHIVED' }),
-      checkpoint({ id: 'cube-active', topology: 'cube', size: 4, lineageStatus: 'ACTIVE' }),
+      checkpoint({
+        id: 'torus-active',
+        topology: 'torus',
+        size: 9,
+        lineageStatus: 'ACTIVE',
+      }),
+      checkpoint({
+        id: 'torus-archived',
+        topology: 'torus',
+        size: 9,
+        lineageStatus: 'ARCHIVED',
+      }),
+      checkpoint({
+        id: 'cube-active',
+        topology: 'cube',
+        size: 4,
+        lineageStatus: 'ACTIVE',
+      }),
     ];
 
-    expect(visibleCheckpointsForFilters(checkpoints, false, 'torus:9').map((item) => item.id)).toEqual([
-      'torus-active',
-    ]);
-    expect(visibleCheckpointsForFilters(checkpoints, true, 'torus:9').map((item) => item.id)).toEqual([
-      'torus-active',
-      'torus-archived',
-    ]);
+    expect(
+      visibleCheckpointsForFilters(checkpoints, false, 'torus:9').map((item) => item.id),
+    ).toEqual(['torus-active']);
+    expect(
+      visibleCheckpointsForFilters(checkpoints, true, 'torus:9').map((item) => item.id),
+    ).toEqual(['torus-active', 'torus-archived']);
   });
 
   it('falls back to the last visible checkpoint when the current selection is filtered out', () => {
@@ -145,11 +165,15 @@ describe('Development Workspace checkpoint compatibility', () => {
 
   it('rejects size, rules, and komi mismatches', () => {
     const base = checkpoint();
-    expect(checkpointCompatibilityError(base, checkpoint({ id: 'size', size: 5 }))).toMatch(/size/i);
+    expect(checkpointCompatibilityError(base, checkpoint({ id: 'size', size: 5 }))).toMatch(
+      /size/i,
+    );
     expect(
       checkpointCompatibilityError(base, checkpoint({ id: 'rules', ruleSet: 'japanese' })),
     ).toMatch(/rules/i);
-    expect(checkpointCompatibilityError(base, checkpoint({ id: 'komi', komi: 6.5 }))).toMatch(/komi/i);
+    expect(checkpointCompatibilityError(base, checkpoint({ id: 'komi', komi: 6.5 }))).toMatch(
+      /komi/i,
+    );
   });
 
   it('rejects generated metadata that differs from the selected compatible checkpoints', () => {

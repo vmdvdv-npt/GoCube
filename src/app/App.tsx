@@ -4,14 +4,20 @@ import type { RuleSet } from '../core/game/types';
 import { TORUS_SIZES } from '../core/topology/TorusTopology';
 import { CUBE_UI_SIZES } from './CubeGameConfig';
 import { Cube2DGame } from './Cube2DGame';
-import { DevelopmentWorkspace } from './development/DevelopmentWorkspace';
 import {
   GameApplication,
   type ActiveGame,
   type GameMode,
   type GameSize,
+  type NewGameSettings,
   type SavedGameSummary,
 } from './GameApplication';
+import { createBotRuntime, type BotRuntime } from './BotGameRuntime';
+import type { SharedGameActionResult } from './GameSessionControllerFacade';
+import { PlayVsBotLauncher } from './PlayVsBotLauncher';
+import { DevelopmentWorkspace } from './development/DevelopmentWorkspace';
+import type { AlphaZeroGateway } from './development/AlphaZeroGateway';
+import { HttpAlphaZeroClient } from './development/HttpAlphaZeroClient';
 import { LocalStoragePreferencesStorage } from './persistence/LocalStoragePreferencesStorage';
 import {
   DEFAULT_USER_PREFERENCES,
@@ -31,18 +37,24 @@ type TopologyPreviewTransition = Readonly<{
   to: GameMode;
   direction: TopologyPreviewDirection;
 }>;
+type BotPresentationAction = Readonly<{
+  runtimeIdentity: number;
+  sequence: number;
+  result: SharedGameActionResult;
+}>;
+
+export interface AppProps {
+  readonly alphaZeroGateway?: AlphaZeroGateway;
+  readonly gameApplication?: GameApplication;
+}
 
 const DEFAULT_KOMI = 0.5;
-
 const sizesForMode = (mode: GameMode): readonly GameSize[] =>
   mode === 'cube-2d' ? CUBE_UI_SIZES : TORUS_SIZES;
-
 const defaultSizeForMode = (mode: GameMode): GameSize =>
   mode === 'cube-2d' ? 4 : 9;
-
 const preferredGameMode = (preferences: UserPreferences): GameMode =>
   preferences.lastGameMode ?? 'torus-2d';
-
 const preferredSizeForMode = (
   mode: GameMode,
   preferences: UserPreferences,
@@ -50,32 +62,39 @@ const preferredSizeForMode = (
   mode === 'cube-2d'
     ? preferences.lastCubeSize ?? defaultSizeForMode(mode)
     : preferences.lastTorusSize ?? defaultSizeForMode(mode);
-
 const preferredKomi = (preferences: UserPreferences): number =>
   preferences.lastKomi ?? DEFAULT_KOMI;
-
 const modeLabel = (mode: GameMode): string =>
   mode === 'cube-2d' ? 'Cube 2D' : 'Torus 2D';
-
 const topologyLabel = (mode: GameMode): string =>
   mode === 'cube-2d' ? 'Cube' : 'Torus';
-
 const topologyPreviewSrc = (mode: GameMode): string =>
   mode === 'cube-2d' ? '/assets/board/cube.svg' : '/assets/board/torus.svg';
-
 const topologyPreviewAlt = (mode: GameMode): string =>
   `${mode === 'cube-2d' ? 'Cube' : 'Torus'} topology preview`;
-
 const normalizeKomi = (value: number): number => Math.floor(value) + 0.5;
 
-export function App() {
-  const application = useMemo(() => new GameApplication(), []);
+export function App({ alphaZeroGateway, gameApplication }: AppProps = {}) {
+  const application = useMemo(
+    () => gameApplication ?? new GameApplication(),
+    [gameApplication],
+  );
+  const gateway = useMemo(
+    () => alphaZeroGateway ?? new HttpAlphaZeroClient(),
+    [alphaZeroGateway],
+  );
   const preferencesStorage = useMemo(() => new LocalStoragePreferencesStorage(), []);
+
   const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_USER_PREFERENCES);
   const [screen, setScreen] = useState<AppScreen>('loading');
   const developmentReturnScreenRef = useRef<DevelopmentReturnScreen>('settings');
   const [savedGame, setSavedGame] = useState<SavedGameSummary | null>(null);
   const [activeGame, setActiveGame] = useState<ActiveGame | null>(null);
+  const [botRuntime, setBotRuntime] = useState<BotRuntime | null>(null);
+  const [botState, setBotState] = useState<ReturnType<BotRuntime['state']> | null>(null);
+  const [externalAction, setExternalAction] = useState<BotPresentationAction | null>(null);
+  const botRuntimeIdentityRef = useRef(0);
+  const actionSequenceRef = useRef(0);
   const [gameInstanceKey, setGameInstanceKey] = useState(0);
   const [confirmNewGame, setConfirmNewGame] = useState(false);
   const [gameMode, setGameMode] = useState<GameMode>('torus-2d');
@@ -92,33 +111,38 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
-
     void Promise.all([
       application.findSavedGame(),
       preferencesStorage.loadPreferences(),
-    ]).then(([summary, storedPreferences]) => {
+    ]).then(([summary, stored]) => {
       if (cancelled) return;
-      const hydratedPreferences: UserPreferences =
-        storedPreferences.lastGameMode === null && summary
-          ? Object.freeze({ ...storedPreferences, lastGameMode: summary.gameMode })
-          : storedPreferences;
-      const initialGameMode = preferredGameMode(hydratedPreferences);
-      setPreferences(hydratedPreferences);
-      topologyPreviewTargetRef.current = initialGameMode;
-      setTopologyPreviewTransition(null);
-      setGameMode(initialGameMode);
-      setSize(preferredSizeForMode(initialGameMode, hydratedPreferences));
-      setKomi(String(preferredKomi(hydratedPreferences)));
+      const hydrated =
+        stored.lastGameMode === null && summary
+          ? Object.freeze({ ...stored, lastGameMode: summary.gameMode })
+          : stored;
+      const initialMode = preferredGameMode(hydrated);
+      setPreferences(hydrated);
+      topologyPreviewTargetRef.current = initialMode;
+      setGameMode(initialMode);
+      setSize(preferredSizeForMode(initialMode, hydrated));
+      setKomi(String(preferredKomi(hydrated)));
       setSavedGame(summary);
       setScreen(summary ? 'resume' : 'settings');
     });
-
     return () => {
       cancelled = true;
     };
   }, [application, preferencesStorage]);
 
+  const invalidateBotRuntime = (): void => {
+    botRuntimeIdentityRef.current += 1;
+    setBotRuntime(null);
+    setBotState(null);
+    setExternalAction(null);
+  };
+
   const continueSavedGame = async (): Promise<void> => {
+    invalidateBotRuntime();
     setScreen('loading');
     setError(null);
     const restored = await application.restoreSavedGame();
@@ -127,24 +151,24 @@ export function App() {
       setScreen('settings');
       return;
     }
-
     setActiveGame(restored);
-    setGameInstanceKey((current) => current + 1);
+    setGameInstanceKey((value) => value + 1);
     setScreen('game');
   };
 
   const discardAndChooseSettings = async (): Promise<void> => {
+    invalidateBotRuntime();
     setError(null);
     try {
       await application.discardSavedGame();
-      const nextGameMode = preferredGameMode(preferences);
+      const nextMode = preferredGameMode(preferences);
       setActiveGame(null);
       setSavedGame(null);
       setConfirmNewGame(false);
-      topologyPreviewTargetRef.current = nextGameMode;
+      topologyPreviewTargetRef.current = nextMode;
       setTopologyPreviewTransition(null);
-      setGameMode(nextGameMode);
-      setSize(preferredSizeForMode(nextGameMode, preferences));
+      setGameMode(nextMode);
+      setSize(preferredSizeForMode(nextMode, preferences));
       setRuleSet('japanese');
       setKomi(String(preferredKomi(preferences)));
       setScreen('settings');
@@ -153,15 +177,14 @@ export function App() {
     }
   };
 
-  const chooseMode = (nextMode: GameMode) => {
-    const fromMode = topologyPreviewTargetRef.current;
-    if (fromMode === nextMode) return;
-
+  const chooseMode = (nextMode: GameMode): void => {
+    const from = topologyPreviewTargetRef.current;
+    if (from === nextMode) return;
     topologyPreviewTargetRef.current = nextMode;
-    const transitionId = ++topologyPreviewTransitionIdRef.current;
+    const id = ++topologyPreviewTransitionIdRef.current;
     setTopologyPreviewTransition({
-      id: transitionId,
-      from: fromMode,
+      id,
+      from,
       to: nextMode,
       direction: nextMode === 'torus-2d' ? 'left' : 'right',
     });
@@ -169,71 +192,123 @@ export function App() {
     setSize(preferredSizeForMode(nextMode, preferences));
   };
 
-  const finishTopologyPreviewTransition = (transitionId: number) => {
-    setTopologyPreviewTransition((current) =>
-      current?.id === transitionId ? null : current,
-    );
+  const finishTopologyPreviewTransition = (id: number): void =>
+    setTopologyPreviewTransition((current) => (current?.id === id ? null : current));
+
+  const settings = (): NewGameSettings | null => {
+    const parsed = Number(komi);
+    if (!Number.isFinite(parsed)) return null;
+    return { gameMode, size, ruleSet, komi: normalizeKomi(parsed) };
+  };
+
+  const savePreferences = async (normalizedKomi: number): Promise<void> => {
+    const stored = await preferencesStorage.loadPreferences().catch(() => preferences);
+    const next: UserPreferences = Object.freeze({
+      ...stored,
+      lastGameMode: gameMode,
+      lastCubeSize:
+        gameMode === 'cube-2d'
+          ? (size as UserPreferences['lastCubeSize'])
+          : stored.lastCubeSize,
+      lastTorusSize:
+        gameMode === 'torus-2d'
+          ? (size as UserPreferences['lastTorusSize'])
+          : stored.lastTorusSize,
+      lastKomi: normalizedKomi,
+    });
+    setPreferences(next);
+    try {
+      await preferencesStorage.savePreferences(next);
+    } catch {
+      setError('Game started, but preferences could not be saved.');
+    }
   };
 
   const startNewGame = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
+    invalidateBotRuntime();
     setError(null);
-
-    const parsedKomi = Number(komi);
-    if (!Number.isFinite(parsedKomi)) {
+    const nextSettings = settings();
+    if (!nextSettings) {
       setError('Komi must be a finite number.');
       return;
     }
-    const normalizedKomi = normalizeKomi(parsedKomi);
-
     try {
-      const next = await application.createNewGame({
-        gameMode,
-        size,
-        ruleSet,
-        komi: normalizedKomi,
-      });
-
-      const storedPreferences = await preferencesStorage
-        .loadPreferences()
-        .catch(() => preferences);
-      const nextPreferences: UserPreferences = Object.freeze({
-        ...storedPreferences,
-        lastGameMode: gameMode,
-        lastCubeSize:
-          gameMode === 'cube-2d'
-            ? (size as UserPreferences['lastCubeSize'])
-            : storedPreferences.lastCubeSize,
-        lastTorusSize:
-          gameMode === 'torus-2d'
-            ? (size as UserPreferences['lastTorusSize'])
-            : storedPreferences.lastTorusSize,
-        lastKomi: normalizedKomi,
-      });
-      setPreferences(nextPreferences);
-      try {
-        await preferencesStorage.savePreferences(nextPreferences);
-      } catch {
-        setError('Game started, but preferences could not be saved.');
-      }
-
+      const next = await application.createNewGame(nextSettings);
+      await savePreferences(nextSettings.komi);
       setActiveGame(next);
-      setGameInstanceKey((current) => current + 1);
+      setGameInstanceKey((value) => value + 1);
       setScreen('game');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not start a new game.');
     }
   };
 
+  const launchBotGame = async ({
+    humanColor,
+    checkpoint,
+    mctsSimulations,
+  }: {
+    humanColor: 'black' | 'white';
+    checkpoint: { id: string };
+    mctsSimulations: number;
+  }): Promise<void> => {
+    const nextSettings = settings();
+    if (!nextSettings) {
+      setError('Komi must be a finite number.');
+      return;
+    }
+
+    invalidateBotRuntime();
+    await application.discardSavedGame();
+    const next = application.createEphemeralGame(nextSettings);
+    const identity = ++botRuntimeIdentityRef.current;
+    let runtime!: BotRuntime;
+
+    runtime = createBotRuntime({
+      identity,
+      activeGame: next,
+      gateway,
+      humanColor,
+      checkpointId: checkpoint.id,
+      mctsSimulations,
+      onEvent: (event) => {
+        if (botRuntimeIdentityRef.current !== identity) return;
+        if (event.type === 'bot-action-accepted') {
+          actionSequenceRef.current += 1;
+          setExternalAction(
+            Object.freeze({
+              runtimeIdentity: identity,
+              sequence: actionSequenceRef.current,
+              result: event.result,
+            }),
+          );
+        }
+        setBotState(runtime.state());
+      },
+    });
+
+    setActiveGame(next);
+    setBotRuntime(runtime);
+    setBotState(runtime.state());
+    setExternalAction(null);
+    setGameInstanceKey((value) => value + 1);
+    setScreen('game');
+    await savePreferences(nextSettings.komi);
+
+    if (humanColor === 'white') {
+      void runtime.orchestrator.start().catch(() => {
+        if (botRuntimeIdentityRef.current === identity) setBotState(runtime.state());
+      });
+    }
+  };
+
   const setTorusDuplicateRegionsPreference = (visible: boolean): void => {
-    const nextPreferences: UserPreferences = Object.freeze({
-      ...preferences,
-      showTorusDuplicateRegions: visible,
-    });
-    setPreferences(nextPreferences);
-    void preferencesStorage.savePreferences(nextPreferences).catch(() => {
-      setError('Display preference could not be saved.');
-    });
+    const next = Object.freeze({ ...preferences, showTorusDuplicateRegions: visible });
+    setPreferences(next);
+    void preferencesStorage
+      .savePreferences(next)
+      .catch(() => setError('Display preference could not be saved.'));
   };
 
   const openDevelopment = (): void => {
@@ -246,19 +321,36 @@ export function App() {
 
   const closeDevelopment = (): void => {
     const target = developmentReturnScreenRef.current;
-    if (target === 'game' && !activeGame) {
-      setScreen(savedGame ? 'resume' : 'settings');
-      return;
-    }
-    if (target === 'resume' && !savedGame) {
-      setScreen('settings');
-      return;
-    }
-    setScreen(target);
+    if (target === 'game' && !activeGame) setScreen(savedGame ? 'resume' : 'settings');
+    else if (target === 'resume' && !savedGame) setScreen('settings');
+    else setScreen(target);
   };
 
   const sizes = sizesForMode(gameMode);
   const gameShell = screen === 'game' || screen === 'development';
+  const interactionLocked = botRuntime ? botState !== 'human-turn' : false;
+  const turnLabelOverride =
+    botState === 'bot-thinking' || botState === 'bot-turn'
+      ? 'Computer is thinking…'
+      : botState === 'error'
+        ? 'Bot move failed.'
+        : null;
+  const retryBotTurn =
+    botState === 'error' && botRuntime
+      ? () => {
+          const runtime = botRuntime;
+          void runtime.orchestrator.retryBotTurn().catch(() => {
+            if (botRuntimeIdentityRef.current === runtime.identity) {
+              setBotState(runtime.state());
+            }
+          });
+        }
+      : null;
+  const currentExternalAction =
+    botRuntime && externalAction?.runtimeIdentity === botRuntime.identity
+      ? externalAction
+      : null;
+  const currentSettings = settings();
 
   return (
     <main className={`app-shell${gameShell ? ' app-shell--game' : ''}`}>
@@ -299,137 +391,156 @@ export function App() {
       ) : null}
 
       {screen === 'settings' ? (
-        <form className="startup-card new-game-form" onSubmit={(event) => void startNewGame(event)}>
-          <div className="new-game-settings-grid" data-testid="new-game-settings-grid">
-            <fieldset
-              className="board-size-fieldset surface-fieldset new-game-settings-column new-game-settings-column--shape"
-              data-testid="new-game-shape-column"
-              aria-label="Board Shape"
-            >
-              <div className="topology-preview" data-testid="topology-preview">
-                {topologyPreviewTransition ? (
-                  <>
+        <>
+          <form
+            className="startup-card new-game-form"
+            onSubmit={(event) => void startNewGame(event)}
+          >
+            <div className="new-game-settings-grid" data-testid="new-game-settings-grid">
+              <fieldset
+                className="board-size-fieldset surface-fieldset new-game-settings-column new-game-settings-column--shape"
+                data-testid="new-game-shape-column"
+                aria-label="Board Shape"
+              >
+                <div className="topology-preview" data-testid="topology-preview">
+                  {topologyPreviewTransition ? (
+                    <>
+                      <img
+                        className={`topology-preview__image topology-preview__image--exit-${topologyPreviewTransition.direction}`}
+                        src={topologyPreviewSrc(topologyPreviewTransition.from)}
+                        alt=""
+                        aria-hidden="true"
+                        draggable={false}
+                      />
+                      <img
+                        key={topologyPreviewTransition.id}
+                        className={`topology-preview__image topology-preview__image--enter-from-${topologyPreviewTransition.direction === 'left' ? 'right' : 'left'}`}
+                        data-testid="topology-preview-image"
+                        src={topologyPreviewSrc(topologyPreviewTransition.to)}
+                        alt={topologyPreviewAlt(topologyPreviewTransition.to)}
+                        draggable={false}
+                        onAnimationEnd={() =>
+                          finishTopologyPreviewTransition(topologyPreviewTransition.id)
+                        }
+                      />
+                    </>
+                  ) : (
                     <img
-                      className={`topology-preview__image topology-preview__image--exit-${topologyPreviewTransition.direction}`}
-                      src={topologyPreviewSrc(topologyPreviewTransition.from)}
-                      alt=""
-                      aria-hidden="true"
-                      draggable={false}
-                    />
-                    <img
-                      key={topologyPreviewTransition.id}
-                      className={`topology-preview__image topology-preview__image--enter-from-${topologyPreviewTransition.direction === 'left' ? 'right' : 'left'}`}
+                      className="topology-preview__image"
                       data-testid="topology-preview-image"
-                      src={topologyPreviewSrc(topologyPreviewTransition.to)}
-                      alt={topologyPreviewAlt(topologyPreviewTransition.to)}
+                      src={topologyPreviewSrc(gameMode)}
+                      alt={topologyPreviewAlt(gameMode)}
                       draggable={false}
-                      onAnimationEnd={() =>
-                        finishTopologyPreviewTransition(topologyPreviewTransition.id)
-                      }
                     />
-                  </>
-                ) : (
-                  <img
-                    className="topology-preview__image"
-                    data-testid="topology-preview-image"
-                    src={topologyPreviewSrc(gameMode)}
-                    alt={topologyPreviewAlt(gameMode)}
-                    draggable={false}
-                  />
-                )}
-              </div>
-              <span className="new-game-control-label">Board Shape</span>
-              <div className="board-size-options surface-options">
-                {(['cube-2d', 'torus-2d'] as const).map((mode) => (
-                  <button
-                    type="button"
-                    key={mode}
-                    className={gameMode === mode ? 'is-selected' : undefined}
-                    aria-pressed={gameMode === mode}
-                    onClick={() => chooseMode(mode)}
-                  >
-                    {topologyLabel(mode)}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-
-            <div
-              className="new-game-column-divider"
-              data-testid="new-game-column-divider"
-              aria-hidden="true"
-            />
-
-            <div
-              className="new-game-settings-column new-game-settings-column--details"
-              data-testid="new-game-details-column"
-            >
-              <fieldset className="board-size-fieldset">
-                <legend>Board Size</legend>
-                <div className="board-size-options">
-                  {sizes.map((option) => (
+                  )}
+                </div>
+                <span className="new-game-control-label">Board Shape</span>
+                <div className="board-size-options surface-options">
+                  {(['cube-2d', 'torus-2d'] as const).map((mode) => (
                     <button
                       type="button"
-                      key={option}
-                      className={size === option ? 'is-selected' : undefined}
-                      aria-pressed={size === option}
-                      onClick={() => setSize(option)}
+                      key={mode}
+                      className={gameMode === mode ? 'is-selected' : undefined}
+                      aria-pressed={gameMode === mode}
+                      onClick={() => chooseMode(mode)}
                     >
-                      {option}×{option}
+                      {topologyLabel(mode)}
                     </button>
                   ))}
                 </div>
-                <select
-                  className="board-size-native-select"
-                  aria-label="Board size"
-                  value={size}
-                  onChange={(event) => setSize(Number(event.target.value) as GameSize)}
-                  tabIndex={-1}
-                >
-                  {sizes.map((option) => (
-                    <option value={option} key={option}>
-                      {option}×{option}
-                    </option>
-                  ))}
-                </select>
               </fieldset>
 
-              <div className="new-game-rules-komi">
-                <label>
-                  Rules
+              <div
+                className="new-game-column-divider"
+                data-testid="new-game-column-divider"
+                aria-hidden="true"
+              />
+
+              <div
+                className="new-game-settings-column new-game-settings-column--details"
+                data-testid="new-game-details-column"
+              >
+                <fieldset className="board-size-fieldset">
+                  <legend>Board Size</legend>
+                  <div className="board-size-options">
+                    {sizes.map((option) => (
+                      <button
+                        type="button"
+                        key={option}
+                        className={size === option ? 'is-selected' : undefined}
+                        aria-pressed={size === option}
+                        onClick={() => setSize(option)}
+                      >
+                        {option}×{option}
+                      </button>
+                    ))}
+                  </div>
                   <select
-                    value={ruleSet}
-                    onChange={(event) => setRuleSet(event.target.value as RuleSet)}
+                    className="board-size-native-select"
+                    aria-label="Board size"
+                    value={size}
+                    onChange={(event) => setSize(Number(event.target.value) as GameSize)}
+                    tabIndex={-1}
                   >
-                    <option value="japanese">Japanese</option>
-                    <option value="chinese">Chinese</option>
+                    {sizes.map((option) => (
+                      <option value={option} key={option}>
+                        {option}×{option}
+                      </option>
+                    ))}
                   </select>
-                </label>
+                </fieldset>
 
-                <label>
-                  Komi
-                  <input
-                    type="number"
-                    step="any"
-                    value={komi}
-                    onChange={(event) => setKomi(event.target.value)}
-                  />
-                </label>
+                <div className="new-game-rules-komi">
+                  <label>
+                    Rules
+                    <select
+                      value={ruleSet}
+                      onChange={(event) => setRuleSet(event.target.value as RuleSet)}
+                    >
+                      <option value="japanese">Japanese</option>
+                      <option value="chinese">Chinese</option>
+                    </select>
+                  </label>
+                  <label>
+                    Komi
+                    <input
+                      type="number"
+                      step="any"
+                      value={komi}
+                      onChange={(event) => setKomi(event.target.value)}
+                    />
+                  </label>
+                </div>
+
+                <button className="start-game-button" type="submit">
+                  Start game
+                </button>
               </div>
-
-              <button className="start-game-button" type="submit">Start game</button>
             </div>
-          </div>
-        </form>
+          </form>
+
+          {currentSettings ? (
+            <PlayVsBotLauncher
+              settings={currentSettings}
+              gateway={gateway}
+              onStart={(options) => void launchBotGame(options)}
+            />
+          ) : null}
+        </>
       ) : null}
 
       {screen === 'game' && activeGame?.gameMode === 'torus-2d' ? (
         <TorusGame
           key={`torus-${String(gameInstanceKey)}`}
           controller={activeGame.controller}
+          interaction={botRuntime?.interaction}
           onRequestNewGame={() => setConfirmNewGame(true)}
           initialShowDuplicateRegions={preferences.showTorusDuplicateRegions}
           onShowDuplicateRegionsPreferenceChange={setTorusDuplicateRegionsPreference}
+          gameplayReadOnly={interactionLocked}
+          externalAction={currentExternalAction}
+          turnLabelOverride={turnLabelOverride}
+          retryBotTurn={retryBotTurn}
         />
       ) : null}
 
@@ -437,13 +548,16 @@ export function App() {
         <Cube2DGame
           key={`cube-${String(gameInstanceKey)}`}
           controller={activeGame.controller}
+          interaction={botRuntime?.interaction}
           onRequestNewGame={() => setConfirmNewGame(true)}
+          gameplayReadOnly={interactionLocked}
+          externalAction={currentExternalAction}
+          turnLabelOverride={turnLabelOverride}
+          retryBotTurn={retryBotTurn}
         />
       ) : null}
 
-      {screen === 'development' ? (
-        <DevelopmentWorkspace onBack={closeDevelopment} />
-      ) : null}
+      {screen === 'development' ? <DevelopmentWorkspace onBack={closeDevelopment} /> : null}
 
       {confirmNewGame ? (
         <div className="confirmation-backdrop" role="presentation">

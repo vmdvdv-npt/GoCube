@@ -6,9 +6,7 @@ import {
   type BotTurnGameController,
   type BotTurnResult,
 } from './BotTurnCoordinator';
-import type {
-  AlphaZeroGateway,
-} from './development/AlphaZeroGateway';
+import type { AlphaZeroGateway } from './development/AlphaZeroGateway';
 import type { AlphaZeroPositionProjectionOptions } from './AlphaZeroPositionProjection';
 
 export type BotGameOrchestratorState =
@@ -38,18 +36,19 @@ export class BotGameActionBlockedError extends Error {
   }
 }
 
+export type BotGamePresentationEvent =
+  | Readonly<{ type: 'human-action-accepted'; result: BotTurnControllerActionResult }>
+  | Readonly<{ type: 'bot-action-accepted'; result: BotTurnControllerActionResult }>
+  | Readonly<{ type: 'state-changed'; state: BotGameOrchestratorState }>;
+
 export interface BotGameOrchestratorOptions extends AlphaZeroPositionProjectionOptions {
   readonly gateway: Pick<AlphaZeroGateway, 'selectMove'>;
-  /**
-   * A direct controller is sufficient for one fixed game. A resolver supports
-   * the application-owned active-game identity and lets stale protection prove
-   * that a replaced session must not receive an old AlphaZero response.
-   */
   readonly controller: BotTurnGameController | (() => BotTurnGameController);
   readonly humanColor: StoneColor;
   readonly checkpointId: string;
   readonly mctsSimulations: number;
   readonly requestIdFactory?: () => string;
+  readonly onPresentationEvent?: (event: BotGamePresentationEvent) => void;
 }
 
 const currentState = (controller: BotTurnGameController) => {
@@ -61,11 +60,6 @@ const currentState = (controller: BotTurnGameController) => {
 
 const oppositeColor = (color: StoneColor): StoneColor => (color === 'black' ? 'white' : 'black');
 
-/**
- * Owns the application lifecycle of one human-vs-bot game while delegating a
- * single AlphaZero proposal to BotTurnCoordinator. It stores no board or move
- * history: every bot request is rebuilt from the authoritative GameSession.
- */
 export class BotGameOrchestrator {
   readonly humanColor: StoneColor;
   readonly botColor: StoneColor;
@@ -76,7 +70,7 @@ export class BotGameOrchestrator {
   private failureController: BotTurnGameController | null = null;
   private failure: unknown | null = null;
 
-  constructor(options: BotGameOrchestratorOptions) {
+  constructor(private readonly options: BotGameOrchestratorOptions) {
     this.humanColor = options.humanColor;
     this.botColor = oppositeColor(options.humanColor);
     const controllerSource = options.controller;
@@ -110,11 +104,6 @@ export class BotGameOrchestrator {
     return this.failureController === controller ? this.failure : null;
   }
 
-  /**
-   * Starts bot ownership when the current authoritative turn belongs to it.
-   * In particular, human=White causes Black to move before control reaches the
-   * human. Human=Black starts immediately in human-turn and performs no I/O.
-   */
   async start(): Promise<BotTurnResult | null> {
     const controller = this.resolveController();
     const state = currentState(controller);
@@ -139,7 +128,6 @@ export class BotGameOrchestrator {
     return this.performHumanAction((controller) => controller.pass());
   }
 
-  /** Re-runs a failed bot turn from the current authoritative GameSession history. */
   async retryBotTurn(): Promise<BotTurnResult> {
     const controller = this.resolveController();
     if (this.failureController !== controller || this.failure === null) {
@@ -161,6 +149,14 @@ export class BotGameOrchestrator {
     }
 
     return this.runBotTurn(controller, true);
+  }
+
+  private publish(event: BotGamePresentationEvent): void {
+    try {
+      this.options.onPresentationEvent?.(event);
+    } catch {
+      // Presentation observers must never alter accepted gameplay semantics.
+    }
   }
 
   private async performHumanAction(
@@ -191,16 +187,18 @@ export class BotGameOrchestrator {
     const result = await action(controller);
     if (!result.accepted) return result;
 
-    // The action belonged to the old game. Do not start a request for a newly
-    // installed controller/session if the application replaced it meanwhile.
+    // Publish the real authoritative human action result immediately so the
+    // presentation can render it before the following MCTS request completes.
+    this.publish({ type: 'human-action-accepted', result });
+
     if (this.resolveController() !== controller) return result;
 
     const latest = currentState(controller);
     if (latest.phase !== 'playing' || latest.currentPlayer !== this.botColor) return result;
 
-    // The human action is already authoritative. A bot failure is reflected in
-    // orchestrator state and must never turn that accepted human action into a
-    // rollback or fallback Pass.
+    // Preserve the established headless contract: awaiting humanPlaceStone/
+    // humanPass waits until the automatically-following bot turn has settled.
+    // Presentation does not wait because it consumes the event published above.
     await this.runBotTurn(controller, false);
     return result;
   }
@@ -247,13 +245,15 @@ export class BotGameOrchestrator {
 
     const pending = this.botTurnCoordinator.playBotTurn();
     this.inFlightByController.set(controller, pending);
+    this.publish({ type: 'state-changed', state: 'bot-thinking' });
 
     try {
-      return await pending;
+      const result = await pending;
+      if (result.status === 'applied' && this.resolveController() === controller) {
+        this.publish({ type: 'bot-action-accepted', result: result.result });
+      }
+      return result;
     } catch (error) {
-      // A failure from an obsolete request must not put a replacement game into
-      // error. For the still-current game, keep the authoritative position and
-      // make retry explicitly available.
       if (this.resolveController() === controller) {
         const latest = currentState(controller);
         if (latest.phase === 'playing' && latest.currentPlayer === this.botColor) {
@@ -267,6 +267,9 @@ export class BotGameOrchestrator {
     } finally {
       if (this.inFlightByController.get(controller) === pending) {
         this.inFlightByController.delete(controller);
+      }
+      if (this.resolveController() === controller) {
+        this.publish({ type: 'state-changed', state: this.state() });
       }
     }
   }

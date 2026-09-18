@@ -1,22 +1,17 @@
 import type { StoneColor } from '../core/game/types';
 import type { GameSessionSnapshot } from '../core/persistence/GameSessionSnapshot';
 import type { PointId } from '../core/topology/Topology';
-import {
-  projectGameSessionToAlphaZeroPosition,
-  type AlphaZeroPositionProjectionOptions,
-} from './AlphaZeroPositionProjection';
+import type { AlphaZeroPositionProjectionOptions } from './AlphaZeroPositionProjection';
+import { projectGameSessionToAlphaZeroPosition } from './AlphaZeroPositionProjection';
+import type { SharedGameActionResult } from './GameSessionControllerFacade';
 import type {
   AlphaZeroAction,
   AlphaZeroGateway,
   AlphaZeroSelectedMove,
 } from './development/AlphaZeroGateway';
 
-export interface BotTurnControllerActionResult {
-  readonly accepted: boolean;
-  readonly reason: string | null;
-}
+export type BotTurnControllerActionResult = SharedGameActionResult;
 
-/** Minimal structural surface shared by GameSessionControllerFacade and topology controllers. */
 export interface BotTurnGameController {
   snapshot(): GameSessionSnapshot;
   placeStone(point: PointId): Promise<BotTurnControllerActionResult>;
@@ -25,10 +20,6 @@ export interface BotTurnGameController {
 
 export interface BotTurnCoordinatorOptions extends AlphaZeroPositionProjectionOptions {
   readonly gateway: Pick<AlphaZeroGateway, 'selectMove'>;
-  /**
-   * Resolves the application-owned current controller. Returning a different
-   * object is a session identity change and makes any in-flight response stale.
-   */
   readonly controller: () => BotTurnGameController;
   readonly checkpointId: string;
   readonly mctsSimulations: number;
@@ -40,11 +31,9 @@ export type BotTurnResult =
       status: 'applied';
       requestId: string;
       action: AlphaZeroAction;
+      result: BotTurnControllerActionResult;
     }>
-  | Readonly<{
-      status: 'stale';
-      requestId: string;
-    }>;
+  | Readonly<{ status: 'stale'; requestId: string }>;
 
 export type BotTurnCompatibilityReason = 'wrong-color' | 'action-rejected';
 
@@ -72,19 +61,16 @@ type PositionIdentity = Readonly<{
 }>;
 
 const currentState = (snapshot: GameSessionSnapshot) => {
-  const state = snapshot.history[snapshot.history.length - 1];
+  const state = snapshot.history.at(-1);
   if (!state) throw new Error('GameSession history must contain a current state');
   return state;
 };
 
-const sessionRevision = (snapshot: GameSessionSnapshot): number => snapshot.sessionRevision ?? 0;
+const sessionRevision = (snapshot: GameSessionSnapshot): number =>
+  snapshot.sessionRevision ?? 0;
 
 const defaultRequestIdFactory = (): string => globalThis.crypto.randomUUID();
 
-/**
- * Coordinates one stateless AlphaZero proposal against the authoritative
- * GoCube session. AlphaZero never owns or mutates GameState directly.
- */
 export class BotTurnCoordinator {
   private readonly requestIdFactory: () => string;
 
@@ -105,7 +91,9 @@ export class BotTurnCoordinator {
     const snapshot = controller.snapshot();
     const state = currentState(snapshot);
     if (state.phase !== 'playing') {
-      throw new BotTurnUnavailableError(`Bot move requires playing phase, got ${state.phase}`);
+      throw new BotTurnUnavailableError(
+        `Bot move requires playing phase, got ${state.phase}`,
+      );
     }
 
     const identity: PositionIdentity = Object.freeze({
@@ -115,7 +103,7 @@ export class BotTurnCoordinator {
       currentPlayer: state.currentPlayer,
     });
     const requestId = this.requestIdFactory();
-    if (requestId.length === 0) throw new Error('Bot requestId must be non-empty');
+    if (!requestId) throw new Error('Bot requestId must be non-empty');
 
     const response = await this.options.gateway.selectMove(
       Object.freeze({
@@ -134,7 +122,6 @@ export class BotTurnCoordinator {
     }
 
     this.assertResponseColor(response, latestState.currentPlayer, requestId);
-
     const result =
       response.action.type === 'place'
         ? await currentController.placeStone(response.action.pointId)
@@ -154,6 +141,7 @@ export class BotTurnCoordinator {
       status: 'applied' as const,
       requestId,
       action: response.action,
+      result,
     });
   }
 
@@ -177,12 +165,13 @@ export class BotTurnCoordinator {
     currentPlayer: StoneColor,
     requestId: string,
   ): void {
-    if (response.color === currentPlayer) return;
-    throw new BotTurnCompatibilityError(
-      'wrong-color',
-      requestId,
-      `AlphaZero returned ${response.color} for ${currentPlayer} turn`,
-    );
+    if (response.color !== currentPlayer) {
+      throw new BotTurnCompatibilityError(
+        'wrong-color',
+        requestId,
+        `AlphaZero returned ${response.color} for ${currentPlayer} turn`,
+      );
+    }
   }
 
   private describeAction(action: AlphaZeroAction): string {

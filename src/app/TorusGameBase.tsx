@@ -9,11 +9,6 @@ import type { GroupStatus } from '../core/endgame/EndgameClassifier';
 import type { AnimationMode } from '../presentation/AnimationMode';
 import { endgameGroupForPoint } from '../presentation/EndgameGroupPresentation';
 import { finalBoardViewModel } from '../presentation/EndgameTerritoryPresentation';
-import { EndgameReviewControls } from './EndgameReviewControls';
-import { GameResultDialog } from './GameResultDialog';
-import { GameSidebar } from './GameSidebar';
-import './manual-endgame.css';
-import './game-viewport.css';
 import {
   isTorus2DPrimaryBoardClientPosition,
   renderTorus2DEdgeDuplicates,
@@ -24,6 +19,10 @@ import {
   type Torus2DSize,
 } from '../renderer2d/Torus2DRenderer';
 import { renderTorus2DStoneAnnotations } from '../renderer2d/Torus2DStoneAnnotations';
+import { EndgameReviewControls } from './EndgameReviewControls';
+import type { GameInteractionBoundary } from './GameInteractionBoundary';
+import { GameResultDialog } from './GameResultDialog';
+import { GameSidebar } from './GameSidebar';
 import {
   TorusGameController,
   type TorusEndgameGroup,
@@ -31,6 +30,8 @@ import {
 } from './TorusGameController';
 import { useDragPan, type DragPanOffset } from './useDragPan';
 import { useEndgameReview } from './useEndgameReview';
+import './manual-endgame.css';
+import './game-viewport.css';
 
 const TORUS_ZOOM_MIN = 0.7;
 const TORUS_ZOOM_MAX = 2.5;
@@ -75,7 +76,12 @@ const rendererClientPosition = (
 ): Readonly<{ x: number; y: number }> => {
   const bounds = svg.getBoundingClientRect();
   const viewBox = svg.viewBox.baseVal;
-  if (bounds.width <= 0 || bounds.height <= 0 || viewBox.width <= 0 || viewBox.height <= 0) {
+  if (
+    bounds.width <= 0 ||
+    bounds.height <= 0 ||
+    viewBox.width <= 0 ||
+    viewBox.height <= 0
+  ) {
     return Object.freeze({ x: clientX, y: clientY });
   }
 
@@ -122,6 +128,9 @@ export interface TorusGameProps {
   readonly newGameDisabled?: boolean;
   readonly animationMode?: AnimationMode;
   readonly externalAction?: TorusExternalAction | null;
+  readonly interaction?: GameInteractionBoundary;
+  readonly turnLabelOverride?: string | null;
+  readonly retryBotTurn?: (() => void) | null;
 }
 
 export function TorusGame({
@@ -133,6 +142,9 @@ export function TorusGame({
   newGameDisabled = false,
   animationMode = 'normal',
   externalAction = null,
+  interaction = controller,
+  turnLabelOverride = null,
+  retryBotTurn = null,
 }: TorusGameProps) {
   const initialViewModel = controller.viewModel();
   const [viewModel, setViewModel] = useState(() => initialViewModel);
@@ -141,7 +153,9 @@ export function TorusGame({
   const [resultOpen, setResultOpen] = useState(
     () => initialViewModel.phase === 'finished',
   );
-  const [showDuplicateRegions, setShowDuplicateRegions] = useState(initialShowDuplicateRegions);
+  const [showDuplicateRegions, setShowDuplicateRegions] = useState(
+    initialShowDuplicateRegions,
+  );
   const [showMoveNumbers, setShowMoveNumbers] = useState(false);
   const [viewZoom, setViewZoom] = useState(1);
   const [passGuardUntil, setPassGuardUntil] = useState<number | null>(null);
@@ -186,21 +200,26 @@ export function TorusGame({
   });
   const panOffsetRef = useRef<DragPanOffset>(dragPan.offset);
 
-  const applyResult = useCallback((result: TorusGameActionResult): void => {
-    previewedMovePointRef.current = null;
-    rendererRef.current?.setMovePreview(null);
-    setViewModel(result.viewModel);
-    setFeedback(result.accepted ? null : rejectionLabel(result.reason));
-    setResultOpen(result.viewModel.phase === 'finished' && Boolean(result.viewModel.finalScore));
-    endgame.sync(result.viewModel);
+  const applyResult = useCallback(
+    (result: TorusGameActionResult): void => {
+      previewedMovePointRef.current = null;
+      rendererRef.current?.setMovePreview(null);
+      setViewModel(result.viewModel);
+      setFeedback(result.accepted ? null : rejectionLabel(result.reason));
+      setResultOpen(
+        result.viewModel.phase === 'finished' && Boolean(result.viewModel.finalScore),
+      );
+      endgame.sync(result.viewModel);
 
-    if (
-      result.viewModel.phase !== 'playing' ||
-      result.viewModel.consecutivePasses === 0
-    ) {
-      setPassGuardUntil(null);
-    }
-  }, [endgame.sync]);
+      if (
+        result.viewModel.phase !== 'playing' ||
+        result.viewModel.consecutivePasses === 0
+      ) {
+        setPassGuardUntil(null);
+      }
+    },
+    [endgame.sync],
+  );
 
   useEffect(() => {
     panOffsetRef.current = dragPan.offset;
@@ -312,7 +331,6 @@ export function TorusGame({
     rendererRef.current = renderer;
     const displayViewModel = finalBoardViewModel(viewModel);
 
-    // The opt-in duplicate view is a separate one-line, non-interactive edge overlay.
     renderer.setDuplicateRegionsVisible(false);
     renderer.setEndgamePresentation(
       viewModel.phase === 'endgame' ? endgame.presentation : null,
@@ -326,13 +344,7 @@ export function TorusGame({
       showDuplicateRegions,
     );
     renderTorus2DStoneAnnotations(svg, viewModel, showMoveNumbers);
-  }, [
-    controller,
-    endgame.presentation,
-    showDuplicateRegions,
-    showMoveNumbers,
-    viewModel,
-  ]);
+  }, [controller, endgame.presentation, showDuplicateRegions, showMoveNumbers, viewModel]);
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -342,10 +354,6 @@ export function TorusGame({
     const applyCamera = (): void =>
       applyTorusVectorCamera(svg, controller.size, showDuplicateRegions);
 
-    // Torus2DRenderer still owns the scene lifecycle and may perform one final
-    // initial render after React's first effect pass. Apply immediately and once
-    // again on the next frame so the stable vector-fit camera remains the owner
-    // of the root viewBox while user zoom is applied to the whole board shell.
     applyCamera();
     const frameId = view?.requestAnimationFrame(applyCamera) ?? null;
     return () => {
@@ -445,7 +453,8 @@ export function TorusGame({
     if (!renderer) return;
 
     const exactHit = renderer.visualPointFromClientPosition(client.x, client.y);
-    const logicalPointId = previewedMovePointRef.current ?? exactHit?.logicalPointId ?? null;
+    const logicalPointId =
+      previewedMovePointRef.current ?? exactHit?.logicalPointId ?? null;
     if (!logicalPointId) return;
 
     const availability = controller.moveAvailability(logicalPointId);
@@ -459,7 +468,7 @@ export function TorusGame({
     renderer.setMovePreview(null);
     actionInFlight.current = true;
     try {
-      applyResult(await controller.placeStone(logicalPointId));
+      applyResult(await interaction.placeStone(logicalPointId));
     } finally {
       actionInFlight.current = false;
     }
@@ -569,7 +578,7 @@ export function TorusGame({
 
     actionInFlight.current = true;
     try {
-      const result = await controller.pass();
+      const result = await interaction.pass();
       applyResult(result);
       if (
         result.accepted &&
@@ -681,8 +690,8 @@ export function TorusGame({
         showDuplicateRegions={showDuplicateRegions}
         onShowDuplicateRegionsChange={handleShowDuplicateRegionsChange}
         passDisabled={gameplayReadOnly || viewModel.phase !== 'playing' || passGuardActive}
-        canRedo={!gameplayReadOnly && controller.canRedo()}
-        canUndo={!gameplayReadOnly && controller.canUndo()}
+        canRedo={!gameplayReadOnly && interaction.canRedo()}
+        canUndo={!gameplayReadOnly && interaction.canUndo()}
         onPass={() => void handlePass()}
         onRedo={() => void handleRedo()}
         onUndo={() => void handleUndo()}
@@ -692,6 +701,8 @@ export function TorusGame({
         newGameDisabled={newGameDisabled}
         endgame={endgamePanel}
         feedback={feedback}
+        turnLabelOverride={turnLabelOverride}
+        retryBotTurn={retryBotTurn}
       />
 
       <div
@@ -735,7 +746,13 @@ export function TorusGame({
         <div className="torus-board-viewport">
           <svg
             ref={svgRef}
-            className={`torus-board${viewModel.phase === 'playing' ? '' : viewModel.phase === 'endgame' ? ' torus-board--endgame' : ' torus-board--inactive'}`}
+            className={`torus-board${
+              viewModel.phase === 'playing'
+                ? ''
+                : viewModel.phase === 'endgame'
+                  ? ' torus-board--endgame'
+                  : ' torus-board--inactive'
+            }`}
             data-view-zoom={viewZoom.toFixed(3)}
             data-move-numbers-visible={showMoveNumbers ? 'true' : 'false'}
             style={{ cursor: 'default' }}

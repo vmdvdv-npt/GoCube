@@ -6,7 +6,10 @@ import {
 } from 'react';
 import type { AnimationMode } from '../presentation/AnimationMode';
 import { finalBoardViewModel } from '../presentation/EndgameTerritoryPresentation';
-import { CUBE_2D_LAYOUT_COLUMNS, CUBE_2D_LAYOUT_ROWS } from '../presentation/cube/Cube2DLayout';
+import {
+  CUBE_2D_LAYOUT_COLUMNS,
+  CUBE_2D_LAYOUT_ROWS,
+} from '../presentation/cube/Cube2DLayout';
 import {
   CUBE_2D_BASE_CELL_SIZE,
   CUBE_2D_TRANSITION_MS,
@@ -15,6 +18,7 @@ import {
 import { Cube2DGameController } from './Cube2DGameController';
 import { Cube2DVisualEffects } from './Cube2DVisualEffects';
 import { EndgameReviewControls } from './EndgameReviewControls';
+import type { GameInteractionBoundary } from './GameInteractionBoundary';
 import { GameResultDialog } from './GameResultDialog';
 import { GameSidebar } from './GameSidebar';
 import { useCube2DGame, type Cube2DExternalAction } from './useCube2DGame';
@@ -65,6 +69,9 @@ export interface Cube2DGameProps {
   readonly newGameDisabled?: boolean;
   readonly animationMode?: AnimationMode;
   readonly externalAction?: Cube2DExternalAction | null;
+  readonly interaction?: GameInteractionBoundary;
+  readonly turnLabelOverride?: string | null;
+  readonly retryBotTurn?: (() => void) | null;
   /** True only when this view is also the explicit owner of an ephemeral controller. */
   readonly ownsController?: boolean;
 }
@@ -76,11 +83,19 @@ export function Cube2DGame({
   newGameDisabled = false,
   animationMode = 'normal',
   externalAction = null,
+  interaction = controller,
+  turnLabelOverride = null,
+  retryBotTurn = null,
   ownsController = false,
 }: Cube2DGameProps) {
   useGameControllerLifecycle(ownsController ? controller : null);
 
-  const g = useCube2DGame(controller, { gameplayReadOnly, animationMode, externalAction });
+  const g = useCube2DGame(controller, {
+    gameplayReadOnly,
+    animationMode,
+    externalAction,
+    interaction,
+  });
   const displayViewModel = finalBoardViewModel(g.vm);
   const layoutCellSize = CUBE_2D_BASE_CELL_SIZE * g.zoom;
   const stageWidth = layoutCellSize * CUBE_2D_LAYOUT_COLUMNS;
@@ -88,7 +103,8 @@ export function Cube2DGame({
   const navigationWidth = stageWidth + CUBE_2D_NAVIGATION_INSET * 2;
   const navigationHeight = stageHeight + CUBE_2D_NAVIGATION_INSET * 2;
   const sideRowCenterY = CUBE_2D_NAVIGATION_INSET + layoutCellSize * 1.5;
-  const verticalPairCenterX = CUBE_2D_NAVIGATION_INSET + layoutCellSize * (g.view.verticalAnchorColumn + 0.5);
+  const verticalPairCenterX =
+    CUBE_2D_NAVIGATION_INSET + layoutCellSize * (g.view.verticalAnchorColumn + 0.5);
   const navigationDisabled = Boolean(g.transition) || g.captureAnimating;
   const verticalPairIsMoving = g.transition?.direction === 'anchor';
   const verticalArrowMotionStyle: Cube2DNavigationArrowStyle = verticalPairIsMoving
@@ -118,7 +134,9 @@ export function Cube2DGame({
     event.preventDefault();
     const currentZoom = zoomRef.current;
     const currentPan = panOffsetRef.current;
-    const nextZoom = g.setZoom(currentZoom - wheelDeltaPixels(event) * CUBE_2D_ZOOM_WHEEL_SENSITIVITY);
+    const nextZoom = g.setZoom(
+      currentZoom - wheelDeltaPixels(event) * CUBE_2D_ZOOM_WHEEL_SENSITIVITY,
+    );
     if (nextZoom === currentZoom) return;
 
     let nextPan: DragPanOffset;
@@ -139,23 +157,28 @@ export function Cube2DGame({
     dragPan.setOffset(nextPan);
   };
 
-  const endgamePanel = g.vm.phase === 'endgame' ? (
-    <EndgameReviewControls
-      titleId="cube-endgame-title"
-      reviewReady={g.endgameReviewReady}
-      groups={g.groups}
-      decisions={g.decisions}
-      selectedGroup={g.selected}
-      resolvedCount={g.resolvedCount}
-      automaticClassified={g.automaticClassified}
-      canFinish={g.canFinishEndgame}
-      onDecision={g.setDecision}
-      onFinish={g.finishEndgame}
-    />
-  ) : null;
+  const endgamePanel =
+    g.vm.phase === 'endgame' ? (
+      <EndgameReviewControls
+        titleId="cube-endgame-title"
+        reviewReady={g.endgameReviewReady}
+        groups={g.groups}
+        decisions={g.decisions}
+        selectedGroup={g.selected}
+        resolvedCount={g.resolvedCount}
+        automaticClassified={g.automaticClassified}
+        canFinish={g.canFinishEndgame}
+        onDecision={g.setDecision}
+        onFinish={g.finishEndgame}
+      />
+    ) : null;
 
   return (
-    <section className="torus-game cube-2d-game" aria-label="Cube 2D game" data-animation-mode={animationMode}>
+    <section
+      className="torus-game cube-2d-game"
+      aria-label="Cube 2D game"
+      data-animation-mode={animationMode}
+    >
       <GameSidebar
         size={controller.size}
         viewModel={g.vm}
@@ -163,9 +186,25 @@ export function Cube2DGame({
         onShowMoveNumbersChange={g.setShowMoveNumbers}
         showDuplicateRegions={false}
         duplicateRegionsDisabled
-        passDisabled={gameplayReadOnly || g.vm.phase !== 'playing' || g.passGuarded || Boolean(g.transition) || g.captureAnimating}
-        canRedo={!gameplayReadOnly && !g.transition && !g.captureAnimating && controller.canRedo()}
-        canUndo={!gameplayReadOnly && !g.transition && !g.captureAnimating && controller.canUndo()}
+        passDisabled={
+          gameplayReadOnly ||
+          g.vm.phase !== 'playing' ||
+          g.passGuarded ||
+          Boolean(g.transition) ||
+          g.captureAnimating
+        }
+        canRedo={
+          !gameplayReadOnly &&
+          !g.transition &&
+          !g.captureAnimating &&
+          interaction.canRedo()
+        }
+        canUndo={
+          !gameplayReadOnly &&
+          !g.transition &&
+          !g.captureAnimating &&
+          interaction.canUndo()
+        }
         onPass={() => void g.pass()}
         onRedo={() => void g.run(() => controller.redo())}
         onUndo={() => void g.run(() => controller.undo())}
@@ -176,6 +215,8 @@ export function Cube2DGame({
         endgame={endgamePanel}
         feedback={g.feedback}
         finalAnalysisProgressSource={controller.finalAnalysisProgressSource()}
+        turnLabelOverride={turnLabelOverride}
+        retryBotTurn={retryBotTurn}
       />
 
       <div className="cube-2d-game__board-shell" aria-label="Cube 2D view">
@@ -217,15 +258,22 @@ export function Cube2DGame({
                 top: 0,
               }}
               onClick={() => g.navigate('up')}
-            >↑</button>
+            >
+              ↑
+            </button>
             <button
               className="torus-pan torus-pan--left cube-2d-game__navigation-arrow"
               type="button"
               aria-label="Move cube left"
               disabled={navigationDisabled}
-              style={{ left: 0, top: `${sideRowCenterY - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px` }}
+              style={{
+                left: 0,
+                top: `${sideRowCenterY - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px`,
+              }}
               onClick={() => g.navigate('left')}
-            >←</button>
+            >
+              ←
+            </button>
 
             <div
               className="cube-2d-stage cube-2d-game__stage"
@@ -246,7 +294,13 @@ export function Cube2DGame({
                 hoveredPointId={g.hoveredPoint}
                 hoverStatus={g.hoverStatus}
                 showMoveNumbers={g.showMoveNumbers}
-                inputDisabled={Boolean(g.transition) || g.captureAnimating || g.vm.phase === 'finished' || (gameplayReadOnly && g.vm.phase === 'playing') || dragPan.dragging}
+                inputDisabled={
+                  Boolean(g.transition) ||
+                  g.captureAnimating ||
+                  g.vm.phase === 'finished' ||
+                  (gameplayReadOnly && g.vm.phase === 'playing') ||
+                  dragPan.dragging
+                }
                 onPointHover={g.hover}
                 onPointActivate={(point) => void g.activate(point)}
               />
@@ -265,9 +319,14 @@ export function Cube2DGame({
               type="button"
               aria-label="Move cube right"
               disabled={navigationDisabled}
-              style={{ left: `${CUBE_2D_NAVIGATION_INSET + stageWidth + CUBE_2D_NAVIGATION_GAP}px`, top: `${sideRowCenterY - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px` }}
+              style={{
+                left: `${CUBE_2D_NAVIGATION_INSET + stageWidth + CUBE_2D_NAVIGATION_GAP}px`,
+                top: `${sideRowCenterY - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px`,
+              }}
               onClick={() => g.navigate('right')}
-            >→</button>
+            >
+              →
+            </button>
             <button
               className={`torus-pan torus-pan--down cube-2d-game__navigation-arrow${verticalPairIsMoving ? ' cube-2d-game__navigation-arrow--anchor-moving' : ''}`}
               type="button"
@@ -279,12 +338,16 @@ export function Cube2DGame({
                 top: `${CUBE_2D_NAVIGATION_INSET + stageHeight + CUBE_2D_NAVIGATION_GAP}px`,
               }}
               onClick={() => g.navigate('down')}
-            >↓</button>
+            >
+              ↓
+            </button>
           </div>
         </div>
       </div>
 
-      {g.result && g.resultOpen ? <GameResultDialog result={g.result} onClose={() => g.setResultOpen(false)} /> : null}
+      {g.result && g.resultOpen ? (
+        <GameResultDialog result={g.result} onClose={() => g.setResultOpen(false)} />
+      ) : null}
     </section>
   );
 }

@@ -25,6 +25,8 @@ export interface GameSidebarProps {
   readonly endgame?: ReactNode;
   readonly feedback?: string | null;
   readonly finalAnalysisProgressSource?: FinalProofSearchProgressSource;
+  readonly turnLabelOverride?: string | null;
+  readonly retryBotTurn?: (() => void) | null;
 }
 
 export function GameSidebar({
@@ -48,12 +50,13 @@ export function GameSidebar({
   endgame = null,
   feedback = null,
   finalAnalysisProgressSource,
+  turnLabelOverride = null,
+  retryBotTurn = null,
 }: GameSidebarProps) {
   const contextualProgressSource = useFinalAnalysisProgressSource();
   const progressSource = finalAnalysisProgressSource ?? contextualProgressSource;
-  const [finalAnalysisProgress, setFinalAnalysisProgress] = useState<FinalProofSearchProgress | null>(
-    () => progressSource?.current() ?? null,
-  );
+  const [finalAnalysisProgress, setFinalAnalysisProgress] =
+    useState<FinalProofSearchProgress | null>(() => progressSource?.current() ?? null);
 
   useEffect(() => {
     setFinalAnalysisProgress(progressSource?.current() ?? null);
@@ -63,11 +66,12 @@ export function GameSidebar({
 
   const stageLabel = finalAnalysisProgress
     ? 'Analyzing final position…'
-    : viewModel.phase === 'playing'
-      ? `${viewModel.currentPlayer === 'black' ? 'Black' : 'White'} to move`
-      : viewModel.phase === 'endgame'
-        ? 'Classify groups'
-        : 'Game finished';
+    : turnLabelOverride ??
+      (viewModel.phase === 'playing'
+        ? `${viewModel.currentPlayer === 'black' ? 'Black' : 'White'} to move`
+        : viewModel.phase === 'endgame'
+          ? 'Classify groups'
+          : 'Game finished');
 
   const analysisDetail = finalAnalysisProgress
     ? finalAnalysisProgress.groupsTotal > 0
@@ -84,19 +88,28 @@ export function GameSidebar({
     <>
       <div className="game-summary" aria-live="polite">
         <div className="turn-indicator">
-          {viewModel.phase === 'playing' && !finalAnalysisProgress ? (
-            <span className={`stone-chip stone-chip--${viewModel.currentPlayer}`} aria-hidden="true" />
+          {viewModel.phase === 'playing' && !finalAnalysisProgress && !turnLabelOverride ? (
+            <span
+              className={`stone-chip stone-chip--${viewModel.currentPlayer}`}
+              aria-hidden="true"
+            />
           ) : null}
           <strong>{stageLabel}</strong>
         </div>
         <div className="game-statistics">
           <span>{size}×{size}</span>
           <span>Move {viewModel.moveNumber}</span>
-          <span className="capture-stat capture-stat--black" aria-label={`Black stones captured: ${viewModel.captures.white}`}>
+          <span
+            className="capture-stat capture-stat--black"
+            aria-label={`Black stones captured: ${viewModel.captures.white}`}
+          >
             <i className="capture-stat__stone capture-stat__stone--black" aria-hidden="true" />
             <strong className="capture-stat__count">{viewModel.captures.white}</strong>
           </span>
-          <span className="capture-stat capture-stat--white" aria-label={`White stones captured: ${viewModel.captures.black}`}>
+          <span
+            className="capture-stat capture-stat--white"
+            aria-label={`White stones captured: ${viewModel.captures.black}`}
+          >
             <i className="capture-stat__stone capture-stat__stone--white" aria-hidden="true" />
             <strong className="capture-stat__count">{viewModel.captures.black}</strong>
           </span>
@@ -105,9 +118,17 @@ export function GameSidebar({
         </div>
       </div>
 
-      <div className="torus-duplicates-control" role="group" aria-label="Board display options">
+      <div
+        className="torus-duplicates-control"
+        role="group"
+        aria-label="Board display options"
+      >
         <label>
-          <input type="checkbox" checked={showMoveNumbers} onChange={(event) => onShowMoveNumbersChange(event.target.checked)} />
+          <input
+            type="checkbox"
+            checked={showMoveNumbers}
+            onChange={(event) => onShowMoveNumbersChange(event.target.checked)}
+          />
           <span>Move numbers</span>
         </label>
         {duplicateRegionsAvailable ? (
@@ -131,17 +152,52 @@ export function GameSidebar({
       {endgame}
 
       <div className="game-controls">
-        <button className="pass-control" type="button" onClick={onPass} disabled={passDisabled || Boolean(finalAnalysisProgress)}>
-          {viewModel.phase === 'playing' && viewModel.consecutivePasses === 1 ? 'Pass (1)' : 'Pass'}
+        <button
+          className="pass-control"
+          type="button"
+          onClick={onPass}
+          disabled={passDisabled || Boolean(finalAnalysisProgress)}
+        >
+          {viewModel.phase === 'playing' && viewModel.consecutivePasses === 1
+            ? 'Pass (1)'
+            : 'Pass'}
         </button>
+
         <div className="history-controls" role="group" aria-label="Move history controls">
-          <button type="button" onClick={onRedo} disabled={!canRedo || Boolean(finalAnalysisProgress)}>Redo</button>
-          <button type="button" onClick={onUndo} disabled={!canUndo || Boolean(finalAnalysisProgress)}>Undo</button>
+          <button
+            type="button"
+            onClick={onRedo}
+            disabled={!canRedo || Boolean(finalAnalysisProgress)}
+          >
+            Redo
+          </button>
+          <button
+            type="button"
+            onClick={onUndo}
+            disabled={!canUndo || Boolean(finalAnalysisProgress)}
+          >
+            Undo
+          </button>
         </div>
-        {gameResultAvailable ? (
-          <button className="game-result-control" type="button" onClick={onOpenGameResult}>Game result</button>
+
+        {retryBotTurn ? (
+          <button type="button" onClick={retryBotTurn}>
+            Retry
+          </button>
         ) : null}
-        <button className="new-game-control" type="button" onClick={onRequestNewGame} disabled={newGameDisabled || Boolean(finalAnalysisProgress)}>
+
+        {gameResultAvailable ? (
+          <button className="game-result-control" type="button" onClick={onOpenGameResult}>
+            Game result
+          </button>
+        ) : null}
+
+        <button
+          className="new-game-control"
+          type="button"
+          onClick={onRequestNewGame}
+          disabled={newGameDisabled || Boolean(finalAnalysisProgress)}
+        >
           New game
         </button>
       </div>
