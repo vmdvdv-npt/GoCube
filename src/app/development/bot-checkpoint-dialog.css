@@ -1,0 +1,222 @@
+.bot-checkpoint-backdrop {
+  padding: 24px;
+}
+
+.bot-checkpoint-dialog {
+  box-sizing: border-box;
+  width: min(480px, calc(100vw - 48px));
+  max-width: 480px;
+  max-height: calc(100vh - 48px);
+  gap: 14px;
+  padding: 22px;
+  overflow: hidden;
+  border: 1px solid rgb(215 154 59 / 22%);
+  border-radius: 20px;
+  background: #0b131b;
+  box-shadow:
+    0 24px 72px rgb(0 0 0 / 52%),
+    inset 0 1px 0 rgb(255 255 255 / 2%);
+}
+
+.bot-checkpoint-dialog,
+.bot-checkpoint-dialog * {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.bot-checkpoint-dialog__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.bot-checkpoint-dialog__heading h2 {
+  color: #eef3f7;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.bot-checkpoint-dialog__status {
+  flex: 0 0 auto;
+  padding: 5px 11px;
+  border: 1px solid rgb(132 145 154 / 22%);
+  border-radius: 999px;
+  background: rgb(4 12 17 / 72%);
+  color: #aeb7bf;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
+.bot-checkpoint-dialog__status--available {
+  border-color: rgb(66 190 122 / 34%);
+  color: #66d895;
+}
+
+.bot-checkpoint-dialog__status--checking {
+  border-color: rgb(215 154 59 / 34%);
+  color: #d7a65d;
+}
+
+.bot-checkpoint-dialog__status--unavailable {
+  border-color: rgb(217 139 139 / 36%);
+  color: #d98b8b;
+}
+
+.bot-checkpoint-dialog__service-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 14px;
+  border: 1px solid rgb(255 255 255 / 7%);
+  border-radius: 13px;
+  background: #081018;
+}
+
+.bot-checkpoint-dialog__service {
+  overflow: hidden;
+  color: #92c5df;
+  font-size: 13px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bot-checkpoint-dialog .bot-checkpoint-dialog__retry {
+  min-width: 70px;
+  min-height: 36px;
+  padding: 7px 13px;
+  border-color: rgb(255 255 255 / 11%);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #151f29, #0b1219);
+  color: #eef3f7;
+  font-weight: 700;
+}
+
+.bot-checkpoint-dialog .bot-checkpoint-dialog__retry:hover:not(:disabled) {
+  border-color: rgb(160 169 178 / 62%);
+  background: linear-gradient(180deg, #24313c, #101820);
+}
+
+.bot-checkpoint-dialog__closed-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  padding: 10px 14px;
+  border: 1px solid rgb(255 255 255 / 7%);
+  border-radius: 13px;
+  background: #081018;
+  color: #c2cad0;
+  font-size: 14px;
+}
+
+.bot-checkpoint-dialog__closed-row input {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: #d79a3b;
+}
+
+.bot-checkpoint-dialog__fields {
+  display: grid;
+  gap: 12px;
+}
+
+.bot-checkpoint-dialog__field {
+  display: grid;
+  gap: 7px;
+  color: #b7c0c7;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.bot-checkpoint-dialog__field select {
+  width: 100%;
+  max-width: 100%;
+  min-height: 46px;
+  padding: 9px 36px 9px 13px;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 11%);
+  border-radius: 12px;
+  outline: none;
+  background: linear-gradient(180deg, #101a23, #091118);
+  color: #eef3f7;
+  font: inherit;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bot-checkpoint-dialog__field select:focus {
+  border-color: rgb(160 169 178 / 62%);
+  box-shadow: 0 0 0 2px rgb(147 158 168 / 10%);
+}
+
+.bot-checkpoint-dialog__field select:disabled,
+.bot-checkpoint-dialog__closed-row:has(input:disabled),
+.bot-checkpoint-dialog button:disabled {
+  opacity: 0.48;
+}
+
+.bot-checkpoint-dialog .bot-checkpoint-dialog__metadata {
+  padding: 9px 11px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #0a1219;
+  color: #81909b;
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bot-checkpoint-dialog .bot-checkpoint-dialog__error {
+  color: #d98b8b;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.bot-checkpoint-dialog__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.bot-checkpoint-dialog__actions button {
+  width: 100%;
+  min-height: 42px;
+  border-radius: 10px;
+  font-weight: 800;
+}
+
+.bot-checkpoint-dialog__actions button:first-child {
+  border-color: rgb(255 255 255 / 11%);
+  background: linear-gradient(180deg, #151f29, #0b1219);
+  color: #d5dbe0;
+}
+
+.bot-checkpoint-dialog__actions button:first-child:hover {
+  border-color: rgb(160 169 178 / 62%);
+  background: linear-gradient(180deg, #24313c, #101820);
+  color: #f0f2f4;
+}
+
+.bot-checkpoint-dialog .bot-checkpoint-dialog__confirm {
+  border-color: rgb(103 103 103 / 24%);
+  background: linear-gradient(180deg, #07313a, #05242b);
+  color: #cfcfcf;
+}
+
+.bot-checkpoint-dialog .bot-checkpoint-dialog__confirm:hover:not(:disabled) {
+  border-color: rgb(127 153 157 / 42%);
+  background: linear-gradient(180deg, #0a3c46, #062b33);
+  color: #f0f2f4;
+}

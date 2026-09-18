@@ -9,6 +9,7 @@ import {
   visibleCheckpointsForFilters,
   type BoardFilterValue,
 } from './AlphaZeroCheckpointSelection';
+import './bot-checkpoint-dialog.css';
 
 export interface BotCheckpointDialogProps {
   gateway: AlphaZeroGateway;
@@ -16,9 +17,9 @@ export interface BotCheckpointDialogProps {
   size: GameSize;
   ruleSet: RuleSet;
   komi: number;
+  initialCheckpointId?: string | null;
   onCancel: () => void;
-  onStart: (checkpoint: AlphaZeroCheckpointDescriptor) => void;
-  onSelectionChange?: (checkpoint: AlphaZeroCheckpointDescriptor | null) => void;
+  onConfirm: (checkpoint: AlphaZeroCheckpointDescriptor) => void;
 }
 
 const topologyForMode = (mode: GameMode) => mode === 'cube-2d' ? 'cube' : 'torus';
@@ -42,17 +43,18 @@ export function BotCheckpointDialog(props: BotCheckpointDialogProps) {
     size,
     ruleSet,
     komi,
+    initialCheckpointId,
     onCancel,
-    onStart,
-    onSelectionChange,
+    onConfirm,
   } = props;
   const preferredFilter = `${topologyForMode(gameMode)}:${size}` as BoardFilterValue;
   const [connection, setConnection] = useState<'checking' | 'available' | 'unavailable'>('checking');
   const [capable, setCapable] = useState(false);
+  const [serviceSummary, setServiceSummary] = useState('AlphaZero service · protocol v1');
   const [checkpoints, setCheckpoints] = useState<readonly AlphaZeroCheckpointDescriptor[]>([]);
   const [showClosed, setShowClosed] = useState(false);
   const [boardFilter, setBoardFilter] = useState<BoardFilterValue>(preferredFilter);
-  const [checkpointId, setCheckpointId] = useState('');
+  const [checkpointId, setCheckpointId] = useState(initialCheckpointId ?? '');
   const [diagnostic, setDiagnostic] = useState<string | null>(null);
 
   const boardOptions = useMemo(() => boardFilterOptionsFromCheckpoints(checkpoints), [checkpoints]);
@@ -62,16 +64,8 @@ export function BotCheckpointDialog(props: BotCheckpointDialogProps) {
   );
   const selected = checkpoints.find((checkpoint) => checkpoint.id === checkpointId) ?? null;
   const compatibility = botCheckpointCompatibilityError(selected, { gameMode, size, ruleSet, komi });
-
-  const publishSelection = (
-    nextId: string,
-    available: readonly AlphaZeroCheckpointDescriptor[] = checkpoints,
-    selectMoveAvailable = connection === 'available' && capable,
-  ): void => {
-    setCheckpointId(nextId);
-    const checkpoint = available.find((candidate) => candidate.id === nextId) ?? null;
-    onSelectionChange?.(selectMoveAvailable ? checkpoint : null);
-  };
+  const statusLabel = connection === 'available' ? 'CONNECTED' : connection === 'checking' ? 'CHECKING' : 'OFFLINE';
+  const visibleMessage = diagnostic ?? (connection === 'available' ? compatibility : null);
 
   const refresh = async () => {
     setConnection('checking');
@@ -81,15 +75,14 @@ export function BotCheckpointDialog(props: BotCheckpointDialogProps) {
       const selectMoveAvailable = health.capabilities?.selectMove === true;
       setConnection('available');
       setCapable(selectMoveAvailable);
+      setServiceSummary(`${health.service} · protocol v${health.protocolVersion}`);
       setCheckpoints(available);
       const options = boardFilterOptionsFromCheckpoints(available);
       const nextFilter = options.some((option) => option.value === preferredFilter) ? preferredFilter : 'all';
       setBoardFilter(nextFilter);
       const filtered = visibleCheckpointsForFilters(available, showClosed, nextFilter);
-      publishSelection(
-        checkpointIdWithFallback(checkpointId, filtered),
-        available,
-        selectMoveAvailable,
+      setCheckpointId(
+        checkpointIdWithFallback(checkpointId || initialCheckpointId || '', filtered),
       );
       if (!selectMoveAvailable) {
         setDiagnostic('Interactive move selection is not supported by this AlphaZero service.');
@@ -98,7 +91,8 @@ export function BotCheckpointDialog(props: BotCheckpointDialogProps) {
       setConnection('unavailable');
       setCapable(false);
       setCheckpoints([]);
-      publishSelection('', [], false);
+      setCheckpointId('');
+      setServiceSummary('AlphaZero service · protocol v1');
       setDiagnostic(error instanceof Error ? error.message : 'AlphaZero unavailable');
     }
   };
@@ -107,23 +101,108 @@ export function BotCheckpointDialog(props: BotCheckpointDialogProps) {
 
   const updateFilter = (nextShowClosed: boolean, nextFilter: BoardFilterValue) => {
     const filtered = visibleCheckpointsForFilters(checkpoints, nextShowClosed, nextFilter);
-    publishSelection(checkpointIdWithFallback(checkpointId, filtered));
+    setCheckpointId(checkpointIdWithFallback(checkpointId, filtered));
   };
 
   return (
-    <div className="confirmation-backdrop" role="presentation">
-      <section className="confirmation-card bot-checkpoint-dialog" role="dialog" aria-modal="true" aria-labelledby="bot-checkpoint-title">
-        <div className="development-alpha-zero__heading">
+    <div className="confirmation-backdrop bot-checkpoint-backdrop" role="presentation">
+      <section
+        className="confirmation-card bot-checkpoint-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bot-checkpoint-title"
+      >
+        <div className="bot-checkpoint-dialog__heading">
           <h2 id="bot-checkpoint-title">AlphaZero</h2>
-          <span>{connection === 'available' ? 'Connected' : connection === 'checking' ? 'Checking' : 'Offline'}</span>
+          <span className={`bot-checkpoint-dialog__status bot-checkpoint-dialog__status--${connection}`}>
+            {statusLabel}
+          </span>
         </div>
-        <button type="button" disabled={connection === 'checking'} onClick={() => void refresh()}>Retry</button>
-        <label><input type="checkbox" checked={showClosed} disabled={connection !== 'available'} onChange={(event) => { setShowClosed(event.target.checked); updateFilter(event.target.checked, boardFilter); }} /> Show closed lineages</label>
-        <label>Board filter<select value={boardFilter} disabled={connection !== 'available'} onChange={(event) => { const value = event.target.value as BoardFilterValue; setBoardFilter(value); updateFilter(showClosed, value); }}>{boardOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-        <label>Bot checkpoint<select value={checkpointId} disabled={connection !== 'available'} onChange={(event) => publishSelection(event.target.value)}><option value="">Select checkpoint</option>{visible.map((checkpoint) => <option key={checkpoint.id} value={checkpoint.id}>{checkpointLabel(checkpoint)}</option>)}</select></label>
-        <p className="development-alpha-zero__metadata">{selected ? `${selected.topology} · ${selected.size}×${selected.size} · ${selected.ruleSet} · komi ${selected.komi}` : 'Choose a model compatible with the current New Game settings.'}</p>
-        {diagnostic ?? compatibility ? <p className="development-alpha-zero__error" role="alert">{diagnostic ?? compatibility}</p> : null}
-        <div className="startup-actions"><button type="button" onClick={onCancel}>Cancel</button><button type="button" className="start-game-button" disabled={connection !== 'available' || !capable || Boolean(compatibility)} onClick={() => selected && onStart(selected)}>Start game</button></div>
+
+        <div className="bot-checkpoint-dialog__service-row">
+          <span className="bot-checkpoint-dialog__service" title={serviceSummary}>
+            {serviceSummary}
+          </span>
+          <button
+            className="bot-checkpoint-dialog__retry"
+            type="button"
+            disabled={connection === 'checking'}
+            onClick={() => void refresh()}
+          >
+            Retry
+          </button>
+        </div>
+
+        <label className="bot-checkpoint-dialog__closed-row">
+          <input
+            type="checkbox"
+            checked={showClosed}
+            disabled={connection !== 'available'}
+            onChange={(event) => {
+              setShowClosed(event.target.checked);
+              updateFilter(event.target.checked, boardFilter);
+            }}
+          />
+          <span>Show closed lineages</span>
+        </label>
+
+        <div className="bot-checkpoint-dialog__fields">
+          <label className="bot-checkpoint-dialog__field">
+            <span>Board filter</span>
+            <select
+              value={boardFilter}
+              disabled={connection !== 'available'}
+              onChange={(event) => {
+                const value = event.target.value as BoardFilterValue;
+                setBoardFilter(value);
+                updateFilter(showClosed, value);
+              }}
+            >
+              {boardOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="bot-checkpoint-dialog__field">
+            <span>Bot checkpoint</span>
+            <select
+              value={checkpointId}
+              disabled={connection !== 'available'}
+              onChange={(event) => setCheckpointId(event.target.value)}
+            >
+              <option value="">Select checkpoint</option>
+              {visible.map((checkpoint) => (
+                <option key={checkpoint.id} value={checkpoint.id}>{checkpointLabel(checkpoint)}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <p
+          className="bot-checkpoint-dialog__metadata"
+          title={selected ? `${selected.topology} · ${selected.size}×${selected.size} · ${selected.ruleSet} · komi ${selected.komi}` : undefined}
+        >
+          {selected
+            ? `${selected.topology} · ${selected.size}×${selected.size} · ${selected.ruleSet} · komi ${selected.komi}`
+            : 'Choose a model compatible with the current New Game settings.'}
+        </p>
+
+        {visibleMessage ? (
+          <p className="bot-checkpoint-dialog__error" role="alert">{visibleMessage}</p>
+        ) : null}
+
+        <div className="startup-actions bot-checkpoint-dialog__actions">
+          <button type="button" onClick={onCancel}>Cancel</button>
+          <button
+            type="button"
+            className="bot-checkpoint-dialog__confirm"
+            disabled={connection !== 'available' || !capable || Boolean(compatibility)}
+            onClick={() => selected && onConfirm(selected)}
+          >
+            OK
+          </button>
+        </div>
       </section>
     </div>
   );
