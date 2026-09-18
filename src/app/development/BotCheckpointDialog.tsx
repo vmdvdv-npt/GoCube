@@ -4,7 +4,6 @@ import type { GameMode, GameSize } from '../GameApplication';
 import type { AlphaZeroCheckpointDescriptor, AlphaZeroGateway } from './AlphaZeroGateway';
 import {
   boardFilterOptionsFromCheckpoints,
-  boardFilterValueForCheckpoint,
   checkpointIdWithFallback,
   checkpointLabel,
   visibleCheckpointsForFilters,
