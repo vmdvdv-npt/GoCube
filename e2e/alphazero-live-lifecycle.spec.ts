@@ -266,9 +266,14 @@ test.describe('Play vs bot live AlphaZero lifecycle acceptance', () => {
     const backendCompleted = new Promise<void>((resolve) => {
       markBackendCompleted = resolve;
     });
+    let markRouteSettled!: () => void;
+    const routeSettled = new Promise<void>((resolve) => {
+      markRouteSettled = resolve;
+    });
     let liveRequest: MoveRequest | null = null;
     let liveResponseBody: MoveResponse | null = null;
     let liveStatus: number | null = null;
+    let deliveryOutcome: 'fulfilled' | 'cancelled' | null = null;
 
     await page.route(moveUrl, async (route) => {
       const intercepted = route.request();
@@ -283,7 +288,16 @@ test.describe('Play vs bot live AlphaZero lifecycle acceptance', () => {
       liveResponseBody = (await backendResponse.json()) as MoveResponse;
       markBackendCompleted();
       await responseRelease;
-      await route.fulfill({ response: backendResponse });
+      try {
+        await route.fulfill({ response: backendResponse });
+        deliveryOutcome = 'fulfilled';
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        if (!detail.includes('Route is already handled')) throw error;
+        deliveryOutcome = 'cancelled';
+      } finally {
+        markRouteSettled();
+      }
     });
 
     await startBotGame(page, checkpoint, mctsSimulations);
@@ -318,7 +332,9 @@ test.describe('Play vs bot live AlphaZero lifecycle acceptance', () => {
     await expect(page.locator('.torus-board__stone[data-copy-role="primary"]')).toHaveCount(0);
 
     releaseResponse();
+    await routeSettled;
     await page.unroute(moveUrl);
+    expect(deliveryOutcome === 'fulfilled' || deliveryOutcome === 'cancelled').toBe(true);
     await page.waitForTimeout(250);
 
     await expect(page.locator('.torus-board__stone[data-copy-role="primary"]')).toHaveCount(0);
