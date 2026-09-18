@@ -9,6 +9,7 @@ import {
 } from '../endgame/EndgameGroupIdentity';
 import type { GameEngine } from '../game/GameEngine';
 import type { GameState, PointOccupancy, StoneColor } from '../game/types';
+import { inferGameStateTransition } from '../history/GameStateTransition';
 import type { ScoringStrategy } from '../scoring/Scoring';
 import type { PointId, Topology } from '../topology/Topology';
 import type { GameSessionSnapshot } from './GameSessionSnapshot';
@@ -151,12 +152,6 @@ const sameGameState = (
   actual.captures.white === expected.captures.white &&
   topology.points().every((point) => actual.board[point] === expected.board[point]);
 
-const boardsMatch = (
-  left: GameState,
-  right: GameState,
-  topology: Topology,
-): boolean => topology.points().every((point) => left.board[point] === right.board[point]);
-
 const assertReplayedStateMatches = (
   actual: GameState,
   expected: GameState,
@@ -191,7 +186,8 @@ const assertGameEngineTransition = (
     return;
   }
 
-  if (boardsMatch(source, target, topology)) {
+  const transition = inferGameStateTransition(source, target, topology.points(), label);
+  if (transition.action.type === 'pass') {
     const pass = engine.pass(source);
     if (!pass.ok) {
       throw new Error(`${label} is impossible: GameEngine rejected Pass`);
@@ -200,18 +196,9 @@ const assertGameEngineTransition = (
     return;
   }
 
-  const placedPoints = topology.points().filter(
-    (point) =>
-      source.board[point] === 'empty' &&
-      target.board[point] === source.currentPlayer,
-  );
-  if (placedPoints.length !== 1) {
-    throw new Error(`${label} is impossible: expected exactly one newly placed stone`);
-  }
-
   const placement = engine.placeStone(
     source,
-    placedPoints[0]!,
+    transition.action.point,
     source.currentPlayer,
     Object.freeze({ previousBoard: previousState?.board ?? null }),
   );
