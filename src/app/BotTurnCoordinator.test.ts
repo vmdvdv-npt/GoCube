@@ -68,10 +68,11 @@ describe('BotTurnCoordinator', () => {
 
     const result = await coordinator.playBotTurn();
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       status: 'applied',
       requestId: 'bot-request-1',
       action: { type: 'place', pointId: '1,0' },
+      result: { accepted: true, reason: null, captured: [] },
     });
     expect(selectMove).toHaveBeenCalledOnce();
     expect(selectMove.mock.calls[0]![0]).toMatchObject({
