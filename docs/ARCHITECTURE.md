@@ -102,6 +102,14 @@
 
 `human action → GameSession → BotGameOrchestrator → BotTurnCoordinator → AlphaZeroGateway → BotTurnCoordinator → GameSession → GameEngine`
 
+Presentation-facing dispatch для обычной и Human-vs-Bot партии проходит через явную interaction boundary:
+
+`Presentation → GameInteractionBoundary → ordinary controller/GameSession`
+
+или для bot game:
+
+`Presentation → GameInteractionBoundary → BotGameOrchestrator → BotTurnCoordinator → AlphaZeroGateway → BotTurnCoordinator → GameSession → BotGamePresentationEvent → Presentation`
+
 Отдельный test-only verification path не входит в runtime/application graph:
 
 `Deterministic fixture → classifier → DifferentialOracleAdapter/reference result → test assertion/diagnostic`
@@ -1009,6 +1017,14 @@ Failure текущего bot turn переводит orchestrator этой же 
 Замена owning controller/session не отменяет stale proof внутри `BotTurnCoordinator`: старый response не применяется к новой партии. Single-flight scoped к controller identity, поэтому зависший запрос старой партии не превращается в глобальный lock новой партии. Независимо от исхода `applied | stale | error` lifecycle старой попытки не должен оставлять актуальную партию навсегда в `bot-thinking`.
 
 Если human либо bot Pass переводит authoritative session из `playing` в `endgame`, orchestrator не запускает следующий AlphaZero request и полностью передаёт дальнейший lifecycle существующему endgame flow; отдельного bot-endgame engine/state нет.
+
+Presentation не вызывает bot-specific controller напрямую. Для dispatch пользовательских `placeStone`/`pass` используется явный `GameInteractionBoundary`: в обычной партии он делегирует существующему controller, а в Human-vs-Bot партии — `BotGameOrchestrator`. Boundary не владеет `GameState`, History, captures или turn state и не является второй gameplay model.
+
+`BotGamePresentationEvent` является только bridge для уже authoritative результатов и lifecycle notification. После принятого human action orchestrator публикует `human-action-accepted` с реальным controller action result **до** ожидания следующего MCTS, поэтому presentation может немедленно отобразить человеческий ход, пока headless contract `humanPlaceStone()`/`humanPass()` по-прежнему дожидается завершения автоматически следующего bot turn. После успешного применения bot proposal через `GameSession → GameEngine` отдельно публикуется `bot-action-accepted` с тем же authoritative action-result contract. `state-changed` сообщает только orchestration lifecycle. Ни одно presentation event не становится источником board/history truth и не разрешает UI реконструировать captures или domain transition самостоятельно.
+
+Application layer владеет отдельной `botRuntime` identity/generation поверх controller/session stale proof. Presentation event принимается только если identity события совпадает с identity текущего активного runtime. Замена или закрытие bot runtime сначала инвалидирует эту identity; любой поздний `human-action-accepted`, `bot-action-accepted`, `state-changed` или error callback предыдущего runtime игнорируется и не имеет права менять новый renderer/sidebar/presentation state. Эта presentation fencing дополняет, а не заменяет stale protection `BotTurnCoordinator`, которая отдельно запрещает mutation неактуальной `GameSession`.
+
+Ephemeral Human-vs-Bot controller создаётся через application-owned `GameApplication.createEphemeralGame(settings)` (или эквивалентную общую factory boundary), а не прямым topology-specific construction в React/bot runtime. Factory создаёт обычные authoritative `GameSession` и topology controller с теми же rules/classifier/scoring contracts, но без persistence config; такой runtime не пишет `CURRENT_GAME_ID` и не запускает normal autosave. Persistent New Game и ephemeral modes используют общий internal controller factory, различаясь только подключением persistence boundary.
 
 Health capabilities являются additive Protocol V1 metadata: наличие `selectMove: true` позволяет application layer явно определить поддержку stateless move selection, а legacy health без `capabilities` остаётся допустимым для уже существующих Development Workspace операций.
 
