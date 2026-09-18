@@ -1444,25 +1444,29 @@ Controls панели используют существующий visual langu
 
 Dialog показывает:
 
-- connection status;
-- `Retry`;
+- компактный connection-status pill `CONNECTED` / `CHECKING` / `OFFLINE`;
+- строку identity AlphaZero service с отдельной компактной кнопкой `Retry`;
 - `Show closed lineages`;
 - динамический `Board filter`;
 - один selector `Bot checkpoint`;
 - metadata выбранного checkpoint;
-- `Start game`.
+- две нижние кнопки `Cancel` и `OK`.
 
-В этом dialog нет пары Black/White checkpoints, `Generate game` и отдельного MCTS control.
+В этом dialog нет пары Black/White checkpoints, `Generate game`, отдельного MCTS control и кнопки `Start game`.
 
-По умолчанию `Board filter` соответствует текущим `Board Shape` + `Board Size`, если такая пара существует в реально загруженном каталоге. Старт разрешён только если metadata выбранного checkpoint полностью совместимы с текущей партией по topology, size, rules и komi.
+Dialog использует тот же тёмный visual language GoCube, остаётся компактным и целиком удерживает labels, selects, metadata и action buttons внутри своей карточки без horizontal overflow или вылезающих controls.
 
-Для интерактивной партии AlphaZero health должен явно сообщать capability `selectMove: true`. Если capability отсутствует или false, старт запрещён и показывается точный diagnostic:
+`OK` подтверждает текущий совместимый checkpoint, закрывает dialog и обновляет выбранную модель в нижней панели; саму партию `OK` не запускает. `Cancel` закрывает dialog без изменения ранее подтверждённой модели. Фактический запуск bot game выполняется только основной кнопкой `Play vs bot` в нижней панели.
+
+По умолчанию `Board filter` соответствует текущим `Board Shape` + `Board Size`, если такая пара существует в реально загруженном каталоге. `OK` доступна только если metadata выбранного checkpoint полностью совместимы с текущей партией по topology, size, rules и komi.
+
+Для интерактивной партии AlphaZero health должен явно сообщать capability `selectMove: true`. Если capability отсутствует или false, подтверждение модели запрещено и показывается точный diagnostic:
 
 `Interactive move selection is not supported by this AlphaZero service.`
 
 ## 43.3. Начало и очередность
 
-После запуска через `Play vs bot` на панели или существующую `Start game` в model dialog открывается обычный игровой экран выбранной topology.
+После запуска через `Play vs bot` на панели открывается обычный игровой экран выбранной topology.
 
 - Если человек играет Black, первый ход сразу принадлежит человеку.
 - Если человек играет White, AlphaZero автоматически делает opening Black move до передачи хода человеку.
