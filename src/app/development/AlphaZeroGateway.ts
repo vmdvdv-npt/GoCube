@@ -8,10 +8,17 @@ export const ALPHAZERO_DEFAULT_BASE_URL = 'http://127.0.0.1:8765';
 export type AlphaZeroTopology = 'cube' | 'torus';
 export type AlphaZeroLineageStatus = 'ACTIVE' | 'ARCHIVED' | 'DISCARDED';
 
+export interface AlphaZeroCapabilities {
+  readonly generateGame: boolean;
+  readonly selectMove: boolean;
+}
+
 export interface AlphaZeroHealth {
   readonly protocolVersion: typeof ALPHAZERO_PROTOCOL_VERSION;
   readonly service: string;
   readonly version: string;
+  /** Optional for backward compatibility with legacy Protocol V1 health responses. */
+  readonly capabilities?: AlphaZeroCapabilities;
 }
 
 export interface AlphaZeroCheckpointDescriptor {
@@ -86,10 +93,58 @@ export interface AlphaZeroGenerateGameRequest {
   readonly mctsSimulations: number;
 }
 
+export interface AlphaZeroPositionMove {
+  readonly moveNumber: number;
+  readonly color: StoneColor;
+  readonly action: AlphaZeroAction;
+}
+
+export interface AlphaZeroPosition {
+  readonly topology: AlphaZeroTopology;
+  readonly size: number;
+  readonly ruleSet: RuleSet;
+  readonly komi: number;
+  readonly moves: readonly AlphaZeroPositionMove[];
+}
+
+export interface AlphaZeroSelectMoveRequest {
+  readonly requestId: string;
+  readonly checkpointId: string;
+  readonly mctsSimulations: number;
+  readonly position: AlphaZeroPosition;
+}
+
+export interface AlphaZeroSearchDiagnostics {
+  readonly simulations: number;
+  readonly implementationId: string;
+}
+
+export interface AlphaZeroSelectedMove {
+  readonly protocolVersion: typeof ALPHAZERO_PROTOCOL_VERSION;
+  readonly requestId: string;
+  readonly checkpointId: string;
+  readonly mctsSimulations: number;
+  readonly moveNumber: number;
+  readonly color: StoneColor;
+  readonly action: AlphaZeroAction;
+  readonly search: AlphaZeroSearchDiagnostics;
+}
+
+export type AlphaZeroMoveServiceErrorCode =
+  | 'position_invalid'
+  | 'position_terminal'
+  | 'checkpoint_not_found'
+  | 'checkpoint_incompatible'
+  | 'service_busy'
+  | 'search_failed'
+  | 'invalid_request'
+  | 'unsupported_protocol';
+
 export interface AlphaZeroGateway {
   health(): Promise<AlphaZeroHealth>;
   listCheckpoints(): Promise<readonly AlphaZeroCheckpointDescriptor[]>;
   generateGame(request: AlphaZeroGenerateGameRequest): Promise<AlphaZeroGeneratedGame>;
+  selectMove(request: AlphaZeroSelectMoveRequest): Promise<AlphaZeroSelectedMove>;
 }
 
 export class AlphaZeroGatewayError extends Error {
@@ -97,6 +152,8 @@ export class AlphaZeroGatewayError extends Error {
     message: string,
     readonly kind: 'transport' | 'protocol',
     readonly causeValue?: unknown,
+    readonly httpStatus?: number,
+    readonly serviceCode?: string,
   ) {
     super(message);
     this.name = 'AlphaZeroGatewayError';

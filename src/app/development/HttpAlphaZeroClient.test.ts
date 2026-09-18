@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AlphaZeroSelectMoveRequest } from './AlphaZeroGateway';
 import { HttpAlphaZeroClient, type AlphaZeroFetch } from './HttpAlphaZeroClient';
 
 const jsonResponse = (value: unknown, status = 200): Response =>
@@ -7,12 +8,39 @@ const jsonResponse = (value: unknown, status = 200): Response =>
     headers: { 'Content-Type': 'application/json' },
   });
 
+const moveRequest: AlphaZeroSelectMoveRequest = {
+  requestId: 'request-1',
+  checkpointId: 'torus9-m88',
+  mctsSimulations: 128,
+  position: {
+    topology: 'torus',
+    size: 9,
+    ruleSet: 'chinese',
+    komi: 0.5,
+    moves: [],
+  },
+};
+
+const moveResponse = {
+  protocolVersion: 1,
+  requestId: 'request-1',
+  checkpointId: 'torus9-m88',
+  mctsSims: 128,
+  moveNumber: 1,
+  color: 'black',
+  action: { type: 'place', pointId: '0,0' },
+  search: {
+    simulations: 128,
+    implementationId: 'sequential-puct-v1',
+  },
+} as const;
+
 describe('HttpAlphaZeroClient', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it('loads health and checkpoint descriptors through the typed gateway', async () => {
+  it('loads health capabilities and checkpoint descriptors through the typed gateway', async () => {
     const seen: string[] = [];
     const fetcher: AlphaZeroFetch = async (input) => {
       const url = String(input);
@@ -23,6 +51,7 @@ describe('HttpAlphaZeroClient', () => {
           status: 'ok',
           service: 'gocube-alphazero',
           device: 'cpu',
+          capabilities: { generateGame: true, selectMove: true },
         });
       }
       return jsonResponse({
@@ -40,12 +69,30 @@ describe('HttpAlphaZeroClient', () => {
       protocolVersion: 1,
       service: 'gocube-alphazero',
       version: 'cpu',
+      capabilities: { generateGame: true, selectMove: true },
     });
     await expect(client.listCheckpoints()).resolves.toHaveLength(1);
     expect(seen).toEqual([
       'http://example.test/v1/health',
       'http://example.test/v1/checkpoints',
     ]);
+  });
+
+  it('keeps legacy health without capabilities compatible', async () => {
+    const client = new HttpAlphaZeroClient({
+      fetcher: async () => jsonResponse({
+        protocolVersion: 1,
+        status: 'ok',
+        service: 'gocube-alphazero',
+        device: 'cpu',
+      }),
+    });
+
+    await expect(client.health()).resolves.toEqual({
+      protocolVersion: 1,
+      service: 'gocube-alphazero',
+      version: 'cpu',
+    });
   });
 
   it('reports an unavailable service without throwing a raw fetch error', async () => {
@@ -152,5 +199,153 @@ describe('HttpAlphaZeroClient', () => {
       },
     });
     expect(game.moves[0]?.action).toEqual({ type: 'pass' });
+  });
+
+  it('serializes an empty history request and parses a selected place move', async () => {
+    let requestUrl = '';
+    let requestBody: unknown = null;
+    const client = new HttpAlphaZeroClient({
+      baseUrl: 'http://example.test',
+      fetcher: async (input, init) => {
+        requestUrl = String(input);
+        requestBody = JSON.parse(String(init?.body));
+        return jsonResponse(moveResponse);
+      },
+    });
+
+    const move = await client.selectMove(moveRequest);
+
+    expect(requestUrl).toBe('http://example.test/v1/move');
+    expect(requestBody).toEqual({
+      protocolVersion: 1,
+      requestId: 'request-1',
+      checkpointId: 'torus9-m88',
+      mctsSims: 128,
+      position: {
+        topology: 'torus',
+        size: 9,
+        ruleSet: 'chinese',
+        komi: 0.5,
+        moves: [],
+      },
+    });
+    expect(move.action).toEqual({ type: 'place', pointId: '0,0' });
+    expect(move.search).toEqual({
+      simulations: 128,
+      implementationId: 'sequential-puct-v1',
+    });
+  });
+
+  it('serializes non-empty place/pass history without captured data', async () => {
+    let requestBody: unknown = null;
+    const request: AlphaZeroSelectMoveRequest = {
+      ...moveRequest,
+      position: {
+        ...moveRequest.position,
+        moves: [
+          { moveNumber: 1, color: 'black', action: { type: 'place', pointId: '0,0' } },
+          { moveNumber: 2, color: 'white', action: { type: 'pass' } },
+        ],
+      },
+    };
+    const client = new HttpAlphaZeroClient({
+      fetcher: async (_input, init) => {
+        requestBody = JSON.parse(String(init?.body));
+        return jsonResponse({
+          ...moveResponse,
+          moveNumber: 3,
+          action: { type: 'pass' },
+        });
+      },
+    });
+
+    const move = await client.selectMove(request);
+
+    expect(requestBody).toEqual({
+      protocolVersion: 1,
+      requestId: 'request-1',
+      checkpointId: 'torus9-m88',
+      mctsSims: 128,
+      position: {
+        topology: 'torus',
+        size: 9,
+        ruleSet: 'chinese',
+        komi: 0.5,
+        moves: [
+          { moveNumber: 1, color: 'black', action: { type: 'place', pointId: '0,0' } },
+          { moveNumber: 2, color: 'white', action: { type: 'pass' } },
+        ],
+      },
+    });
+    expect(move.action).toEqual({ type: 'pass' });
+  });
+
+  it('rejects malformed JSON from the move endpoint as a protocol error', async () => {
+    const client = new HttpAlphaZeroClient({
+      fetcher: async () => new Response('{broken', { status: 200 }),
+    });
+
+    await expect(client.selectMove(moveRequest)).rejects.toMatchObject({ kind: 'protocol' });
+  });
+
+  it('uses the independent move timeout for stateless move selection', async () => {
+    vi.useFakeTimers();
+    const seenSignals: AbortSignal[] = [];
+    const fetcher: AlphaZeroFetch = async (_input, init) => {
+      if (init?.signal) seenSignals.push(init.signal);
+      return await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(new DOMException('Aborted', 'AbortError'));
+        }, { once: true });
+      });
+    };
+    const client = new HttpAlphaZeroClient({
+      fetcher,
+      metadataTimeoutMs: 60_000,
+      moveTimeoutMs: 1_000,
+    });
+
+    const rejection = client.selectMove(moveRequest).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(1_000);
+    const error = await rejection;
+
+    expect(error).toMatchObject({ kind: 'transport' });
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/timed out after 1 seconds/i);
+    expect(seenSignals).toHaveLength(1);
+    expect(seenSignals[0]?.aborted).toBe(true);
+  });
+
+  it.each([
+    ['position_invalid', 422],
+    ['position_terminal', 409],
+    ['checkpoint_not_found', 404],
+    ['checkpoint_incompatible', 422],
+    ['service_busy', 503],
+    ['search_failed', 500],
+    ['invalid_request', 400],
+    ['unsupported_protocol', 400],
+  ] as const)('preserves machine-readable move service error %s', async (serviceCode, httpStatus) => {
+    const client = new HttpAlphaZeroClient({
+      fetcher: async () => jsonResponse({
+        protocolVersion: 1,
+        error: {
+          code: serviceCode,
+          message: 'safe service message',
+          traceback: 'SECRET TRACEBACK',
+        },
+      }, httpStatus),
+    });
+
+    const error = await client.selectMove(moveRequest).catch((value: unknown) => value);
+
+    expect(error).toMatchObject({
+      kind: 'transport',
+      httpStatus,
+      serviceCode,
+    });
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('safe service message');
+    expect((error as Error).message).not.toContain('SECRET TRACEBACK');
   });
 });
