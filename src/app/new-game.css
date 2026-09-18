@@ -507,6 +507,7 @@
 
 .play-vs-bot-start-button {
   min-height: 42px;
+  padding: 8px 12px;
   border-color: rgb(103 103 103 / 24%);
   background: linear-gradient(180deg, #07313a, #05242b);
   color: #cfcfcf;
