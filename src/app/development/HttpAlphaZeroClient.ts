@@ -2,16 +2,20 @@ import {
   ALPHAZERO_DEFAULT_BASE_URL,
   ALPHAZERO_PROTOCOL_VERSION,
   AlphaZeroGatewayError,
+  type AlphaZeroAction,
   type AlphaZeroGenerateGameRequest,
   type AlphaZeroGateway,
   type AlphaZeroGeneratedGame,
   type AlphaZeroHealth,
   type AlphaZeroCheckpointDescriptor,
+  type AlphaZeroSelectedMove,
+  type AlphaZeroSelectMoveRequest,
 } from './AlphaZeroGateway';
 import {
   parseAlphaZeroCheckpointList,
   parseAlphaZeroGeneratedGame,
   parseAlphaZeroHealth,
+  parseAlphaZeroSelectedMove,
 } from './AlphaZeroProtocol';
 
 export type AlphaZeroFetch = (
@@ -24,10 +28,12 @@ export interface HttpAlphaZeroClientOptions {
   readonly fetcher?: AlphaZeroFetch;
   readonly metadataTimeoutMs?: number;
   readonly generationTimeoutMs?: number;
+  readonly moveTimeoutMs?: number;
 }
 
 const DEFAULT_METADATA_TIMEOUT_MS = 5_000;
 const DEFAULT_GENERATION_TIMEOUT_MS = 10 * 60_000;
+const DEFAULT_MOVE_TIMEOUT_MS = 60_000;
 
 const configuredBaseUrl = (): string => {
   const configured = import.meta.env.VITE_ALPHAZERO_BASE_URL;
@@ -72,6 +78,9 @@ const normalizeHealthResponse = (value: unknown): unknown => {
     protocolVersion: record.protocolVersion,
     service: record.service,
     version: record.device,
+    ...(Object.prototype.hasOwnProperty.call(record, 'capabilities')
+      ? { capabilities: record.capabilities }
+      : {}),
   };
 };
 
@@ -96,11 +105,30 @@ const normalizeGeneratedGameResponse = (value: unknown): unknown => {
   };
 };
 
+const serializeAction = (action: AlphaZeroAction): Readonly<Record<string, unknown>> =>
+  action.type === 'pass'
+    ? { type: 'pass' }
+    : { type: 'place', pointId: action.pointId };
+
+const parseServiceError = (
+  value: unknown,
+): Readonly<{ code: string; message: string }> | null => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const envelope = value as Readonly<Record<string, unknown>>;
+  const rawError = envelope.error;
+  if (typeof rawError !== 'object' || rawError === null || Array.isArray(rawError)) return null;
+  const error = rawError as Readonly<Record<string, unknown>>;
+  if (typeof error.code !== 'string' || error.code.trim().length === 0) return null;
+  if (typeof error.message !== 'string' || error.message.trim().length === 0) return null;
+  return { code: error.code, message: error.message };
+};
+
 export class HttpAlphaZeroClient implements AlphaZeroGateway {
   private readonly baseUrl: string;
   private readonly fetcher: AlphaZeroFetch;
   private readonly metadataTimeoutMs: number;
   private readonly generationTimeoutMs: number;
+  private readonly moveTimeoutMs: number;
 
   constructor(options: HttpAlphaZeroClientOptions = {}) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl ?? configuredBaseUrl());
@@ -114,6 +142,11 @@ export class HttpAlphaZeroClient implements AlphaZeroGateway {
       options.generationTimeoutMs,
       DEFAULT_GENERATION_TIMEOUT_MS,
       'generationTimeoutMs',
+    );
+    this.moveTimeoutMs = normalizeTimeoutMs(
+      options.moveTimeoutMs,
+      DEFAULT_MOVE_TIMEOUT_MS,
+      'moveTimeoutMs',
     );
   }
 
@@ -146,14 +179,44 @@ export class HttpAlphaZeroClient implements AlphaZeroGateway {
     );
   }
 
-  private async request(path: string, init: RequestInit | undefined, timeoutMs: number): Promise<unknown> {
+  async selectMove(request: AlphaZeroSelectMoveRequest): Promise<AlphaZeroSelectedMove> {
+    const response = await this.request('/v1/move', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        protocolVersion: ALPHAZERO_PROTOCOL_VERSION,
+        requestId: request.requestId,
+        checkpointId: request.checkpointId,
+        mctsSims: request.mctsSimulations,
+        position: {
+          topology: request.position.topology,
+          size: request.position.size,
+          ruleSet: request.position.ruleSet,
+          komi: request.position.komi,
+          moves: request.position.moves.map((move) => ({
+            moveNumber: move.moveNumber,
+            color: move.color,
+            action: serializeAction(move.action),
+          })),
+        },
+      }),
+    }, this.moveTimeoutMs, true);
+    return parseAlphaZeroSelectedMove(response, request);
+  }
+
+  private async request(
+    path: string,
+    init: RequestInit | undefined,
+    timeoutMs: number,
+    preserveServiceError = false,
+  ): Promise<unknown> {
     const controller = new AbortController();
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
     const operation = this.performRequest(path, {
       ...init,
       signal: controller.signal,
-    });
+    }, preserveServiceError);
     const timeout = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(() => {
         controller.abort();
@@ -171,7 +234,11 @@ export class HttpAlphaZeroClient implements AlphaZeroGateway {
     }
   }
 
-  private async performRequest(path: string, init?: RequestInit): Promise<unknown> {
+  private async performRequest(
+    path: string,
+    init?: RequestInit,
+    preserveServiceError = false,
+  ): Promise<unknown> {
     let response: Response;
     try {
       response = await this.fetcher(`${this.baseUrl}${path}`, init);
@@ -184,6 +251,24 @@ export class HttpAlphaZeroClient implements AlphaZeroGateway {
     }
 
     if (!response.ok) {
+      if (preserveServiceError) {
+        let parsedError: Readonly<{ code: string; message: string }> | null = null;
+        try {
+          parsedError = parseServiceError(await response.json());
+        } catch {
+          // A malformed error body remains an HTTP transport failure without exposing raw content.
+        }
+        throw new AlphaZeroGatewayError(
+          parsedError === null
+            ? `AlphaZero service returned HTTP ${response.status}.`
+            : `AlphaZero service returned HTTP ${response.status}: ${parsedError.message}`,
+          'transport',
+          undefined,
+          response.status,
+          parsedError?.code,
+        );
+      }
+
       let detail = '';
       try {
         const text = await response.text();
@@ -194,6 +279,8 @@ export class HttpAlphaZeroClient implements AlphaZeroGateway {
       throw new AlphaZeroGatewayError(
         `AlphaZero service returned HTTP ${response.status}.${detail}`,
         'transport',
+        undefined,
+        response.status,
       );
     }
 
