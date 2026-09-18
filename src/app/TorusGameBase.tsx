@@ -515,15 +515,6 @@ export function TorusGame({
       }
 
       const availability = controller.moveAvailability(hit.logicalPointId);
-      endgame.setHoveredGroupId(null);
-      setHoveredPoint(hit.logicalPointId);
-      setHoverStatus(
-        availability.allowed
-          ? 'allowed'
-          : availability.reason === 'occupied'
-            ? 'occupied'
-            : 'forbidden',
-      );
       if (availability.allowed) {
         previewedMovePointRef.current = hit.logicalPointId;
         renderer.setMovePreview({
