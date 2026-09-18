@@ -60,6 +60,7 @@
 37. Torus/Cube topology-specific controllers не владеют независимыми копиями общего gameplay/endgame lifecycle: один shared application facade координирует `GameEngine`, `GameSession`, scoring/classifier, request-scoped Final Proof lifetime, history commands, endgame/result projections и disposal; mode-specific controllers остаются тонкими configuration/compatibility adapters.
 38. Lifetime обычного игрового controller определяется application-owned identity текущего `activeGame`, а не mount/unmount конкретного React/renderer view; временное исчезновение Game view не уничтожает controller и не отменяет его активный Final Proof Search.
 39. Persistence trust boundary охватывает **весь** `GameSessionSnapshot`, а не только отдельные `GameState`: persisted `History` становится trusted только после structural runtime-validation каждого state и transition-semantic replay всей past/current/redo timeline через authoritative `GameEngine` с корректным `SimpleKoContext`; session-level endgame/result metadata после чтения storage остаётся недоверенной до проверки относительно соответствующего authoritative `GameState`/`Topology`; persisted `FinalScore` является derived data и принимается только после доказательства эквивалентности свежему результату выбранной `ScoringStrategy` для проверенной classification/state.
+40. Human-vs-bot lifecycle остаётся application-level orchestration: `BotGameOrchestrator` владеет только turn ownership, single-flight, retry/error и lifecycle state, переиспользует `BotTurnCoordinator` для одного stateless AlphaZero хода и никогда не создаёт параллельную board/history/game-state модель.
 
 Стрелка `A → B` в этом документе означает: `A` использует контракт `B` или передаёт ему данные/команду. Она не означает наследование.
 
@@ -93,9 +94,13 @@
 
 `AlphaZero generated move → DeveloperReplaySession → GameSession → GameEngine → GameState → Presentation/Renderer`
 
-Stateless bot-turn orchestration для настоящей партии также остаётся application-level и возвращает proposal в тот же authoritative path:
+Один stateless bot turn настоящей партии остаётся application-level и возвращает proposal в тот же authoritative path:
 
 `GameSession authoritative History → AlphaZeroPosition projection → BotTurnCoordinator → AlphaZeroGateway.selectMove() → proposed action → BotTurnCoordinator → GameSession → GameEngine`
+
+Полный headless Human-vs-Bot lifecycle добавляет над этим single-turn primitive отдельный application owner:
+
+`human action → GameSession → BotGameOrchestrator → BotTurnCoordinator → AlphaZeroGateway → BotTurnCoordinator → GameSession → GameEngine`
 
 Отдельный test-only verification path не входит в runtime/application graph:
 
@@ -983,7 +988,7 @@ Stateless move-selection boundary имеет вид:
 
 `requestId` создаётся и принадлежит вызывающему application layer; gateway использует его только как opaque correlation identity и не придаёт ему игрового смысла. Возвращённый proposed action после transport/runtime validation всё ещё не является authoritative gameplay mutation: сам вызов `selectMove()` не меняет `GameSession` или `GameState`, а последующее применение такого action обязано проходить через обычный authoritative `GameSession → GameEngine` path. Формирование authoritative `GameSession history → Protocol V1 history` является отдельной application orchestration boundary и не переносится в transport client.
 
-Для хода бота над настоящей пользовательской `GameSession` application-level orchestration принадлежит `BotTurnCoordinator` (или эквивалентному узкому компоненту) и имеет полный путь:
+Для одного хода бота над настоящей пользовательской `GameSession` application-level orchestration принадлежит `BotTurnCoordinator` (или эквивалентному узкому компоненту) и имеет полный путь:
 
 `GameSession authoritative History → AlphaZeroPosition projection → BotTurnCoordinator → AlphaZeroGateway.selectMove() → proposed action → BotTurnCoordinator → GameSession → GameEngine`
 
@@ -992,6 +997,18 @@ Stateless move-selection boundary имеет вид:
 Асинхронный `selectMove()` обязан быть защищён от stale response на application boundary. Перед запросом coordinator сохраняет identity owning controller/session, `sessionRevision`, текущие `moveNumber` и `currentPlayer`; после ответа он повторно доказывает ту же позицию перед mutation. `requestId` остаётся только correlation id и сам по себе не является доказательством актуальности позиции. Любой Undo, другая accepted mutation, замена controller/session или выход позиции из `playing` делает ответ stale/cancelled и запрещает применять `placeStone`/`pass`.
 
 После проверки актуальности response color обязан совпадать с authoritative `currentPlayer`. `place(pointId)` и `pass` применяются только через существующий controller/`GameSession`; если GoCube отвергает transport-valid proposal, это compatibility/integration failure без исправления хода, force-apply или автоматического fallback Pass. Ошибка AlphaZero, включая `position_invalid`, не меняет `GameSession`. Второй последовательный bot Pass использует обычный `GameSession → GameEngine → ENDGAME_REVIEW` flow; после выхода из `playing` следующий bot move не запрашивается. Различие текущего GoCube Simple Ko и внешней AlphaZero positional-superko validation остаётся transport/integration compatibility boundary и не меняет правила GoCube.
+
+Над single-turn primitive располагается reusable `BotGameOrchestrator`, который владеет lifecycle одной Human-vs-Bot партии, но не владеет её board/history. Его входом служит существующий game controller (либо application resolver текущего controller), `AlphaZeroGateway`, уже разрешённый `humanColor`, checkpoint/search settings и topology metadata. Текущий владелец хода всегда определяется только по authoritative `GameSession.currentPlayer` из controller snapshot.
+
+Human action проходит через orchestrator guard и затем через тот же существующий controller/`GameSession`. Только после **accepted** human action orchestrator проверяет, что phase всё ещё `playing` и turn перешёл боту, после чего вызывает существующий `BotTurnCoordinator.playBotTurn()`. При `humanColor = white` explicit lifecycle start запускает первый Black bot turn до передачи управления человеку. Orchestrator не повторяет projection, Protocol V1 DTO или применение AlphaZero action.
+
+Для каждой controller/session identity допускается максимум один in-flight bot request. Пока он существует, lifecycle имеет состояние `bot-thinking`; новые human place/Pass и второй bot launch для той же партии блокируются application-level, независимо от будущего UI. Idle `playing` state выводится из authoritative `currentPlayer` как human turn либо bot turn; `endgame` и `finished` выводятся из обычного `GamePhase`. Это orchestration state, а не второй `GameState`.
+
+Failure текущего bot turn переводит orchestrator этой же controller/session identity в `error`, не откатывая уже принятый human move и не создавая fallback Pass. `retryBotTurn()` разрешён только для сохранившейся `playing` позиции, где authoritative `currentPlayer` всё ещё принадлежит боту; retry заново вызывает `BotTurnCoordinator`, поэтому Protocol V1 history снова строится из текущей полной authoritative History. Ошибка или завершение obsolete request предыдущего controller не имеет права переводить новую партию в error.
+
+Замена owning controller/session не отменяет stale proof внутри `BotTurnCoordinator`: старый response не применяется к новой партии. Single-flight scoped к controller identity, поэтому зависший запрос старой партии не превращается в глобальный lock новой партии. Независимо от исхода `applied | stale | error` lifecycle старой попытки не должен оставлять актуальную партию навсегда в `bot-thinking`.
+
+Если human либо bot Pass переводит authoritative session из `playing` в `endgame`, orchestrator не запускает следующий AlphaZero request и полностью передаёт дальнейший lifecycle существующему endgame flow; отдельного bot-endgame engine/state нет.
 
 Health capabilities являются additive Protocol V1 metadata: наличие `selectMove: true` позволяет application layer явно определить поддержку stateless move selection, а legacy health без `capabilities` остаётся допустимым для уже существующих Development Workspace операций.
 
@@ -1104,6 +1121,17 @@ Renderer не реконструирует историю самостоятел
 7. При rejection/color/capture mismatch replay останавливается и создаёт compatibility diagnostic; следующие moves не применяются.
 8. Два последовательных Pass естественно приводят в обычный assisted endgame flow; Development Workspace не обходит classifier и не завершает scoring автоматически.
 9. Ни один шаг developer replay не записывает обычный saved game.
+
+## 18.8. Human vs Bot application lifecycle
+
+1. Human place/Pass проходит application guard `BotGameOrchestrator` и применяется существующим controller через authoritative `GameSession → GameEngine`.
+2. Если action rejected, bot request не запускается.
+3. Если action accepted, orchestrator заново читает authoritative snapshot; только `phase = playing` и `currentPlayer = botColor` разрешают bot turn.
+4. Orchestrator устанавливает per-controller single-flight `bot-thinking` и вызывает `BotTurnCoordinator.playBotTurn()`.
+5. `BotTurnCoordinator` заново проецирует полную authoritative History в `AlphaZeroPosition`, вызывает `AlphaZeroGateway.selectMove()` и применяет актуальный validated proposal через тот же controller/`GameSession`.
+6. `applied` возвращает lifecycle к human turn, если authoritative phase остаётся `playing`; `stale` ничего не мутирует; failure текущей партии оставляет позицию как есть и делает доступным retry.
+7. Retry повторяет шаги 4–5 из **текущей** authoritative History, не из сохранённой копии предыдущего request.
+8. Любой переход в `endgame`/`finished` прекращает bot-request lifecycle и оставляет дальнейшую обработку существующим session/endgame flow.
 
 # 19. Testing architecture
 
@@ -1353,6 +1381,10 @@ Debug renderer сам по себе не является пользовател
 AlphaZero client/protocol coverage проверяет как минимум: valid health, unavailable service, malformed JSON, unsupported protocol, checkpoint validation, generated game validation и malformed moves.
 
 `DeveloperReplaySession` coverage проверяет обычные placements, Pass, captures, expected-color mismatch, illegal generated move, optional captured mismatch, Undo/Redo-based Previous/Next, seek backward/forward, jump to start/end и deterministic reach of final move.
+
+`BotTurnCoordinator` coverage отдельно доказывает projection полной authoritative History, application validated `place`/`pass`, mismatch/rejection fail-closed, stale response при mutation/controller replacement и обычный second-Pass endgame transition.
+
+`BotGameOrchestrator` headless integration coverage обязана проверять: Human Black `human move → bot move → human turn`; Human White с автоматическим первым Black bot move; bot `place` и `pass`; human Pass с последующим bot response; блокировку human input и второго bot launch во время `bot-thinking`; сохранение accepted human move при AlphaZero failure; `retryBotTurn()` из актуальной полной authoritative History; stale response после замены controller/session без mutation; normal endgame после второго Pass; отсутствие влияния на обычную local human-vs-human игру. Минимальный acceptance scenario должен доказать две последовательные пары `A → B`, `C → D` и Protocol V1 histories `[A]`, затем `[A, B, C]`.
 
 Presentation coverage проверяет, что изменение replay speed не меняет domain state, `1×` использует normal animation mode, а `5×`/`10×` — disabled; seek/jump выполняется без animation независимо от выбранной скорости.
 
@@ -1646,6 +1678,9 @@ Oracle disagreement не означает автоматически bug GoCube.
 - делать внешний oracle или AlphaZero обязательной production dependency;
 - считать AlphaZero authoritative владельцем `GameState` или принимать от него готовую board occupancy вместо generated actions;
 - рисовать AlphaZero board напрямую в Renderer или мутировать `GameState` в обход `GameSession → GameEngine`;
+- хранить параллельные `botBoard`/`botHistory`/`botGameState` для Human-vs-Bot lifecycle или повторять projection/Protocol V1 logic внутри `BotGameOrchestrator`;
+- запускать второй AlphaZero MCTS для той же controller/session identity, пока предыдущий bot request остаётся in-flight;
+- откатывать accepted human move либо подставлять fallback Pass из-за ошибки последующего bot request;
 - помещать HTTP/fetch/Python/PyTorch/AlphaZero dependencies в `core/game`, `core/topology`, `core/scoring` или `core/endgame`;
 - сохранять developer replay в `CURRENT_GAME_ID` или использовать обычный autosave для ephemeral developer session;
 - считать любой Cube/Torus neighbourhood эквивалентным центру обычной Go board без проверки square-grid embedding;
@@ -1706,6 +1741,7 @@ Oracle disagreement не означает автоматически bug GoCube.
 24. Можно ли заменить HTTP transport другой реализацией `AlphaZeroGateway` без изменения replay/domain core?
 25. Lifetime controller привязан к реальному application owner, а не к временно смонтированному view, и pending async review явно отличается от отсутствующего/пустого resolved review?
 26. После чтения storage проверен ли весь `GameSessionSnapshot`: structural validity каждого past/current/redo `GameState`, transition-semantic достижимость всей `History`/Redo timeline через `GameEngine` с корректным Simple Ko context, exact group identity review/classification и независимая проверка persisted `FinalScore` через configured scorer — всё до создания restored session и передачи данных presentation layer?
+27. Human-vs-Bot orchestration хранит только lifecycle/error/single-flight state, берёт turn/history из authoritative `GameSession` и переиспользует `BotTurnCoordinator`, а не создаёт второй bot engine/history?
 
 Если ответ показывает нарушение границы, сначала исправляется architecture/adapter contract, затем реализуется функция.
 
@@ -1734,7 +1770,9 @@ Oracle disagreement не означает автоматически bug GoCube.
 - после `GameStorage.load()` весь session envelope остаётся untrusted, пока каждый persisted `GameState` не пройдёт structural validation, вся History/Redo timeline не будет transition-semantically воспроизведена через `GameEngine` с корректным Simple Ko context, а exact logical group identity review/classification и derived `FinalScore` не пройдут тот же единый restore boundary;
 - seeded generators и independent oracle adapters помогают тестировать core только внутри test infrastructure и не становятся частью authoritative gameplay/runtime UI;
 - Development Workspace отдельно получает external AlphaZero actions через `AlphaZeroGateway`, создаёт ephemeral replay session и отправляет каждый move назад через обычный controller/`GameSession`/`GameEngine`;
-- AlphaZero не владеет board state, а compatibility disagreement останавливает replay и становится diagnostic;
+- для настоящей Human-vs-Bot партии `BotGameOrchestrator` после accepted human action проверяет authoritative turn/phase и запускает один `BotTurnCoordinator`; coordinator каждый раз строит AlphaZero position из authoritative History и возвращает proposal только через обычный `GameSession → GameEngine` path;
+- `BotGameOrchestrator` хранит только per-controller single-flight и retry/error lifecycle; replacement controller делает старый response stale и не создаёт параллельную board/history;
+- AlphaZero не владеет board state, а compatibility disagreement останавливает replay или bot turn и становится diagnostic/error;
 - ordinary autosave сохраняет стабильный application-level `sessionId` и монотонный `sessionRevision` внутри этой identity; storage сравнивает revision только при совпадении identity, а New Game переключает active identity explicit activation operation под тем же cross-tab lock/fence boundary;
 - developer replay не подключён к normal autosave;
 - `PreferencesStorage` отдельно хранит только product-approved cross-game preferences;

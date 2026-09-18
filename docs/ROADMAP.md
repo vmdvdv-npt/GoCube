@@ -45,7 +45,7 @@
 
 Следующая активная нумерованная версия — **0.5 Cube 3D**.
 
-Независимо от нумерованной release-sequence, перед дальнейшим AlphaZero training выполняется первый обязательный этап постоянной cross-version development infrastructure: **Developer Workspace foundation + AlphaZero game replay**. Он не меняет границы принятых 0.1/0.2/0.3 и не перенумеровывает 0.5.
+Независимо от нумерованной release-sequence, AlphaZero-интеграция развивается последовательными cross-version development-infrastructure этапами: сначала **Developer Workspace foundation + AlphaZero game replay**, затем **interactive AlphaZero bot foundation**. Эти этапы не меняют границы принятых 0.1/0.2/0.3 и не перенумеровывают 0.5.
 
 ---
 
@@ -53,10 +53,11 @@
 
 Development Workspace является постоянной инфраструктурой разработки, которая развивается рядом с нумерованными пользовательскими версиями и не считается отдельной пользовательской release-version.
 
-Нормативный порядок AlphaZero-интеграции начинается с:
+Нормативный порядок AlphaZero-интеграции:
 
 1. **Developer Workspace foundation + AlphaZero game replay** — подключить текущие AlphaZero checkpoints и реальный replay через существующий GoCube gameplay/rendering path до продолжения обучения;
-2. последующие AlphaZero diagnostics/training integrations планируются только после того, как первый этап даёт визуальный и compatibility feedback loop.
+2. **Interactive AlphaZero bot foundation** — после replay foundation добавить reusable headless application lifecycle партии Human vs Bot поверх stateless move-selection boundary и authoritative `GameSession`, до появления пользовательского `Play vs bot` UI;
+3. пользовательский bot UI и последующие AlphaZero diagnostics/training integrations планируются только после того, как interactive foundation стала рабочей и проверяемой.
 
 Конкретный UX Development Workspace определяет `docs/GAME_CUBE_GO.md`, а application/infrastructure boundaries — `docs/ARCHITECTURE.md`.
 
