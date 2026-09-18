@@ -1414,3 +1414,92 @@ Replay navigation не хранит отдельную board occupancy.
 - `Finish scoring` остаётся явным действием по обычным правилам endgame review.
 
 Таким образом Development Workspace пригоден для визуального исследования endgame и сравнения AlphaZero sequence с существующим поведением GoCube на поддерживаемых topology.
+
+# 43. Play vs bot
+
+`Play vs bot` — отдельный пользовательский стартовый режим поверх тех же игровых экранов Cube 2D и Torus 2D. Он не создаёт отдельную bot-доску или специальный renderer.
+
+## 43.1. Стартовая карточка
+
+На экране New Game показывается отдельная карточка `Play vs bot`. Она использует уже выбранные общие настройки `Board Shape`, `Board Size`, `Rules` и `Komi`; внутри карточки эти параметры повторно не дублируются.
+
+Карточка содержит только:
+
+- `Your color`: `Black`, `White`, `Random`;
+- `MCTS simulations`;
+- `Choose model…`.
+
+`MCTS simulations` принимает только положительное целое safe-integer значение. При невалидном значении выбор модели/старт bot game недоступен и показывается понятная ошибка.
+
+`Random` разрешается ровно один раз при фактическом старте партии и после этого партия имеет конкретный человеческий цвет до завершения/выхода.
+
+## 43.2. Выбор AlphaZero model
+
+`Choose model…` открывает отдельный model dialog, использующий тот же каталог checkpoints и те же lifecycle/board-filter semantics, что Development Workspace.
+
+Dialog показывает:
+
+- connection status;
+- `Retry`;
+- `Show closed lineages`;
+- динамический `Board filter`;
+- один selector `Bot checkpoint`;
+- metadata выбранного checkpoint;
+- `Start game`.
+
+В этом dialog нет пары Black/White checkpoints, `Generate game` и отдельного MCTS control.
+
+По умолчанию `Board filter` соответствует текущим `Board Shape` + `Board Size`, если такая пара существует в реально загруженном каталоге. Старт разрешён только если metadata выбранного checkpoint полностью совместимы с текущей партией по topology, size, rules и komi.
+
+Для интерактивной партии AlphaZero health должен явно сообщать capability `selectMove: true`. Если capability отсутствует или false, старт запрещён и показывается точный diagnostic:
+
+`Interactive move selection is not supported by this AlphaZero service.`
+
+## 43.3. Начало и очередность
+
+После `Start game` открывается обычный игровой экран выбранной topology.
+
+- Если человек играет Black, первый ход сразу принадлежит человеку.
+- Если человек играет White, AlphaZero автоматически делает opening Black move до передачи хода человеку.
+- Текущий владелец хода всегда определяется фактическим состоянием партии, а не локальным UI-счётчиком.
+
+## 43.4. Presentation человеческого и bot хода
+
+После принятого человеческого placement/Pass его реальный результат немедленно отображается в обычном игровом представлении, не ожидая завершения MCTS.
+
+Затем sidebar переходит в состояние `Computer is thinking…`. Доска остаётся видимой. Пока bot move вычисляется:
+
+- placement человека заблокирован;
+- Pass заблокирован;
+- hover-preview новых ходов заблокирован;
+- `New Game` остаётся доступен.
+
+После принятого bot placement/Pass UI получает отдельный authoritative result и отображает его тем же presentation path, что обычный ход, включая captures и штатные animations. UI не реконструирует captures или board diff самостоятельно.
+
+## 43.5. Ошибка и Retry
+
+Если AlphaZero request завершился ошибкой:
+
+- уже принятый человеческий ход остаётся в партии;
+- bot move не добавляется;
+- rollback, forced move и fallback Pass не выполняются;
+- sidebar показывает `Bot move failed.`;
+- в том же sidebar доступна кнопка `Retry`.
+
+`Retry` повторяет только текущий bot turn из актуальной полной позиции. Пока ошибка не устранена, новые человеческие placement/Pass не принимаются.
+
+## 43.6. Undo/Redo и endgame
+
+На протяжении всей Play vs bot партии `Undo` и `Redo` disabled. Это ограничение не меняет Human-vs-Human режим.
+
+Pass использует обычные правила партии. Если human/bot последовательность приводит ко второму Pass, AlphaZero больше не запрашивается, а игра переходит в штатный assisted/manual endgame review, scoring и result flow без отдельного bot-endgame режима.
+
+## 43.7. Ephemeral semantics и выход из партии
+
+Play vs bot партия ephemeral:
+
+- она не становится обычным `CURRENT_GAME_ID` autosave;
+- refresh страницы не предлагает восстановить её как Human-vs-Human или bot game;
+- `New Game` завершает текущий bot runtime и возвращает обычный стартовый flow.
+
+Поздний ответ от AlphaZero, относящийся к уже закрытой/заменённой bot-партии, не имеет права менять новый игровой экран, текущий sidebar state, stones/captures или показывать bot action/error в новой партии. После смены партии видимым считается только presentation state текущей партии.
