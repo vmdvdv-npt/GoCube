@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react';
+import type { PointId } from '../../core/topology/Topology';
 import type { AnimationMode } from '../../presentation/AnimationMode';
 import { Cube2DGame } from '../Cube2DGame';
 import type { GameInteractionBoundary } from '../GameInteractionBoundary';
@@ -37,7 +38,7 @@ export function DeveloperReplayPresentation({
   const readOnlyInteraction = useMemo<GameInteractionBoundary>(() => {
     const controller = replay.binding.controller;
     return Object.freeze({
-      placeStone: (point) => controller.placeStone(point),
+      placeStone: (point: PointId) => controller.placeStone(point),
       pass: () => controller.pass(),
       undo: () => controller.undo(),
       redo: () => controller.redo(),
