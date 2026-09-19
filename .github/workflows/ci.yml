@@ -90,9 +90,10 @@ jobs:
       - name: Run Playwright E2E
         env:
           CI_MODE: ${{ steps.mode.outputs.mode }}
+          LIBGL_ALWAYS_SOFTWARE: "1"
         run: |
           if [[ "$CI_MODE" == "firefox-cube3d" ]]; then
-            npx playwright test e2e/firefox-cube3d-debug.spec.ts --project=firefox
+            xvfb-run -a npx playwright test e2e/firefox-cube3d-debug.spec.ts --project=firefox --headed
           elif [[ "$CI_MODE" == "full" ]]; then
             npm run test:e2e
           else
