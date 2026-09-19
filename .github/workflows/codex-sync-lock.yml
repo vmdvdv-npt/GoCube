@@ -1,4 +1,4 @@
-name: Codex Sync Lockfile
+name: Codex Renderer3D Dependency Sync
 
 on:
   push:
@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 jobs:
-  sync-lockfile:
+  sync:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -20,16 +20,40 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - name: Regenerate package lock
+      - name: Synchronize package lock
         run: npm install --package-lock-only --ignore-scripts
-      - name: Commit synchronized lockfile
+      - name: Document local Renderer3D dependency
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('docs/ARCHITECTURE.md')
+          text = path.read_text()
+          needle = '''- готовые animation/control helpers.
+
+Собственный WebGL renderer, picking engine или базовый cube mesh generator не создаётся, пока не доказано, что зрелые primitives не подходят.
+'''
+          replacement = '''- готовые animation/control helpers.
+
+Для production `Renderer3D` Three.js подключается как локальная, lockfile-controlled npm dependency; при отсутствии встроенных declarations рядом фиксируются совместимые TypeScript definitions. Runtime import Three.js с публичных CDN/ESM gateways (`esm.sh` и аналоги) в renderer path не допускается: Vite/production build разрешает библиотеку из `node_modules` по зафиксированному lockfile. Внешний runtime import допустим только как краткоживущий visual POC до принятия библиотеки; после выбора Three.js renderer core использует локальную dependency.
+
+Собственный WebGL renderer, picking engine или базовый cube mesh generator не создаётся, пока не доказано, что зрелые primitives не подходят.
+'''
+          if replacement in text:
+              raise SystemExit(0)
+          if needle not in text:
+              raise SystemExit('architecture insertion point not found')
+          path.write_text(text.replace(needle, replacement, 1))
+          PY
+      - name: Commit synchronized files
         run: |
           set -euo pipefail
-          if git diff --quiet -- package-lock.json; then
+          if git diff --quiet -- package-lock.json docs/ARCHITECTURE.md; then
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json
-          git commit -m "Sync Three.js lockfile"
+          git add package-lock.json docs/ARCHITECTURE.md
+          git commit -m "Document local Three.js renderer dependency"
           git push origin HEAD:codex/localize-threejs-dependency
