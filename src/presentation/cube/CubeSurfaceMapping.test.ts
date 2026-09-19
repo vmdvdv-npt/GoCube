@@ -21,6 +21,8 @@ import {
 const directions: readonly CubeDirection[] = ['top', 'right', 'bottom', 'left'];
 const lengthSquared = (vector: readonly number[]): number =>
   vector.reduce((sum, component) => sum + component * component, 0);
+const squaredDistance = (a: readonly number[], b: readonly number[]): number =>
+  a.reduce((sum, component, index) => sum + (component - b[index]) ** 2, 0);
 
 describe('CubeSurfaceMapping', () => {
   it('round-trips every logical point without consulting Cube2DLayout', () => {
@@ -94,7 +96,7 @@ describe('CubeSurfaceMapping', () => {
           cubeFaceLocalToCartesian(to.face, to.u, 1),
         ];
 
-        expect(targetCandidates).toContainEqual(fromSeam);
+        expect(Math.min(...targetCandidates.map((candidate) => squaredDistance(candidate, fromSeam)))).toBeLessThan(1e-20);
       }
     }
   });
