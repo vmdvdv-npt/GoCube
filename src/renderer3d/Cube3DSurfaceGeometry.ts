@@ -42,16 +42,11 @@ export const DEFAULT_CUBE_3D_SURFACE_PROFILE: Cube3DSurfaceProfile = Object.free
 export const DEFAULT_CUBE_3D_SURFACE_SEGMENTS = 32;
 
 /**
- * Outer 3D intersections sit clearly farther from the physical seam so stones
- * keep visible breathing room from the rounded edge.
+ * Physical-face margin expressed in units of the same pitch used by the full
+ * face lattice. A value above 0.5 leaves a little more than a half-pitch of
+ * breathing room between the outer grid line and the rounded seam.
  */
-export const CUBE_3D_GRID_EDGE_INSET_PITCH_RATIO = 0.66;
-
-/**
- * Preserve the already accepted interior grid/stone scale while only moving the
- * outermost row/column farther inward.
- */
-const CUBE_3D_GRID_INTERIOR_REFERENCE_INSET_PITCH_RATIO = 0.53;
+export const CUBE_3D_GRID_EDGE_MARGIN_PITCH_RATIO = 0.66;
 
 const validateProfile = (profile: Cube3DSurfaceProfile): void => {
   if (!Number.isFinite(profile.halfExtent) || profile.halfExtent <= 0) {
@@ -91,32 +86,21 @@ export const cube3DFaceSurfaceSpan = (
   );
 };
 
+const cube3DGridPitchUnits = (size: CubeSize): number =>
+  1 / ((size - 1) + 2 * CUBE_3D_GRID_EDGE_MARGIN_PITCH_RATIO);
+
+/** Normalized face-coordinate margin derived from the common lattice pitch. */
 export const cube3DGridEdgeInset = (size: CubeSize): number =>
-  CUBE_3D_GRID_EDGE_INSET_PITCH_RATIO / size;
+  CUBE_3D_GRID_EDGE_MARGIN_PITCH_RATIO * cube3DGridPitchUnits(size);
 
-const cube3DGridInteriorReferenceInset = (size: CubeSize): number =>
-  CUBE_3D_GRID_INTERIOR_REFERENCE_INSET_PITCH_RATIO / size;
+const cube3DGridLocalCoordinate = (size: CubeSize, index: number): number =>
+  (CUBE_3D_GRID_EDGE_MARGIN_PITCH_RATIO + index) * cube3DGridPitchUnits(size);
 
-const cube3DGridLocalCoordinate = (size: CubeSize, index: number): number => {
-  const edgeInset = cube3DGridEdgeInset(size);
-  if (index === 0) return edgeInset;
-  if (index === size - 1) return 1 - edgeInset;
-
-  const referenceInset = cube3DGridInteriorReferenceInset(size);
-  return referenceInset + (index / (size - 1)) * (1 - 2 * referenceInset);
-};
-
-/**
- * Reference surface-arc pitch used for stone/marker sizing and interior spacing.
- * The outermost row/column may sit farther inward without changing this pitch.
- */
+/** Uniform surface-arc pitch used by every neighboring point on one face lattice. */
 export const cube3DGridSurfacePitch = (
   size: CubeSize,
   profile: Cube3DSurfaceProfile = DEFAULT_CUBE_3D_SURFACE_PROFILE,
-): number => {
-  const referenceInset = cube3DGridInteriorReferenceInset(size);
-  return (cube3DFaceSurfaceSpan(profile) * (1 - 2 * referenceInset)) / (size - 1);
-};
+): number => cube3DFaceSurfaceSpan(profile) * cube3DGridPitchUnits(size);
 
 /**
  * Converts a normalized logical face coordinate to a sharp-cube source coordinate
