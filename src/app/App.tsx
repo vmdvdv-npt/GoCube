@@ -14,6 +14,7 @@ import {
 } from './GameApplication';
 import { createBotRuntime, type BotRuntime } from './BotGameRuntime';
 import type { SharedGameActionResult } from './GameSessionControllerFacade';
+import { DevelopmentEntryProvider } from './GameSidebar';
 import { PlayVsBotLauncher } from './PlayVsBotLauncher';
 import { DevelopmentWorkspace } from './development/DevelopmentWorkspace';
 import type { AlphaZeroGateway } from './development/AlphaZeroGateway';
@@ -353,235 +354,244 @@ export function App({ alphaZeroGateway, gameApplication }: AppProps = {}) {
   const currentSettings = settings();
 
   return (
-    <main className={`app-shell${gameShell ? ' app-shell--game' : ''}`}>
-      {screen !== 'game' && screen !== 'development' ? (
-        <header className="app-header">
-          <p className="app-kicker">Game Cube Go · 0.2.0 · {__BUILD_PR__}</p>
-          <h1>GoCube</h1>
-          <p>Two surface modes · local save/load · Chinese and Japanese scoring.</p>
-        </header>
-      ) : null}
+    <DevelopmentEntryProvider onOpen={screen === 'development' ? null : openDevelopment}>
+      <main className={`app-shell${gameShell ? ' app-shell--game' : ''}`}>
+        {screen !== 'game' && screen !== 'development' ? (
+          <header className="app-header">
+            <p className="app-kicker">Game Cube Go · 0.2.0 · {__BUILD_PR__}</p>
+            <h1>GoCube</h1>
+            <p>Two surface modes · local save/load · Chinese and Japanese scoring.</p>
+          </header>
+        ) : null}
 
-      {screen !== 'loading' && screen !== 'development' ? (
-        <button type="button" className="development-entry" onClick={openDevelopment}>
-          Development
-        </button>
-      ) : null}
-
-      {screen === 'loading' ? <p className="startup-status">Loading local game…</p> : null}
-
-      {screen === 'resume' && savedGame ? (
-        <section className="startup-card" aria-labelledby="resume-title">
-          <h2 id="resume-title">Continue saved game?</h2>
-          <p>
-            {modeLabel(savedGame.gameMode)} · {savedGame.size}×{savedGame.size} ·{' '}
-            {savedGame.ruleSet === 'chinese' ? 'Chinese' : 'Japanese'} · Komi{' '}
-            {savedGame.komi} · Move {savedGame.moveNumber}
-            {savedGame.phase === 'finished' ? ' · Finished' : ''}
-          </p>
-          <div className="startup-actions">
-            <button type="button" onClick={() => void continueSavedGame()}>
-              Continue
-            </button>
-            <button type="button" onClick={() => void discardAndChooseSettings()}>
-              New game
-            </button>
-          </div>
-        </section>
-      ) : null}
-
-      {screen === 'settings' ? (
-        <>
-          <form
-            className="startup-card new-game-form"
-            onSubmit={(event) => void startNewGame(event)}
+        {screen !== 'loading' && screen !== 'development' && screen !== 'game' ? (
+          <a
+            href="#development"
+            className="development-entry"
+            onClick={(event) => {
+              event.preventDefault();
+              openDevelopment();
+            }}
           >
-            <div className="new-game-settings-grid" data-testid="new-game-settings-grid">
-              <fieldset
-                className="board-size-fieldset surface-fieldset new-game-settings-column new-game-settings-column--shape"
-                data-testid="new-game-shape-column"
-                aria-label="Board Shape"
-              >
-                <div className="topology-preview" data-testid="topology-preview">
-                  {topologyPreviewTransition ? (
-                    <>
-                      <img
-                        className={`topology-preview__image topology-preview__image--exit-${topologyPreviewTransition.direction}`}
-                        src={topologyPreviewSrc(topologyPreviewTransition.from)}
-                        alt=""
-                        aria-hidden="true"
-                        draggable={false}
-                      />
-                      <img
-                        key={topologyPreviewTransition.id}
-                        className={`topology-preview__image topology-preview__image--enter-from-${topologyPreviewTransition.direction === 'left' ? 'right' : 'left'}`}
-                        data-testid="topology-preview-image"
-                        src={topologyPreviewSrc(topologyPreviewTransition.to)}
-                        alt={topologyPreviewAlt(topologyPreviewTransition.to)}
-                        draggable={false}
-                        onAnimationEnd={() =>
-                          finishTopologyPreviewTransition(topologyPreviewTransition.id)
-                        }
-                      />
-                    </>
-                  ) : (
-                    <img
-                      className="topology-preview__image"
-                      data-testid="topology-preview-image"
-                      src={topologyPreviewSrc(gameMode)}
-                      alt={topologyPreviewAlt(gameMode)}
-                      draggable={false}
-                    />
-                  )}
-                </div>
-                <span className="new-game-control-label">Board Shape</span>
-                <div className="board-size-options surface-options">
-                  {(['cube-2d', 'torus-2d'] as const).map((mode) => (
-                    <button
-                      type="button"
-                      key={mode}
-                      className={gameMode === mode ? 'is-selected' : undefined}
-                      aria-pressed={gameMode === mode}
-                      onClick={() => chooseMode(mode)}
-                    >
-                      {topologyLabel(mode)}
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
+            development
+          </a>
+        ) : null}
 
-              <div
-                className="new-game-column-divider"
-                data-testid="new-game-column-divider"
-                aria-hidden="true"
-              />
+        {screen === 'loading' ? <p className="startup-status">Loading local game…</p> : null}
 
-              <div
-                className="new-game-settings-column new-game-settings-column--details"
-                data-testid="new-game-details-column"
-              >
-                <fieldset className="board-size-fieldset">
-                  <legend>Board Size</legend>
-                  <div className="board-size-options">
-                    {sizes.map((option) => (
-                      <button
-                        type="button"
-                        key={option}
-                        className={size === option ? 'is-selected' : undefined}
-                        aria-pressed={size === option}
-                        onClick={() => setSize(option)}
-                      >
-                        {option}×{option}
-                      </button>
-                    ))}
-                  </div>
-                  <select
-                    className="board-size-native-select"
-                    aria-label="Board size"
-                    value={size}
-                    onChange={(event) => setSize(Number(event.target.value) as GameSize)}
-                    tabIndex={-1}
-                  >
-                    {sizes.map((option) => (
-                      <option value={option} key={option}>
-                        {option}×{option}
-                      </option>
-                    ))}
-                  </select>
-                </fieldset>
-
-                <div className="new-game-rules-komi">
-                  <label>
-                    Rules
-                    <select
-                      value={ruleSet}
-                      onChange={(event) => setRuleSet(event.target.value as RuleSet)}
-                    >
-                      <option value="japanese">Japanese</option>
-                      <option value="chinese">Chinese</option>
-                    </select>
-                  </label>
-                  <label>
-                    Komi
-                    <input
-                      type="number"
-                      step="any"
-                      value={komi}
-                      onChange={(event) => setKomi(event.target.value)}
-                    />
-                  </label>
-                </div>
-
-                <button className="start-game-button" type="submit">
-                  Start game
-                </button>
-              </div>
-            </div>
-          </form>
-
-          {currentSettings ? (
-            <PlayVsBotLauncher
-              settings={currentSettings}
-              gateway={gateway}
-              onStart={(options) => void launchBotGame(options)}
-            />
-          ) : null}
-        </>
-      ) : null}
-
-      {screen === 'game' && activeGame?.gameMode === 'torus-2d' ? (
-        <TorusGame
-          key={`torus-${String(gameInstanceKey)}`}
-          controller={activeGame.controller}
-          interaction={botRuntime?.interaction}
-          onRequestNewGame={() => setConfirmNewGame(true)}
-          initialShowDuplicateRegions={preferences.showTorusDuplicateRegions}
-          onShowDuplicateRegionsPreferenceChange={setTorusDuplicateRegionsPreference}
-          gameplayReadOnly={interactionLocked}
-          externalAction={currentExternalAction}
-          turnLabelOverride={turnLabelOverride}
-          retryBotTurn={retryBotTurn}
-        />
-      ) : null}
-
-      {screen === 'game' && activeGame?.gameMode === 'cube-2d' ? (
-        <Cube2DGame
-          key={`cube-${String(gameInstanceKey)}`}
-          controller={activeGame.controller}
-          interaction={botRuntime?.interaction}
-          onRequestNewGame={() => setConfirmNewGame(true)}
-          gameplayReadOnly={interactionLocked}
-          externalAction={currentExternalAction}
-          turnLabelOverride={turnLabelOverride}
-          retryBotTurn={retryBotTurn}
-        />
-      ) : null}
-
-      {screen === 'development' ? <DevelopmentWorkspace onBack={closeDevelopment} /> : null}
-
-      {confirmNewGame ? (
-        <div className="confirmation-backdrop" role="presentation">
-          <section
-            className="confirmation-card"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="new-game-confirm-title"
-          >
-            <h2 id="new-game-confirm-title">Start a new game?</h2>
-            <p>The current game and its local autosave will be discarded.</p>
+        {screen === 'resume' && savedGame ? (
+          <section className="startup-card" aria-labelledby="resume-title">
+            <h2 id="resume-title">Continue saved game?</h2>
+            <p>
+              {modeLabel(savedGame.gameMode)} · {savedGame.size}×{savedGame.size} ·{' '}
+              {savedGame.ruleSet === 'chinese' ? 'Chinese' : 'Japanese'} · Komi{' '}
+              {savedGame.komi} · Move {savedGame.moveNumber}
+              {savedGame.phase === 'finished' ? ' · Finished' : ''}
+            </p>
             <div className="startup-actions">
-              <button type="button" onClick={() => setConfirmNewGame(false)}>
-                Cancel
+              <button type="button" onClick={() => void continueSavedGame()}>
+                Continue
               </button>
               <button type="button" onClick={() => void discardAndChooseSettings()}>
-                New Game
+                New game
               </button>
             </div>
           </section>
-        </div>
-      ) : null}
+        ) : null}
 
-      {error ? <p className="game-feedback">{error}</p> : null}
-    </main>
+        {screen === 'settings' ? (
+          <>
+            <form
+              className="startup-card new-game-form"
+              onSubmit={(event) => void startNewGame(event)}
+            >
+              <div className="new-game-settings-grid" data-testid="new-game-settings-grid">
+                <fieldset
+                  className="board-size-fieldset surface-fieldset new-game-settings-column new-game-settings-column--shape"
+                  data-testid="new-game-shape-column"
+                  aria-label="Board Shape"
+                >
+                  <div className="topology-preview" data-testid="topology-preview">
+                    {topologyPreviewTransition ? (
+                      <>
+                        <img
+                          className={`topology-preview__image topology-preview__image--exit-${topologyPreviewTransition.direction}`}
+                          src={topologyPreviewSrc(topologyPreviewTransition.from)}
+                          alt=""
+                          aria-hidden="true"
+                          draggable={false}
+                        />
+                        <img
+                          key={topologyPreviewTransition.id}
+                          className={`topology-preview__image topology-preview__image--enter-from-${topologyPreviewTransition.direction === 'left' ? 'right' : 'left'}`}
+                          data-testid="topology-preview-image"
+                          src={topologyPreviewSrc(topologyPreviewTransition.to)}
+                          alt={topologyPreviewAlt(topologyPreviewTransition.to)}
+                          draggable={false}
+                          onAnimationEnd={() =>
+                            finishTopologyPreviewTransition(topologyPreviewTransition.id)
+                          }
+                        />
+                      </>
+                    ) : (
+                      <img
+                        className="topology-preview__image"
+                        data-testid="topology-preview-image"
+                        src={topologyPreviewSrc(gameMode)}
+                        alt={topologyPreviewAlt(gameMode)}
+                        draggable={false}
+                      />
+                    )}
+                  </div>
+                  <span className="new-game-control-label">Board Shape</span>
+                  <div className="board-size-options surface-options">
+                    {(['cube-2d', 'torus-2d'] as const).map((mode) => (
+                      <button
+                        type="button"
+                        key={mode}
+                        className={gameMode === mode ? 'is-selected' : undefined}
+                        aria-pressed={gameMode === mode}
+                        onClick={() => chooseMode(mode)}
+                      >
+                        {topologyLabel(mode)}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+
+                <div
+                  className="new-game-column-divider"
+                  data-testid="new-game-column-divider"
+                  aria-hidden="true"
+                />
+
+                <div
+                  className="new-game-settings-column new-game-settings-column--details"
+                  data-testid="new-game-details-column"
+                >
+                  <fieldset className="board-size-fieldset">
+                    <legend>Board Size</legend>
+                    <div className="board-size-options">
+                      {sizes.map((option) => (
+                        <button
+                          type="button"
+                          key={option}
+                          className={size === option ? 'is-selected' : undefined}
+                          aria-pressed={size === option}
+                          onClick={() => setSize(option)}
+                        >
+                          {option}×{option}
+                        </button>
+                      ))}
+                    </div>
+                    <select
+                      className="board-size-native-select"
+                      aria-label="Board size"
+                      value={size}
+                      onChange={(event) => setSize(Number(event.target.value) as GameSize)}
+                      tabIndex={-1}
+                    >
+                      {sizes.map((option) => (
+                        <option value={option} key={option}>
+                          {option}×{option}
+                        </option>
+                      ))}
+                    </select>
+                  </fieldset>
+
+                  <div className="new-game-rules-komi">
+                    <label>
+                      Rules
+                      <select
+                        value={ruleSet}
+                        onChange={(event) => setRuleSet(event.target.value as RuleSet)}
+                      >
+                        <option value="japanese">Japanese</option>
+                        <option value="chinese">Chinese</option>
+                      </select>
+                    </label>
+                    <label>
+                      Komi
+                      <input
+                        type="number"
+                        step="any"
+                        value={komi}
+                        onChange={(event) => setKomi(event.target.value)}
+                      />
+                    </label>
+                  </div>
+
+                  <button className="start-game-button" type="submit">
+                    Start game
+                  </button>
+                </div>
+              </div>
+            </form>
+
+            {currentSettings ? (
+              <PlayVsBotLauncher
+                settings={currentSettings}
+                gateway={gateway}
+                onStart={(options) => void launchBotGame(options)}
+              />
+            ) : null}
+          </>
+        ) : null}
+
+        {screen === 'game' && activeGame?.gameMode === 'torus-2d' ? (
+          <TorusGame
+            key={`torus-${String(gameInstanceKey)}`}
+            controller={activeGame.controller}
+            interaction={botRuntime?.interaction}
+            onRequestNewGame={() => setConfirmNewGame(true)}
+            initialShowDuplicateRegions={preferences.showTorusDuplicateRegions}
+            onShowDuplicateRegionsPreferenceChange={setTorusDuplicateRegionsPreference}
+            gameplayReadOnly={interactionLocked}
+            externalAction={currentExternalAction}
+            turnLabelOverride={turnLabelOverride}
+            retryBotTurn={retryBotTurn}
+          />
+        ) : null}
+
+        {screen === 'game' && activeGame?.gameMode === 'cube-2d' ? (
+          <Cube2DGame
+            key={`cube-${String(gameInstanceKey)}`}
+            controller={activeGame.controller}
+            interaction={botRuntime?.interaction}
+            onRequestNewGame={() => setConfirmNewGame(true)}
+            gameplayReadOnly={interactionLocked}
+            externalAction={currentExternalAction}
+            turnLabelOverride={turnLabelOverride}
+            retryBotTurn={retryBotTurn}
+          />
+        ) : null}
+
+        {screen === 'development' ? <DevelopmentWorkspace onBack={closeDevelopment} /> : null}
+
+        {confirmNewGame ? (
+          <div className="confirmation-backdrop" role="presentation">
+            <section
+              className="confirmation-card"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="new-game-confirm-title"
+            >
+              <h2 id="new-game-confirm-title">Start a new game?</h2>
+              <p>The current game and its local autosave will be discarded.</p>
+              <div className="startup-actions">
+                <button type="button" onClick={() => setConfirmNewGame(false)}>
+                  Cancel
+                </button>
+                <button type="button" onClick={() => void discardAndChooseSettings()}>
+                  New Game
+                </button>
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        {error ? <p className="game-feedback">{error}</p> : null}
+      </main>
+    </DevelopmentEntryProvider>
   );
 }
