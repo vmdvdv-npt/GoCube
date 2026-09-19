@@ -126,6 +126,7 @@
   border: 1px solid rgb(203 140 50 / 36%);
   color: #9a9a9a;
   font-size: 13px;
+  anchor-name: --development-entry-anchor;
 }
 
 .torus-duplicates-control label {
@@ -235,4 +236,40 @@
 .app-shell--game {
   width: auto;
   margin: 0 12px;
+}
+
+/* Development is a low-emphasis text link, not a floating action button. */
+.development-entry {
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #9a9a9a;
+  box-shadow: none;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.25;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  text-transform: lowercase;
+  cursor: pointer;
+}
+
+.development-entry:hover {
+  color: #cfcfcf;
+  background: transparent;
+}
+
+/* In an active game, keep the link directly below the sidebar display-options block. */
+.app-shell--game > .development-entry {
+  top: 420px;
+  right: auto;
+  left: 32px;
+  z-index: 2;
+  position-anchor: --development-entry-anchor;
+  top: calc(anchor(bottom) + 10px);
+  left: calc(anchor(left) + 6px);
 }
