@@ -47,6 +47,7 @@ const CUBE_2D_NAVIGATION_BUTTON_SIZE = 38;
 const CUBE_2D_NAVIGATION_INSET = CUBE_2D_NAVIGATION_GAP + CUBE_2D_NAVIGATION_BUTTON_SIZE;
 const CUBE_2D_ZOOM_WHEEL_SENSITIVITY = 0.0008;
 const CUBE_2D_HOME_ZOOM = 1;
+const CUBE_VIEW_SWITCH_TRANSITION_MS = 360;
 const WHEEL_LINE_HEIGHT_PX = 16;
 const WHEEL_DELTA_LINE = 1;
 const WHEEL_DELTA_PAGE = 2;
@@ -105,6 +106,8 @@ export function Cube2DGame({
   useGameControllerLifecycle(ownsController ? controller : null);
   const [viewMode, setViewMode] = useState<CubeViewMode>('2d');
   const [cube3DViewState, setCube3DViewState] = useState(() => createCube3DViewState());
+  const [viewTransitioning, setViewTransitioning] = useState(false);
+  const viewTransitionTimer = useRef<number | null>(null);
 
   const g = useCube2DGame(controller, {
     gameplayReadOnly,
@@ -121,7 +124,7 @@ export function Cube2DGame({
   const sideRowCenterY = CUBE_2D_NAVIGATION_INSET + layoutCellSize * 1.5;
   const verticalPairCenterX =
     CUBE_2D_NAVIGATION_INSET + layoutCellSize * (g.view.verticalAnchorColumn + 0.5);
-  const navigationDisabled = Boolean(g.transition) || g.captureAnimating;
+  const navigationDisabled = Boolean(g.transition) || g.captureAnimating || viewTransitioning;
   const verticalPairIsMoving = g.transition?.direction === 'anchor';
   const verticalArrowMotionStyle: Cube2DNavigationArrowStyle = verticalPairIsMoving
     ? {
@@ -141,12 +144,24 @@ export function Cube2DGame({
   panOffsetRef.current = dragPan.offset;
 
   useEffect(() => {
+    if (viewTransitionTimer.current !== null) {
+      window.clearTimeout(viewTransitionTimer.current);
+      viewTransitionTimer.current = null;
+    }
+    setViewTransitioning(false);
     setViewMode('2d');
     setCube3DViewState(createCube3DViewState());
     zoomRef.current = CUBE_2D_HOME_ZOOM;
     panOffsetRef.current = Object.freeze({ x: 0, y: 0 });
     dragPan.reset();
   }, [controller, dragPan.reset]);
+
+  useEffect(
+    () => () => {
+      if (viewTransitionTimer.current !== null) window.clearTimeout(viewTransitionTimer.current);
+    },
+    [],
+  );
 
   const handleWheel = (event: ReactWheelEvent<HTMLDivElement>): void => {
     event.preventDefault();
@@ -175,14 +190,28 @@ export function Cube2DGame({
     dragPan.setOffset(nextPan);
   };
 
+  const startViewTransition = (): void => {
+    g.hover(null);
+    if (viewTransitionTimer.current !== null) window.clearTimeout(viewTransitionTimer.current);
+    setViewTransitioning(true);
+    viewTransitionTimer.current = window.setTimeout(
+      () => {
+        setViewTransitioning(false);
+        viewTransitionTimer.current = null;
+      },
+      animationMode === 'disabled' ? 0 : CUBE_VIEW_SWITCH_TRANSITION_MS,
+    );
+  };
+
   const switchTo2D = (): void => {
-    if (viewMode === '2d') return;
+    if (viewMode === '2d' || viewTransitioning) return;
     g.syncOrientation(new CubeOrientation(cube3DViewState.orientationAnchor));
+    startViewTransition();
     setViewMode('2d');
   };
 
   const switchTo3D = (): void => {
-    if (viewMode === '3d') return;
+    if (viewMode === '3d' || viewTransitioning) return;
     const orientationAnchor = g.view.orientation.toState();
     const currentAnchor = cube3DViewState.orientationAnchor;
     if (
@@ -191,6 +220,7 @@ export function Cube2DGame({
     ) {
       setCube3DViewState((current) => withCube3DOrientationAnchor(current, orientationAnchor));
     }
+    startViewTransition();
     setViewMode('3d');
   };
 
@@ -212,18 +242,10 @@ export function Cube2DGame({
 
   const viewSwitch = (
     <div className="cube-view-switch" role="group" aria-label="Cube view">
-      <button
-        type="button"
-        aria-pressed={viewMode === '2d'}
-        onClick={switchTo2D}
-      >
+      <button type="button" aria-pressed={viewMode === '2d'} disabled={viewTransitioning} onClick={switchTo2D}>
         2D
       </button>
-      <button
-        type="button"
-        aria-pressed={viewMode === '3d'}
-        onClick={switchTo3D}
-      >
+      <button type="button" aria-pressed={viewMode === '3d'} disabled={viewTransitioning} onClick={switchTo3D}>
         3D
       </button>
     </div>
@@ -308,6 +330,7 @@ export function Cube2DGame({
               hoverStatus={g.hoverStatus}
               showMoveNumbers={g.showMoveNumbers}
               inputDisabled={
+                viewTransitioning ||
                 Boolean(g.transition) ||
                 g.captureAnimating ||
                 g.vm.phase === 'finished' ||
@@ -363,17 +386,34 @@ export function Cube2DGame({
     <div className="cube-2d-game__board-shell cube-3d-board-shell" aria-label="Cube 3D view">
       {viewSwitch}
       <Suspense fallback={<div className="cube-3d-scene cube-3d-scene--loading">Loading 3D…</div>}>
-        <LazyThreeScene viewState={cube3DViewState} onViewStateChange={setCube3DViewState} />
+        <LazyThreeScene
+          size={controller.size}
+          viewModel={displayViewModel}
+          viewState={cube3DViewState}
+          hoveredPointId={g.hoveredPoint}
+          hoverStatus={g.hoverStatus}
+          inputDisabled={
+            viewTransitioning ||
+            Boolean(g.transition) ||
+            g.captureAnimating ||
+            g.vm.phase === 'finished' ||
+            (gameplayReadOnly && g.vm.phase === 'playing')
+          }
+          onViewStateChange={setCube3DViewState}
+          onPointHover={g.hover}
+          onPointActivate={(point) => void g.activate(point)}
+        />
       </Suspense>
     </div>
   );
 
   return (
     <section
-      className="torus-game cube-2d-game"
+      className={`torus-game cube-2d-game${viewTransitioning ? ' cube-view-transitioning' : ''}`}
       aria-label="Cube game"
       data-animation-mode={animationMode}
       data-cube-view={viewMode}
+      data-cube-view-transitioning={viewTransitioning ? 'true' : 'false'}
     >
       <GameSidebar
         size={controller.size}
@@ -386,11 +426,12 @@ export function Cube2DGame({
           gameplayReadOnly ||
           g.vm.phase !== 'playing' ||
           g.passGuarded ||
+          viewTransitioning ||
           Boolean(g.transition) ||
           g.captureAnimating
         }
-        canRedo={!g.transition && !g.captureAnimating && interaction.canRedo()}
-        canUndo={!g.transition && !g.captureAnimating && interaction.canUndo()}
+        canRedo={!viewTransitioning && !g.transition && !g.captureAnimating && interaction.canRedo()}
+        canUndo={!viewTransitioning && !g.transition && !g.captureAnimating && interaction.canUndo()}
         onPass={() => void g.pass()}
         onRedo={() => void g.run(() => interaction.redo())}
         onUndo={() => void g.run(() => interaction.undo())}
