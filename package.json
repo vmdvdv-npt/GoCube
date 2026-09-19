@@ -21,13 +21,15 @@
     "vite": "8.2.2",
     "typescript": "7.0.2",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "three": "0.180.0"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
     "@types/node": "26.2.0",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
+    "@types/three": "0.180.0",
     "vitest": "4.1.11",
     "@vitest/coverage-v8": "4.1.11",
     "oxlint": "1.79.0"
