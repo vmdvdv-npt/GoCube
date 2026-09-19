@@ -18,7 +18,10 @@ describe('Cube3DViewState', () => {
       upFace: 'top',
     });
 
-    expect(anchored.rotation).toEqual({ x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 });
+    expect(anchored.rotation.x).toBe(0);
+    expect(anchored.rotation.z).toBe(0);
+    expect(anchored.rotation.y).toBeCloseTo(Math.SQRT1_2, 15);
+    expect(anchored.rotation.w).toBeCloseTo(Math.SQRT1_2, 15);
     expect(anchored.zoom).toBe(1.7);
     expect(anchored.orientationAnchor).toEqual({ centerFace: 'right', upFace: 'top' });
   });
