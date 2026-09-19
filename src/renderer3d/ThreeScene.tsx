@@ -193,8 +193,8 @@ export function ThreeScene({
     grid.renderOrder = 1;
 
     const stoneGeometry = createCube3DStoneGeometry();
-    const blackMaterial = new THREE.MeshStandardMaterial({ color: 0x111315, roughness: 0.52 });
-    const whiteMaterial = new THREE.MeshStandardMaterial({ color: 0xeee9df, roughness: 0.58 });
+    const blackMaterial = new THREE.MeshLambertMaterial({ color: 0x111315 });
+    const whiteMaterial = new THREE.MeshLambertMaterial({ color: 0xeee9df });
     const capacity = 6 * size * size;
     const blackStones = new THREE.InstancedMesh(stoneGeometry, blackMaterial, capacity);
     const whiteStones = new THREE.InstancedMesh(stoneGeometry, whiteMaterial, capacity);
@@ -221,7 +221,14 @@ export function ThreeScene({
     key.position.set(3, 4, 5);
     scene.add(ambient, key);
 
-    const render = (): void => renderer.render(scene, camera);
+    let renderFrameId: number | null = null;
+    const render = (): void => {
+      if (renderFrameId !== null) return;
+      renderFrameId = window.requestAnimationFrame(() => {
+        renderFrameId = null;
+        renderer.render(scene, camera);
+      });
+    };
     let runtime!: SceneRuntime;
     const pointFromClientPosition = (x: number, y: number): PointId | null => {
       const bounds = renderer.domElement.getBoundingClientRect();
@@ -365,6 +372,10 @@ export function ThreeScene({
       renderer.domElement.removeEventListener('pointercancel', pointerCancel);
       renderer.domElement.removeEventListener('pointerleave', pointerLeave);
       renderer.domElement.removeEventListener('wheel', wheel);
+      if (renderFrameId !== null) {
+        window.cancelAnimationFrame(renderFrameId);
+        renderFrameId = null;
+      }
       surfaceGeometry.dispose();
       surfaceMaterial.dispose();
       gridGeometry.dispose();
