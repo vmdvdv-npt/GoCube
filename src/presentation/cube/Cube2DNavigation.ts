@@ -98,6 +98,15 @@ export const navigateCube2DViewState = (
   return createCube2DViewState(orientation, state.verticalAnchorColumn);
 };
 
+/** Replaces only the renderer-neutral spatial orientation, preserving 2D layout preferences. */
+export const setCube2DOrientation = (
+  state: Cube2DViewState,
+  orientation: CubeOrientation,
+): Cube2DViewState => {
+  if (state.orientation.equals(orientation)) return state;
+  return createCube2DViewState(orientation, state.verticalAnchorColumn);
+};
+
 /** Moves the physical TOP/BOTTOM pair together without changing cube orientation. */
 export const setCube2DVerticalAnchorColumn = (
   state: Cube2DViewState,
