@@ -6,6 +6,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
+import { pointerMovementExceedsDragThreshold } from '../presentation/PointerGesture';
 
 export interface DragPanOffset {
   readonly x: number;
@@ -28,7 +29,6 @@ export interface DragPanOptions {
   readonly allowInteractiveDrag?: boolean;
 }
 
-const DRAG_PAN_THRESHOLD_PX = 6;
 const DRAG_PAN_INTERACTIVE_SELECTOR = 'button, input, select, textarea, a';
 const DRAG_PAN_ALWAYS_IGNORE_SELECTOR = '[data-drag-pan-ignore="true"]';
 
@@ -122,8 +122,7 @@ export function useDragPan(options: DragPanOptions = {}) {
       setOffsetState((current) =>
         sameOffset(current, next) ? current : frozenOffset(next.x, next.y),
       );
-    },
-    [constrainOffset],
+    }, [constrainOffset],
   );
 
   const reset = useCallback((): void => {
@@ -153,10 +152,7 @@ export function useDragPan(options: DragPanOptions = {}) {
 
       const previousSession = sessionRef.current;
       const captureElement = captureElementRef.current;
-      if (
-        previousSession &&
-        captureElement?.hasPointerCapture(previousSession.pointerId)
-      ) {
+      if (previousSession && captureElement?.hasPointerCapture(previousSession.pointerId)) {
         captureElement.releasePointerCapture(previousSession.pointerId);
       }
       detachGestureElement();
@@ -207,7 +203,7 @@ export function useDragPan(options: DragPanOptions = {}) {
 
       if (startOnPointerDown) {
         // Cube owns this pointer gesture from pointerdown onward. Prevent browser text
-        // selection/drag defaults before our 6px pan threshold can be crossed.
+        // selection/drag defaults before our shared movement threshold can be crossed.
         event.preventDefault();
       }
 
@@ -215,7 +211,7 @@ export function useDragPan(options: DragPanOptions = {}) {
       const deltaY = event.clientY - session.startY;
 
       if (!session.dragging) {
-        if (Math.hypot(deltaX, deltaY) < DRAG_PAN_THRESHOLD_PX) return;
+        if (!pointerMovementExceedsDragThreshold(deltaX, deltaY)) return;
         session.dragging = true;
         suppressClickRef.current = true;
         captureElementRef.current = event.currentTarget;
@@ -248,9 +244,6 @@ export function useDragPan(options: DragPanOptions = {}) {
     setOffset: applyOffset,
     reset,
     reconstrain,
-    // Callers can opt into an explicit pointer-down session so a short press
-    // remains a click, while crossing the movement threshold becomes pan and suppresses
-    // that click. Interactive controls stay excluded unless explicitly allowed.
     onPointerDown: startOnPointerDown ? handlePointerDown : undefined,
     onPointerMove: handlePointerMove,
     onPointerUp: undefined,
