@@ -1599,6 +1599,8 @@ MIT JavaScript engine с Toroidal Go особенно полезен как не
 - LineSegments/line primitives для grid;
 - готовые animation/control helpers.
 
+Для production `Renderer3D` Three.js подключается как локальная, lockfile-controlled npm dependency; при отсутствии встроенных declarations рядом фиксируются совместимые TypeScript definitions. Runtime import Three.js с публичных CDN/ESM gateways (`esm.sh` и аналоги) в renderer path не допускается: Vite/production build разрешает библиотеку из `node_modules` по зафиксированному lockfile. Внешний runtime import допустим только как краткоживущий visual POC до принятия библиотеки; после выбора Three.js renderer core использует локальную dependency.
+
 Собственный WebGL renderer, picking engine или базовый cube mesh generator не создаётся, пока не доказано, что зрелые primitives не подходят.
 
 Независимо от библиотеки нашими остаются:
