@@ -148,7 +148,7 @@ export function PlayVsBotLauncher({
             disabled={parsedMcts === null || compatibleCheckpoint === null}
             onClick={() => compatibleCheckpoint && startBotGame(compatibleCheckpoint)}
           >
-            Play vs bot
+            Play vs AI
           </button>
         </div>
       </section>
