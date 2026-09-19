@@ -176,6 +176,7 @@ export function ThreeScene({ viewState, onViewStateChange }: ThreeSceneProps) {
       geometry.dispose();
       material.dispose();
       renderer.dispose();
+      renderer.forceContextLoss();
       renderer.domElement.remove();
       scene.clear();
       runtimeRef.current = null;
