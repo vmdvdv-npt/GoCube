@@ -1,8 +1,10 @@
 import {
   CUBE_FACES,
+  cubeEdgeTransition,
   cubePointId,
   isValidCubeSize,
   parseCubePointId,
+  type CubeEdge,
   type CubeFace,
   type CubeSize,
 } from '../../core/topology/CubeTopology';
@@ -20,15 +22,41 @@ export interface CubeFaceBasis {
   readonly down: CubeAxisVector;
 }
 
-export interface CubeSurfaceLocation {
+export interface CubeFaceLocalCoordinates {
+  readonly u: number;
+  readonly v: number;
+}
+
+export interface CubeSurfaceLocation extends CubeFaceLocalCoordinates {
   readonly pointId: PointId;
   readonly face: CubeFace;
   readonly row: number;
   readonly column: number;
-  /** Cell-centred normalized face coordinate in (0, 1). */
-  readonly u: number;
-  /** Cell-centred normalized face coordinate in (0, 1). */
-  readonly v: number;
+  readonly basis: CubeFaceBasis;
+}
+
+/**
+ * Complete renderer-neutral frame transform for one physical Cube edge.
+ * `targetTangent` is already oriented so increasing source edge coordinate maps
+ * to the same world-space direction after applying `reverse`.
+ */
+export interface CubeSurfaceEdgeTransform {
+  readonly sourceFace: CubeFace;
+  readonly sourceEdge: CubeEdge;
+  readonly targetFace: CubeFace;
+  readonly targetEdge: CubeEdge;
+  readonly reverse: boolean;
+  readonly sourceBasis: CubeFaceBasis;
+  readonly targetBasis: CubeFaceBasis;
+  readonly sourceTangent: CubeAxisVector;
+  readonly targetTangent: CubeAxisVector;
+  readonly sourceOutward: CubeAxisVector;
+  readonly targetInward: CubeAxisVector;
+}
+
+export interface CubeSurfaceEdgeMappedLocation extends CubeFaceLocalCoordinates {
+  readonly face: CubeFace;
+  readonly edge: CubeEdge;
   readonly basis: CubeFaceBasis;
 }
 
@@ -82,7 +110,7 @@ export const cubeFaceFromNormal = (normal: CubeAxisVector): CubeFace => {
 export const oppositeCubeFace = (face: CubeFace): CubeFace =>
   cubeFaceFromNormal(negateCubeAxisVector(cubeFaceBasis(face).normal));
 
-/** Half a grid step. No logical point is located directly on a physical face seam. */
+/** Half a logical grid step. No PointId is located directly on a physical face seam. */
 export const cubeSurfaceEdgeInset = (size: CubeSize): number => {
   if (!isValidCubeSize(size)) {
     throw new Error(`Cube size must be a safe integer >= 2, got ${String(size)}`);
@@ -119,7 +147,7 @@ export const cubePointToSurfaceLocation = (
   });
 };
 
-/** Exact inverse for canonical cell-centred face-local grid coordinates. */
+/** Exact inverse for canonical face-local logical grid coordinates. */
 export const cubeSurfaceLocationToPoint = (
   size: CubeSize,
   face: CubeFace,
@@ -132,10 +160,109 @@ export const cubeSurfaceLocationToPoint = (
   return cubePointId(face, gridIndexFromCoordinate(v, size, 'v'), gridIndexFromCoordinate(u, size, 'u'));
 };
 
-const validateLocalCoordinate = (value: number, name: 'u' | 'v'): void => {
+const validateLocalCoordinate = (value: number, name: string): void => {
   if (!Number.isFinite(value) || value < 0 || value > 1) {
     throw new Error(`Cube face ${name} must be finite and within [0, 1], got ${String(value)}`);
   }
+};
+
+const edgeTangent = (basis: CubeFaceBasis, edge: CubeEdge): CubeAxisVector =>
+  edge === 'top' || edge === 'bottom' ? basis.right : basis.down;
+
+const edgeOutward = (basis: CubeFaceBasis, edge: CubeEdge): CubeAxisVector => {
+  switch (edge) {
+    case 'top':
+      return negateCubeAxisVector(basis.down);
+    case 'right':
+      return basis.right;
+    case 'bottom':
+      return basis.down;
+    case 'left':
+      return negateCubeAxisVector(basis.right);
+  }
+};
+
+const edgeInward = (basis: CubeFaceBasis, edge: CubeEdge): CubeAxisVector =>
+  negateCubeAxisVector(edgeOutward(basis, edge));
+
+/**
+ * Returns the canonical frame transform across a physical edge. Logical adjacency
+ * comes directly from CubeTopology; this layer only adds renderer-neutral bases.
+ */
+export const cubeSurfaceEdgeTransform = (
+  face: CubeFace,
+  edge: CubeEdge,
+): CubeSurfaceEdgeTransform => {
+  const transition = cubeEdgeTransition(face, edge);
+  const sourceBasis = cubeFaceBasis(face);
+  const targetBasis = cubeFaceBasis(transition.face);
+  const rawTargetTangent = edgeTangent(targetBasis, transition.edge);
+
+  return Object.freeze({
+    sourceFace: face,
+    sourceEdge: edge,
+    targetFace: transition.face,
+    targetEdge: transition.edge,
+    reverse: transition.reverse,
+    sourceBasis,
+    targetBasis,
+    sourceTangent: edgeTangent(sourceBasis, edge),
+    targetTangent: transition.reverse
+      ? negateCubeAxisVector(rawTargetTangent)
+      : rawTargetTangent,
+    sourceOutward: edgeOutward(sourceBasis, edge),
+    targetInward: edgeInward(targetBasis, transition.edge),
+  });
+};
+
+/**
+ * Converts edge coordinate `t` plus normalized inward distance into face-local u/v.
+ * `t` follows columns on top/bottom and rows on left/right, matching CubeTopology.
+ */
+export const cubeEdgeLocalCoordinates = (
+  edge: CubeEdge,
+  t: number,
+  inset = 0,
+): CubeFaceLocalCoordinates => {
+  validateLocalCoordinate(t, 'edge coordinate');
+  validateLocalCoordinate(inset, 'edge inset');
+
+  switch (edge) {
+    case 'top':
+      return Object.freeze({ u: t, v: inset });
+    case 'right':
+      return Object.freeze({ u: 1 - inset, v: t });
+    case 'bottom':
+      return Object.freeze({ u: t, v: 1 - inset });
+    case 'left':
+      return Object.freeze({ u: inset, v: t });
+  }
+};
+
+/**
+ * Maps a continuous coordinate across a real Cube edge without using Cube2DLayout.
+ * `inset` is measured inward from the target edge and is normally half a grid step
+ * when mapping one logical edge PointId to its neighbour.
+ */
+export const cubeSurfaceCoordinateAcrossEdge = (
+  face: CubeFace,
+  edge: CubeEdge,
+  t: number,
+  inset = 0,
+): CubeSurfaceEdgeMappedLocation => {
+  validateLocalCoordinate(t, 'edge coordinate');
+  validateLocalCoordinate(inset, 'edge inset');
+  const transform = cubeSurfaceEdgeTransform(face, edge);
+  const targetT = transform.reverse ? 1 - t : t;
+  const local = cubeEdgeLocalCoordinates(transform.targetEdge, targetT, inset);
+
+  return Object.freeze({
+    face: transform.targetFace,
+    edge: transform.targetEdge,
+    u: local.u,
+    v: local.v,
+    basis: transform.targetBasis,
+  });
 };
 
 /**
