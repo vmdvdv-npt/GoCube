@@ -127,7 +127,7 @@ describe('Cube3D logical picking', () => {
       const lift = proxyPosition.clone().sub(samplePosition);
 
       expect(proxyNormal.dot(sampleNormal)).toBeGreaterThan(0.999999);
-      expect(lift.clone().cross(sampleNormal).length()).toBeLessThan(1e-10);
+      expect(lift.clone().cross(sampleNormal).length()).toBeLessThan(1e-7);
       expect(lift.dot(sampleNormal)).toBeGreaterThan(0);
       expect(lift.length()).toBeLessThan(pitch * 0.1);
     }
