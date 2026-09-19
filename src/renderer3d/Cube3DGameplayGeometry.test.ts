@@ -4,6 +4,7 @@ import type { CubeSize } from '../core/topology/CubeTopology';
 import type { PointId } from '../core/topology/Topology';
 import {
   CUBE_3D_STONE_DIAMETER_PITCH_RATIO,
+  CUBE_3D_STONE_LIFT_PITCH_RATIO,
   createCube3DStoneGeometry,
   cube3DGridPitch,
   cube3DStoneMatrix,
@@ -21,6 +22,9 @@ const transformedUp = (matrix: THREE.Matrix4): THREE.Vector3 => {
   return new THREE.Vector3(0, 1, 0).applyQuaternion(rotation).normalize();
 };
 
+const matrixPosition = (matrix: THREE.Matrix4): THREE.Vector3 =>
+  new THREE.Vector3().setFromMatrixPosition(matrix);
+
 describe('Cube3D gameplay geometry', () => {
   it.each([
     [5, point('front', 2, 2)],
@@ -33,6 +37,26 @@ describe('Cube3D gameplay geometry', () => {
     const expectedNormal = new THREE.Vector3(...sample.normal).normalize();
     const actualNormal = transformedUp(cube3DStoneMatrix(size, pointId));
     expect(actualNormal.dot(expectedNormal)).toBeGreaterThan(0.999999);
+  });
+
+  it.each([
+    [4, point('front', 0, 0)],
+    [5, point('top', 2, 4)],
+    [7, point('right', 6, 3)],
+    [8, point('back', 4, 4)],
+  ] as const)('places stone matrices directly from the shared point sample', (rawSize, pointId) => {
+    const size = rawSize as CubeSize;
+    const pitch = cube3DGridPitch(size);
+    const radius = (pitch * CUBE_3D_STONE_DIAMETER_PITCH_RATIO) / 2;
+    const lift = pitch * CUBE_3D_STONE_LIFT_PITCH_RATIO + radius * 0.03;
+    const sample = cube3DPointSample(size, pointId);
+    const expected = new THREE.Vector3(...sample.position).addScaledVector(
+      new THREE.Vector3(...sample.normal).normalize(),
+      lift,
+    );
+    const actual = matrixPosition(cube3DStoneMatrix(size, pointId));
+
+    expect(actual.distanceTo(expected)).toBeLessThan(1e-10);
   });
 
   it('scales the shared lens to the configured grid-pitch diameter', () => {
