@@ -41,6 +41,7 @@ export const createCube3DPickTargets = (size: CubeSize): Cube3DPickTargets => {
     transparent: true,
     opacity: 0,
     depthWrite: false,
+    side: THREE.DoubleSide,
   });
   material.colorWrite = false;
   const mesh = new THREE.InstancedMesh(geometry, material, pointIds.length);
