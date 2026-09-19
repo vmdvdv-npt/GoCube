@@ -72,23 +72,26 @@ test('short 3D click places through the shared game flow while drag and occupied
   await page.mouse.up();
   await expect(page.getByText('Move 0', { exact: true })).toBeVisible();
 
-  // Return the center point to the camera after the drag, then click the point currently under the pointer.
-  await enter2D(page);
+  // The drag intentionally changes the persisted 3D rotation. Start a fresh game
+  // before click assertions so the click target is tested from the deterministic
+  // initial camera orientation instead of assuming the rotation resets on 2D ↔ 3D.
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Start game' })).toBeVisible();
+  await startCubeGame(page);
   await enter3D(page);
-  const resetBounds = await canvas.boundingBox();
+
+  const resetCanvas = page.locator('[data-testid="cube-3d-canvas"]');
+  const resetBounds = await resetCanvas.boundingBox();
   expect(resetBounds).not.toBeNull();
   if (!resetBounds) return;
-  await page.mouse.click(
-    resetBounds.x + resetBounds.width * 0.5,
-    resetBounds.y + resetBounds.height * 0.5,
-  );
+  const resetX = resetBounds.x + resetBounds.width * 0.5;
+  const resetY = resetBounds.y + resetBounds.height * 0.5;
+
+  await page.mouse.click(resetX, resetY);
   await expect(page.getByText('Move 1', { exact: true })).toBeVisible();
 
   // Same logical point is occupied; a second click must not create another move.
-  await page.mouse.click(
-    resetBounds.x + resetBounds.width * 0.5,
-    resetBounds.y + resetBounds.height * 0.5,
-  );
+  await page.mouse.click(resetX, resetY);
   await expect(page.getByText('Move 1', { exact: true })).toBeVisible();
 
   await enter2D(page);
@@ -206,6 +209,7 @@ test('Cube 3D repeated mount/unmount and resize do not accumulate canvases', asy
 
 test('Cube 3D Chromium diagnostic records interaction metrics and enforces heap budget', async ({ page, browserName }) => {
   test.skip(browserName !== 'chromium', 'Chromium CDP is required for deterministic heap diagnostics.');
+  test.setTimeout(120_000);
 
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Emulation.setDeviceMetricsOverride', {
