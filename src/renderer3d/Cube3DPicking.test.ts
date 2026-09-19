@@ -2,13 +2,17 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import type { CubeSize } from '../core/topology/CubeTopology';
 import type { PointId } from '../core/topology/Topology';
+import { cube3DGridPitch } from './Cube3DGameplayGeometry';
 import {
   createCube3DPickTargets,
   disposeCube3DPickTargets,
   pointFromCube3DClientPosition,
   type Cube3DPickTargets,
 } from './Cube3DPicking';
-import { createCube3DRoundedSurfaceGeometry } from './Cube3DSurfaceGeometry';
+import {
+  createCube3DRoundedSurfaceGeometry,
+  cube3DPointSample,
+} from './Cube3DSurfaceGeometry';
 
 const VIEWPORT = Object.freeze({ left: 0, top: 0, width: 800, height: 800 });
 const CAMERA_DISTANCE = 5;
@@ -109,6 +113,26 @@ const point = (face: string, row: number, column: number): PointId =>
   `${face}:${row}:${column}` as PointId;
 
 describe('Cube3D logical picking', () => {
+  it('derives every 7×7 pick proxy from the shared PointId surface sample', () => {
+    const size = 7 as CubeSize;
+    const fixture = createFixture(size);
+    const pitch = cube3DGridPitch(size);
+
+    for (const pointId of fixture.targets.pointIds) {
+      const sample = cube3DPointSample(size, pointId);
+      const samplePosition = new THREE.Vector3(...sample.position);
+      const sampleNormal = new THREE.Vector3(...sample.normal).normalize();
+      const proxyPosition = localProxyPosition(fixture, pointId);
+      const proxyNormal = localProxyNormal(fixture, pointId);
+      const lift = proxyPosition.clone().sub(samplePosition);
+
+      expect(proxyNormal.dot(sampleNormal)).toBeGreaterThan(0.999999);
+      expect(lift.clone().cross(sampleNormal).length()).toBeLessThan(1e-10);
+      expect(lift.dot(sampleNormal)).toBeGreaterThan(0);
+      expect(lift.length()).toBeLessThan(pitch * 0.1);
+    }
+  });
+
   it.each([2, 4, 7] as const)(
     'round-trips representative center-face points for Cube size %d',
     (size) => {
