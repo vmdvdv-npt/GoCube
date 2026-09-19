@@ -128,7 +128,7 @@ test('Development Workspace replays generated Cube game without changing normal 
   await expect(stone(page, 'front:2:2')).toHaveCount(1);
   const savedBefore = await localStorageSnapshot(page);
 
-  await page.getByRole('button', { name: 'Development', exact: true }).click();
+  await page.getByRole('link', { name: 'development', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Development Workspace' })).toBeVisible();
   await expect(page.getByText(/gocube-alphazero test · protocol v1/)).toBeVisible();
   await expect(page.getByLabel('Black checkpoint')).toHaveValue(checkpoint.id);
@@ -217,7 +217,7 @@ test('Development replay explicitly flags AlphaZero and GoCube result mismatch',
   );
 
   await page.goto('/');
-  await page.getByRole('button', { name: 'Development', exact: true }).click();
+  await page.getByRole('link', { name: 'development', exact: true }).click();
   await page.getByRole('button', { name: 'Generate game' }).click();
   await page.getByRole('button', { name: 'Replay end' }).click();
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
@@ -235,7 +235,7 @@ test('Development replay stops and diagnoses an illegal AlphaZero move', async (
     { moveNumber: 2, color: 'white', action: { type: 'place', pointId: 'front:0:0' } },
   ]);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Development', exact: true }).click();
+  await page.getByRole('link', { name: 'development', exact: true }).click();
   await page.getByRole('button', { name: 'Generate game' }).click();
 
   await page.getByRole('button', { name: 'Next move' }).click();
