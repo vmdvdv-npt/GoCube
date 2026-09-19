@@ -2,20 +2,21 @@ import { describe, expect, it } from 'vitest';
 import {
   CUBE_FACES,
   CubeTopology,
-  parseCubePointId,
   type CubeDirection,
+  type CubeFace,
   type CubeSize,
 } from '../core/topology/CubeTopology';
+import type { PointId } from '../core/topology/Topology';
 import {
   cubeEdgeLocalCoordinates,
   cubeSurfaceCoordinateAcrossEdge,
 } from '../presentation/cube/CubeSurfaceMapping';
 import {
-  CUBE_3D_GRID_EDGE_INSET_PITCH_RATIO,
+  CUBE_3D_GRID_EDGE_MARGIN_PITCH_RATIO,
   createCube3DRoundedSurfaceGeometry,
   cube3DDebugGridPaths,
+  cube3DFaceSurfaceSpan,
   cube3DGridEdgeInset,
-  cube3DGridPathLength,
   cube3DGridSurfacePitch,
   cube3DPointPosition,
   cube3DPointSample,
@@ -32,25 +33,40 @@ const expectVectorClose = (actual: readonly number[], expected: readonly number[
     expect(actual[index]).toBeCloseTo(expected[index], 10);
   }
 };
+const point = (face: CubeFace, row: number, column: number): PointId =>
+  `${face}:${row}:${column}` as PointId;
+const distance = (a: readonly number[], b: readonly number[]): number =>
+  Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
-const isBoundaryPoint = (size: CubeSize, pointId: string): boolean => {
-  const { row, column } = parseCubePointId(size, pointId);
-  return row === 0 || column === 0 || row === size - 1 || column === size - 1;
+const expectUniformIntervals = (
+  size: CubeSize,
+  pointIds: readonly PointId[],
+): void => {
+  const intervals = pointIds.slice(1).map((pointId, index) =>
+    distance(cube3DPointPosition(size, pointIds[index]), cube3DPointPosition(size, pointId)),
+  );
+  const minimum = Math.min(...intervals);
+  const maximum = Math.max(...intervals);
+  const mean = intervals.reduce((sum, value) => sum + value, 0) / intervals.length;
+  const expectedPitch = cube3DGridSurfacePitch(size);
+
+  expect(maximum / minimum).toBeLessThan(1.000001);
+  expect(Math.abs(mean - expectedPitch) / expectedPitch).toBeLessThan(1e-9);
 };
 
 describe('Cube3DSurfaceGeometry', () => {
   it('keeps all 6 × N × N logical points geometrically distinct for odd, even and technical sizes', () => {
-    for (const size of [2, 3, 4, 8]) {
+    for (const size of [2, 3, 4, 5, 7, 8]) {
       const topology = new CubeTopology(size);
-      const positions = topology.points().map((point) => key(cube3DPointPosition(size, point)));
+      const positions = topology.points().map((pointId) => key(cube3DPointPosition(size, pointId)));
       expect(new Set(positions).size).toBe(6 * size * size);
     }
   });
 
   it('returns a unit surface normal with every logical point sample', () => {
     for (const size of [2, 3, 8]) {
-      for (const point of new CubeTopology(size).points()) {
-        const sample = cube3DPointSample(size, point);
+      for (const pointId of new CubeTopology(size).points()) {
+        const sample = cube3DPointSample(size, pointId);
         expect(vectorLength(sample.normal)).toBeCloseTo(1, 10);
         for (const component of sample.position) {
           expect(Math.abs(component)).toBeLessThanOrEqual(DEFAULT_CUBE_3D_SURFACE_PROFILE.halfExtent);
@@ -119,45 +135,47 @@ describe('Cube3DSurfaceGeometry', () => {
     }
   });
 
-  it('insets outer 3D intersections substantially beyond the canonical half-pitch', () => {
-    expect(CUBE_3D_GRID_EDGE_INSET_PITCH_RATIO).toBeGreaterThanOrEqual(0.65);
-    for (const size of [2, 3, 4, 8]) {
+  it('derives the physical-edge margin from the same pitch as the full face lattice', () => {
+    expect(CUBE_3D_GRID_EDGE_MARGIN_PITCH_RATIO).toBeGreaterThan(0.5);
+
+    for (const rawSize of [4, 5, 7, 8]) {
+      const size = rawSize as CubeSize;
+      const expectedPitchUnits =
+        1 / ((size - 1) + 2 * CUBE_3D_GRID_EDGE_MARGIN_PITCH_RATIO);
       const inset = cube3DGridEdgeInset(size);
-      expect(inset * size).toBeCloseTo(CUBE_3D_GRID_EDGE_INSET_PITCH_RATIO, 10);
-      expect(inset).toBeGreaterThan(0.5 / size);
+      const surfacePitch = cube3DGridSurfacePitch(size);
+      const surfaceMargin = cube3DFaceSurfaceSpan() * inset;
+
+      expect(inset).toBeCloseTo(
+        CUBE_3D_GRID_EDGE_MARGIN_PITCH_RATIO * expectedPitchUnits,
+        12,
+      );
+      expect(surfaceMargin / surfacePitch).toBeCloseTo(
+        CUBE_3D_GRID_EDGE_MARGIN_PITCH_RATIO,
+        12,
+      );
     }
   });
 
-  it('preserves interior grid pitch while moving only the outer row and column inward', () => {
+  it('uses one uniform horizontal and vertical pitch on every face for 4×4, 5×5, 7×7 and 8×8', () => {
     for (const rawSize of [4, 5, 7, 8]) {
       const size = rawSize as CubeSize;
-      const paths = cube3DDebugGridPaths(size, DEFAULT_CUBE_3D_SURFACE_PROFILE, 24);
-      const localLengths = paths
-        .filter((path) => !path.crossesFaceBoundary)
-        .map(cube3DGridPathLength);
-      const interiorLengths = paths
-        .filter(
-          (path) =>
-            !path.crossesFaceBoundary &&
-            !isBoundaryPoint(size, path.fromPointId) &&
-            !isBoundaryPoint(size, path.toPointId),
-        )
-        .map(cube3DGridPathLength);
-      const seamLengths = paths
-        .filter((path) => path.crossesFaceBoundary)
-        .map(cube3DGridPathLength);
-      const expectedPitch = cube3DGridSurfacePitch(size);
-      const interiorMinimum = Math.min(...interiorLengths);
-      const interiorMaximum = Math.max(...interiorLengths);
-      const interiorMean =
-        interiorLengths.reduce((sum, value) => sum + value, 0) / interiorLengths.length;
-      const localMinimum = Math.min(...localLengths);
-      const seamMinimum = Math.min(...seamLengths);
 
-      expect(interiorMaximum / interiorMinimum).toBeLessThan(1.01);
-      expect(Math.abs(interiorMean - expectedPitch) / expectedPitch).toBeLessThan(0.01);
-      expect(localMinimum).toBeLessThan(expectedPitch * 0.9);
-      expect(seamMinimum).toBeGreaterThan(expectedPitch * 1.25);
+      for (const face of CUBE_FACES) {
+        for (let row = 0; row < size; row += 1) {
+          expectUniformIntervals(
+            size,
+            Array.from({ length: size }, (_, column) => point(face, row, column)),
+          );
+        }
+
+        for (let column = 0; column < size; column += 1) {
+          expectUniformIntervals(
+            size,
+            Array.from({ length: size }, (_, row) => point(face, row, column)),
+          );
+        }
+      }
     }
   });
 
