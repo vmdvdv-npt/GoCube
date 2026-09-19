@@ -15,6 +15,7 @@ import {
   withCube3DZoom,
   type Cube3DViewState,
 } from '../presentation/cube/Cube3DViewState';
+import { cube3DArcballDragRotation } from './Cube3DArcballRotation';
 import {
   CUBE_3D_MARKER_DIAMETER_PITCH_RATIO,
   createCube3DStoneGeometry,
@@ -42,6 +43,8 @@ const ZOOM_SENSITIVITY = 0.001;
 const MARKER_THICKNESS = 0.08;
 const INITIAL_RENDER_DEFER_FALLBACK_MS = 500;
 const VIEW_TRANSITION_MS = 240;
+
+type Cube3DRotationMode = 'screen' | 'arcball';
 
 interface SceneRuntime {
   readonly scene: THREE.Scene;
@@ -148,14 +151,17 @@ export function ThreeScene({
   const inputDisabledRef = useRef(inputDisabled);
   const initialRenderDeferredRef = useRef(inputDisabled);
   const viewTransitioningRef = useRef(false);
+  const rotationModeRef = useRef<Cube3DRotationMode>('screen');
   const startViewTransitionRef = useRef<(target: Cube3DViewState) => void>(() => undefined);
   const onViewStateChangeRef = useRef(onViewStateChange);
   const onViewTransitioningChangeRef = useRef(onViewTransitioningChange);
   const onPointHoverRef = useRef(onPointHover);
   const onPointActivateRef = useRef(onPointActivate);
   const [viewTransitioning, setViewTransitioning] = useState(false);
+  const [rotationMode, setRotationMode] = useState<Cube3DRotationMode>('screen');
   viewStateRef.current = viewState;
   inputDisabledRef.current = inputDisabled;
+  rotationModeRef.current = rotationMode;
   onViewStateChangeRef.current = onViewStateChange;
   onViewTransitioningChangeRef.current = onViewTransitioningChange;
   onPointHoverRef.current = onPointHover;
@@ -281,6 +287,7 @@ export function ThreeScene({
     host.dataset.cube3dGridPitch = cube3DGridPitch(size).toFixed(6);
     host.dataset.cube3dMarkerRatio = String(CUBE_3D_MARKER_DIAMETER_PITCH_RATIO);
     host.dataset.cube3dTransitioning = 'false';
+    host.dataset.cube3dRotationMode = rotationModeRef.current;
 
     const finishViewTransition = (target: Cube3DViewState): void => {
       transitionFrameId = null;
@@ -380,13 +387,22 @@ export function ThreeScene({
       }
 
       event.preventDefault();
-      const nextQuaternion = cube3DScreenSpaceDragRotation(
-        drag.rotation,
-        camera.quaternion,
-        deltaX,
-        deltaY,
-        ROTATION_SENSITIVITY,
-      );
+      const nextQuaternion =
+        rotationModeRef.current === 'arcball'
+          ? cube3DArcballDragRotation(
+              drag.rotation,
+              camera.quaternion,
+              { x: drag.x, y: drag.y },
+              { x: event.clientX, y: event.clientY },
+              renderer.domElement.getBoundingClientRect(),
+            )
+          : cube3DScreenSpaceDragRotation(
+              drag.rotation,
+              camera.quaternion,
+              deltaX,
+              deltaY,
+              ROTATION_SENSITIVITY,
+            );
       const nextState = withCube3DRotation(viewStateRef.current, toQuaternionState(nextQuaternion));
       viewStateRef.current = nextState;
       cubeRoot.quaternion.copy(nextQuaternion);
@@ -526,9 +542,41 @@ export function ThreeScene({
     startViewTransitionRef.current(cube3DResetTarget());
   };
 
+  const changeRotationMode = (mode: Cube3DRotationMode): void => {
+    if (viewTransitioningRef.current || mode === rotationModeRef.current) return;
+    rotationModeRef.current = mode;
+    setRotationMode(mode);
+    onPointHoverRef.current(null);
+    const host = hostRef.current;
+    if (host) host.dataset.cube3dRotationMode = mode;
+  };
+
   return (
     <div className="cube-3d-interaction-surface">
       <div ref={hostRef} className="cube-3d-scene" aria-label="Cube 3D scene" />
+      <div
+        className="cube-3d-rotation-mode"
+        role="group"
+        aria-label="Cube 3D rotation mode"
+        data-testid="cube-3d-rotation-mode"
+      >
+        <button
+          type="button"
+          aria-pressed={rotationMode === 'screen'}
+          disabled={viewTransitioning}
+          onClick={() => changeRotationMode('screen')}
+        >
+          Screen
+        </button>
+        <button
+          type="button"
+          aria-pressed={rotationMode === 'arcball'}
+          disabled={viewTransitioning}
+          onClick={() => changeRotationMode('arcball')}
+        >
+          Arcball
+        </button>
+      </div>
       <div className="cube-3d-navigation" role="group" aria-label="Cube 3D navigation">
         <button
           className="torus-pan cube-3d-navigation__button cube-3d-navigation__button--up"
