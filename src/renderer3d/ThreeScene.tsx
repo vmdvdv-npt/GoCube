@@ -28,11 +28,12 @@ import {
   pointFromCube3DClientPosition,
   type Cube3DPickTargets,
 } from './Cube3DPicking';
+import { CUBE_3D_PERFORMANCE_BUDGET } from './Cube3DPerformance';
+import { cube3DScreenSpaceDragRotation } from './Cube3DScreenRotation';
 import {
   createCube3DDebugGridGeometry,
   createCube3DRoundedSurfaceGeometry,
 } from './Cube3DSurfaceGeometry';
-import { CUBE_3D_PERFORMANCE_BUDGET } from './Cube3DPerformance';
 import './cube3d.css';
 
 const BASE_CAMERA_DISTANCE = 5;
@@ -379,15 +380,13 @@ export function ThreeScene({
       }
 
       event.preventDefault();
-      const yaw = new THREE.Quaternion().setFromAxisAngle(
-        new THREE.Vector3(0, 1, 0),
-        deltaX * ROTATION_SENSITIVITY,
+      const nextQuaternion = cube3DScreenSpaceDragRotation(
+        drag.rotation,
+        camera.quaternion,
+        deltaX,
+        deltaY,
+        ROTATION_SENSITIVITY,
       );
-      const pitch = new THREE.Quaternion().setFromAxisAngle(
-        new THREE.Vector3(1, 0, 0),
-        deltaY * ROTATION_SENSITIVITY,
-      );
-      const nextQuaternion = yaw.multiply(drag.rotation).multiply(pitch).normalize();
       const nextState = withCube3DRotation(viewStateRef.current, toQuaternionState(nextQuaternion));
       viewStateRef.current = nextState;
       cubeRoot.quaternion.copy(nextQuaternion);
