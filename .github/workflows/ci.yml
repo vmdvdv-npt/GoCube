@@ -93,7 +93,7 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: "1"
         run: |
           if [[ "$CI_MODE" == "firefox-cube3d" ]]; then
-            xvfb-run -a npx playwright test e2e/firefox-cube3d-debug.spec.ts --project=firefox --headed
+            xvfb-run -a npx playwright test e2e/cube3d-visual-entry.spec.ts --project=firefox --headed
           elif [[ "$CI_MODE" == "full" ]]; then
             npm run test:e2e
           else
