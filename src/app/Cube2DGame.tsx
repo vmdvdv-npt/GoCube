@@ -1,6 +1,7 @@
 import {
   useEffect,
   useRef,
+  useState,
   type CSSProperties,
   type WheelEvent as ReactWheelEvent,
 } from 'react';
@@ -15,6 +16,8 @@ import {
   CUBE_2D_TRANSITION_MS,
   Cube2DRenderer,
 } from '../renderer2d/Cube2DRenderer';
+import { ThreeScene } from '../renderer3d/ThreeScene';
+import '../renderer3d/cube3d.css';
 import { Cube2DGameController } from './Cube2DGameController';
 import { Cube2DVisualEffects } from './Cube2DVisualEffects';
 import { EndgameReviewControls } from './EndgameReviewControls';
@@ -38,6 +41,7 @@ const WHEEL_LINE_HEIGHT_PX = 16;
 const WHEEL_DELTA_LINE = 1;
 const WHEEL_DELTA_PAGE = 2;
 
+type CubeViewMode = '2d' | '3d';
 type Cube2DNavigationArrowStyle = CSSProperties & {
   '--cube-2d-navigation-from-x'?: string;
 };
@@ -89,6 +93,7 @@ export function Cube2DGame({
   ownsController = false,
 }: Cube2DGameProps) {
   useGameControllerLifecycle(ownsController ? controller : null);
+  const [viewMode, setViewMode] = useState<CubeViewMode>('2d');
 
   const g = useCube2DGame(controller, {
     gameplayReadOnly,
@@ -125,6 +130,7 @@ export function Cube2DGame({
   panOffsetRef.current = dragPan.offset;
 
   useEffect(() => {
+    setViewMode('2d');
     zoomRef.current = CUBE_2D_HOME_ZOOM;
     panOffsetRef.current = Object.freeze({ x: 0, y: 0 });
     dragPan.reset();
@@ -173,11 +179,167 @@ export function Cube2DGame({
       />
     ) : null;
 
+  const viewSwitch = (
+    <div className="cube-view-switch" role="group" aria-label="Cube view">
+      <button
+        type="button"
+        aria-pressed={viewMode === '2d'}
+        onClick={() => setViewMode('2d')}
+      >
+        2D
+      </button>
+      <button
+        type="button"
+        aria-pressed={viewMode === '3d'}
+        onClick={() => setViewMode('3d')}
+      >
+        3D
+      </button>
+    </div>
+  );
+
+  const cube2dView = (
+    <div className="cube-2d-game__board-shell" aria-label="Cube 2D view">
+      {viewSwitch}
+      <div
+        className="cube-2d-game__viewport"
+        data-view-zoom={g.zoom.toFixed(3)}
+        data-pan-x={dragPan.offset.x.toFixed(1)}
+        data-pan-y={dragPan.offset.y.toFixed(1)}
+        data-dragging={dragPan.dragging ? 'true' : 'false'}
+        style={{ position: 'relative', touchAction: 'none' }}
+        onWheel={handleWheel}
+        onPointerDown={dragPan.onPointerDown}
+        onPointerMove={dragPan.onPointerMove}
+        onPointerUp={dragPan.onPointerUp}
+        onPointerCancel={dragPan.onPointerCancel}
+        onClickCapture={dragPan.onClickCapture}
+      >
+        <div
+          className="cube-2d-game__navigation-layer"
+          data-navigation-gap={CUBE_2D_NAVIGATION_GAP}
+          data-vertical-anchor-column={g.view.verticalAnchorColumn}
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            width: `${navigationWidth}px`,
+            height: `${navigationHeight}px`,
+            transform: `translate(-50%, -50%) translate(${dragPan.offset.x}px, ${dragPan.offset.y}px)`,
+          }}
+        >
+          <button
+            className={`torus-pan torus-pan--up cube-2d-game__navigation-arrow${verticalPairIsMoving ? ' cube-2d-game__navigation-arrow--anchor-moving' : ''}`}
+            type="button"
+            aria-label="Move cube up"
+            disabled={navigationDisabled}
+            style={{
+              ...verticalArrowMotionStyle,
+              left: `${verticalPairCenterX - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px`,
+              top: 0,
+            }}
+            onClick={() => g.navigate('up')}
+          >
+            ↑
+          </button>
+          <button
+            className="torus-pan torus-pan--left cube-2d-game__navigation-arrow"
+            type="button"
+            aria-label="Move cube left"
+            disabled={navigationDisabled}
+            style={{
+              left: 0,
+              top: `${sideRowCenterY - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px`,
+            }}
+            onClick={() => g.navigate('left')}
+          >
+            ←
+          </button>
+
+          <div
+            className="cube-2d-stage cube-2d-game__stage"
+            data-view-zoom={g.zoom.toFixed(3)}
+            style={{
+              left: `${CUBE_2D_NAVIGATION_INSET}px`,
+              top: `${CUBE_2D_NAVIGATION_INSET}px`,
+              width: `${stageWidth}px`,
+              height: `${stageHeight}px`,
+            }}
+          >
+            <Cube2DRenderer
+              layout={g.layout}
+              layoutCellSize={layoutCellSize}
+              transition={g.transition ?? undefined}
+              onVerticalAnchorColumnChange={g.moveAnchor}
+              viewModel={displayViewModel}
+              hoveredPointId={g.hoveredPoint}
+              hoverStatus={g.hoverStatus}
+              showMoveNumbers={g.showMoveNumbers}
+              inputDisabled={
+                Boolean(g.transition) ||
+                g.captureAnimating ||
+                g.vm.phase === 'finished' ||
+                (gameplayReadOnly && g.vm.phase === 'playing') ||
+                dragPan.dragging
+              }
+              onPointHover={g.hover}
+              onPointActivate={(point) => void g.activate(point)}
+            />
+            <Cube2DVisualEffects
+              layout={g.layout}
+              layoutCellSize={layoutCellSize}
+              finalScore={g.vm.finalScore}
+              finalClassification={g.finalClassification}
+              endgamePresentation={g.vm.phase === 'endgame' ? g.endgamePresentation : null}
+              capturedStones={g.capturedEffects}
+            />
+          </div>
+
+          <button
+            className="torus-pan torus-pan--right cube-2d-game__navigation-arrow"
+            type="button"
+            aria-label="Move cube right"
+            disabled={navigationDisabled}
+            style={{
+              left: `${CUBE_2D_NAVIGATION_INSET + stageWidth + CUBE_2D_NAVIGATION_GAP}px`,
+              top: `${sideRowCenterY - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px`,
+            }}
+            onClick={() => g.navigate('right')}
+          >
+            →
+          </button>
+          <button
+            className={`torus-pan torus-pan--down cube-2d-game__navigation-arrow${verticalPairIsMoving ? ' cube-2d-game__navigation-arrow--anchor-moving' : ''}`}
+            type="button"
+            aria-label="Move cube down"
+            disabled={navigationDisabled}
+            style={{
+              ...verticalArrowMotionStyle,
+              left: `${verticalPairCenterX - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px`,
+              top: `${CUBE_2D_NAVIGATION_INSET + stageHeight + CUBE_2D_NAVIGATION_GAP}px`,
+            }}
+            onClick={() => g.navigate('down')}
+          >
+            ↓
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const cube3dView = (
+    <div className="cube-2d-game__board-shell cube-3d-board-shell" aria-label="Cube 3D view">
+      {viewSwitch}
+      <ThreeScene />
+    </div>
+  );
+
   return (
     <section
       className="torus-game cube-2d-game"
-      aria-label="Cube 2D game"
+      aria-label="Cube game"
       data-animation-mode={animationMode}
+      data-cube-view={viewMode}
     >
       <GameSidebar
         size={controller.size}
@@ -209,131 +371,7 @@ export function Cube2DGame({
         retryBotTurn={retryBotTurn}
       />
 
-      <div className="cube-2d-game__board-shell" aria-label="Cube 2D view">
-        <div
-          className="cube-2d-game__viewport"
-          data-view-zoom={g.zoom.toFixed(3)}
-          data-pan-x={dragPan.offset.x.toFixed(1)}
-          data-pan-y={dragPan.offset.y.toFixed(1)}
-          data-dragging={dragPan.dragging ? 'true' : 'false'}
-          style={{ position: 'relative', touchAction: 'none' }}
-          onWheel={handleWheel}
-          onPointerDown={dragPan.onPointerDown}
-          onPointerMove={dragPan.onPointerMove}
-          onPointerUp={dragPan.onPointerUp}
-          onPointerCancel={dragPan.onPointerCancel}
-          onClickCapture={dragPan.onClickCapture}
-        >
-          <div
-            className="cube-2d-game__navigation-layer"
-            data-navigation-gap={CUBE_2D_NAVIGATION_GAP}
-            data-vertical-anchor-column={g.view.verticalAnchorColumn}
-            style={{
-              position: 'absolute',
-              left: '50%',
-              top: '50%',
-              width: `${navigationWidth}px`,
-              height: `${navigationHeight}px`,
-              transform: `translate(-50%, -50%) translate(${dragPan.offset.x}px, ${dragPan.offset.y}px)`,
-            }}
-          >
-            <button
-              className={`torus-pan torus-pan--up cube-2d-game__navigation-arrow${verticalPairIsMoving ? ' cube-2d-game__navigation-arrow--anchor-moving' : ''}`}
-              type="button"
-              aria-label="Move cube up"
-              disabled={navigationDisabled}
-              style={{
-                ...verticalArrowMotionStyle,
-                left: `${verticalPairCenterX - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px`,
-                top: 0,
-              }}
-              onClick={() => g.navigate('up')}
-            >
-              ↑
-            </button>
-            <button
-              className="torus-pan torus-pan--left cube-2d-game__navigation-arrow"
-              type="button"
-              aria-label="Move cube left"
-              disabled={navigationDisabled}
-              style={{
-                left: 0,
-                top: `${sideRowCenterY - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px`,
-              }}
-              onClick={() => g.navigate('left')}
-            >
-              ←
-            </button>
-
-            <div
-              className="cube-2d-stage cube-2d-game__stage"
-              data-view-zoom={g.zoom.toFixed(3)}
-              style={{
-                left: `${CUBE_2D_NAVIGATION_INSET}px`,
-                top: `${CUBE_2D_NAVIGATION_INSET}px`,
-                width: `${stageWidth}px`,
-                height: `${stageHeight}px`,
-              }}
-            >
-              <Cube2DRenderer
-                layout={g.layout}
-                layoutCellSize={layoutCellSize}
-                transition={g.transition ?? undefined}
-                onVerticalAnchorColumnChange={g.moveAnchor}
-                viewModel={displayViewModel}
-                hoveredPointId={g.hoveredPoint}
-                hoverStatus={g.hoverStatus}
-                showMoveNumbers={g.showMoveNumbers}
-                inputDisabled={
-                  Boolean(g.transition) ||
-                  g.captureAnimating ||
-                  g.vm.phase === 'finished' ||
-                  (gameplayReadOnly && g.vm.phase === 'playing') ||
-                  dragPan.dragging
-                }
-                onPointHover={g.hover}
-                onPointActivate={(point) => void g.activate(point)}
-              />
-              <Cube2DVisualEffects
-                layout={g.layout}
-                layoutCellSize={layoutCellSize}
-                finalScore={g.vm.finalScore}
-                finalClassification={g.finalClassification}
-                endgamePresentation={g.vm.phase === 'endgame' ? g.endgamePresentation : null}
-                capturedStones={g.capturedEffects}
-              />
-            </div>
-
-            <button
-              className="torus-pan torus-pan--right cube-2d-game__navigation-arrow"
-              type="button"
-              aria-label="Move cube right"
-              disabled={navigationDisabled}
-              style={{
-                left: `${CUBE_2D_NAVIGATION_INSET + stageWidth + CUBE_2D_NAVIGATION_GAP}px`,
-                top: `${sideRowCenterY - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px`,
-              }}
-              onClick={() => g.navigate('right')}
-            >
-              →
-            </button>
-            <button
-              className={`torus-pan torus-pan--down cube-2d-game__navigation-arrow${verticalPairIsMoving ? ' cube-2d-game__navigation-arrow--anchor-moving' : ''}`}
-              type="button"
-              aria-label="Move cube down"
-              disabled={navigationDisabled}
-              style={{
-                ...verticalArrowMotionStyle,
-                left: `${verticalPairCenterX - CUBE_2D_NAVIGATION_BUTTON_SIZE / 2}px`,
-                top: `${CUBE_2D_NAVIGATION_INSET + stageHeight + CUBE_2D_NAVIGATION_GAP}px`,
-              }}
-              onClick={() => g.navigate('down')}
-            >
-              ↓
-            </button>
-          </div>
-        </div>
-      </div>
+      {viewMode === '2d' ? cube2dView : cube3dView}
 
       {g.result && g.resultOpen ? (
         <GameResultDialog result={g.result} onClose={() => g.setResultOpen(false)} />
