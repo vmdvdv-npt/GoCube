@@ -179,8 +179,28 @@ export function Cube2DGame({
       />
     ) : null;
 
+  const viewSwitch = (
+    <div className="cube-view-switch" role="group" aria-label="Cube view">
+      <button
+        type="button"
+        aria-pressed={viewMode === '2d'}
+        onClick={() => setViewMode('2d')}
+      >
+        2D
+      </button>
+      <button
+        type="button"
+        aria-pressed={viewMode === '3d'}
+        onClick={() => setViewMode('3d')}
+      >
+        3D
+      </button>
+    </div>
+  );
+
   const cube2dView = (
     <div className="cube-2d-game__board-shell" aria-label="Cube 2D view">
+      {viewSwitch}
       <div
         className="cube-2d-game__viewport"
         data-view-zoom={g.zoom.toFixed(3)}
@@ -307,6 +327,13 @@ export function Cube2DGame({
     </div>
   );
 
+  const cube3dView = (
+    <div className="cube-2d-game__board-shell cube-3d-board-shell" aria-label="Cube 3D view">
+      {viewSwitch}
+      <ThreeScene />
+    </div>
+  );
+
   return (
     <section
       className="torus-game cube-2d-game"
@@ -344,25 +371,7 @@ export function Cube2DGame({
         retryBotTurn={retryBotTurn}
       />
 
-      <div className="cube-view-shell">
-        <div className="cube-view-switch" role="group" aria-label="Cube view">
-          <button
-            type="button"
-            aria-pressed={viewMode === '2d'}
-            onClick={() => setViewMode('2d')}
-          >
-            2D
-          </button>
-          <button
-            type="button"
-            aria-pressed={viewMode === '3d'}
-            onClick={() => setViewMode('3d')}
-          >
-            3D
-          </button>
-        </div>
-        {viewMode === '2d' ? cube2dView : <ThreeScene />}
-      </div>
+      {viewMode === '2d' ? cube2dView : cube3dView}
 
       {g.result && g.resultOpen ? (
         <GameResultDialog result={g.result} onClose={() => g.setResultOpen(false)} />
