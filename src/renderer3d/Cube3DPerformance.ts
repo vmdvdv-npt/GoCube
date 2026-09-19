@@ -13,8 +13,10 @@ export const CUBE_3D_PERFORMANCE_BUDGET = Object.freeze({
 });
 
 /**
- * The browser diagnostic exercises the real mounted Renderer3D runtime under repeated interaction
- * and lifecycle churn. The same budgets must be rerun unchanged when the proof cube is replaced by
- * the representative gameplay scene; only that later run can establish full-scene performance.
+ * Chromium CI always records real mounted Renderer3D interaction and heap metrics. Shared hosted
+ * runners are not a representative GPU/browser environment, so absolute FPS/p95 targets are only
+ * hard-enforced when CUBE3D_ENFORCE_PERF=1. Lifecycle/resource cleanup remains a deterministic CI
+ * gate. The same targets must be rerun unchanged on the representative gameplay scene; only that
+ * later run can establish full-scene performance.
  */
 export type Cube3DPerformanceBudget = typeof CUBE_3D_PERFORMANCE_BUDGET;
