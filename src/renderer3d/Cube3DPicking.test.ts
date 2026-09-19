@@ -187,7 +187,7 @@ describe('Cube3D logical picking', () => {
 
   it('preserves logical identity across arbitrary rotations and zoom levels', () => {
     const fixture = createFixture(5);
-    const pointId = point('right', 0, 4);
+    const pointId = point('right', 2, 2);
     orientPointTowardCamera(fixture, pointId);
     fixture.root.rotateZ(0.37);
     fixture.root.updateMatrixWorld(true);
@@ -197,6 +197,10 @@ describe('Cube3D logical picking', () => {
       fixture.camera.lookAt(0, 0, 0);
       fixture.camera.updateMatrixWorld(true);
       const [x, y] = clientPositionForPoint(fixture, pointId);
+      expect(x).toBeGreaterThanOrEqual(VIEWPORT.left);
+      expect(x).toBeLessThanOrEqual(VIEWPORT.left + VIEWPORT.width);
+      expect(y).toBeGreaterThanOrEqual(VIEWPORT.top);
+      expect(y).toBeLessThanOrEqual(VIEWPORT.top + VIEWPORT.height);
       expect(pick(fixture, x, y)).toBe(pointId);
     }
   });
