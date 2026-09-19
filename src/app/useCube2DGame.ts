@@ -9,6 +9,7 @@ import {
 import {
   createCube2DViewState,
   navigateCube2DViewState,
+  setCube2DOrientation,
   setCube2DVerticalAnchorColumn,
   type Cube2DNavigationDirection,
   type Cube2DViewState,
@@ -217,6 +218,13 @@ export function useCube2DGame(
     moveView(navigateCube2DViewState(view, direction), direction);
   const moveAnchor = (column: Cube2DLayoutColumn) =>
     moveView(setCube2DVerticalAnchorColumn(view, column), 'anchor');
+  const syncOrientation = (orientation: Cube2DViewState['orientation']) => {
+    clearHover();
+    if (transitionTimer.current !== null) window.clearTimeout(transitionTimer.current);
+    transitionTimer.current = null;
+    setTransition(null);
+    setView((current) => setCube2DOrientation(current, orientation));
+  };
   const hover = (point: PointId | null) => {
     if (!point || transition || captureAnimating) {
       clearHover();
@@ -352,6 +360,7 @@ export function useCube2DGame(
     captureAnimating,
     navigate,
     moveAnchor,
+    syncOrientation,
     hover,
     activate,
     run,
