@@ -1135,7 +1135,7 @@ Final territory остаётся видимой непосредственно �
 - White territory помечается маленькой белой точкой.
 - Neutral/seki points не получают black/white marker.
 - Marker располагается в центре соответствующего игрового intersection и заметно меньше stone.
-- Territory показывается точками, а не заливка клеток, не сплошным tint связной области и не изменением wood texture.
+- Territory показывается точками, а не заливкой клеток, не сплошным tint связной области и не изменением wood texture.
 - Grid и оставшиеся живые stones остаются полностью читаемыми.
 - Закрытие result dialog не убирает markers.
 - Undo завершения партии убирает final territory markers и возвращает состояние review/игры согласно истории.
