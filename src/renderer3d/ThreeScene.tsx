@@ -67,5 +67,5 @@ export function ThreeScene() {
     };
   }, []);
 
-  return <div ref={hostRef} className="cube-3d-scene" aria-label="Cube 3D view" />;
+  return <div ref={hostRef} className="cube-3d-scene" aria-label="Cube 3D scene" />;
 }
