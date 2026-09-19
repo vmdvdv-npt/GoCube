@@ -28,7 +28,7 @@ export interface Cube3DPickContext {
 const PICK_DIAMETER_PITCH_RATIO = 0.58;
 const PICK_DEPTH_PITCH_RATIO = 0.18;
 const PICK_LIFT_PITCH_RATIO = 0.035;
-const SILHOUETTE_FRONT_FACING_EPSILON = 0.01;
+const FRONT_FACING_EPSILON = 0.01;
 const LOCAL_PICK_NORMAL = new THREE.Vector3(0, 1, 0);
 
 export const createCube3DPickTargets = (size: CubeSize): Cube3DPickTargets => {
@@ -73,7 +73,7 @@ const pickInstanceFacesCamera = (
   targets.mesh.getMatrixAt(instanceId, instanceMatrix);
   const worldMatrix = new THREE.Matrix4().multiplyMatrices(targets.mesh.matrixWorld, instanceMatrix);
   const worldNormal = LOCAL_PICK_NORMAL.clone().transformDirection(worldMatrix);
-  return worldNormal.dot(rayDirection) < -SILHOUETTE_FRONT_FACING_EPSILON;
+  return worldNormal.dot(rayDirection) < -FRONT_FACING_EPSILON;
 };
 
 export const pointFromCube3DClientPosition = (
@@ -107,20 +107,26 @@ export const pointFromCube3DClientPosition = (
   context.targets.mesh.updateWorldMatrix(true, false);
   raycaster.setFromCamera(pointer, context.camera);
 
-  // The closed surface is the normal occlusion boundary. Rounded-edge hit proxies
-  // can legitimately protrude just outside the projected surface silhouette, so a
-  // no-surface-hit ray is still eligible when the proxy's sampled surface normal
-  // is front-facing. This preserves edge/corner usability without allowing picks
-  // through the cube to a hidden back-side point.
+  // The first closed-surface hit is the normal occlusion boundary. A logical
+  // proxy in a rounded edge/corner zone can sit slightly behind a neighboring
+  // surface triangle along the same ray even though its sampled surface normal
+  // is camera-facing. Because the cube surface is convex, front-facing sampled
+  // points are still on the visible hemisphere; hidden back-side points have an
+  // away-facing normal and remain rejected.
   const surfaceHit = raycaster.intersectObject(context.surface, false)[0] ?? null;
   const targetHits = raycaster.intersectObject(context.targets.mesh, false);
   for (const hit of targetHits) {
     if (hit.instanceId === undefined) continue;
-    if (surfaceHit) {
-      if (hit.distance > surfaceHit.distance + context.targets.occlusionTolerance) break;
-    } else if (!pickInstanceFacesCamera(context.targets, hit.instanceId, raycaster.ray.direction)) {
-      continue;
-    }
+
+    const frontFacing = pickInstanceFacesCamera(
+      context.targets,
+      hit.instanceId,
+      raycaster.ray.direction,
+    );
+    const withinSurfaceBoundary = Boolean(
+      surfaceHit && hit.distance <= surfaceHit.distance + context.targets.occlusionTolerance,
+    );
+    if (!withinSurfaceBoundary && !frontFacing) continue;
 
     const pointId = context.targets.pointIds[hit.instanceId];
     if (pointId) return pointId;
