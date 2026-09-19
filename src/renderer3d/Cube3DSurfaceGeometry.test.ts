@@ -9,10 +9,12 @@ import {
   cubeSurfaceCoordinateAcrossEdge,
 } from '../presentation/cube/CubeSurfaceMapping';
 import {
+  CUBE_3D_GRID_EDGE_INSET_PITCH_RATIO,
   createCube3DRoundedSurfaceGeometry,
   cube3DDebugGridPaths,
-  cube3DFaceSurfaceSpan,
+  cube3DGridEdgeInset,
   cube3DGridPathLength,
+  cube3DGridSurfacePitch,
   cube3DPointPosition,
   cube3DPointSample,
   cube3DSurfaceSample,
@@ -110,20 +112,34 @@ describe('Cube3DSurfaceGeometry', () => {
     }
   });
 
-  it('keeps logical grid pitch visually uniform through rounded edges', () => {
-    for (const size of [2, 3, 4, 7, 8]) {
-      const expectedPitch = cube3DFaceSurfaceSpan() / size;
-      const lengths = cube3DDebugGridPaths(
-        size,
-        DEFAULT_CUBE_3D_SURFACE_PROFILE,
-        24,
-      ).map(cube3DGridPathLength);
-      const minimum = Math.min(...lengths);
-      const maximum = Math.max(...lengths);
-      const mean = lengths.reduce((sum, value) => sum + value, 0) / lengths.length;
+  it('insets outer 3D intersections slightly beyond the canonical half-pitch', () => {
+    for (const size of [2, 3, 4, 8]) {
+      const inset = cube3DGridEdgeInset(size);
+      expect(inset * size).toBeCloseTo(CUBE_3D_GRID_EDGE_INSET_PITCH_RATIO, 10);
+      expect(inset).toBeGreaterThan(0.5 / size);
+    }
+  });
 
-      expect(maximum / minimum).toBeLessThan(1.01);
-      expect(Math.abs(mean - expectedPitch) / expectedPitch).toBeLessThan(0.01);
+  it('keeps face-local pitch uniform while leaving modest extra breathing room across seams', () => {
+    for (const size of [2, 3, 4, 7, 8]) {
+      const paths = cube3DDebugGridPaths(size, DEFAULT_CUBE_3D_SURFACE_PROFILE, 24);
+      const localLengths = paths
+        .filter((path) => !path.crossesFaceBoundary)
+        .map(cube3DGridPathLength);
+      const seamLengths = paths
+        .filter((path) => path.crossesFaceBoundary)
+        .map(cube3DGridPathLength);
+      const expectedPitch = cube3DGridSurfacePitch(size);
+      const localMinimum = Math.min(...localLengths);
+      const localMaximum = Math.max(...localLengths);
+      const localMean = localLengths.reduce((sum, value) => sum + value, 0) / localLengths.length;
+      const seamMinimum = Math.min(...seamLengths);
+      const seamMaximum = Math.max(...seamLengths);
+
+      expect(localMaximum / localMinimum).toBeLessThan(1.01);
+      expect(Math.abs(localMean - expectedPitch) / expectedPitch).toBeLessThan(0.01);
+      expect(seamMinimum).toBeGreaterThan(localMaximum * 1.02);
+      expect(seamMaximum / localMinimum).toBeLessThan(1.2);
     }
   });
 

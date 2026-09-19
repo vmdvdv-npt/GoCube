@@ -41,6 +41,12 @@ export const DEFAULT_CUBE_3D_SURFACE_PROFILE: Cube3DSurfaceProfile = Object.free
 
 export const DEFAULT_CUBE_3D_SURFACE_SEGMENTS = 32;
 
+/**
+ * Outer 3D intersections sit a little farther than the canonical half-pitch from
+ * the physical seam so stones do not visually press into the rounded edge.
+ */
+export const CUBE_3D_GRID_EDGE_INSET_PITCH_RATIO = 0.53;
+
 const validateProfile = (profile: Cube3DSurfaceProfile): void => {
   if (!Number.isFinite(profile.halfExtent) || profile.halfExtent <= 0) {
     throw new Error(`Cube 3D half extent must be finite and > 0, got ${String(profile.halfExtent)}`);
@@ -77,6 +83,23 @@ export const cube3DFaceSurfaceSpan = (
     2 * (profile.halfExtent - profile.roundingRadius) +
     (Math.PI * profile.roundingRadius) / 2
   );
+};
+
+export const cube3DGridEdgeInset = (size: CubeSize): number =>
+  CUBE_3D_GRID_EDGE_INSET_PITCH_RATIO / size;
+
+const cube3DGridLocalCoordinate = (size: CubeSize, index: number): number => {
+  const inset = cube3DGridEdgeInset(size);
+  return inset + (index / (size - 1)) * (1 - 2 * inset);
+};
+
+/** Surface-arc spacing between adjacent intersections on the same 3D face. */
+export const cube3DGridSurfacePitch = (
+  size: CubeSize,
+  profile: Cube3DSurfaceProfile = DEFAULT_CUBE_3D_SURFACE_PROFILE,
+): number => {
+  const inset = cube3DGridEdgeInset(size);
+  return (cube3DFaceSurfaceSpan(profile) * (1 - 2 * inset)) / (size - 1);
 };
 
 /**
@@ -195,7 +218,12 @@ export const cube3DPointSample = (
   profile: Cube3DSurfaceProfile = DEFAULT_CUBE_3D_SURFACE_PROFILE,
 ): Cube3DSurfaceSample => {
   const surface = cubePointToSurfaceLocation(size, pointId);
-  return cube3DSurfaceSample(surface.face, surface.u, surface.v, profile);
+  return cube3DSurfaceSample(
+    surface.face,
+    cube3DGridLocalCoordinate(size, surface.column),
+    cube3DGridLocalCoordinate(size, surface.row),
+    profile,
+  );
 };
 
 export const cube3DPointPosition = (
@@ -255,8 +283,16 @@ export const cube3DGridPath = (
   const nextPointId = cubeStepPoint(size, pointId, direction);
   const from = cubePointToSurfaceLocation(size, pointId);
   const to = cubePointToSurfaceLocation(size, nextPointId);
-  const fromSharp = cube3DSharpPointForFaceLocal(from.face, from.u, from.v, profile);
-  const toSharp = cube3DSharpPointForFaceLocal(to.face, to.u, to.v, profile);
+  const fromVisual = Object.freeze({
+    u: cube3DGridLocalCoordinate(size, from.column),
+    v: cube3DGridLocalCoordinate(size, from.row),
+  });
+  const toVisual = Object.freeze({
+    u: cube3DGridLocalCoordinate(size, to.column),
+    v: cube3DGridLocalCoordinate(size, to.row),
+  });
+  const fromSharp = cube3DSharpPointForFaceLocal(from.face, fromVisual.u, fromVisual.v, profile);
+  const toSharp = cube3DSharpPointForFaceLocal(to.face, toVisual.u, toVisual.v, profile);
 
   if (from.face === to.face) {
     return Object.freeze({
@@ -267,13 +303,14 @@ export const cube3DGridPath = (
     });
   }
 
-  const t = direction === 'top' || direction === 'bottom' ? from.u : from.v;
-  const fromSeamLocal = cubeEdgeLocalCoordinates(direction, t);
-  const targetSeamLocal = cubeSurfaceCoordinateAcrossEdge(from.face, direction, t);
+  const logicalT = direction === 'top' || direction === 'bottom' ? from.u : from.v;
+  const visualT = direction === 'top' || direction === 'bottom' ? fromVisual.u : fromVisual.v;
+  const fromSeamLocal = cubeEdgeLocalCoordinates(direction, visualT);
+  const targetSeamLocal = cubeSurfaceCoordinateAcrossEdge(from.face, direction, visualT);
   const expectedTarget = cubeSurfaceCoordinateAcrossEdge(
     from.face,
     direction,
-    t,
+    logicalT,
     cubeSurfaceEdgeInset(size),
   );
 
