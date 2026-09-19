@@ -3,6 +3,8 @@ export const CUBE_3D_PERFORMANCE_BUDGET = Object.freeze({
   maxDevicePixelRatio: 2,
   interactionTargetFps: 55,
   interactionP95FrameMs: 25,
+  benchmarkWarmupFrames: 15,
+  benchmarkSampleFrames: 90,
   automatedLifecycleCycles: 8,
   diagnosticLifecycleCycles: 20,
   maxLiveCanvases: 1,
@@ -11,7 +13,8 @@ export const CUBE_3D_PERFORMANCE_BUDGET = Object.freeze({
 });
 
 /**
- * FPS/heap values are local diagnostic targets until the representative gameplay scene exists.
- * Deterministic CI gates use lifecycle/resource counts, lazy loading and resize/state preservation.
+ * The browser diagnostic exercises the real mounted Renderer3D runtime under repeated interaction
+ * and lifecycle churn. The same budgets must be rerun unchanged when the proof cube is replaced by
+ * the representative gameplay scene; only that later run can establish full-scene performance.
  */
 export type Cube3DPerformanceBudget = typeof CUBE_3D_PERFORMANCE_BUDGET;
