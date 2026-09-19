@@ -2,8 +2,6 @@ import { useEffect, useRef } from 'react';
 
 const THREE_MODULE_URL = 'https://esm.sh/three@0.180.0';
 
-type ThreeModule = typeof import('three');
-
 /** Minimal visual-development scene. Game/domain state stays outside this boundary. */
 export function ThreeScene() {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -15,7 +13,7 @@ export function ThreeScene() {
     let disposed = false;
     let cleanup = (): void => undefined;
 
-    void import(/* @vite-ignore */ THREE_MODULE_URL).then((THREE: ThreeModule) => {
+    void import(/* @vite-ignore */ THREE_MODULE_URL).then((THREE) => {
       if (disposed) return;
 
       const scene = new THREE.Scene();
