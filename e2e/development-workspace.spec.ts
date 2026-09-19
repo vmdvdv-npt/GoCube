@@ -128,6 +128,8 @@ test('Development Workspace replays generated Cube game without changing normal 
   await expect(stone(page, 'front:2:2')).toHaveCount(1);
   const savedBefore = await localStorageSnapshot(page);
 
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Continue saved game?' })).toBeVisible();
   await page.getByRole('link', { name: 'development', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Development Workspace' })).toBeVisible();
   await expect(page.getByText(/gocube-alphazero test · protocol v1/)).toBeVisible();
@@ -191,8 +193,10 @@ test('Development Workspace replays generated Cube game without changing normal 
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Back to GoCube' }).click();
-  await expect(stone(page, 'front:2:2')).toHaveCount(1);
+  await expect(page.getByRole('heading', { name: 'Continue saved game?' })).toBeVisible();
   expect(await localStorageSnapshot(page)).toEqual(savedBefore);
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(stone(page, 'front:2:2')).toHaveCount(1);
 });
 
 test('Development replay explicitly flags AlphaZero and GoCube result mismatch', async ({ page }) => {
