@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   CUBE_FACES,
   CubeTopology,
+  parseCubePointId,
   type CubeDirection,
+  type CubeSize,
 } from '../core/topology/CubeTopology';
 import {
   cubeEdgeLocalCoordinates,
@@ -29,6 +31,11 @@ const expectVectorClose = (actual: readonly number[], expected: readonly number[
   for (let index = 0; index < expected.length; index += 1) {
     expect(actual[index]).toBeCloseTo(expected[index], 10);
   }
+};
+
+const isBoundaryPoint = (size: CubeSize, pointId: string): boolean => {
+  const { row, column } = parseCubePointId(size, pointId);
+  return row === 0 || column === 0 || row === size - 1 || column === size - 1;
 };
 
 describe('Cube3DSurfaceGeometry', () => {
@@ -112,7 +119,8 @@ describe('Cube3DSurfaceGeometry', () => {
     }
   });
 
-  it('insets outer 3D intersections slightly beyond the canonical half-pitch', () => {
+  it('insets outer 3D intersections substantially beyond the canonical half-pitch', () => {
+    expect(CUBE_3D_GRID_EDGE_INSET_PITCH_RATIO).toBeGreaterThanOrEqual(0.65);
     for (const size of [2, 3, 4, 8]) {
       const inset = cube3DGridEdgeInset(size);
       expect(inset * size).toBeCloseTo(CUBE_3D_GRID_EDGE_INSET_PITCH_RATIO, 10);
@@ -120,26 +128,40 @@ describe('Cube3DSurfaceGeometry', () => {
     }
   });
 
-  it('keeps face-local pitch uniform while leaving modest extra breathing room across seams', () => {
-    for (const size of [2, 3, 4, 7, 8]) {
+  it('preserves interior grid pitch while moving only the outer row and column inward', () => {
+    for (const rawSize of [4, 5, 7, 8]) {
+      const size = rawSize as CubeSize;
       const paths = cube3DDebugGridPaths(size, DEFAULT_CUBE_3D_SURFACE_PROFILE, 24);
-      const localLengths = paths
-        .filter((path) => !path.crossesFaceBoundary)
+      const interiorLengths = paths
+        .filter(
+          (path) =>
+            !path.crossesFaceBoundary &&
+            !isBoundaryPoint(size, path.fromPointId) &&
+            !isBoundaryPoint(size, path.toPointId),
+        )
+        .map(cube3DGridPathLength);
+      const edgeCellLengths = paths
+        .filter(
+          (path) =>
+            !path.crossesFaceBoundary &&
+            (isBoundaryPoint(size, path.fromPointId) || isBoundaryPoint(size, path.toPointId)),
+        )
         .map(cube3DGridPathLength);
       const seamLengths = paths
         .filter((path) => path.crossesFaceBoundary)
         .map(cube3DGridPathLength);
       const expectedPitch = cube3DGridSurfacePitch(size);
-      const localMinimum = Math.min(...localLengths);
-      const localMaximum = Math.max(...localLengths);
-      const localMean = localLengths.reduce((sum, value) => sum + value, 0) / localLengths.length;
+      const interiorMinimum = Math.min(...interiorLengths);
+      const interiorMaximum = Math.max(...interiorLengths);
+      const interiorMean =
+        interiorLengths.reduce((sum, value) => sum + value, 0) / interiorLengths.length;
+      const edgeCellMaximum = Math.max(...edgeCellLengths);
       const seamMinimum = Math.min(...seamLengths);
-      const seamMaximum = Math.max(...seamLengths);
 
-      expect(localMaximum / localMinimum).toBeLessThan(1.01);
-      expect(Math.abs(localMean - expectedPitch) / expectedPitch).toBeLessThan(0.01);
-      expect(seamMinimum).toBeGreaterThan(localMaximum * 1.02);
-      expect(seamMaximum / localMinimum).toBeLessThan(1.2);
+      expect(interiorMaximum / interiorMinimum).toBeLessThan(1.01);
+      expect(Math.abs(interiorMean - expectedPitch) / expectedPitch).toBeLessThan(0.01);
+      expect(edgeCellMaximum).toBeLessThan(expectedPitch * 0.9);
+      expect(seamMinimum).toBeGreaterThan(expectedPitch * 1.25);
     }
   });
 
