@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { CUBE_3D_PERFORMANCE_BUDGET } from '../src/renderer3d/Cube3DPerformance';
 
 test.beforeEach(async ({ page }) => {
@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole('link', { name: 'development', exact: true })).toBeVisible();
 });
 
-const startCubeGame = async (page: Parameters<typeof test>[0]['page']) => {
+const startCubeGame = async (page: Page) => {
   await page.getByRole('button', { name: 'Cube', exact: true }).click();
   await page.getByRole('button', { name: '3×3', exact: true }).click();
   await page.getByRole('button', { name: 'Start game' }).click();
