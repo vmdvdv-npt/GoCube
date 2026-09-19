@@ -13,6 +13,7 @@ export const isValidCubeSize = (size: number): size is CubeSize =>
 export const CUBE_FACES = ['front', 'back', 'left', 'right', 'top', 'bottom'] as const;
 export type CubeFace = (typeof CUBE_FACES)[number];
 export type CubeDirection = 'top' | 'right' | 'bottom' | 'left';
+export type CubeEdge = CubeDirection;
 
 export interface CubePointCoordinates {
   readonly face: CubeFace;
@@ -20,15 +21,13 @@ export interface CubePointCoordinates {
   readonly column: number;
 }
 
-type CubeEdge = CubeDirection;
-
-interface EdgeTransition {
+export interface CubeEdgeTransition {
   readonly face: CubeFace;
   readonly edge: CubeEdge;
   readonly reverse: boolean;
 }
 
-const EDGE_TRANSITIONS: Readonly<Record<CubeFace, Readonly<Record<CubeEdge, EdgeTransition>>>> =
+const EDGE_TRANSITIONS: Readonly<Record<CubeFace, Readonly<Record<CubeEdge, CubeEdgeTransition>>>> =
   Object.freeze({
     front: Object.freeze({
       top: Object.freeze({ face: 'top', edge: 'bottom', reverse: false }),
@@ -71,6 +70,10 @@ const EDGE_TRANSITIONS: Readonly<Record<CubeFace, Readonly<Record<CubeEdge, Edge
 export const cubePointId = (face: CubeFace, row: number, column: number): PointId =>
   `${face}:${row}:${column}`;
 
+/** Shared renderer-neutral source of truth for physical Cube edge adjacency. */
+export const cubeEdgeTransition = (face: CubeFace, edge: CubeEdge): CubeEdgeTransition =>
+  EDGE_TRANSITIONS[face][edge];
+
 const pointOnEdge = (
   face: CubeFace,
   edge: CubeEdge,
@@ -95,7 +98,7 @@ const crossCubeEdge = (
   edge: CubeEdge,
   index: number,
 ): PointId => {
-  const transition = EDGE_TRANSITIONS[face][edge];
+  const transition = cubeEdgeTransition(face, edge);
   const last = size - 1;
   const targetIndex = transition.reverse ? last - index : index;
   return pointOnEdge(transition.face, transition.edge, targetIndex, last);
