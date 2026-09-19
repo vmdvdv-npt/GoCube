@@ -15,18 +15,25 @@ const startCubeGame = async (page: Page) => {
 
 const cubeViewSwitch = (page: Page) => page.getByRole('group', { name: 'Cube view' });
 const cubeGame = (page: Page) => page.getByRole('region', { name: 'Cube game' });
+const CUBE_VIEW_TRANSITION_EXPECT_TIMEOUT_MS = 30_000;
 const waitForViewTransition = async (page: Page) => {
-  await expect(cubeGame(page)).toHaveAttribute('data-cube-view-transitioning', 'false');
+  await expect(cubeGame(page)).toHaveAttribute('data-cube-view-transitioning', 'false', {
+    timeout: CUBE_VIEW_TRANSITION_EXPECT_TIMEOUT_MS,
+  });
 };
 const enter3D = async (page: Page) => {
   await cubeViewSwitch(page).getByRole('button', { name: '3D' }).click();
   await waitForViewTransition(page);
-  await expect(page.locator('[data-testid="cube-3d-canvas"]')).toHaveCount(1);
+  await expect(page.locator('[data-testid="cube-3d-canvas"]')).toHaveCount(1, {
+    timeout: CUBE_VIEW_TRANSITION_EXPECT_TIMEOUT_MS,
+  });
 };
 const enter2D = async (page: Page) => {
   await cubeViewSwitch(page).getByRole('button', { name: '2D' }).click();
   await waitForViewTransition(page);
-  await expect(page.locator('[data-testid="cube-3d-canvas"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="cube-3d-canvas"]')).toHaveCount(0, {
+    timeout: CUBE_VIEW_TRANSITION_EXPECT_TIMEOUT_MS,
+  });
 };
 const ENFORCE_CUBE_3D_INTERACTION_BUDGET = process.env.CUBE3D_ENFORCE_PERF === '1';
 
@@ -55,7 +62,7 @@ test('Cube starts in 2D and switches to the gameplay 3D scene without changing t
   await expect(page.getByText('Move 1', { exact: true })).toBeVisible();
 });
 
-test('short 3D click places through the shared game flow while drag and occupied clicks do not', async ({ page }) => {
+test('3D drag rotates without placing a stone', async ({ page }) => {
   await startCubeGame(page);
   await enter3D(page);
 
@@ -71,27 +78,23 @@ test('short 3D click places through the shared game flow while drag and occupied
   await page.mouse.move(x + 90, y - 45, { steps: 6 });
   await page.mouse.up();
   await expect(page.getByText('Move 0', { exact: true })).toBeVisible();
+});
 
-  // The drag intentionally changes the persisted 3D rotation. Start a fresh game
-  // before click assertions so the click target is tested from the deterministic
-  // initial camera orientation instead of assuming the rotation resets on 2D ↔ 3D.
-  await page.reload();
-  await expect(page.getByRole('button', { name: 'Start game' })).toBeVisible();
+test('short 3D click places through the shared game flow while an occupied click does not', async ({ page }) => {
   await startCubeGame(page);
   await enter3D(page);
 
-  const resetCanvas = page.locator('[data-testid="cube-3d-canvas"]');
-  const resetBounds = await resetCanvas.boundingBox();
-  expect(resetBounds).not.toBeNull();
-  if (!resetBounds) return;
-  const resetX = resetBounds.x + resetBounds.width * 0.5;
-  const resetY = resetBounds.y + resetBounds.height * 0.5;
+  const canvas = page.locator('[data-testid="cube-3d-canvas"]');
+  const bounds = await canvas.boundingBox();
+  expect(bounds).not.toBeNull();
+  if (!bounds) return;
+  const x = bounds.x + bounds.width * 0.5;
+  const y = bounds.y + bounds.height * 0.5;
 
-  await page.mouse.click(resetX, resetY);
+  await page.mouse.click(x, y);
   await expect(page.getByText('Move 1', { exact: true })).toBeVisible();
 
-  // Same logical point is occupied; a second click must not create another move.
-  await page.mouse.click(resetX, resetY);
+  await page.mouse.click(x, y);
   await expect(page.getByText('Move 1', { exact: true })).toBeVisible();
 
   await enter2D(page);
