@@ -1,10 +1,15 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { CubeSize } from '../core/topology/CubeTopology';
 import type { PointId } from '../core/topology/Topology';
 import type { GamePointHoverStatus } from '../presentation/GamePointHoverStatus';
 import type { GameViewModel } from '../presentation/PresentationModel';
 import { pointerMovementExceedsDragThreshold } from '../presentation/PointerGesture';
+import {
+  cube3DNavigationTarget,
+  cube3DResetTarget,
+  type Cube3DNavigationDirection,
+} from '../presentation/cube/Cube3DNavigation';
 import {
   withCube3DRotation,
   withCube3DZoom,
@@ -35,6 +40,7 @@ const ROTATION_SENSITIVITY = 0.008;
 const ZOOM_SENSITIVITY = 0.001;
 const MARKER_THICKNESS = 0.08;
 const INITIAL_RENDER_DEFER_FALLBACK_MS = 500;
+const VIEW_TRANSITION_MS = 240;
 
 interface SceneRuntime {
   readonly scene: THREE.Scene;
@@ -66,12 +72,15 @@ export interface ThreeSceneProps {
   readonly hoverStatus: GamePointHoverStatus;
   readonly inputDisabled: boolean;
   readonly onViewStateChange: (state: Cube3DViewState) => void;
+  readonly onViewTransitioningChange: (transitioning: boolean) => void;
   readonly onPointHover: (pointId: PointId | null) => void;
   readonly onPointActivate: (pointId: PointId) => void;
 }
 
 const toQuaternionState = (quaternion: THREE.Quaternion) =>
   Object.freeze({ x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w });
+
+const easeOutCubic = (progress: number): number => 1 - (1 - progress) ** 3;
 
 const updateStoneInstances = (
   size: CubeSize,
@@ -128,6 +137,7 @@ export function ThreeScene({
   hoverStatus,
   inputDisabled,
   onViewStateChange,
+  onViewTransitioningChange,
   onPointHover,
   onPointActivate,
 }: ThreeSceneProps) {
@@ -136,12 +146,17 @@ export function ThreeScene({
   const viewStateRef = useRef(viewState);
   const inputDisabledRef = useRef(inputDisabled);
   const initialRenderDeferredRef = useRef(inputDisabled);
+  const viewTransitioningRef = useRef(false);
+  const startViewTransitionRef = useRef<(target: Cube3DViewState) => void>(() => undefined);
   const onViewStateChangeRef = useRef(onViewStateChange);
+  const onViewTransitioningChangeRef = useRef(onViewTransitioningChange);
   const onPointHoverRef = useRef(onPointHover);
   const onPointActivateRef = useRef(onPointActivate);
+  const [viewTransitioning, setViewTransitioning] = useState(false);
   viewStateRef.current = viewState;
   inputDisabledRef.current = inputDisabled;
   onViewStateChangeRef.current = onViewStateChange;
+  onViewTransitioningChangeRef.current = onViewTransitioningChange;
   onPointHoverRef.current = onPointHover;
   onPointActivateRef.current = onPointActivate;
 
@@ -224,6 +239,7 @@ export function ThreeScene({
     scene.add(ambient, key);
 
     let renderFrameId: number | null = null;
+    let transitionFrameId: number | null = null;
     let renderRequestedWhileDeferred = false;
     const render = (): void => {
       if (initialRenderDeferredRef.current) {
@@ -263,6 +279,58 @@ export function ThreeScene({
     host.dataset.cube3dSize = String(size);
     host.dataset.cube3dGridPitch = cube3DGridPitch(size).toFixed(6);
     host.dataset.cube3dMarkerRatio = String(CUBE_3D_MARKER_DIAMETER_PITCH_RATIO);
+    host.dataset.cube3dTransitioning = 'false';
+
+    const finishViewTransition = (target: Cube3DViewState): void => {
+      transitionFrameId = null;
+      viewStateRef.current = target;
+      applyViewState(runtime, target);
+      host.dataset.cube3dTransitioning = 'false';
+      viewTransitioningRef.current = false;
+      onViewStateChangeRef.current(target);
+      onViewTransitioningChangeRef.current(false);
+      setViewTransitioning(false);
+    };
+
+    startViewTransitionRef.current = (target: Cube3DViewState): void => {
+      if (viewTransitioningRef.current) return;
+
+      viewTransitioningRef.current = true;
+      host.dataset.cube3dTransitioning = 'true';
+      onPointHoverRef.current(null);
+      onViewTransitioningChangeRef.current(true);
+      setViewTransitioning(true);
+
+      const startRotation = runtime.cubeRoot.quaternion.clone().normalize();
+      const targetRotation = new THREE.Quaternion(
+        target.rotation.x,
+        target.rotation.y,
+        target.rotation.z,
+        target.rotation.w,
+      ).normalize();
+      const startZoom = BASE_CAMERA_DISTANCE / runtime.camera.position.z;
+      const startedAt = performance.now();
+
+      const frame = (now: number): void => {
+        const progress = Math.min(1, Math.max(0, (now - startedAt) / VIEW_TRANSITION_MS));
+        const eased = easeOutCubic(progress);
+        runtime.cubeRoot.quaternion.copy(startRotation).slerp(targetRotation, eased).normalize();
+        const zoom = startZoom + (target.zoom - startZoom) * eased;
+        runtime.camera.position.set(0, 0, BASE_CAMERA_DISTANCE / zoom);
+        runtime.camera.lookAt(0, 0, 0);
+        runtime.camera.updateMatrixWorld(true);
+        runtime.cubeRoot.updateMatrixWorld(true);
+        runtime.renderer.render(runtime.scene, runtime.camera);
+
+        if (progress < 1) {
+          transitionFrameId = window.requestAnimationFrame(frame);
+          return;
+        }
+        finishViewTransition(target);
+      };
+
+      transitionFrameId = window.requestAnimationFrame(frame);
+    };
 
     const resize = (): void => {
       const width = Math.max(1, host.clientWidth);
@@ -276,7 +344,7 @@ export function ThreeScene({
     let drag: DragSession | null = null;
 
     const pointerDown = (event: PointerEvent): void => {
-      if (event.button !== 0) return;
+      if (event.button !== 0 || viewTransitioningRef.current) return;
       drag = {
         pointerId: event.pointerId,
         x: event.clientX,
@@ -294,7 +362,7 @@ export function ThreeScene({
 
     const pointerMove = (event: PointerEvent): void => {
       if (!drag || drag.pointerId !== event.pointerId) {
-        if (event.buttons === 0) {
+        if (event.buttons === 0 && !viewTransitioningRef.current) {
           onPointHoverRef.current(
             inputDisabledRef.current ? null : runtime.pointFromClientPosition(event.clientX, event.clientY),
           );
@@ -335,7 +403,7 @@ export function ThreeScene({
         renderer.domElement.releasePointerCapture(event.pointerId);
       }
       drag = null;
-      if (wasDragging || !activate || inputDisabledRef.current) return;
+      if (wasDragging || !activate || inputDisabledRef.current || viewTransitioningRef.current) return;
 
       const pointId = runtime.pointFromClientPosition(event.clientX, event.clientY);
       onPointHoverRef.current(pointId);
@@ -350,6 +418,7 @@ export function ThreeScene({
 
     const wheel = (event: WheelEvent): void => {
       event.preventDefault();
+      if (viewTransitioningRef.current) return;
       const nextState = withCube3DZoom(
         viewStateRef.current,
         viewStateRef.current.zoom * Math.exp(-event.deltaY * ZOOM_SENSITIVITY),
@@ -385,6 +454,8 @@ export function ThreeScene({
 
     return () => {
       observer.disconnect();
+      startViewTransitionRef.current = () => undefined;
+      viewTransitioningRef.current = false;
       renderer.domElement.removeEventListener('pointerdown', pointerDown);
       renderer.domElement.removeEventListener('pointermove', pointerMove);
       renderer.domElement.removeEventListener('pointerup', pointerUp);
@@ -395,6 +466,10 @@ export function ThreeScene({
       if (renderFrameId !== null) {
         window.cancelAnimationFrame(renderFrameId);
         renderFrameId = null;
+      }
+      if (transitionFrameId !== null) {
+        window.cancelAnimationFrame(transitionFrameId);
+        transitionFrameId = null;
       }
       surfaceGeometry.dispose();
       surfaceMaterial.dispose();
@@ -416,7 +491,7 @@ export function ThreeScene({
 
   useEffect(() => {
     const runtime = runtimeRef.current;
-    if (runtime) applyViewState(runtime, viewState);
+    if (runtime && !viewTransitioningRef.current) applyViewState(runtime, viewState);
   }, [viewState]);
 
   useEffect(() => {
@@ -442,5 +517,66 @@ export function ThreeScene({
     runtimeRef.current?.render();
   }, [inputDisabled]);
 
-  return <div ref={hostRef} className="cube-3d-scene" aria-label="Cube 3D scene" />;
+  const navigate = (direction: Cube3DNavigationDirection): void => {
+    if (viewTransitioningRef.current) return;
+    startViewTransitionRef.current(cube3DNavigationTarget(viewStateRef.current, direction));
+  };
+
+  const resetView = (): void => {
+    if (viewTransitioningRef.current) return;
+    startViewTransitionRef.current(cube3DResetTarget());
+  };
+
+  return (
+    <div className="cube-3d-interaction-surface">
+      <div ref={hostRef} className="cube-3d-scene" aria-label="Cube 3D scene" />
+      <div className="cube-3d-navigation" role="group" aria-label="Cube 3D navigation">
+        <button
+          className="torus-pan cube-3d-navigation__button cube-3d-navigation__button--up"
+          type="button"
+          aria-label="Move Cube 3D up"
+          disabled={viewTransitioning}
+          onClick={() => navigate('up')}
+        >
+          ↑
+        </button>
+        <button
+          className="torus-pan cube-3d-navigation__button cube-3d-navigation__button--left"
+          type="button"
+          aria-label="Move Cube 3D left"
+          disabled={viewTransitioning}
+          onClick={() => navigate('left')}
+        >
+          ←
+        </button>
+        <button
+          className="torus-pan cube-3d-navigation__button cube-3d-navigation__button--reset"
+          type="button"
+          aria-label="Reset Cube 3D view"
+          disabled={viewTransitioning}
+          onClick={resetView}
+        >
+          ●
+        </button>
+        <button
+          className="torus-pan cube-3d-navigation__button cube-3d-navigation__button--right"
+          type="button"
+          aria-label="Move Cube 3D right"
+          disabled={viewTransitioning}
+          onClick={() => navigate('right')}
+        >
+          →
+        </button>
+        <button
+          className="torus-pan cube-3d-navigation__button cube-3d-navigation__button--down"
+          type="button"
+          aria-label="Move Cube 3D down"
+          disabled={viewTransitioning}
+          onClick={() => navigate('down')}
+        >
+          ↓
+        </button>
+      </div>
+    </div>
+  );
 }
