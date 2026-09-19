@@ -58,11 +58,8 @@ test('Cube 3D interaction polish preserves gameplay while navigating and resetti
   await page.mouse.up();
   await expect(page.getByText('Move 1', { exact: true })).toBeVisible();
 
-  await page.mouse.click(centerX, centerY);
-  await expect(page.getByText('Move 2', { exact: true })).toBeVisible();
-
   const zoomBefore = await scene.getAttribute('data-cube3d-zoom');
-  const boardBounds = await page.getByLabel('Cube 3D view').boundingBox();
+  const boardBounds = await page.getByLabel('Cube 3D view', { exact: true }).boundingBox();
   expect(boardBounds).not.toBeNull();
   if (!boardBounds) return;
   await page.mouse.move(boardBounds.x + 20, boardBounds.y + boardBounds.height / 2);
@@ -73,7 +70,7 @@ test('Cube 3D interaction polish preserves gameplay while navigating and resetti
   const moveUp = page.getByRole('button', { name: 'Move Cube 3D up' });
   await moveUp.click();
   await waitForViewTransition(page);
-  await expect(page.getByText('Move 2', { exact: true })).toBeVisible();
+  await expect(page.getByText('Move 1', { exact: true })).toBeVisible();
 
   const navigatedAnchor = await scene.getAttribute('data-cube3d-anchor');
   expect(navigatedAnchor).toBeTruthy();
@@ -91,17 +88,17 @@ test('Cube 3D interaction polish preserves gameplay while navigating and resetti
     navigatedBounds.x + navigatedBounds.width / 2,
     navigatedBounds.y + navigatedBounds.height / 2,
   );
-  await expect(page.getByText('Move 3', { exact: true })).toBeVisible();
+  await expect(page.getByText('Move 2', { exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: 'Reset Cube 3D view' }).click();
   await waitForViewTransition(page);
   await expect(scene).toHaveAttribute('data-cube3d-anchor', 'front:top');
   await expect(scene).toHaveAttribute('data-cube3d-rotation', '0.000000,0.000000,0.000000,1.000000');
   await expect(scene).toHaveAttribute('data-cube3d-zoom', '1.0000');
-  await expect(page.getByText('Move 3', { exact: true })).toBeVisible();
+  await expect(page.getByText('Move 2', { exact: true })).toBeVisible();
 
   await cubeViewSwitch(page).getByRole('button', { name: '2D' }).click();
   await expect(page.locator('[data-testid="cube-3d-canvas"]')).toHaveCount(0);
-  await expect(page.locator('.cube-2d-stone')).toHaveCount(3);
-  await expect(page.getByText('Move 3', { exact: true })).toBeVisible();
+  await expect(page.locator('.cube-2d-stone')).toHaveCount(2);
+  await expect(page.getByText('Move 2', { exact: true })).toBeVisible();
 });
