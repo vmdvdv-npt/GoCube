@@ -12,6 +12,7 @@ import { createCube3DRoundedSurfaceGeometry } from './Cube3DSurfaceGeometry';
 
 const VIEWPORT = Object.freeze({ left: 0, top: 0, width: 800, height: 800 });
 const CAMERA_DISTANCE = 5;
+const LOCAL_SURFACE_UP = new THREE.Vector3(0, 1, 0);
 
 interface PickFixture {
   readonly camera: THREE.PerspectiveCamera;
@@ -59,15 +60,21 @@ const pointIndex = (fixture: PickFixture, pointId: PointId): number => {
   return index;
 };
 
-const localProxyPosition = (fixture: PickFixture, pointId: PointId): THREE.Vector3 => {
+const localProxyMatrix = (fixture: PickFixture, pointId: PointId): THREE.Matrix4 => {
   const matrix = new THREE.Matrix4();
   fixture.targets.mesh.getMatrixAt(pointIndex(fixture, pointId), matrix);
-  return new THREE.Vector3().setFromMatrixPosition(matrix);
+  return matrix;
 };
 
+const localProxyPosition = (fixture: PickFixture, pointId: PointId): THREE.Vector3 =>
+  new THREE.Vector3().setFromMatrixPosition(localProxyMatrix(fixture, pointId));
+
+const localProxyNormal = (fixture: PickFixture, pointId: PointId): THREE.Vector3 =>
+  LOCAL_SURFACE_UP.clone().transformDirection(localProxyMatrix(fixture, pointId));
+
 const orientPointTowardCamera = (fixture: PickFixture, pointId: PointId): void => {
-  const direction = localProxyPosition(fixture, pointId).normalize();
-  fixture.root.quaternion.setFromUnitVectors(direction, new THREE.Vector3(0, 0, 1));
+  const normal = localProxyNormal(fixture, pointId);
+  fixture.root.quaternion.setFromUnitVectors(normal, new THREE.Vector3(0, 0, 1));
   fixture.root.updateMatrixWorld(true);
 };
 
@@ -103,7 +110,7 @@ const point = (face: string, row: number, column: number): PointId =>
 
 describe('Cube3D logical picking', () => {
   it.each([2, 4, 7] as const)(
-    'round-trips representative center-face points for Cube %dx%d',
+    'round-trips representative center-face points for Cube size %d',
     (size) => {
       const fixture = createFixture(size);
       const middle = Math.floor((size - 1) / 2);
