@@ -54,7 +54,7 @@ test('Cube starts in 2D and switches to the gameplay 3D scene without changing t
 
   await enter3D(page);
   await expect(view.getByRole('button', { name: '3D' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByLabel('Cube 3D view')).toBeVisible();
+  await expect(page.getByLabel('Cube 3D view', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Cube 3D scene')).toHaveAttribute('data-cube3d-size', '3');
 
   await enter2D(page);
