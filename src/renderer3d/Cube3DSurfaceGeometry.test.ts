@@ -12,6 +12,12 @@ import {
 
 const directions: readonly CubeDirection[] = ['top', 'right', 'bottom', 'left'];
 const key = (position: readonly number[]): string => position.map((value) => value.toFixed(9)).join(':');
+const expectVectorClose = (actual: readonly number[], expected: readonly number[]): void => {
+  expect(actual).toHaveLength(expected.length);
+  for (let index = 0; index < expected.length; index += 1) {
+    expect(actual[index]).toBeCloseTo(expected[index], 12);
+  }
+};
 
 describe('Cube3DSurfaceGeometry', () => {
   it('keeps all 6 × N × N logical points geometrically distinct near edges and corners', () => {
@@ -32,8 +38,8 @@ describe('Cube3DSurfaceGeometry', () => {
         const next = cubeStepPoint(size, point, direction);
         const path = cube3DGridPath(size, point, direction);
         expect(path.toPointId).toBe(next);
-        expect(path.positions[0]).toEqual(cube3DPointPosition(size, point));
-        expect(path.positions.at(-1)).toEqual(cube3DPointPosition(size, next));
+        expectVectorClose(path.positions[0], cube3DPointPosition(size, point));
+        expectVectorClose(path.positions.at(-1) ?? [], cube3DPointPosition(size, next));
         if (path.crossesFaceBoundary) {
           crossedEdges += 1;
           expect(path.positions.length).toBeGreaterThan(2);
