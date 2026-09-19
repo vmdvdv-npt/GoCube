@@ -14,6 +14,12 @@ export const CUBE_FACES = ['front', 'back', 'left', 'right', 'top', 'bottom'] as
 export type CubeFace = (typeof CUBE_FACES)[number];
 export type CubeDirection = 'top' | 'right' | 'bottom' | 'left';
 
+export interface CubePointCoordinates {
+  readonly face: CubeFace;
+  readonly row: number;
+  readonly column: number;
+}
+
 type CubeEdge = CubeDirection;
 
 interface EdgeTransition {
@@ -95,18 +101,11 @@ const crossCubeEdge = (
   return pointOnEdge(transition.face, transition.edge, targetIndex, last);
 };
 
-const isCubeFace = (value: string): value is CubeFace =>
+export const isCubeFace = (value: string): value is CubeFace =>
   CUBE_FACES.includes(value as CubeFace);
 
-/**
- * Renderer-neutral one-step surface traversal used by topology-stress test tooling.
- * The returned PointId follows the same edge transitions as CubeTopology.neighbors().
- */
-export const cubeStepPoint = (
-  size: CubeSize,
-  point: PointId,
-  direction: CubeDirection,
-): PointId => {
+/** Stable renderer-neutral decoding of a canonical Cube PointId. */
+export const parseCubePointId = (size: CubeSize, point: PointId): CubePointCoordinates => {
   if (!isValidCubeSize(size)) {
     throw new Error(`Cube size must be a safe integer >= 2, got ${String(size)}`);
   }
@@ -116,7 +115,6 @@ export const cubeStepPoint = (
     throw new Error(`Unknown cube point: ${point}`);
   }
 
-  const face = faceText;
   const row = Number(rowText);
   const column = Number(columnText);
   const last = size - 1;
@@ -130,6 +128,21 @@ export const cubeStepPoint = (
   ) {
     throw new Error(`Unknown cube point: ${point}`);
   }
+
+  return Object.freeze({ face: faceText, row, column });
+};
+
+/**
+ * Renderer-neutral one-step surface traversal used by topology-stress test tooling.
+ * The returned PointId follows the same edge transitions as CubeTopology.neighbors().
+ */
+export const cubeStepPoint = (
+  size: CubeSize,
+  point: PointId,
+  direction: CubeDirection,
+): PointId => {
+  const { face, row, column } = parseCubePointId(size, point);
+  const last = size - 1;
 
   switch (direction) {
     case 'top':

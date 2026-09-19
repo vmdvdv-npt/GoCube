@@ -1,4 +1,12 @@
 import type { CubeFace } from '../../core/topology/CubeTopology';
+import {
+  crossCubeAxisVectors,
+  cubeFaceBasis,
+  cubeFaceFromNormal,
+  dotCubeAxisVectors,
+  negateCubeAxisVector,
+  oppositeCubeFace,
+} from './CubeSurfaceMapping';
 
 /** Clockwise quarter-turn from the canonical logical orientation of a CubeTopology face. */
 export type CubeRotation = 0 | 90 | 180 | 270;
@@ -15,59 +23,7 @@ export interface CubeOrientationNeighbors {
   readonly bottom: CubeFace;
 }
 
-type Axis = -1 | 0 | 1;
-type AxisVector = readonly [Axis, Axis, Axis];
-
-const FACE_NORMALS: Readonly<Record<CubeFace, AxisVector>> = Object.freeze({
-  front: Object.freeze([0, 0, 1] as const),
-  back: Object.freeze([0, 0, -1] as const),
-  left: Object.freeze([-1, 0, 0] as const),
-  right: Object.freeze([1, 0, 0] as const),
-  top: Object.freeze([0, 1, 0] as const),
-  bottom: Object.freeze([0, -1, 0] as const),
-});
-
-const CANONICAL_TOP: Readonly<Record<CubeFace, CubeFace>> = Object.freeze({
-  front: 'top',
-  back: 'top',
-  left: 'top',
-  right: 'top',
-  top: 'back',
-  bottom: 'front',
-});
-
-const CANONICAL_RIGHT: Readonly<Record<CubeFace, CubeFace>> = Object.freeze({
-  front: 'right',
-  back: 'left',
-  left: 'front',
-  right: 'back',
-  top: 'right',
-  bottom: 'right',
-});
-
-const negate = ([x, y, z]: AxisVector): AxisVector => [-x as Axis, -y as Axis, -z as Axis];
-
-const cross = ([ax, ay, az]: AxisVector, [bx, by, bz]: AxisVector): AxisVector => [
-  (ay * bz - az * by) as Axis,
-  (az * bx - ax * bz) as Axis,
-  (ax * by - ay * bx) as Axis,
-];
-
-const dot = ([ax, ay, az]: AxisVector, [bx, by, bz]: AxisVector): number =>
-  ax * bx + ay * by + az * bz;
-
-const faceFromNormal = (normal: AxisVector): CubeFace => {
-  for (const [face, candidate] of Object.entries(FACE_NORMALS) as readonly [CubeFace, AxisVector][]) {
-    if (candidate[0] === normal[0] && candidate[1] === normal[1] && candidate[2] === normal[2]) {
-      return face;
-    }
-  }
-
-  throw new Error(`Invalid cube axis vector: ${normal.join(',')}`);
-};
-
-export const oppositeCubeFace = (face: CubeFace): CubeFace =>
-  faceFromNormal(negate(FACE_NORMALS[face]));
+export { oppositeCubeFace } from './CubeSurfaceMapping';
 
 /** Pure view-orientation state: one central logical face plus the adjacent face treated as up. */
 export class CubeOrientation {
@@ -75,10 +31,10 @@ export class CubeOrientation {
   readonly upFace: CubeFace;
 
   constructor(state: CubeOrientationState = { centerFace: 'front', upFace: 'top' }) {
-    const centerNormal = FACE_NORMALS[state.centerFace];
-    const upNormal = FACE_NORMALS[state.upFace];
+    const centerNormal = cubeFaceBasis(state.centerFace).normal;
+    const upNormal = cubeFaceBasis(state.upFace).normal;
 
-    if (dot(centerNormal, upNormal) !== 0) {
+    if (dotCubeAxisVectors(centerNormal, upNormal) !== 0) {
       throw new Error(
         `Invalid cube orientation: ${state.upFace} cannot be up while ${state.centerFace} is central`,
       );
@@ -99,8 +55,9 @@ export class CubeOrientation {
   }
 
   get rotation(): CubeRotation {
-    const canonicalTop = CANONICAL_TOP[this.centerFace];
-    const canonicalRight = CANONICAL_RIGHT[this.centerFace];
+    const basis = cubeFaceBasis(this.centerFace);
+    const canonicalTop = cubeFaceFromNormal(negateCubeAxisVector(basis.down));
+    const canonicalRight = cubeFaceFromNormal(basis.right);
     const canonicalBottom = oppositeCubeFace(canonicalTop);
     const canonicalLeft = oppositeCubeFace(canonicalRight);
 
@@ -143,6 +100,11 @@ export class CubeOrientation {
   }
 
   private rightFace(): CubeFace {
-    return faceFromNormal(cross(FACE_NORMALS[this.upFace], FACE_NORMALS[this.centerFace]));
+    return cubeFaceFromNormal(
+      crossCubeAxisVectors(
+        cubeFaceBasis(this.upFace).normal,
+        cubeFaceBasis(this.centerFace).normal,
+      ),
+    );
   }
 }
