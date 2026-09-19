@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useEffect,
   useRef,
   useState,
@@ -11,13 +13,12 @@ import {
   CUBE_2D_LAYOUT_COLUMNS,
   CUBE_2D_LAYOUT_ROWS,
 } from '../presentation/cube/Cube2DLayout';
+import { createCube3DViewState } from '../presentation/cube/Cube3DViewState';
 import {
   CUBE_2D_BASE_CELL_SIZE,
   CUBE_2D_TRANSITION_MS,
   Cube2DRenderer,
 } from '../renderer2d/Cube2DRenderer';
-import { ThreeScene } from '../renderer3d/ThreeScene';
-import '../renderer3d/cube3d.css';
 import { Cube2DGameController } from './Cube2DGameController';
 import { Cube2DVisualEffects } from './Cube2DVisualEffects';
 import { EndgameReviewControls } from './EndgameReviewControls';
@@ -31,6 +32,11 @@ import './manual-endgame.css';
 import './cube2d-preview.css';
 import './cube2d-game-flow.css';
 import './cube2d-game.css';
+
+const LazyThreeScene = lazy(async () => {
+  const module = await import('../renderer3d/ThreeScene');
+  return { default: module.ThreeScene };
+});
 
 const CUBE_2D_NAVIGATION_GAP = 30;
 const CUBE_2D_NAVIGATION_BUTTON_SIZE = 38;
@@ -94,6 +100,7 @@ export function Cube2DGame({
 }: Cube2DGameProps) {
   useGameControllerLifecycle(ownsController ? controller : null);
   const [viewMode, setViewMode] = useState<CubeViewMode>('2d');
+  const [cube3DViewState, setCube3DViewState] = useState(() => createCube3DViewState());
 
   const g = useCube2DGame(controller, {
     gameplayReadOnly,
@@ -131,6 +138,7 @@ export function Cube2DGame({
 
   useEffect(() => {
     setViewMode('2d');
+    setCube3DViewState(createCube3DViewState());
     zoomRef.current = CUBE_2D_HOME_ZOOM;
     panOffsetRef.current = Object.freeze({ x: 0, y: 0 });
     dragPan.reset();
@@ -330,7 +338,9 @@ export function Cube2DGame({
   const cube3dView = (
     <div className="cube-2d-game__board-shell cube-3d-board-shell" aria-label="Cube 3D view">
       {viewSwitch}
-      <ThreeScene />
+      <Suspense fallback={<div className="cube-3d-scene cube-3d-scene--loading">Loading 3D…</div>}>
+        <LazyThreeScene viewState={cube3DViewState} onViewStateChange={setCube3DViewState} />
+      </Suspense>
     </div>
   );
 
