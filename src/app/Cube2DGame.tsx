@@ -105,6 +105,7 @@ export function Cube2DGame({
   useGameControllerLifecycle(ownsController ? controller : null);
   const [viewMode, setViewMode] = useState<CubeViewMode>('2d');
   const [cube3DViewState, setCube3DViewState] = useState(() => createCube3DViewState());
+  const [cube3DTransitioning, setCube3DTransitioning] = useState(false);
 
   const g = useCube2DGame(controller, {
     gameplayReadOnly,
@@ -143,6 +144,7 @@ export function Cube2DGame({
   useEffect(() => {
     setViewMode('2d');
     setCube3DViewState(createCube3DViewState());
+    setCube3DTransitioning(false);
     zoomRef.current = CUBE_2D_HOME_ZOOM;
     panOffsetRef.current = Object.freeze({ x: 0, y: 0 });
     dragPan.reset();
@@ -176,13 +178,13 @@ export function Cube2DGame({
   };
 
   const switchTo2D = (): void => {
-    if (viewMode === '2d') return;
+    if (viewMode === '2d' || cube3DTransitioning) return;
     g.syncOrientation(new CubeOrientation(cube3DViewState.orientationAnchor));
     setViewMode('2d');
   };
 
   const switchTo3D = (): void => {
-    if (viewMode === '3d') return;
+    if (viewMode === '3d' || cube3DTransitioning) return;
     const orientationAnchor = g.view.orientation.toState();
     const currentAnchor = cube3DViewState.orientationAnchor;
     if (
@@ -213,10 +215,20 @@ export function Cube2DGame({
 
   const viewSwitch = (
     <div className="cube-view-switch" role="group" aria-label="Cube view">
-      <button type="button" aria-pressed={viewMode === '2d'} onClick={switchTo2D}>
+      <button
+        type="button"
+        aria-pressed={viewMode === '2d'}
+        disabled={cube3DTransitioning}
+        onClick={switchTo2D}
+      >
         2D
       </button>
-      <button type="button" aria-pressed={viewMode === '3d'} onClick={switchTo3D}>
+      <button
+        type="button"
+        aria-pressed={viewMode === '3d'}
+        disabled={cube3DTransitioning}
+        onClick={switchTo3D}
+      >
         3D
       </button>
     </div>
@@ -363,12 +375,14 @@ export function Cube2DGame({
           hoveredPointId={g.hoveredPoint}
           hoverStatus={g.hoverStatus}
           inputDisabled={
+            cube3DTransitioning ||
             Boolean(g.transition) ||
             g.captureAnimating ||
             g.vm.phase === 'finished' ||
             (gameplayReadOnly && g.vm.phase === 'playing')
           }
           onViewStateChange={setCube3DViewState}
+          onViewTransitioningChange={setCube3DTransitioning}
           onPointHover={g.hover}
           onPointActivate={(point) => void g.activate(point)}
         />
@@ -382,7 +396,7 @@ export function Cube2DGame({
       aria-label="Cube game"
       data-animation-mode={animationMode}
       data-cube-view={viewMode}
-      data-cube-view-transitioning="false"
+      data-cube-view-transitioning={cube3DTransitioning ? 'true' : 'false'}
     >
       <GameSidebar
         size={controller.size}
