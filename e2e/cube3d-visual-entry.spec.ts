@@ -101,7 +101,7 @@ test('Cube 3D resize and repeated mount/unmount do not accumulate canvases', asy
   await page.getByRole('group', { name: 'Cube view' }).getByRole('button', { name: '3D' }).click();
   const scene = page.getByLabel('Cube 3D scene');
   const before = await scene.getAttribute('data-cube3d-viewport');
-  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.setViewportSize({ width: 800, height: 600 });
   await expect(scene).not.toHaveAttribute('data-cube3d-viewport', before ?? '');
   await expect(page.locator('[data-testid="cube-3d-canvas"]')).toHaveCount(1);
 });
