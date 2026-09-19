@@ -67,7 +67,7 @@ test('Play vs bot launcher is a four-zone panel and starts with the selected mod
   const panel = page.locator('.play-vs-bot-card');
   const newGameCard = page.locator('.new-game-form');
   const startGame = newGameCard.getByRole('button', { name: 'Start game', exact: true });
-  const play = panel.getByRole('button', { name: 'Play vs bot', exact: true });
+  const play = panel.getByRole('button', { name: 'Play vs AI', exact: true });
 
   await expect(panel).toBeVisible();
   await expect(panel.getByRole('heading', { name: 'Play as' })).toBeVisible();
