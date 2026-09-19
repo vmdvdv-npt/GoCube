@@ -131,7 +131,7 @@ const startBotGame = async (
   await expect(dialog.getByText('CONNECTED', { exact: true })).toBeVisible();
   await expect(dialog.getByLabel('Bot checkpoint')).toHaveValue(checkpoint.id);
   await dialog.getByRole('button', { name: 'OK', exact: true }).click();
-  await panel.getByRole('button', { name: 'Play vs bot', exact: true }).click();
+  await panel.getByRole('button', { name: 'Play vs AI', exact: true }).click();
   await expect(page.getByRole('region', { name: /game/i }).or(page.locator('.torus-game'))).toBeVisible();
 };
 

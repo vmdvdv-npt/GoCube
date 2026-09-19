@@ -69,7 +69,7 @@
 Форма `New Game` использует компактную двухколоночную desktop-композицию вместо длинной одноколоночной формы.
 
 - Внутри формы нет отдельного заголовка `New game` и поясняющего текста `Choose the surface, board size, scoring rules, and komi.`; после общего header сразу начинается область настроек.
-- Отступ после общего `.app-header` перед формой New Game — `12vh`.
+- Отступ после общего `.app-header` перед формой New Game — `4vh`.
 - Для `.startup-card` и `.confirmation-card` используются внутренние отступы `10px 45px 30px 45px` (top/right/bottom/left).
 - Левая колонка содержит крупный topology preview, а под ним подпись `Board Shape` и controls `Cube` / `Torus`.
 - Правая колонка содержит `Board Size`, `Rules`, `Komi` и `Start game`.

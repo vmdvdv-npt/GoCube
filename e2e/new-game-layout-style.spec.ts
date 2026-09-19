@@ -61,7 +61,7 @@ test('New Game uses the requested effective layout styles', async ({ page }) => 
       page.evaluate(() => window.innerHeight),
     ]);
 
-  expect(headerStyle.marginBottom).toBeCloseTo(viewportHeight * 0.12, 1);
+  expect(headerStyle.marginBottom).toBeCloseTo(viewportHeight * 0.04, 1);
   expect(formStyle.paddingTop).toBe(10);
   expect(formStyle.paddingRight).toBe(45);
   expect(formStyle.paddingBottom).toBe(30);
