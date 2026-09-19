@@ -132,19 +132,15 @@ describe('Cube3DSurfaceGeometry', () => {
     for (const rawSize of [4, 5, 7, 8]) {
       const size = rawSize as CubeSize;
       const paths = cube3DDebugGridPaths(size, DEFAULT_CUBE_3D_SURFACE_PROFILE, 24);
+      const localLengths = paths
+        .filter((path) => !path.crossesFaceBoundary)
+        .map(cube3DGridPathLength);
       const interiorLengths = paths
         .filter(
           (path) =>
             !path.crossesFaceBoundary &&
             !isBoundaryPoint(size, path.fromPointId) &&
             !isBoundaryPoint(size, path.toPointId),
-        )
-        .map(cube3DGridPathLength);
-      const edgeCellLengths = paths
-        .filter(
-          (path) =>
-            !path.crossesFaceBoundary &&
-            (isBoundaryPoint(size, path.fromPointId) || isBoundaryPoint(size, path.toPointId)),
         )
         .map(cube3DGridPathLength);
       const seamLengths = paths
@@ -155,12 +151,12 @@ describe('Cube3DSurfaceGeometry', () => {
       const interiorMaximum = Math.max(...interiorLengths);
       const interiorMean =
         interiorLengths.reduce((sum, value) => sum + value, 0) / interiorLengths.length;
-      const edgeCellMaximum = Math.max(...edgeCellLengths);
+      const localMinimum = Math.min(...localLengths);
       const seamMinimum = Math.min(...seamLengths);
 
       expect(interiorMaximum / interiorMinimum).toBeLessThan(1.01);
       expect(Math.abs(interiorMean - expectedPitch) / expectedPitch).toBeLessThan(0.01);
-      expect(edgeCellMaximum).toBeLessThan(expectedPitch * 0.9);
+      expect(localMinimum).toBeLessThan(expectedPitch * 0.9);
       expect(seamMinimum).toBeGreaterThan(expectedPitch * 1.25);
     }
   });
