@@ -97,7 +97,7 @@ const primaryStone = (page: Page, pointId: string) =>
 test('Development Workspace replays Torus 9x9 M17-shaped Protocol V1 game through the existing Torus view', async ({ page }) => {
   await routeAlphaZero(page);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Development', exact: true }).click();
+  await page.getByRole('link', { name: 'development', exact: true }).click();
 
   await expect(page.getByLabel('Black checkpoint')).toHaveValue(checkpoint.id);
   await expect(page.getByLabel('White checkpoint')).toHaveValue(checkpoint.id);
