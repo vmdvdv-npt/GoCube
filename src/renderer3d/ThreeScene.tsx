@@ -34,6 +34,7 @@ const BASE_CAMERA_DISTANCE = 5;
 const ROTATION_SENSITIVITY = 0.008;
 const ZOOM_SENSITIVITY = 0.001;
 const MARKER_THICKNESS = 0.08;
+const INITIAL_RENDER_DEFER_FALLBACK_MS = 500;
 
 interface SceneRuntime {
   readonly scene: THREE.Scene;
@@ -134,6 +135,7 @@ export function ThreeScene({
   const runtimeRef = useRef<SceneRuntime | null>(null);
   const viewStateRef = useRef(viewState);
   const inputDisabledRef = useRef(inputDisabled);
+  const initialRenderDeferredRef = useRef(inputDisabled);
   const onViewStateChangeRef = useRef(onViewStateChange);
   const onPointHoverRef = useRef(onPointHover);
   const onPointActivateRef = useRef(onPointActivate);
@@ -222,7 +224,12 @@ export function ThreeScene({
     scene.add(ambient, key);
 
     let renderFrameId: number | null = null;
+    let renderRequestedWhileDeferred = false;
     const render = (): void => {
+      if (initialRenderDeferredRef.current) {
+        renderRequestedWhileDeferred = true;
+        return;
+      }
       if (renderFrameId !== null) return;
       renderFrameId = window.requestAnimationFrame(() => {
         renderFrameId = null;
@@ -364,6 +371,18 @@ export function ThreeScene({
     applyViewState(runtime, viewStateRef.current);
     resize();
 
+    const releaseInitialRender = (): void => {
+      if (!initialRenderDeferredRef.current) return;
+      initialRenderDeferredRef.current = false;
+      if (renderRequestedWhileDeferred) {
+        renderRequestedWhileDeferred = false;
+        render();
+      }
+    };
+    const initialRenderFallbackTimer = initialRenderDeferredRef.current
+      ? window.setTimeout(releaseInitialRender, INITIAL_RENDER_DEFER_FALLBACK_MS)
+      : null;
+
     return () => {
       observer.disconnect();
       renderer.domElement.removeEventListener('pointerdown', pointerDown);
@@ -372,6 +391,7 @@ export function ThreeScene({
       renderer.domElement.removeEventListener('pointercancel', pointerCancel);
       renderer.domElement.removeEventListener('pointerleave', pointerLeave);
       renderer.domElement.removeEventListener('wheel', wheel);
+      if (initialRenderFallbackTimer !== null) window.clearTimeout(initialRenderFallbackTimer);
       if (renderFrameId !== null) {
         window.cancelAnimationFrame(renderFrameId);
         renderFrameId = null;
@@ -413,7 +433,13 @@ export function ThreeScene({
   }, [hoverStatus, hoveredPointId, size, viewModel]);
 
   useEffect(() => {
-    if (inputDisabled) onPointHoverRef.current(null);
+    if (inputDisabled) {
+      onPointHoverRef.current(null);
+      return;
+    }
+    if (!initialRenderDeferredRef.current) return;
+    initialRenderDeferredRef.current = false;
+    runtimeRef.current?.render();
   }, [inputDisabled]);
 
   return <div ref={hostRef} className="cube-3d-scene" aria-label="Cube 3D scene" />;
