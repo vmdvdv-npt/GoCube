@@ -53,7 +53,10 @@ describe('CubeSurfaceMapping', () => {
       expect(dotCubeAxisVectors(basis.normal, basis.right)).toBe(0);
       expect(dotCubeAxisVectors(basis.normal, basis.down)).toBe(0);
       expect(dotCubeAxisVectors(basis.right, basis.down)).toBe(0);
-      expect(crossCubeAxisVectors(basis.down, basis.right)).toEqual(basis.normal);
+      const reconstructedNormal = crossCubeAxisVectors(basis.down, basis.right);
+      for (let axisIndex = 0; axisIndex < 3; axisIndex += 1) {
+        expect(reconstructedNormal[axisIndex]).toBeCloseTo(basis.normal[axisIndex], 12);
+      }
 
       const canonicalUp = cubeFaceFromNormal(negateCubeAxisVector(basis.down));
       expect(new CubeOrientation({ centerFace: face, upFace: canonicalUp }).rotation).toBe(0);
@@ -96,7 +99,9 @@ describe('CubeSurfaceMapping', () => {
           cubeFaceLocalToCartesian(to.face, to.u, 1),
         ];
 
-        expect(Math.min(...targetCandidates.map((candidate) => squaredDistance(candidate, fromSeam)))).toBeLessThan(1e-20);
+        expect(
+          Math.min(...targetCandidates.map((candidate) => squaredDistance(candidate, fromSeam))),
+        ).toBeLessThan(1e-20);
       }
     }
   });
