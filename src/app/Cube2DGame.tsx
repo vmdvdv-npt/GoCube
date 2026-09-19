@@ -385,25 +385,28 @@ export function Cube2DGame({
   const cube3dView = (
     <div className="cube-2d-game__board-shell cube-3d-board-shell" aria-label="Cube 3D view">
       {viewSwitch}
-      <Suspense fallback={<div className="cube-3d-scene cube-3d-scene--loading">Loading 3D…</div>}>
-        <LazyThreeScene
-          size={controller.size}
-          viewModel={displayViewModel}
-          viewState={cube3DViewState}
-          hoveredPointId={g.hoveredPoint}
-          hoverStatus={g.hoverStatus}
-          inputDisabled={
-            viewTransitioning ||
-            Boolean(g.transition) ||
-            g.captureAnimating ||
-            g.vm.phase === 'finished' ||
-            (gameplayReadOnly && g.vm.phase === 'playing')
-          }
-          onViewStateChange={setCube3DViewState}
-          onPointHover={g.hover}
-          onPointActivate={(point) => void g.activate(point)}
-        />
-      </Suspense>
+      {viewTransitioning ? (
+        <div className="cube-3d-scene cube-3d-scene--loading">Loading 3D…</div>
+      ) : (
+        <Suspense fallback={<div className="cube-3d-scene cube-3d-scene--loading">Loading 3D…</div>}>
+          <LazyThreeScene
+            size={controller.size}
+            viewModel={displayViewModel}
+            viewState={cube3DViewState}
+            hoveredPointId={g.hoveredPoint}
+            hoverStatus={g.hoverStatus}
+            inputDisabled={
+              Boolean(g.transition) ||
+              g.captureAnimating ||
+              g.vm.phase === 'finished' ||
+              (gameplayReadOnly && g.vm.phase === 'playing')
+            }
+            onViewStateChange={setCube3DViewState}
+            onPointHover={g.hover}
+            onPointActivate={(point) => void g.activate(point)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 
