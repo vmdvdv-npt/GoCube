@@ -1,6 +1,5 @@
 import {
   createContext,
-  useContext,
   useEffect,
   useState,
   type ReactNode,
@@ -75,7 +74,6 @@ export function GameSidebar({
   turnLabelOverride = null,
   retryBotTurn = null,
 }: GameSidebarProps) {
-  const onOpenDevelopment = useContext(DevelopmentEntryContext);
   const contextualProgressSource = useFinalAnalysisProgressSource();
   const progressSource = finalAnalysisProgressSource ?? contextualProgressSource;
   const [finalAnalysisProgress, setFinalAnalysisProgress] =
@@ -141,43 +139,28 @@ export function GameSidebar({
         </div>
       </div>
 
-      <div className="game-display-options">
-        <div
-          className="torus-duplicates-control"
-          role="group"
-          aria-label="Board display options"
-        >
+      <div
+        className="torus-duplicates-control"
+        role="group"
+        aria-label="Board display options"
+      >
+        <label>
+          <input
+            type="checkbox"
+            checked={showMoveNumbers}
+            onChange={(event) => onShowMoveNumbersChange(event.target.checked)}
+          />
+          <span>Move numbers</span>
+        </label>
+        {duplicateRegionsAvailable ? (
           <label>
             <input
               type="checkbox"
-              checked={showMoveNumbers}
-              onChange={(event) => onShowMoveNumbersChange(event.target.checked)}
+              checked={showDuplicateRegions}
+              onChange={(event) => onShowDuplicateRegionsChange?.(event.target.checked)}
             />
-            <span>Move numbers</span>
+            <span>Show duplicate regions</span>
           </label>
-          {duplicateRegionsAvailable ? (
-            <label>
-              <input
-                type="checkbox"
-                checked={showDuplicateRegions}
-                onChange={(event) => onShowDuplicateRegionsChange?.(event.target.checked)}
-              />
-              <span>Show duplicate regions</span>
-            </label>
-          ) : null}
-        </div>
-
-        {onOpenDevelopment ? (
-          <a
-            href="#development"
-            className="development-entry development-entry--sidebar"
-            onClick={(event) => {
-              event.preventDefault();
-              onOpenDevelopment();
-            }}
-          >
-            development
-          </a>
         ) : null}
       </div>
 
