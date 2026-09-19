@@ -128,6 +128,11 @@
   align-content: start;
 }
 
+.game-display-options > .torus-duplicates-control {
+  grid-column: auto;
+  grid-row: auto;
+}
+
 .torus-duplicates-control {
   display: grid;
   align-items: stretch;
