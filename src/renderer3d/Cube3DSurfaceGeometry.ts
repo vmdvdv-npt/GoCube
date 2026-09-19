@@ -42,10 +42,16 @@ export const DEFAULT_CUBE_3D_SURFACE_PROFILE: Cube3DSurfaceProfile = Object.free
 export const DEFAULT_CUBE_3D_SURFACE_SEGMENTS = 32;
 
 /**
- * Outer 3D intersections sit a little farther than the canonical half-pitch from
- * the physical seam so stones do not visually press into the rounded edge.
+ * Outer 3D intersections sit clearly farther from the physical seam so stones
+ * keep visible breathing room from the rounded edge.
  */
-export const CUBE_3D_GRID_EDGE_INSET_PITCH_RATIO = 0.53;
+export const CUBE_3D_GRID_EDGE_INSET_PITCH_RATIO = 0.66;
+
+/**
+ * Preserve the already accepted interior grid/stone scale while only moving the
+ * outermost row/column farther inward.
+ */
+const CUBE_3D_GRID_INTERIOR_REFERENCE_INSET_PITCH_RATIO = 0.53;
 
 const validateProfile = (profile: Cube3DSurfaceProfile): void => {
   if (!Number.isFinite(profile.halfExtent) || profile.halfExtent <= 0) {
@@ -88,18 +94,28 @@ export const cube3DFaceSurfaceSpan = (
 export const cube3DGridEdgeInset = (size: CubeSize): number =>
   CUBE_3D_GRID_EDGE_INSET_PITCH_RATIO / size;
 
+const cube3DGridInteriorReferenceInset = (size: CubeSize): number =>
+  CUBE_3D_GRID_INTERIOR_REFERENCE_INSET_PITCH_RATIO / size;
+
 const cube3DGridLocalCoordinate = (size: CubeSize, index: number): number => {
-  const inset = cube3DGridEdgeInset(size);
-  return inset + (index / (size - 1)) * (1 - 2 * inset);
+  const edgeInset = cube3DGridEdgeInset(size);
+  if (index === 0) return edgeInset;
+  if (index === size - 1) return 1 - edgeInset;
+
+  const referenceInset = cube3DGridInteriorReferenceInset(size);
+  return referenceInset + (index / (size - 1)) * (1 - 2 * referenceInset);
 };
 
-/** Surface-arc spacing between adjacent intersections on the same 3D face. */
+/**
+ * Reference surface-arc pitch used for stone/marker sizing and interior spacing.
+ * The outermost row/column may sit farther inward without changing this pitch.
+ */
 export const cube3DGridSurfacePitch = (
   size: CubeSize,
   profile: Cube3DSurfaceProfile = DEFAULT_CUBE_3D_SURFACE_PROFILE,
 ): number => {
-  const inset = cube3DGridEdgeInset(size);
-  return (cube3DFaceSurfaceSpan(profile) * (1 - 2 * inset)) / (size - 1);
+  const referenceInset = cube3DGridInteriorReferenceInset(size);
+  return (cube3DFaceSurfaceSpan(profile) * (1 - 2 * referenceInset)) / (size - 1);
 };
 
 /**
