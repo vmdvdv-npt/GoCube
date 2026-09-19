@@ -1,8 +1,5 @@
-.cube-view-shell {
+.cube-2d-game__board-shell {
   position: relative;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
 }
 
 .cube-view-switch {
@@ -35,6 +32,11 @@
 .cube-view-switch button[aria-pressed='true'] {
   background: rgb(255 255 255 / 12%);
   color: #fff;
+}
+
+.cube-3d-board-shell {
+  min-height: 420px;
+  overflow: hidden;
 }
 
 .cube-3d-scene {
