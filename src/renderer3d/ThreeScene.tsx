@@ -1,10 +1,16 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
+import type { CubeSize } from '../core/topology/CubeTopology';
 import {
   withCube3DRotation,
   withCube3DZoom,
   type Cube3DViewState,
 } from '../presentation/cube/Cube3DViewState';
+import {
+  createCube3DDebugGridGeometry,
+  createCube3DDebugPointGeometry,
+  createCube3DRoundedSurfaceGeometry,
+} from './Cube3DSurfaceGeometry';
 import { CUBE_3D_PERFORMANCE_BUDGET } from './Cube3DPerformance';
 import './cube3d.css';
 
@@ -15,11 +21,12 @@ const ZOOM_SENSITIVITY = 0.001;
 interface SceneRuntime {
   readonly camera: THREE.PerspectiveCamera;
   readonly renderer: THREE.WebGLRenderer;
-  readonly proofCube: THREE.Mesh<THREE.BoxGeometry, THREE.MeshStandardMaterial>;
+  readonly cubeRoot: THREE.Group;
   readonly render: () => void;
 }
 
 export interface ThreeSceneProps {
+  readonly size: CubeSize;
   readonly viewState: Cube3DViewState;
   readonly onViewStateChange: (state: Cube3DViewState) => void;
 }
@@ -27,8 +34,8 @@ export interface ThreeSceneProps {
 const toQuaternionState = (quaternion: THREE.Quaternion) =>
   Object.freeze({ x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w });
 
-/** Minimal visual-development scene. Game/domain state stays outside this boundary. */
-export function ThreeScene({ viewState, onViewStateChange }: ThreeSceneProps) {
+/** Technical Cube 3D renderer-core scene. Game/domain state stays outside this boundary. */
+export function ThreeScene({ size, viewState, onViewStateChange }: ThreeSceneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const runtimeRef = useRef<SceneRuntime | null>(null);
   const viewStateRef = useRef(viewState);
@@ -38,7 +45,7 @@ export function ThreeScene({ viewState, onViewStateChange }: ThreeSceneProps) {
 
   const applyViewState = (runtime: SceneRuntime, state: Cube3DViewState): void => {
     const { rotation } = state;
-    runtime.proofCube.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w).normalize();
+    runtime.cubeRoot.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w).normalize();
     runtime.camera.position.set(0, 0, BASE_CAMERA_DISTANCE / state.zoom);
     runtime.camera.lookAt(0, 0, 0);
     const host = hostRef.current;
@@ -68,18 +75,47 @@ export function ThreeScene({ viewState, onViewStateChange }: ThreeSceneProps) {
     renderer.domElement.style.touchAction = 'none';
     host.appendChild(renderer.domElement);
 
-    const geometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
-    const material = new THREE.MeshStandardMaterial({ color: 0x8b6f47, roughness: 0.8 });
-    const proofCube = new THREE.Mesh(geometry, material);
-    scene.add(proofCube);
+    const surfaceGeometry = createCube3DRoundedSurfaceGeometry();
+    const surfaceMaterial = new THREE.MeshStandardMaterial({
+      color: 0x747a80,
+      roughness: 0.9,
+      metalness: 0,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
+    });
+    const surface = new THREE.Mesh(surfaceGeometry, surfaceMaterial);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 1.4);
-    const key = new THREE.DirectionalLight(0xffffff, 2.2);
+    const gridGeometry = createCube3DDebugGridGeometry(size);
+    const gridMaterial = new THREE.LineBasicMaterial({ color: 0xe1e5e9 });
+    const grid = new THREE.LineSegments(gridGeometry, gridMaterial);
+    grid.renderOrder = 1;
+
+    const pointGeometry = createCube3DDebugPointGeometry(size);
+    const pointMaterial = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 0.045,
+      sizeAttenuation: true,
+    });
+    const points = new THREE.Points(pointGeometry, pointMaterial);
+    points.renderOrder = 2;
+
+    const cubeRoot = new THREE.Group();
+    cubeRoot.add(surface, grid, points);
+    scene.add(cubeRoot);
+
+    const ambient = new THREE.AmbientLight(0xffffff, 1.2);
+    const key = new THREE.DirectionalLight(0xffffff, 1.8);
     key.position.set(3, 4, 5);
     scene.add(ambient, key);
 
+    host.dataset.cube3dDebugPoints = String(6 * size * size);
+    host.dataset.cube3dDebugGridEdges = String(12 * size * size);
+    host.dataset.cube3dDebugPhysicalEdges = '12';
+    host.dataset.cube3dDebugPhysicalCorners = '8';
+
     const render = (): void => renderer.render(scene, camera);
-    const runtime: SceneRuntime = { camera, renderer, proofCube, render };
+    const runtime: SceneRuntime = { camera, renderer, cubeRoot, render };
     runtimeRef.current = runtime;
 
     const resize = (): void => {
@@ -132,7 +168,7 @@ export function ThreeScene({ viewState, onViewStateChange }: ThreeSceneProps) {
         toQuaternionState(nextQuaternion),
       );
       viewStateRef.current = nextState;
-      proofCube.quaternion.copy(nextQuaternion);
+      cubeRoot.quaternion.copy(nextQuaternion);
       render();
       onViewStateChangeRef.current(nextState);
     };
@@ -174,15 +210,19 @@ export function ThreeScene({ viewState, onViewStateChange }: ThreeSceneProps) {
       renderer.domElement.removeEventListener('pointerup', endDrag);
       renderer.domElement.removeEventListener('pointercancel', endDrag);
       renderer.domElement.removeEventListener('wheel', wheel);
-      geometry.dispose();
-      material.dispose();
+      surfaceGeometry.dispose();
+      surfaceMaterial.dispose();
+      gridGeometry.dispose();
+      gridMaterial.dispose();
+      pointGeometry.dispose();
+      pointMaterial.dispose();
       renderer.dispose();
       renderer.forceContextLoss();
       renderer.domElement.remove();
       scene.clear();
       runtimeRef.current = null;
     };
-  }, []);
+  }, [size]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
