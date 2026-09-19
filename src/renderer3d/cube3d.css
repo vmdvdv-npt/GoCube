@@ -67,6 +67,42 @@
   height: 100%;
 }
 
+.cube-3d-rotation-mode {
+  position: absolute;
+  z-index: 15;
+  top: 14px;
+  left: 18px;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 9px;
+  background: rgb(7 16 24 / 88%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 28%);
+}
+
+.cube-3d-rotation-mode button {
+  min-width: 62px;
+  height: 30px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgb(220 225 229 / 72%);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cube-3d-rotation-mode button[aria-pressed='true'] {
+  background: rgb(255 255 255 / 12%);
+  color: #fff;
+}
+
+.cube-3d-rotation-mode button:disabled {
+  cursor: default;
+}
+
 .cube-3d-navigation {
   position: absolute;
   z-index: 15;
