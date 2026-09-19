@@ -34,6 +34,10 @@
   color: #fff;
 }
 
+.cube-view-switch button:disabled {
+  cursor: default;
+}
+
 .cube-3d-board-shell {
   min-height: 420px;
   overflow: hidden;

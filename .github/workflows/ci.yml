@@ -83,7 +83,15 @@ jobs:
           CI_MODE: ${{ steps.mode.outputs.mode }}
         run: |
           if [[ "$CI_MODE" == "full" ]]; then
-            npm run test:e2e
+            npm run test:e2e -- --project=chromium --project=webkit
+
+            mapfile -t firefox_headless_specs < <(
+              find e2e -name '*.spec.ts' ! -name 'cube3d-visual-entry.spec.ts' -print | sort
+            )
+            npx playwright test "${firefox_headless_specs[@]}" --project=firefox
+
+            LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a \
+              npx playwright test e2e/cube3d-visual-entry.spec.ts --project=firefox --headed
           else
             npm run test:e2e -- --project=chromium
           fi

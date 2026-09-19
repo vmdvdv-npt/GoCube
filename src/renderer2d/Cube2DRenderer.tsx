@@ -2,6 +2,7 @@ import type { CSSProperties, ReactElement } from 'react';
 import type { StoneColor } from '../core/game/types';
 import type { PointId } from '../core/topology/Topology';
 import type { CubeFace } from '../core/topology/CubeTopology';
+import type { GamePointHoverStatus } from '../presentation/GamePointHoverStatus';
 import type { GameViewModel, GameViewPoint } from '../presentation/PresentationModel';
 import {
   CUBE_2D_LAYOUT_COLUMNS,
@@ -72,7 +73,7 @@ export interface Cube2DRendererTransition {
   readonly id: number;
 }
 
-export type Cube2DHoverStatus = 'allowed' | 'forbidden' | 'occupied' | null;
+export type Cube2DHoverStatus = GamePointHoverStatus;
 
 const visualCoordinate = (index: number, size: number): number => {
   const step = CUBE_2D_SVG_SIZE / size;

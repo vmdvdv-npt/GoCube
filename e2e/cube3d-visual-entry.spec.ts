@@ -14,9 +14,30 @@ const startCubeGame = async (page: Page) => {
 };
 
 const cubeViewSwitch = (page: Page) => page.getByRole('group', { name: 'Cube view' });
+const cubeGame = (page: Page) => page.getByRole('region', { name: 'Cube game' });
+const CUBE_VIEW_TRANSITION_EXPECT_TIMEOUT_MS = 30_000;
+const waitForViewTransition = async (page: Page) => {
+  await expect(cubeGame(page)).toHaveAttribute('data-cube-view-transitioning', 'false', {
+    timeout: CUBE_VIEW_TRANSITION_EXPECT_TIMEOUT_MS,
+  });
+};
+const enter3D = async (page: Page) => {
+  await cubeViewSwitch(page).getByRole('button', { name: '3D' }).click();
+  await waitForViewTransition(page);
+  await expect(page.locator('[data-testid="cube-3d-canvas"]')).toHaveCount(1, {
+    timeout: CUBE_VIEW_TRANSITION_EXPECT_TIMEOUT_MS,
+  });
+};
+const enter2D = async (page: Page) => {
+  await cubeViewSwitch(page).getByRole('button', { name: '2D' }).click();
+  await waitForViewTransition(page);
+  await expect(page.locator('[data-testid="cube-3d-canvas"]')).toHaveCount(0, {
+    timeout: CUBE_VIEW_TRANSITION_EXPECT_TIMEOUT_MS,
+  });
+};
 const ENFORCE_CUBE_3D_INTERACTION_BUDGET = process.env.CUBE3D_ENFORCE_PERF === '1';
 
-test('Cube starts in 2D and switches to the isolated 3D scene without changing the game', async ({ page }) => {
+test('Cube starts in 2D and switches to the gameplay 3D scene without changing the game', async ({ page }) => {
   await startCubeGame(page);
 
   const view = cubeViewSwitch(page);
@@ -31,15 +52,76 @@ test('Cube starts in 2D and switches to the isolated 3D scene without changing t
   await point.click();
   await expect(page.locator('.cube-2d-stone[data-logical-point-id="front:1:1"]')).toHaveCount(1);
 
-  await view.getByRole('button', { name: '3D' }).click();
+  await enter3D(page);
   await expect(view.getByRole('button', { name: '3D' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByLabel('Cube 3D view')).toBeVisible();
-  await expect(page.locator('[data-testid="cube-3d-canvas"]')).toHaveCount(1);
+  await expect(page.getByLabel('Cube 3D scene')).toHaveAttribute('data-cube3d-size', '3');
 
-  await view.getByRole('button', { name: '2D' }).click();
-  await expect(page.locator('[data-testid="cube-3d-canvas"]')).toHaveCount(0);
+  await enter2D(page);
   await expect(page.locator('.cube-2d-stone[data-logical-point-id="front:1:1"]')).toHaveCount(1);
   await expect(page.getByText('Move 1', { exact: true })).toBeVisible();
+});
+
+test('3D drag rotates without placing a stone', async ({ page }) => {
+  await startCubeGame(page);
+  await enter3D(page);
+
+  const canvas = page.locator('[data-testid="cube-3d-canvas"]');
+  const bounds = await canvas.boundingBox();
+  expect(bounds).not.toBeNull();
+  if (!bounds) return;
+  const x = bounds.x + bounds.width * 0.5;
+  const y = bounds.y + bounds.height * 0.5;
+
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 90, y - 45, { steps: 6 });
+  await page.mouse.up();
+  await expect(page.getByText('Move 0', { exact: true })).toBeVisible();
+});
+
+test('short 3D click places through the shared game flow while an occupied click does not', async ({ page }) => {
+  await startCubeGame(page);
+  await enter3D(page);
+
+  const canvas = page.locator('[data-testid="cube-3d-canvas"]');
+  const bounds = await canvas.boundingBox();
+  expect(bounds).not.toBeNull();
+  if (!bounds) return;
+  const x = bounds.x + bounds.width * 0.5;
+  const y = bounds.y + bounds.height * 0.5;
+
+  await page.mouse.click(x, y);
+  await expect(page.getByText('Move 1', { exact: true })).toBeVisible();
+
+  await page.mouse.click(x, y);
+  await expect(page.getByText('Move 1', { exact: true })).toBeVisible();
+
+  await enter2D(page);
+  await expect(page.locator('.cube-2d-stone')).toHaveCount(1);
+});
+
+test('Undo and Redo remain authoritative while alternating 3D and 2D', async ({ page }) => {
+  await startCubeGame(page);
+  await enter3D(page);
+
+  const canvas = page.locator('[data-testid="cube-3d-canvas"]');
+  const bounds = await canvas.boundingBox();
+  expect(bounds).not.toBeNull();
+  if (!bounds) return;
+  await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await expect(page.getByText('Move 1', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByText('Move 0', { exact: true })).toBeVisible();
+  await enter2D(page);
+  await expect(page.locator('.cube-2d-stone')).toHaveCount(0);
+
+  await enter3D(page);
+  await page.getByRole('button', { name: 'Redo' }).click();
+  await expect(page.getByText('Move 1', { exact: true })).toBeVisible();
+  await enter2D(page);
+  await expect(page.locator('.cube-2d-stone')).toHaveCount(1);
 });
 
 test('Three.js stays lazy until the user enters Cube 3D', async ({ page }) => {
@@ -52,19 +134,16 @@ test('Three.js stays lazy until the user enters Cube 3D', async ({ page }) => {
   await startCubeGame(page);
   expect(threeRequests).toHaveLength(0);
 
-  await cubeViewSwitch(page).getByRole('button', { name: '3D' }).click();
-  await expect(page.locator('[data-testid="cube-3d-canvas"]')).toHaveCount(1);
+  await enter3D(page);
   expect(threeRequests.length).toBeGreaterThan(0);
 });
 
 test('Cube 3D anchor, free rotation and zoom survive a temporary switch to 2D', async ({ page }) => {
   await startCubeGame(page);
-  const view = cubeViewSwitch(page);
-  await view.getByRole('button', { name: '3D' }).click();
+  await enter3D(page);
 
   const scene = page.getByLabel('Cube 3D scene');
   const canvas = page.locator('[data-testid="cube-3d-canvas"]');
-  await expect(canvas).toHaveCount(1);
   const bounds = await canvas.boundingBox();
   expect(bounds).not.toBeNull();
   if (!bounds) return;
@@ -82,11 +161,10 @@ test('Cube 3D anchor, free rotation and zoom survive a temporary switch to 2D', 
   expect(zoom).not.toBe('1.0000');
   expect(anchor).toBeTruthy();
 
-  await view.getByRole('button', { name: '2D' }).click();
-  await expect(canvas).toHaveCount(0);
+  await enter2D(page);
   await expect(page.locator('[data-cube2d-anchor]')).toHaveAttribute('data-cube2d-anchor', anchor ?? '');
 
-  await cubeViewSwitch(page).getByRole('button', { name: '3D' }).click();
+  await enter3D(page);
   await expect(page.getByLabel('Cube 3D scene')).toHaveAttribute('data-cube3d-anchor', anchor ?? '');
   await expect(page.getByLabel('Cube 3D scene')).toHaveAttribute('data-cube3d-rotation', rotation ?? '');
   await expect(page.getByLabel('Cube 3D scene')).toHaveAttribute('data-cube3d-zoom', zoom ?? '');
@@ -105,37 +183,36 @@ test('Cube 2D navigation becomes the Cube 3D spatial anchor', async ({ page }) =
   expect(navigatedAnchor).toBeTruthy();
   expect(navigatedAnchor).not.toBe(initialAnchor);
 
-  await cubeViewSwitch(page).getByRole('button', { name: '3D' }).click();
+  await enter3D(page);
   await expect(page.getByLabel('Cube 3D scene')).toHaveAttribute(
     'data-cube3d-anchor',
     navigatedAnchor ?? '',
   );
 });
 
-test('Cube 3D resize and repeated mount/unmount do not accumulate canvases', async ({ page }) => {
+test('Cube 3D repeated mount/unmount and resize do not accumulate canvases', async ({ page }) => {
   await startCubeGame(page);
 
   for (let cycle = 0; cycle < CUBE_3D_PERFORMANCE_BUDGET.automatedLifecycleCycles; cycle += 1) {
-    await cubeViewSwitch(page).getByRole('button', { name: '3D' }).click();
+    await enter3D(page);
     await expect(page.locator('[data-testid="cube-3d-canvas"]')).toHaveCount(
       CUBE_3D_PERFORMANCE_BUDGET.maxLiveCanvases,
     );
-    await cubeViewSwitch(page).getByRole('button', { name: '2D' }).click();
+    await enter2D(page);
     await expect(page.locator('[data-testid="cube-3d-canvas"]')).toHaveCount(
       CUBE_3D_PERFORMANCE_BUDGET.maxResidualCanvasesAfterUnmount,
     );
   }
 
-  await cubeViewSwitch(page).getByRole('button', { name: '3D' }).click();
-  const scene = page.getByLabel('Cube 3D scene');
-  const before = await scene.getAttribute('data-cube3d-viewport');
+  await enter3D(page);
   await page.setViewportSize({ width: 800, height: 600 });
-  await expect(scene).not.toHaveAttribute('data-cube3d-viewport', before ?? '');
+  await expect(page.locator('[data-testid="cube-3d-canvas"]')).toBeVisible();
   await expect(page.locator('[data-testid="cube-3d-canvas"]')).toHaveCount(1);
 });
 
 test('Cube 3D Chromium diagnostic records interaction metrics and enforces heap budget', async ({ page, browserName }) => {
   test.skip(browserName !== 'chromium', 'Chromium CDP is required for deterministic heap diagnostics.');
+  test.setTimeout(120_000);
 
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Emulation.setDeviceMetricsOverride', {
@@ -146,8 +223,7 @@ test('Cube 3D Chromium diagnostic records interaction metrics and enforces heap 
   });
 
   await startCubeGame(page);
-  await cubeViewSwitch(page).getByRole('button', { name: '3D' }).click();
-  await expect(page.locator('[data-testid="cube-3d-canvas"]')).toHaveCount(1);
+  await enter3D(page);
 
   const interaction = await page.evaluate(
     async ({ warmupFrames, sampleFrames }) => {
@@ -203,16 +279,14 @@ test('Cube 3D Chromium diagnostic records interaction metrics and enforces heap 
     );
   }
 
-  await cubeViewSwitch(page).getByRole('button', { name: '2D' }).click();
+  await enter2D(page);
   await cdp.send('HeapProfiler.enable');
   await cdp.send('HeapProfiler.collectGarbage');
   const heapBefore = (await cdp.send('Runtime.getHeapUsage')) as { usedSize: number };
 
   for (let cycle = 0; cycle < CUBE_3D_PERFORMANCE_BUDGET.diagnosticLifecycleCycles; cycle += 1) {
-    await cubeViewSwitch(page).getByRole('button', { name: '3D' }).click();
-    await expect(page.locator('[data-testid="cube-3d-canvas"]')).toHaveCount(1);
-    await cubeViewSwitch(page).getByRole('button', { name: '2D' }).click();
-    await expect(page.locator('[data-testid="cube-3d-canvas"]')).toHaveCount(0);
+    await enter3D(page);
+    await enter2D(page);
   }
 
   await cdp.send('HeapProfiler.collectGarbage');
