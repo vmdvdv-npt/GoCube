@@ -13,7 +13,11 @@ import {
   CUBE_2D_LAYOUT_COLUMNS,
   CUBE_2D_LAYOUT_ROWS,
 } from '../presentation/cube/Cube2DLayout';
-import { createCube3DViewState } from '../presentation/cube/Cube3DViewState';
+import {
+  createCube3DViewState,
+  withCube3DOrientationAnchor,
+} from '../presentation/cube/Cube3DViewState';
+import { CubeOrientation } from '../presentation/cube/CubeOrientation';
 import {
   CUBE_2D_BASE_CELL_SIZE,
   CUBE_2D_TRANSITION_MS,
@@ -171,6 +175,25 @@ export function Cube2DGame({
     dragPan.setOffset(nextPan);
   };
 
+  const switchTo2D = (): void => {
+    if (viewMode === '2d') return;
+    g.syncOrientation(new CubeOrientation(cube3DViewState.orientationAnchor));
+    setViewMode('2d');
+  };
+
+  const switchTo3D = (): void => {
+    if (viewMode === '3d') return;
+    const orientationAnchor = g.view.orientation.toState();
+    const currentAnchor = cube3DViewState.orientationAnchor;
+    if (
+      currentAnchor.centerFace !== orientationAnchor.centerFace ||
+      currentAnchor.upFace !== orientationAnchor.upFace
+    ) {
+      setCube3DViewState((current) => withCube3DOrientationAnchor(current, orientationAnchor));
+    }
+    setViewMode('3d');
+  };
+
   const endgamePanel =
     g.vm.phase === 'endgame' ? (
       <EndgameReviewControls
@@ -192,14 +215,14 @@ export function Cube2DGame({
       <button
         type="button"
         aria-pressed={viewMode === '2d'}
-        onClick={() => setViewMode('2d')}
+        onClick={switchTo2D}
       >
         2D
       </button>
       <button
         type="button"
         aria-pressed={viewMode === '3d'}
-        onClick={() => setViewMode('3d')}
+        onClick={switchTo3D}
       >
         3D
       </button>
@@ -227,6 +250,7 @@ export function Cube2DGame({
           className="cube-2d-game__navigation-layer"
           data-navigation-gap={CUBE_2D_NAVIGATION_GAP}
           data-vertical-anchor-column={g.view.verticalAnchorColumn}
+          data-cube2d-anchor={`${g.view.orientation.centerFace}:${g.view.orientation.upFace}`}
           style={{
             position: 'absolute',
             left: '50%',

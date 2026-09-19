@@ -3,6 +3,7 @@ import {
   CUBE_FACES,
   CubeTopology,
   cubeStepPoint,
+  parseCubePointId,
   type CubeDirection,
 } from '../../core/topology/CubeTopology';
 import { CubeOrientation } from './CubeOrientation';
@@ -42,6 +43,15 @@ describe('CubeSurfaceMapping', () => {
 
       expect(keys.size).toBe(6 * size * size);
     }
+  });
+
+  it('rejects non-canonical PointIds even when Number() could parse them', () => {
+    for (const point of ['front::0', 'front:01:0', 'front:1e0:0', 'front:+1:0', 'front:1.0:0']) {
+      expect(() => parseCubePointId(3, point)).toThrow(`Unknown cube point: ${point}`);
+      expect(() => cubePointToSurfaceLocation(3, point)).toThrow(`Unknown cube point: ${point}`);
+    }
+
+    expect(parseCubePointId(3, 'front:1:0')).toEqual({ face: 'front', row: 1, column: 0 });
   });
 
   it('exposes orthogonal canonical bases consistent with CubeOrientation rotation zero', () => {

@@ -8,6 +8,7 @@ import { CUBE_2D_CENTER, createCube2DLayout, type Cube2DLayoutCell } from './Cub
 import {
   createCube2DViewState,
   navigateCube2DViewState,
+  setCube2DOrientation,
   setCube2DVerticalAnchorColumn,
 } from './Cube2DNavigation';
 import { CubeOrientation } from './CubeOrientation';
@@ -145,6 +146,17 @@ describe('Cube 2D navigation and view state', () => {
         }
       }
     }
+  });
+
+  it('replaces only the spatial orientation when synchronizing from another renderer', () => {
+    const initialOrientation = new CubeOrientation();
+    const initial = createCube2DViewState(initialOrientation, 3);
+    const target = initialOrientation.moveRight().moveUp();
+
+    const synchronized = setCube2DOrientation(initial, target);
+    expect(synchronized.orientation).toBe(target);
+    expect(synchronized.verticalAnchorColumn).toBe(3);
+    expect(setCube2DOrientation(synchronized, target)).toBe(synchronized);
   });
 
   it('accepts only vertical anchor columns 0, 1, 2 and 3 without changing orientation', () => {

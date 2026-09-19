@@ -47,6 +47,7 @@ export function ThreeScene({ viewState, onViewStateChange }: ThreeSceneProps) {
       host.dataset.cube3dRotation = [rotation.x, rotation.y, rotation.z, rotation.w]
         .map((value) => value.toFixed(6))
         .join(',');
+      host.dataset.cube3dAnchor = `${state.orientationAnchor.centerFace}:${state.orientationAnchor.upFace}`;
     }
     runtime.render();
   };
