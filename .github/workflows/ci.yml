@@ -64,19 +64,7 @@ jobs:
 
       - run: npm run typecheck
 
-      - name: Run test coverage
-        id: coverage
-        shell: bash
-        run: |
-          set -o pipefail
-          npm run test:coverage 2>&1 | tee test-coverage.log
-
-      - name: Upload coverage failure diagnostics
-        if: failure() && steps.coverage.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-failure-diagnostics
-          path: test-coverage.log
+      - run: npm run test:coverage
 
       - run: npm run build
 
@@ -145,7 +133,7 @@ jobs:
             exit 1
           fi
 
-          if [[ "$GITHUB_REF" != 'refs/heads/main' ]]; then
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
             echo "Releases may only be authorized from main." >&2
             exit 1
           fi
