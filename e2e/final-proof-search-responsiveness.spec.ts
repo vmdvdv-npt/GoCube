@@ -106,23 +106,12 @@ test('final proof search keeps the browser event loop responsive while final ana
   });
 });
 
-test('Development Workspace does not cancel the active game Final Proof run', async ({ page }) => {
+test('Development entry stays hidden while an active game runs Final Proof', async ({ page }) => {
   test.setTimeout(FINAL_PROOF_E2E_TEST_TIMEOUT_MILLISECONDS);
   await startFinalProofFixture(page);
 
-  const analysisStatus = page.getByText('Analyzing final position…', { exact: true });
-  await page.getByRole('link', { name: 'development', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Development Workspace' })).toBeVisible();
-  await page.waitForTimeout(50);
-  await page.getByRole('button', { name: 'Back to GoCube' }).click();
-
-  await expect(analysisStatus).toBeVisible({ timeout: 500 });
-  await expect(page.getByText('Final analysis is still completing.', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Finish scoring' })).toBeDisabled();
-
-  await expect(page.getByText('Final analysis is still completing.', { exact: true })).toHaveCount(0, {
+  await expect(page.getByRole('link', { name: 'development', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible({
     timeout: 7_000,
   });
-  await expect(analysisStatus).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
 });
