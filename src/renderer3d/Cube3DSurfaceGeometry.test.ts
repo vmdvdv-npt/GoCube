@@ -74,7 +74,7 @@ describe('Cube3DSurfaceGeometry', () => {
   });
 
   it('joins the three face descriptions of every physical corner into exactly 8 rounded corners', () => {
-    const corners = new Map<string, readonly number[][]>();
+    const corners = new Map<string, readonly (readonly number[])[]>();
 
     for (const face of CUBE_FACES) {
       for (const u of [0, 1]) {
