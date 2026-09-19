@@ -119,6 +119,15 @@
   stroke-width: 4px;
 }
 
+.game-display-options {
+  position: relative;
+  z-index: 1;
+  grid-column: 1;
+  grid-row: 2;
+  display: grid;
+  align-content: start;
+}
+
 .torus-duplicates-control {
   display: grid;
   align-items: stretch;
@@ -126,7 +135,6 @@
   border: 1px solid rgb(203 140 50 / 36%);
   color: #9a9a9a;
   font-size: 13px;
-  anchor-name: --development-entry-anchor;
 }
 
 .torus-duplicates-control label {
@@ -263,13 +271,8 @@
   background: transparent;
 }
 
-/* In an active game, keep the link directly below the sidebar display-options block. */
-.app-shell--game > .development-entry {
-  top: 420px;
-  right: auto;
-  left: 32px;
-  z-index: 2;
-  position-anchor: --development-entry-anchor;
-  top: calc(anchor(bottom) + 10px);
-  left: calc(anchor(left) + 6px);
+.development-entry--sidebar {
+  position: static;
+  justify-self: start;
+  margin: 10px 18px 0;
 }
