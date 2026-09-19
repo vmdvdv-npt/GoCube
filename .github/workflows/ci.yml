@@ -92,7 +92,7 @@ jobs:
           CI_MODE: ${{ steps.mode.outputs.mode }}
         run: |
           if [[ "$CI_MODE" == "firefox-cube3d" ]]; then
-            npx playwright test e2e/cube3d-visual-entry.spec.ts --project=firefox --grep "Cube starts in 2D and switches to the gameplay 3D scene without changing the game"
+            npx playwright test e2e/firefox-cube3d-debug.spec.ts --project=firefox
           elif [[ "$CI_MODE" == "full" ]]; then
             npm run test:e2e
           else
