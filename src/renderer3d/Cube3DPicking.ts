@@ -26,7 +26,6 @@ export interface Cube3DPickContext {
 }
 
 const PICK_DIAMETER_PITCH_RATIO = 0.58;
-const PICK_DEPTH_PITCH_RATIO = 0.18;
 const PICK_LIFT_PITCH_RATIO = 0.035;
 const FRONT_FACING_EPSILON = 0.01;
 const LOCAL_PICK_NORMAL = new THREE.Vector3(0, 1, 0);
@@ -35,13 +34,13 @@ export const createCube3DPickTargets = (size: CubeSize): Cube3DPickTargets => {
   const pointIds = Object.freeze([...new CubeTopology(size).points()]);
   const pitch = cube3DGridPitch(size);
   const radius = (pitch * PICK_DIAMETER_PITCH_RATIO) / 2;
-  const depth = pitch * PICK_DEPTH_PITCH_RATIO;
-  const geometry = new THREE.CylinderGeometry(radius, radius, depth, 12);
+  // A sphere makes the hit volume angle-independent at rounded edges/corners.
+  // Logical orientation still comes from the PointId surface sample matrix.
+  const geometry = new THREE.SphereGeometry(radius, 12, 8);
   const material = new THREE.MeshBasicMaterial({
     transparent: true,
     opacity: 0,
     depthWrite: false,
-    side: THREE.DoubleSide,
   });
   material.colorWrite = false;
   const mesh = new THREE.InstancedMesh(geometry, material, pointIds.length);
@@ -61,7 +60,7 @@ export const createCube3DPickTargets = (size: CubeSize): Cube3DPickTargets => {
     pointIds,
     geometry,
     material,
-    occlusionTolerance: depth + pitch * PICK_LIFT_PITCH_RATIO,
+    occlusionTolerance: radius + pitch * PICK_LIFT_PITCH_RATIO,
   });
 };
 
