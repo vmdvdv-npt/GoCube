@@ -73,6 +73,20 @@ describe('cube3DArcballDragRotation', () => {
     expect(Math.abs(axis.z)).toBeGreaterThan(0.05);
   });
 
+  it('continues rotating for radial drags outside the virtual sphere', () => {
+    const start = new THREE.Quaternion();
+    const next = cube3DArcballDragRotation(
+      start,
+      identityCamera,
+      { x: 390, y: 200 },
+      { x: 430, y: 200 },
+      viewport,
+    );
+
+    expect(Math.abs(next.w)).toBeLessThan(0.999999);
+    expect(next.length()).toBeCloseTo(1, 8);
+  });
+
   it('rotates the virtual sphere with the camera basis', () => {
     const camera = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.3, -0.55, 0.2));
     const start = new THREE.Quaternion();
