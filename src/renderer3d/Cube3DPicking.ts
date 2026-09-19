@@ -28,6 +28,8 @@ export interface Cube3DPickContext {
 const PICK_DIAMETER_PITCH_RATIO = 0.58;
 const PICK_LIFT_PITCH_RATIO = 0.035;
 const FRONT_FACING_EPSILON = 0.01;
+const RENDER_LAYER = 0;
+const PICK_LAYER = 1;
 const LOCAL_PICK_NORMAL = new THREE.Vector3(0, 1, 0);
 
 export const createCube3DPickTargets = (size: CubeSize): Cube3DPickTargets => {
@@ -46,6 +48,9 @@ export const createCube3DPickTargets = (size: CubeSize): Cube3DPickTargets => {
   const mesh = new THREE.InstancedMesh(geometry, material, pointIds.length);
   mesh.count = pointIds.length;
   mesh.frustumCulled = false;
+  // Pick proxies participate in scene transforms but live on a non-camera layer,
+  // so they never enter the WebGL draw list. Raycasting opts into this layer below.
+  mesh.layers.set(PICK_LAYER);
 
   pointIds.forEach((pointId, instanceId) => {
     mesh.setMatrixAt(
@@ -113,7 +118,9 @@ export const pointFromCube3DClientPosition = (
   // is camera-facing. Because the cube surface is convex, front-facing sampled
   // points are still on the visible hemisphere; hidden back-side points have an
   // away-facing normal and remain rejected.
+  raycaster.layers.set(RENDER_LAYER);
   const surfaceHit = raycaster.intersectObject(context.surface, false)[0] ?? null;
+  raycaster.layers.set(PICK_LAYER);
   const targetHits = raycaster.intersectObject(context.targets.mesh, false);
   for (const hit of targetHits) {
     if (hit.instanceId === undefined) continue;
