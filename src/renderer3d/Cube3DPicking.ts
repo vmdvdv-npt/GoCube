@@ -28,6 +28,8 @@ export interface Cube3DPickContext {
 const PICK_DIAMETER_PITCH_RATIO = 0.58;
 const PICK_DEPTH_PITCH_RATIO = 0.18;
 const PICK_LIFT_PITCH_RATIO = 0.035;
+const SILHOUETTE_FRONT_FACING_EPSILON = 0.01;
+const LOCAL_PICK_NORMAL = new THREE.Vector3(0, 1, 0);
 
 export const createCube3DPickTargets = (size: CubeSize): Cube3DPickTargets => {
   const pointIds = Object.freeze([...new CubeTopology(size).points()]);
@@ -62,6 +64,18 @@ export const createCube3DPickTargets = (size: CubeSize): Cube3DPickTargets => {
   });
 };
 
+const pickInstanceFacesCamera = (
+  targets: Cube3DPickTargets,
+  instanceId: number,
+  rayDirection: THREE.Vector3,
+): boolean => {
+  const instanceMatrix = new THREE.Matrix4();
+  targets.mesh.getMatrixAt(instanceId, instanceMatrix);
+  const worldMatrix = new THREE.Matrix4().multiplyMatrices(targets.mesh.matrixWorld, instanceMatrix);
+  const worldNormal = LOCAL_PICK_NORMAL.clone().transformDirection(worldMatrix);
+  return worldNormal.dot(rayDirection) < -SILHOUETTE_FRONT_FACING_EPSILON;
+};
+
 export const pointFromCube3DClientPosition = (
   context: Cube3DPickContext,
   clientX: number,
@@ -93,15 +107,21 @@ export const pointFromCube3DClientPosition = (
   context.targets.mesh.updateWorldMatrix(true, false);
   raycaster.setFromCamera(pointer, context.camera);
 
-  // The actual closed cube surface is the occlusion boundary. A logical target
-  // behind the first visible surface can therefore never win a pick.
-  const surfaceHit = raycaster.intersectObject(context.surface, false)[0];
-  if (!surfaceHit) return null;
-
+  // The closed surface is the normal occlusion boundary. Rounded-edge hit proxies
+  // can legitimately protrude just outside the projected surface silhouette, so a
+  // no-surface-hit ray is still eligible when the proxy's sampled surface normal
+  // is front-facing. This preserves edge/corner usability without allowing picks
+  // through the cube to a hidden back-side point.
+  const surfaceHit = raycaster.intersectObject(context.surface, false)[0] ?? null;
   const targetHits = raycaster.intersectObject(context.targets.mesh, false);
   for (const hit of targetHits) {
-    if (hit.distance > surfaceHit.distance + context.targets.occlusionTolerance) break;
     if (hit.instanceId === undefined) continue;
+    if (surfaceHit) {
+      if (hit.distance > surfaceHit.distance + context.targets.occlusionTolerance) break;
+    } else if (!pickInstanceFacesCamera(context.targets, hit.instanceId, raycaster.ray.direction)) {
+      continue;
+    }
+
     const pointId = context.targets.pointIds[hit.instanceId];
     if (pointId) return pointId;
   }
