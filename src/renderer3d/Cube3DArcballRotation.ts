@@ -22,18 +22,20 @@ const projectPointerToArcball = (
   const centerY = viewport.top + viewport.height / 2;
   const x = (pointer.x - centerX) / radius;
   const y = (centerY - pointer.y) / radius;
-  const distanceSquared = x * x + y * y;
+  const distance = Math.hypot(x, y);
+  const sphereToHyperbolaBoundary = Math.SQRT1_2;
+  const z =
+    distance < sphereToHyperbolaBoundary
+      ? Math.sqrt(1 - distance * distance)
+      : 0.5 / Math.max(distance, Number.EPSILON);
 
-  if (distanceSquared <= 1) {
-    return new THREE.Vector3(x, y, Math.sqrt(1 - distanceSquared)).normalize();
-  }
-
-  const inverseLength = 1 / Math.sqrt(distanceSquared);
-  return new THREE.Vector3(x * inverseLength, y * inverseLength, 0);
+  return new THREE.Vector3(x, y, z).normalize();
 };
 
 /**
  * Maps a pointer drag through a virtual sphere centered on the viewport.
+ * Outside the sphere's central region the projection continues onto a smooth
+ * hyperbolic sheet so rotation never sticks near the viewport edges.
  *
  * The virtual-sphere vectors are transformed by the camera orientation before
  * their delta is pre-multiplied onto the cube. The cube quaternion therefore
