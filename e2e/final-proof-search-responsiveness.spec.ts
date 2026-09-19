@@ -111,7 +111,7 @@ test('Development Workspace does not cancel the active game Final Proof run', as
   await startFinalProofFixture(page);
 
   const analysisStatus = page.getByText('Analyzing final position…', { exact: true });
-  await page.getByRole('button', { name: 'Development', exact: true }).click();
+  await page.getByRole('link', { name: 'development', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Development Workspace' })).toBeVisible();
   await page.waitForTimeout(50);
   await page.getByRole('button', { name: 'Back to GoCube' }).click();
