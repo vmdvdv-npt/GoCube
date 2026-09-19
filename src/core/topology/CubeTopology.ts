@@ -124,7 +124,8 @@ export const parseCubePointId = (size: CubeSize, point: PointId): CubePointCoord
     row < 0 ||
     column < 0 ||
     row > last ||
-    column > last
+    column > last ||
+    cubePointId(faceText, row, column) !== point
   ) {
     throw new Error(`Unknown cube point: ${point}`);
   }
