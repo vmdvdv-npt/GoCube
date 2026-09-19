@@ -17,6 +17,7 @@ import './cube3d.css';
 const BASE_CAMERA_DISTANCE = 5;
 const ROTATION_SENSITIVITY = 0.008;
 const ZOOM_SENSITIVITY = 0.001;
+const DEFAULT_DEBUG_CUBE_SIZE: CubeSize = 4;
 
 interface SceneRuntime {
   readonly camera: THREE.PerspectiveCamera;
@@ -26,7 +27,7 @@ interface SceneRuntime {
 }
 
 export interface ThreeSceneProps {
-  readonly size: CubeSize;
+  readonly size?: CubeSize;
   readonly viewState: Cube3DViewState;
   readonly onViewStateChange: (state: Cube3DViewState) => void;
 }
@@ -35,7 +36,11 @@ const toQuaternionState = (quaternion: THREE.Quaternion) =>
   Object.freeze({ x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w });
 
 /** Technical Cube 3D renderer-core scene. Game/domain state stays outside this boundary. */
-export function ThreeScene({ size, viewState, onViewStateChange }: ThreeSceneProps) {
+export function ThreeScene({
+  size = DEFAULT_DEBUG_CUBE_SIZE,
+  viewState,
+  onViewStateChange,
+}: ThreeSceneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const runtimeRef = useRef<SceneRuntime | null>(null);
   const viewStateRef = useRef(viewState);
