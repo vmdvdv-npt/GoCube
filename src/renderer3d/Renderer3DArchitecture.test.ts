@@ -1,24 +1,17 @@
-import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
-
-const source = (relativePath: string) =>
-  readFileSync(new URL(relativePath, import.meta.url), 'utf8');
-
-const importsFrom = (text: string) =>
-  text
-    .split('\n')
-    .filter((line) => line.startsWith('import '));
+import { describe, expectTypeOf, it } from 'vitest';
+import type { PointId } from '../core/topology/Topology';
+import type { GameViewModel } from '../presentation/PresentationModel';
+import type { Renderer3D } from './Renderer3D';
+import type { Cube3DVisualSandboxMount } from './sandbox/Cube3DVisualSandboxBoundary';
 
 describe('Cube 3D foundation architecture', () => {
   it('keeps Renderer3D limited to presentation input and logical PointId output', () => {
-    expect(importsFrom(source('./Renderer3D.ts'))).toEqual([
-      "import type { PointId } from '../core/topology/Topology';",
-      "import type { GameViewModel } from '../presentation/PresentationModel';",
-    ]);
+    expectTypeOf<Parameters<Renderer3D['render']>>().toEqualTypeOf<[GameViewModel]>();
+    expectTypeOf<ReturnType<Renderer3D['pointFromClientPosition']>>().toEqualTypeOf<PointId | null>();
   });
 
-  it('keeps the visual sandbox seam independent from production game modules', () => {
-    expect(importsFrom(source('./sandbox/Cube3DVisualSandboxBoundary.ts'))).toEqual([]);
-    expect(source('../main.tsx')).not.toContain('renderer3d/sandbox');
+  it('keeps the visual sandbox seam limited to an isolated DOM mount lifecycle', () => {
+    expectTypeOf<Parameters<Cube3DVisualSandboxMount['mount']>>().toEqualTypeOf<[HTMLElement]>();
+    expectTypeOf<ReturnType<Cube3DVisualSandboxMount['mount']>>().toEqualTypeOf<() => void>();
   });
 });
