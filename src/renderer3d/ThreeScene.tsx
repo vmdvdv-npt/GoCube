@@ -81,10 +81,8 @@ export function ThreeScene({
     host.appendChild(renderer.domElement);
 
     const surfaceGeometry = createCube3DRoundedSurfaceGeometry();
-    const surfaceMaterial = new THREE.MeshStandardMaterial({
+    const surfaceMaterial = new THREE.MeshLambertMaterial({
       color: 0x747a80,
-      roughness: 0.9,
-      metalness: 0,
       polygonOffset: true,
       polygonOffsetFactor: 1,
       polygonOffsetUnits: 1,
