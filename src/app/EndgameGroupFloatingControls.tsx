@@ -120,6 +120,25 @@ const visibleStoneBounds = (
     }),
   );
 
+const cube3DSelectionAnchorBounds = (available: Bounds): Bounds | null => {
+  const canvas = document.querySelector<HTMLElement>('[data-testid="cube-3d-canvas"]');
+  if (!canvas) return null;
+
+  const visibleCanvas = intersectBounds(rectToBounds(canvas.getBoundingClientRect()), available);
+  if (!visibleCanvas) return null;
+
+  const centerX = (visibleCanvas.left + visibleCanvas.right) / 2;
+  const centerY = (visibleCanvas.top + visibleCanvas.bottom) / 2;
+  return Object.freeze({
+    left: centerX - 0.5,
+    top: centerY - 0.5,
+    right: centerX + 0.5,
+    bottom: centerY + 0.5,
+    width: 1,
+    height: 1,
+  });
+};
+
 const groupBounds = (
   pointIds: ReadonlySet<PointId>,
   available: Bounds,
@@ -134,7 +153,11 @@ const groupBounds = (
     rawRects.push(rectToBounds(rect));
   }
 
-  if (rawRects.length === 0) return null;
+  // WebGL stones intentionally do not have a per-stone DOM projection. The
+  // selected group is already highlighted inside ThreeScene, so keep the shared
+  // status control usable by anchoring it to the active 3D viewport rather than
+  // introducing a second point-to-screen projection model just for this control.
+  if (rawRects.length === 0) return cube3DSelectionAnchorBounds(available);
   const visibleRects = rawRects.flatMap((rect) => {
     const clipped = intersectBounds(rect, available);
     return clipped ? [clipped] : [];
@@ -283,11 +306,11 @@ export interface EndgameGroupFloatingControlsProps {
 }
 
 /**
- * Screen-space group-local endgame controls.
+ * Screen-space endgame controls for the currently selected logical group.
  *
  * Logical identity comes exclusively from the shared review state. DOM is used
- * only to measure the current renderer projection of those already-known PointIds
- * so the control follows zoom, pan and topology-specific navigation.
+ * only for renderer presentation: 2D/Torus measure the selected stone elements,
+ * while Cube 3D uses its active WebGL viewport as the minimal control anchor.
  */
 export function EndgameGroupFloatingControls({
   selectedGroup,
