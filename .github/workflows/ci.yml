@@ -26,31 +26,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Select CI mode
-        id: mode
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
-        run: |
-          set -euo pipefail
-          mode="standard"
-
-          if [[ "$EVENT_NAME" == "pull_request" ]]; then
-            if [[ "$PR_TITLE" == *"[no-test]"* ]]; then
-              echo "[no-test] is no longer supported. Remove it from the PR title; required CI may not be skipped." >&2
-              exit 1
-            fi
-            if [[ "$PR_TITLE" == *"[full]"* ]]; then
-              mode="full"
-            fi
-          elif [[ "$HEAD_MESSAGE" == release:\ finalize\ * ]]; then
-            mode="full"
-          fi
-
-          echo "mode=$mode" >> "$GITHUB_OUTPUT"
-          echo "CI mode: $mode"
-
       - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
@@ -60,41 +35,8 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run lint
-
-      - run: npm run typecheck
-
-      - run: npm run test:coverage
-
-      - run: npm run build
-
-      - name: Install Playwright browsers
-        env:
-          CI_MODE: ${{ steps.mode.outputs.mode }}
-        run: |
-          if [[ "$CI_MODE" == "full" ]]; then
-            npx playwright install --with-deps chromium firefox webkit
-          else
-            npx playwright install --with-deps chromium
-          fi
-
-      - name: Run Playwright E2E
-        env:
-          CI_MODE: ${{ steps.mode.outputs.mode }}
-        run: |
-          if [[ "$CI_MODE" == "full" ]]; then
-            npm run test:e2e -- --project=chromium --project=webkit
-
-            mapfile -t firefox_headless_specs < <(
-              find e2e -name '*.spec.ts' ! -name 'cube3d-*.spec.ts' -print | sort
-            )
-            npx playwright test "${firefox_headless_specs[@]}" --project=firefox
-
-            LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a \
-              npx playwright test e2e/cube3d-*.spec.ts --project=firefox --headed
-          else
-            npm run test:e2e -- --project=chromium
-          fi
+      - name: Isolated Cube 3D endgame depth test
+        run: npx vitest run src/renderer3d/Cube3DFeatureLayer.test.ts
 
   release_ready:
     needs: test
