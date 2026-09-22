@@ -5,15 +5,52 @@ on:
     branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, edited]
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: Version to publish after owner acceptance (for example 0.3)
+        required: true
+        type: string
+      confirm_owner_acceptance:
+        description: I explicitly accept this version and authorize tag + GitHub Release
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 jobs:
   test:
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
+      - name: Select CI mode
+        id: mode
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          mode="standard"
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            if [[ "$PR_TITLE" == *"[no-test]"* ]]; then
+              echo "[no-test] is no longer supported. Remove it from the PR title; required CI may not be skipped." >&2
+              exit 1
+            fi
+            if [[ "$PR_TITLE" == *"[full]"* ]]; then
+              mode="full"
+            fi
+          elif [[ "$HEAD_MESSAGE" == release:\ finalize\ * ]]; then
+            mode="full"
+          fi
+
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "CI mode: $mode"
+
       - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
@@ -23,10 +60,133 @@ jobs:
 
       - run: npm ci
 
-      - name: Install Firefox only
-        run: npx playwright install --with-deps firefox
+      - run: npm run lint
 
-      - name: Verify Cube view fold with software WebGL Firefox
+      - run: npm run typecheck
+
+      - run: npm run test:coverage
+
+      - run: npm run build
+
+      - name: Install Playwright browsers
+        env:
+          CI_MODE: ${{ steps.mode.outputs.mode }}
         run: |
-          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a \
-            npx playwright test e2e/cube-view-fold.spec.ts --project=firefox --headed --workers=1
+          if [[ "$CI_MODE" == "full" ]]; then
+            npx playwright install --with-deps chromium firefox webkit
+          else
+            npx playwright install --with-deps chromium
+          fi
+
+      - name: Run Playwright E2E
+        env:
+          CI_MODE: ${{ steps.mode.outputs.mode }}
+        run: |
+          mapfile -t general_specs < <(
+            find e2e -name '*.spec.ts' \
+              ! -name 'cube3d-*.spec.ts' \
+              ! -name 'cube-view-fold.spec.ts' \
+              -print | sort
+          )
+          cube3d_specs=(e2e/cube3d-*.spec.ts e2e/cube-view-fold.spec.ts)
+
+          if [[ "$CI_MODE" == "full" ]]; then
+            npx playwright test "${general_specs[@]}" --project=chromium --project=webkit
+            npx playwright test "${cube3d_specs[@]}" --project=chromium --workers=1
+            npx playwright test "${cube3d_specs[@]}" --project=webkit --workers=1
+            npx playwright test "${general_specs[@]}" --project=firefox
+
+            LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a \
+              npx playwright test "${cube3d_specs[@]}" --project=firefox --headed --workers=1
+          else
+            npx playwright test "${general_specs[@]}" --project=chromium
+            npx playwright test "${cube3d_specs[@]}" --project=chromium --workers=1
+          fi
+
+  release_ready:
+    needs: test
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      startsWith(github.event.head_commit.message, 'release: finalize ')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - name: Mark full release gate as technically ready
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state=success \
+            -f context=ci/full-release-gate \
+            -f description="Full CI passed; awaiting explicit project-owner acceptance" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+  release:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'vmdvdv-npt' &&
+      inputs.confirm_owner_acceptance == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      statuses: read
+    steps:
+      - name: Verify owner acceptance and release-ready commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_ACTOR" != "vmdvdv-npt" ]]; then
+            echo "Only project owner vmdvdv-npt may authorize a release." >&2
+            exit 1
+          fi
+
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Releases may only be authorized from main." >&2
+            exit 1
+          fi
+
+          if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "Invalid release version: $RELEASE_VERSION" >&2
+            exit 1
+          fi
+
+          head_message="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA" --jq '.commit.message')"
+          expected_message="release: finalize $RELEASE_VERSION"
+          if [[ "$(printf '%s\n' "$head_message" | sed -n '1p')" != "$expected_message" ]]; then
+            echo "main HEAD is not the matching release-finalization commit." >&2
+            echo "Expected first line: $expected_message" >&2
+            exit 1
+          fi
+
+          gate_state="$(
+            gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/status" \
+              --jq '[.statuses[] | select(.context == "ci/full-release-gate")][0].state // ""'
+          )"
+          if [[ "$gate_state" != "success" ]]; then
+            echo "Full release gate is not green for $GITHUB_SHA." >&2
+            exit 1
+          fi
+
+      - name: Create release tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$RELEASE_VERSION" >/dev/null 2>&1; then
+            echo "Release $RELEASE_VERSION already exists; keeping it."
+          else
+            gh release create "$RELEASE_VERSION" \
+              --target "$GITHUB_SHA" \
+              --title "GoCube $RELEASE_VERSION" \
+              --generate-notes
+          fi
