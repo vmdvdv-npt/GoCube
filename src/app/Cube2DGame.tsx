@@ -371,6 +371,8 @@ export function Cube2DGame({
         <LazyThreeScene
           size={controller.size}
           viewModel={displayViewModel}
+          endgamePresentation={g.vm.phase === 'endgame' ? g.endgamePresentation : null}
+          showMoveNumbers={g.showMoveNumbers}
           viewState={cube3DViewState}
           hoveredPointId={g.hoveredPoint}
           hoverStatus={g.hoverStatus}
