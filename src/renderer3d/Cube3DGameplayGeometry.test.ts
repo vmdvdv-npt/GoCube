@@ -4,10 +4,12 @@ import type { CubeSize } from '../core/topology/CubeTopology';
 import type { PointId } from '../core/topology/Topology';
 import {
   CUBE_3D_STONE_DIAMETER_PITCH_RATIO,
+  CUBE_3D_STONE_HEIGHT_RADIUS_RATIO,
   CUBE_3D_STONE_LIFT_PITCH_RATIO,
   createCube3DStoneGeometry,
   cube3DGridPitch,
   cube3DStoneMatrix,
+  cube3DStoneVisualMetrics,
 } from './Cube3DGameplayGeometry';
 import { cube3DPointSample } from './Cube3DSurfaceGeometry';
 
@@ -46,18 +48,27 @@ describe('Cube3D gameplay geometry', () => {
     [8, point('back', 4, 4)],
   ] as const)('places stone matrices directly from the shared point sample', (rawSize, pointId) => {
     const size = rawSize as CubeSize;
-    const pitch = cube3DGridPitch(size);
-    const radius = (pitch * CUBE_3D_STONE_DIAMETER_PITCH_RATIO) / 2;
-    const lift = pitch * CUBE_3D_STONE_LIFT_PITCH_RATIO + radius * 0.03;
+    const { centerLift } = cube3DStoneVisualMetrics(size);
     const sample = cube3DPointSample(size, pointId);
     const expected = new THREE.Vector3(...sample.position).addScaledVector(
       new THREE.Vector3(...sample.normal).normalize(),
-      lift,
+      centerLift,
     );
     const actual = matrixPosition(cube3DStoneMatrix(size, pointId));
 
     expect(actual.distanceTo(expected)).toBeLessThan(1e-10);
   });
+
+  it.each([4, 5, 7, 8] as const)(
+    'keeps the stone bottom just above the surface for %d×%d',
+    (rawSize) => {
+      const size = rawSize as CubeSize;
+      const { pitch, radius, centerLift } = cube3DStoneVisualMetrics(size);
+      const bottomLift = centerLift - radius * CUBE_3D_STONE_HEIGHT_RADIUS_RATIO;
+      expect(bottomLift).toBeCloseTo(pitch * CUBE_3D_STONE_LIFT_PITCH_RATIO, 10);
+      expect(bottomLift).toBeGreaterThan(0);
+    },
+  );
 
   it('scales the shared lens to the configured grid-pitch diameter', () => {
     const size = 5 as CubeSize;
@@ -74,14 +85,15 @@ describe('Cube3D gameplay geometry', () => {
     );
   });
 
-  it('uses one reusable oblate lens geometry rather than a sphere or cylinder primitive per stone', () => {
+  it('uses one reusable low-profile oblate lens rather than a sphere or flat disk per stone', () => {
     const geometry = createCube3DStoneGeometry();
     geometry.computeBoundingBox();
     const box = geometry.boundingBox!;
     const width = box.max.x - box.min.x;
     const height = box.max.y - box.min.y;
     const depth = box.max.z - box.min.z;
-    expect(height).toBeLessThan(width * 0.4);
+    expect(height).toBeGreaterThan(width * 0.25);
+    expect(height).toBeLessThan(width * 0.35);
     expect(depth).toBeCloseTo(width, 2);
     geometry.dispose();
   });
