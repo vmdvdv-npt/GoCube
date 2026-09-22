@@ -41,6 +41,16 @@ export const createCube3DWoodMaterial = (
       .replace('#include <common>', `#include <common>
         varying vec3 woodPosition;
         varying vec3 woodNormal;`)
+      .replace('#include <map_pars_fragment>', `#include <map_pars_fragment>
+        vec3 balancedWood(vec2 uv, vec3 grain) {
+          // A fixed coarse mip estimates illumination baked into the source image.
+          // Normalize before face blending; never tie this correction to camera LOD.
+          vec3 localMean = textureLod(map, uv, 6.0).rgb;
+          vec3 luma = vec3(0.2126, 0.7152, 0.0722);
+          float detail = dot(grain, luma) / max(dot(localMean, luma), 0.001);
+          float softDetail = mix(1.0, clamp(detail, 0.55, 1.6), 0.55);
+          return vec3(0.285, 0.118, 0.041) * softDetail;
+        }`)
       .replace('#include <map_fragment>', `
         // Each opposite face gets a different, non-repeating crop/orientation.
         // Smooth triplanar weights preserve the finish across rounded edges.
@@ -55,7 +65,9 @@ export const createCube3DWoodMaterial = (
         vec3 grainY = texture2D(map, uvY).rgb;
         vec3 grainZ = texture2D(map, uvZ).rgb;
         vec3 woodGrain = grainX * weights.x + grainY * weights.y + grainZ * weights.z;
-        diffuseColor.rgb *= woodGrain;
+        diffuseColor.rgb *= balancedWood(uvX, grainX) * weights.x
+          + balancedWood(uvY, grainY) * weights.y
+          + balancedWood(uvZ, grainZ) * weights.z;
       `)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         // Subtle pore variation breaks up the highlight without noisy bump normals.
@@ -63,6 +75,6 @@ export const createCube3DWoodMaterial = (
         roughnessFactor = clamp(roughnessFactor + (0.18 - grainLuminance) * 0.3, 0.38, 0.54);
       `);
   };
-  material.customProgramCacheKey = () => 'cube-walnut-satin-v3';
+  material.customProgramCacheKey = () => 'cube-walnut-balanced-v4';
   return material;
 };

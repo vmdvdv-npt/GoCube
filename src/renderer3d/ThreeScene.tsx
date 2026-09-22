@@ -239,8 +239,8 @@ export function ThreeScene({
     gridPathGeometry.dispose();
     // Native WebGL lines are limited to one pixel on most devices.
     const gridMaterial = new LineMaterial({
-      color: 0x362316,
-      linewidth: 1.6,
+      color: 0x21170f,
+      linewidth: 2.0,
       alphaToCoverage: true,
       depthTest: true,
       depthWrite: true,
