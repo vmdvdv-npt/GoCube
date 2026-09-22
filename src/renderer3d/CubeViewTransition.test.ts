@@ -30,6 +30,11 @@ describe('cube switching motion and cross anchor', () => {
     expect(end.blend).toBe(1);
     expect(end.approach).toBe(1);
     expect(end.yaw).toBeCloseTo(-2 * Math.PI, 12);
+    const closed = cubeViewTransitionMotion(0.32);
+    expect(closed.fold).toBe(1);
+    const remainingDegrees = (2 * Math.PI - Math.abs(closed.yaw)) * 180 / Math.PI;
+    expect(remainingDegrees).toBeGreaterThan(260);
+    expect(remainingDegrees).toBeLessThan(280);
     const middle = cubeViewTransitionMotion(0.55);
     expect(middle.fold).toBe(1);
     expect(middle.blend).toBeCloseTo(0.5);

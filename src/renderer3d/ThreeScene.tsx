@@ -34,7 +34,7 @@ import {
   pointFromCube3DClientPosition,
   type Cube3DPickTargets,
 } from './Cube3DPicking';
-import { CUBE_3D_PERFORMANCE_BUDGET } from './Cube3DPerformance';
+import { CUBE_3D_PERFORMANCE_BUDGET, cube3DMotionPixelRatio } from './Cube3DPerformance';
 import { cube3DScreenSpaceDragRotation } from './Cube3DScreenRotation';
 import {
   createCube3DDebugGridGeometry,
@@ -211,9 +211,8 @@ export function ThreeScene({
 
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(
-      Math.min(window.devicePixelRatio, CUBE_3D_PERFORMANCE_BUDGET.maxDevicePixelRatio),
-    );
+    const idlePixelRatio = Math.min(window.devicePixelRatio, CUBE_3D_PERFORMANCE_BUDGET.maxDevicePixelRatio);
+    renderer.setPixelRatio(idlePixelRatio);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.95;
     renderer.shadowMap.enabled = true;
@@ -316,9 +315,28 @@ export function ThreeScene({
       if (renderFrameId !== null) return;
       renderFrameId = window.requestAnimationFrame(() => {
         renderFrameId = null;
-        renderer.render(scene, camera);
-        host.dataset.cube3dReady = String(textureReady);
+        renderNow();
       });
+    };
+    const renderNow = (): void => {
+      if (renderFrameId !== null) {
+        window.cancelAnimationFrame(renderFrameId);
+        renderFrameId = null;
+      }
+      renderer.render(scene, camera);
+      host.dataset.cube3dReady = String(textureReady);
+    };
+    let wheelSettleTimer: number | null = null;
+    const beginMotion = (): void => {
+      if (wheelSettleTimer !== null) {
+        window.clearTimeout(wheelSettleTimer);
+        wheelSettleTimer = null;
+      }
+      const ratio = cube3DMotionPixelRatio(idlePixelRatio, host.clientWidth, host.clientHeight);
+      if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
+    };
+    const restoreResolution = (): void => {
+      if (renderer.getPixelRatio() !== idlePixelRatio) renderer.setPixelRatio(idlePixelRatio);
     };
     let runtime!: SceneRuntime;
     const pointFromClientPosition = (x: number, y: number): PointId | null => {
@@ -356,14 +374,22 @@ export function ThreeScene({
         host.dataset.cube3dTransitionRotation = [frame.rotation.x, frame.rotation.y, frame.rotation.z, frame.rotation.w].join(',');
         renderer.domElement.style.opacity = String(frame.opacity);
         cubeRoot.updateMatrixWorld(true);
-        if (frame.opacity > 0) renderer.render(scene, camera);
+        if (frame.opacity > 0) {
+          beginMotion();
+          // The fold owns this frame; consume any queued update instead of drawing twice.
+          renderNow();
+        }
       },
       reset: () => {
+        restoreResolution();
         cubeRoot.scale.setScalar(1);
         cubeRoot.position.set(0, 0, 0);
         camera.clearViewOffset();
         renderer.domElement.style.opacity = '1';
         applyViewState(runtime, viewStateRef.current);
+        // Resizing clears the drawing buffer: repaint before the browser can
+        // present it, so restoring sharpness cannot flash a blank canvas.
+        renderNow();
       },
     };
 
@@ -375,8 +401,10 @@ export function ThreeScene({
 
     const finishViewTransition = (target: Cube3DViewState): void => {
       transitionFrameId = null;
+      restoreResolution();
       viewStateRef.current = target;
       applyViewState(runtime, target);
+      renderNow();
       host.dataset.cube3dTransitioning = 'false';
       viewTransitioningRef.current = false;
       onViewStateChangeRef.current(target);
@@ -393,6 +421,7 @@ export function ThreeScene({
       onViewTransitioningChangeRef.current(true);
       setViewTransitioning(true);
 
+      beginMotion();
       const startRotation = runtime.cubeRoot.quaternion.clone().normalize();
       const targetRotation = new THREE.Quaternion(
         target.rotation.x,
@@ -412,7 +441,7 @@ export function ThreeScene({
         runtime.camera.lookAt(0, 0, 0);
         runtime.camera.updateMatrixWorld(true);
         runtime.cubeRoot.updateMatrixWorld(true);
-        runtime.renderer.render(runtime.scene, runtime.camera);
+        renderNow();
 
         if (progress < 1) {
           transitionFrameId = window.requestAnimationFrame(frame);
@@ -471,6 +500,7 @@ export function ThreeScene({
       }
 
       event.preventDefault();
+      beginMotion();
       const nextQuaternion =
         rotationModeRef.current === 'arcball'
           ? cube3DArcballDragRotation(
@@ -502,6 +532,10 @@ export function ThreeScene({
         renderer.domElement.releasePointerCapture(event.pointerId);
       }
       drag = null;
+      if (wasDragging) {
+        restoreResolution();
+        renderNow();
+      }
       if (wasDragging || !activate || inputDisabledRef.current || viewTransitioningRef.current) return;
 
       const pointId = runtime.pointFromClientPosition(event.clientX, event.clientY);
@@ -518,6 +552,12 @@ export function ThreeScene({
     const wheel = (event: WheelEvent): void => {
       event.preventDefault();
       if (viewTransitioningRef.current) return;
+      beginMotion();
+      wheelSettleTimer = window.setTimeout(() => {
+        wheelSettleTimer = null;
+        restoreResolution();
+        renderNow();
+      }, 120);
       const nextState = withCube3DZoom(
         viewStateRef.current,
         viewStateRef.current.zoom * Math.exp(-event.deltaY * ZOOM_SENSITIVITY),
@@ -542,6 +582,7 @@ export function ThreeScene({
     return () => {
       if (transitionBridgeRef) transitionBridgeRef.current = null;
       observer.disconnect();
+      if (wheelSettleTimer !== null) window.clearTimeout(wheelSettleTimer);
       startViewTransitionRef.current = () => undefined;
       viewTransitioningRef.current = false;
       renderer.domElement.removeEventListener('pointerdown', pointerDown);
