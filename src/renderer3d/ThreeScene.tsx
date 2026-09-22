@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import type { CubeSize } from '../core/topology/CubeTopology';
 import type { PointId } from '../core/topology/Topology';
 import type { EndgamePresentationModel } from '../presentation/EndgamePresentation';
@@ -229,9 +232,20 @@ export function ThreeScene({
     surfaceMaterial.shadowSide = THREE.BackSide;
 
     // Stage 1's continuous adjacency geometry is now the production gameplay grid.
-    const gridGeometry = createCube3DDebugGridGeometry(size);
-    const gridMaterial = new THREE.LineBasicMaterial({ color: 0x362316, depthTest: true, depthWrite: true });
-    const grid = new THREE.LineSegments(gridGeometry, gridMaterial);
+    const gridPathGeometry = createCube3DDebugGridGeometry(size);
+    const gridGeometry = new LineSegmentsGeometry().setPositions(
+      gridPathGeometry.getAttribute('position').array as Float32Array,
+    );
+    gridPathGeometry.dispose();
+    // Native WebGL lines are limited to one pixel on most devices.
+    const gridMaterial = new LineMaterial({
+      color: 0x362316,
+      linewidth: 1.6,
+      alphaToCoverage: true,
+      depthTest: true,
+      depthWrite: true,
+    });
+    const grid = new LineSegments2(gridGeometry, gridMaterial);
     grid.renderOrder = 1;
 
     const stoneGeometry = createCube3DStoneGeometry();
