@@ -1,10 +1,5 @@
 import * as THREE from 'three';
-import {
-  CubeTopology,
-  cubeStepPoint,
-  type CubeDirection,
-  type CubeSize,
-} from '../core/topology/CubeTopology';
+import type { CubeSize } from '../core/topology/CubeTopology';
 import type { PointId } from '../core/topology/Topology';
 import {
   ENDGAME_PRESENTATION_STYLES,
@@ -12,28 +7,21 @@ import {
   type EndgamePresentationModel,
 } from '../presentation/EndgamePresentation';
 import type { GameViewModel } from '../presentation/PresentationModel';
+import { createCube3DReviewContourGeometry } from './Cube3DEndgameContourGeometry';
+import { createCube3DFeaturePresentation } from './Cube3DFeaturePresentation';
 import {
   CUBE_3D_STONE_DIAMETER_PITCH_RATIO,
   CUBE_3D_STONE_LIFT_PITCH_RATIO,
   cube3DGridPitch,
   cube3DSurfaceAlignedMatrix,
 } from './Cube3DGameplayGeometry';
-import {
-  DEFAULT_CUBE_3D_SURFACE_PROFILE,
-  cube3DGridPath,
-} from './Cube3DSurfaceGeometry';
-import { createCube3DFeaturePresentation } from './Cube3DFeaturePresentation';
 
 const DISC_THICKNESS = 0.08;
-const REVIEW_DISC_SEGMENTS = 48;
-const REVIEW_CONNECTION_SAMPLES_PER_SIDE = 5;
 const MOVE_LABEL_TEXTURE_SIZE = 128;
-const UP = new THREE.Vector3(0, 1, 0);
-const CUBE_DIRECTIONS: readonly CubeDirection[] = ['top', 'right', 'bottom', 'left'];
 export const CUBE_3D_REVIEW_SURFACE_LIFT_PITCH_RATIO = 0.006;
-export const CUBE_3D_REVIEW_DISC_SCALE = 1.22;
-export const CUBE_3D_REVIEW_DISC_HOVER_SCALE = 1.26;
-export const CUBE_3D_REVIEW_DISC_SELECTED_SCALE = 1.3;
+export const CUBE_3D_REVIEW_CONTOUR_WIDTH_PITCH_RATIO = 0.19;
+export const CUBE_3D_REVIEW_CONTOUR_HOVER_WIDTH_PITCH_RATIO = 0.21;
+export const CUBE_3D_REVIEW_CONTOUR_SELECTED_WIDTH_PITCH_RATIO = 0.23;
 
 export interface Cube3DFeatureLayerDiagnostics {
   readonly blackTerritoryCount: number;
@@ -81,82 +69,12 @@ export const cube3DReviewSurfaceMatrix = (
     scale,
   );
 
-const reviewScale = (selected: boolean, hovered: boolean): number =>
+const reviewContourWidthRatio = (selected: boolean, hovered: boolean): number =>
   selected
-    ? CUBE_3D_REVIEW_DISC_SELECTED_SCALE
+    ? CUBE_3D_REVIEW_CONTOUR_SELECTED_WIDTH_PITCH_RATIO
     : hovered
-      ? CUBE_3D_REVIEW_DISC_HOVER_SCALE
-      : CUBE_3D_REVIEW_DISC_SCALE;
-
-const roundedSurfaceNormal = (position: readonly number[]): THREE.Vector3 => {
-  const { halfExtent, roundingRadius } = DEFAULT_CUBE_3D_SURFACE_PROFILE;
-  const coreHalfExtent = halfExtent - roundingRadius;
-  const core = new THREE.Vector3(
-    THREE.MathUtils.clamp(position[0] ?? 0, -coreHalfExtent, coreHalfExtent),
-    THREE.MathUtils.clamp(position[1] ?? 0, -coreHalfExtent, coreHalfExtent),
-    THREE.MathUtils.clamp(position[2] ?? 0, -coreHalfExtent, coreHalfExtent),
-  );
-  const normal = new THREE.Vector3(...(position as readonly [number, number, number])).sub(core);
-  if (normal.lengthSq() > 1e-12) return normal.normalize();
-
-  const fallback = new THREE.Vector3(...(position as readonly [number, number, number]));
-  const components = [Math.abs(fallback.x), Math.abs(fallback.y), Math.abs(fallback.z)];
-  const axis = components.indexOf(Math.max(...components));
-  normal.set(0, 0, 0).setComponent(axis, Math.sign(fallback.getComponent(axis)) || 1);
-  return normal;
-};
-
-const reviewPathMatrix = (
-  position: readonly [number, number, number],
-  scale: number,
-  lift: number,
-): THREE.Matrix4 => {
-  const normal = roundedSurfaceNormal(position);
-  const center = new THREE.Vector3(...position).addScaledVector(normal, lift);
-  const rotation = new THREE.Quaternion().setFromUnitVectors(UP, normal);
-  return new THREE.Matrix4().compose(
-    center,
-    rotation,
-    new THREE.Vector3(scale, scale, scale),
-  );
-};
-
-const groupConnectionMatrices = (
-  size: CubeSize,
-  points: readonly PointId[],
-  radius: number,
-): readonly THREE.Matrix4[] => {
-  if (points.length < 2) return Object.freeze([]);
-
-  const pointSet = new Set(points);
-  const seen = new Set<string>();
-  const matrices: THREE.Matrix4[] = [];
-  const lift = cube3DGridPitch(size) * CUBE_3D_REVIEW_SURFACE_LIFT_PITCH_RATIO;
-
-  for (const pointId of points) {
-    for (const direction of CUBE_DIRECTIONS) {
-      const neighbour = cubeStepPoint(size, pointId, direction);
-      if (!pointSet.has(neighbour)) continue;
-      const edgeKey = [pointId, neighbour].sort().join('|');
-      if (seen.has(edgeKey)) continue;
-      seen.add(edgeKey);
-
-      const path = cube3DGridPath(
-        size,
-        pointId,
-        direction,
-        DEFAULT_CUBE_3D_SURFACE_PROFILE,
-        REVIEW_CONNECTION_SAMPLES_PER_SIDE,
-      );
-      for (let index = 1; index < path.positions.length - 1; index += 1) {
-        const position = path.positions[index]!;
-        matrices.push(reviewPathMatrix(position, radius, lift));
-      }
-    }
-  }
-
-  return Object.freeze(matrices);
-};
+      ? CUBE_3D_REVIEW_CONTOUR_HOVER_WIDTH_PITCH_RATIO
+      : CUBE_3D_REVIEW_CONTOUR_WIDTH_PITCH_RATIO;
 
 const numberTexture = (
   cache: Map<string, THREE.CanvasTexture>,
@@ -191,17 +109,15 @@ const numberTexture = (
 
 export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => {
   const capacity = 6 * size * size;
-  const reviewCapacity = capacity * 24;
   const pitch = cube3DGridPitch(size);
   const stoneRadius = (pitch * CUBE_3D_STONE_DIAMETER_PITCH_RATIO) / 2;
   const stoneCenterLift = pitch * CUBE_3D_STONE_LIFT_PITCH_RATIO + stoneRadius * 0.03;
   const stoneTopLift = stoneCenterLift + stoneRadius * 0.38;
+  const reviewLift = pitch * CUBE_3D_REVIEW_SURFACE_LIFT_PITCH_RATIO;
   const group = new THREE.Group();
   group.name = 'cube3d-feature-layer';
 
   const discGeometry = new THREE.CylinderGeometry(1, 1, DISC_THICKNESS, 24);
-  const reviewDiscGeometry = new THREE.CircleGeometry(1, REVIEW_DISC_SEGMENTS);
-  reviewDiscGeometry.rotateX(-Math.PI / 2);
   const blackTerritoryMaterial = new THREE.MeshBasicMaterial({ color: 0x111111 });
   const whiteTerritoryMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const blackTerritory = new THREE.InstancedMesh(discGeometry, blackTerritoryMaterial, capacity);
@@ -209,44 +125,34 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
 
   const deadColor = ENDGAME_PRESENTATION_STYLES.dead.contourColor ?? '#e52b2b';
   const unresolvedColor = ENDGAME_PRESENTATION_STYLES.unresolved.contourColor ?? '#f8cf4d';
-  const deadMaterial = new THREE.MeshBasicMaterial({ color: deadColor, side: THREE.DoubleSide });
-  const unresolvedMaterial = new THREE.MeshBasicMaterial({
-    color: unresolvedColor,
-    side: THREE.DoubleSide,
-  });
-  const deadDiscs = new THREE.InstancedMesh(reviewDiscGeometry, deadMaterial, reviewCapacity);
-  const unresolvedDiscs = new THREE.InstancedMesh(
-    reviewDiscGeometry,
-    unresolvedMaterial,
-    reviewCapacity,
-  );
-  deadDiscs.name = 'cube3d-endgame-dead-discs';
-  unresolvedDiscs.name = 'cube3d-endgame-unresolved-discs';
-
   const sekiContourColor =
     ENDGAME_PRESENTATION_STYLES.seki.contourColor ??
     ENDGAME_PRESENTATION_STYLES.seki.maskColor ??
     '#80878f';
   const sekiMaskColor = ENDGAME_PRESENTATION_STYLES.seki.maskColor ?? sekiContourColor;
   const sekiOpacity = ENDGAME_PRESENTATION_STYLES.seki.maskOpacity;
-  const sekiStoneMaterial = new THREE.MeshBasicMaterial({
-    color: sekiContourColor,
-    side: THREE.DoubleSide,
-  });
+
+  const contourMaterial = (color: string): THREE.MeshBasicMaterial =>
+    new THREE.MeshBasicMaterial({
+      color,
+      side: THREE.DoubleSide,
+      depthTest: true,
+      depthWrite: false,
+    });
+  const deadMaterial = contourMaterial(deadColor);
+  const unresolvedMaterial = contourMaterial(unresolvedColor);
+  const sekiStoneMaterial = contourMaterial(sekiContourColor);
   const sekiPointMaterial = new THREE.MeshBasicMaterial({
     color: sekiMaskColor,
     transparent: true,
     opacity: sekiOpacity,
     depthWrite: false,
   });
-  const sekiStoneDiscs = new THREE.InstancedMesh(
-    reviewDiscGeometry,
-    sekiStoneMaterial,
-    reviewCapacity,
-  );
   const sekiPointMasks = new THREE.InstancedMesh(discGeometry, sekiPointMaterial, capacity);
-  sekiStoneDiscs.name = 'cube3d-endgame-seki-stone-discs';
   sekiPointMasks.name = 'cube3d-endgame-seki-point-masks';
+
+  const reviewContours = new THREE.Group();
+  reviewContours.name = 'cube3d-endgame-review-contours';
 
   const lastMoveMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const lastMoveMarker = new THREE.Mesh(discGeometry, lastMoveMaterial);
@@ -257,21 +163,11 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
   moveLabels.name = 'cube3d-move-labels';
   const textureCache = new Map<string, THREE.CanvasTexture>();
 
-  for (const mesh of [
-    blackTerritory,
-    whiteTerritory,
-    deadDiscs,
-    unresolvedDiscs,
-    sekiStoneDiscs,
-    sekiPointMasks,
-  ]) {
+  for (const mesh of [blackTerritory, whiteTerritory, sekiPointMasks]) {
     mesh.count = 0;
     mesh.renderOrder = 3;
     mesh.frustumCulled = false;
   }
-  deadDiscs.renderOrder = 4;
-  unresolvedDiscs.renderOrder = 4;
-  sekiStoneDiscs.renderOrder = 4;
   sekiPointMasks.renderOrder = 4;
   lastMoveMarker.renderOrder = 5;
   moveLabels.renderOrder = 6;
@@ -279,9 +175,7 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
   group.add(
     blackTerritory,
     whiteTerritory,
-    deadDiscs,
-    unresolvedDiscs,
-    sekiStoneDiscs,
+    reviewContours,
     sekiPointMasks,
     lastMoveMarker,
     moveLabels,
@@ -292,6 +186,39 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
       moveLabels.remove(child);
       if (child instanceof THREE.Sprite) child.material.dispose();
     }
+  };
+
+  const clearReviewContours = (): void => {
+    for (const child of [...reviewContours.children]) {
+      reviewContours.remove(child);
+      if (child instanceof THREE.Mesh) child.geometry.dispose();
+    }
+  };
+
+  const addReviewContour = (
+    pointIds: readonly PointId[],
+    material: THREE.MeshBasicMaterial,
+    name: string,
+    selected: boolean,
+    hovered: boolean,
+  ): void => {
+    if (pointIds.length === 0) return;
+    const geometry = createCube3DReviewContourGeometry(
+      size,
+      pointIds,
+      pitch * reviewContourWidthRatio(selected, hovered),
+      reviewLift,
+    );
+    const positions = geometry.getAttribute('position');
+    if (!positions || positions.count === 0) {
+      geometry.dispose();
+      return;
+    }
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = name;
+    mesh.renderOrder = 4;
+    mesh.frustumCulled = false;
+    reviewContours.add(mesh);
   };
 
   const update = (
@@ -310,12 +237,10 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
     let unresolvedReviewCount = 0;
     let sekiStoneCount = 0;
     let sekiPointCount = 0;
-    let deadInstanceCount = 0;
-    let unresolvedInstanceCount = 0;
-    let sekiStoneInstanceCount = 0;
     let lastMovePointId: PointId | null = null;
 
     clearMoveLabels();
+    clearReviewContours();
 
     for (const point of projection.points) {
       if (point.territoryOwner) {
@@ -332,30 +257,11 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
         }
       }
 
-      const pointReviewScale = reviewScale(point.reviewSelected, point.reviewHovered);
-      if (point.reviewStatus === 'dead' || point.reviewStatus === 'unresolved') {
-        const matrix = cube3DReviewSurfaceMatrix(
-          size,
-          point.pointId,
-          stoneRadius * pointReviewScale,
-        );
-        if (point.reviewStatus === 'dead') {
-          deadInstanceCount = setInstance(deadDiscs, deadInstanceCount, matrix);
-          deadReviewCount += 1;
-        } else {
-          unresolvedInstanceCount = setInstance(unresolvedDiscs, unresolvedInstanceCount, matrix);
-          unresolvedReviewCount += 1;
-        }
-      }
+      if (point.reviewStatus === 'dead') deadReviewCount += 1;
+      if (point.reviewStatus === 'unresolved') unresolvedReviewCount += 1;
 
       if (point.sekiRegion) {
         if (point.occupancy === 'black' || point.occupancy === 'white') {
-          const matrix = cube3DReviewSurfaceMatrix(
-            size,
-            point.pointId,
-            stoneRadius * pointReviewScale,
-          );
-          sekiStoneInstanceCount = setInstance(sekiStoneDiscs, sekiStoneInstanceCount, matrix);
           sekiStoneCount += 1;
         } else {
           const matrix = cube3DReviewSurfaceMatrix(
@@ -407,40 +313,30 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
       }
     }
 
-    for (const reviewGroup of endgamePresentation?.groups ?? []) {
-      if (reviewGroup.status !== 'dead' && reviewGroup.status !== 'unresolved') continue;
-      const radius = stoneRadius * reviewScale(reviewGroup.selected, reviewGroup.hovered);
-      const connections = groupConnectionMatrices(size, reviewGroup.points, radius);
-      for (const matrix of connections) {
-        if (reviewGroup.status === 'dead') {
-          deadInstanceCount = setInstance(deadDiscs, deadInstanceCount, matrix);
-        } else {
-          unresolvedInstanceCount = setInstance(unresolvedDiscs, unresolvedInstanceCount, matrix);
-        }
-      }
+    for (const [index, contour] of (endgamePresentation?.contours ?? []).entries()) {
+      addReviewContour(
+        contour.points,
+        contour.status === 'dead' ? deadMaterial : unresolvedMaterial,
+        `cube3d-endgame-${contour.status}-contour-${String(index)}`,
+        contour.selected,
+        contour.hovered,
+      );
     }
 
-    const topology = new CubeTopology(size);
-    const occupiedByPoint = new Map(projection.points.map((point) => [point.pointId, point.occupancy]));
-    for (const region of endgamePresentation?.sekiRegions ?? []) {
-      const stonePoints = region.points.filter((pointId) => {
-        const occupancy = occupiedByPoint.get(pointId);
-        return occupancy === 'black' || occupancy === 'white';
-      });
-      const radius = stoneRadius * reviewScale(region.selected, region.hovered);
-      for (const matrix of groupConnectionMatrices(size, stonePoints, radius)) {
-        sekiStoneInstanceCount = setInstance(sekiStoneDiscs, sekiStoneInstanceCount, matrix);
-      }
+    for (const [index, region] of (endgamePresentation?.sekiRegions ?? []).entries()) {
+      addReviewContour(
+        region.points,
+        sekiStoneMaterial,
+        `cube3d-endgame-seki-contour-${String(index)}`,
+        region.selected,
+        region.hovered,
+      );
     }
-    void topology;
 
     if (!lastMovePointId) lastMoveMarker.visible = false;
 
     finishInstances(blackTerritory, blackTerritoryCount);
     finishInstances(whiteTerritory, whiteTerritoryCount);
-    finishInstances(deadDiscs, deadInstanceCount);
-    finishInstances(unresolvedDiscs, unresolvedInstanceCount);
-    finishInstances(sekiStoneDiscs, sekiStoneInstanceCount);
     finishInstances(sekiPointMasks, sekiPointCount);
 
     return Object.freeze({
@@ -456,10 +352,10 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
 
   const dispose = (): void => {
     clearMoveLabels();
+    clearReviewContours();
     for (const texture of textureCache.values()) texture.dispose();
     textureCache.clear();
     discGeometry.dispose();
-    reviewDiscGeometry.dispose();
     blackTerritoryMaterial.dispose();
     whiteTerritoryMaterial.dispose();
     deadMaterial.dispose();
