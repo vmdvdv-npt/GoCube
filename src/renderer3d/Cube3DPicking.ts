@@ -29,7 +29,7 @@ const PICK_DIAMETER_PITCH_RATIO = 0.58;
 const PICK_LIFT_PITCH_RATIO = 0.035;
 const FRONT_FACING_EPSILON = 0.01;
 const RENDER_LAYER = 0;
-const PICK_LAYER = 1;
+export const CUBE_3D_PICK_LAYER = 1;
 const LOCAL_PICK_NORMAL = new THREE.Vector3(0, 1, 0);
 
 export const createCube3DPickTargets = (size: CubeSize): Cube3DPickTargets => {
@@ -50,7 +50,7 @@ export const createCube3DPickTargets = (size: CubeSize): Cube3DPickTargets => {
   mesh.frustumCulled = false;
   // Pick proxies participate in scene transforms but live on a non-camera layer,
   // so they never enter the WebGL draw list. Raycasting opts into this layer below.
-  mesh.layers.set(PICK_LAYER);
+  mesh.layers.set(CUBE_3D_PICK_LAYER);
 
   pointIds.forEach((pointId, instanceId) => {
     mesh.setMatrixAt(
@@ -80,6 +80,12 @@ const pickInstanceFacesCamera = (
   const worldNormal = LOCAL_PICK_NORMAL.clone().transformDirection(worldMatrix);
   return worldNormal.dot(rayDirection) < -FRONT_FACING_EPSILON;
 };
+
+const withinSurfaceBoundary = (
+  hit: THREE.Intersection,
+  surfaceHit: THREE.Intersection | null,
+  tolerance: number,
+): boolean => Boolean(surfaceHit && hit.distance <= surfaceHit.distance + tolerance);
 
 export const pointFromCube3DClientPosition = (
   context: Cube3DPickContext,
@@ -120,20 +126,37 @@ export const pointFromCube3DClientPosition = (
   // away-facing normal and remain rejected.
   raycaster.layers.set(RENDER_LAYER);
   const surfaceHit = raycaster.intersectObject(context.surface, false)[0] ?? null;
-  raycaster.layers.set(PICK_LAYER);
-  const targetHits = raycaster.intersectObject(context.targets.mesh, false);
+  raycaster.layers.set(CUBE_3D_PICK_LAYER);
+
+  // Endgame review adds filled group-interior meshes to the same non-rendered
+  // picking layer. Prefer those targets so stones and empty space enclosed by a
+  // review contour resolve to the same logical group representative point.
+  const pickRoot = context.targets.mesh.parent ?? context.targets.mesh;
+  const targetHits = raycaster.intersectObject(pickRoot, true);
   for (const hit of targetHits) {
-    if (hit.instanceId === undefined) continue;
+    const reviewPoint = hit.object.userData.endgameRepresentativePointId;
+    if (
+      typeof reviewPoint === 'string' &&
+      withinSurfaceBoundary(hit, surfaceHit, context.targets.occlusionTolerance)
+    ) {
+      return reviewPoint;
+    }
+  }
+
+  for (const hit of targetHits) {
+    if (hit.object !== context.targets.mesh || hit.instanceId === undefined) continue;
 
     const frontFacing = pickInstanceFacesCamera(
       context.targets,
       hit.instanceId,
       raycaster.ray.direction,
     );
-    const withinSurfaceBoundary = Boolean(
-      surfaceHit && hit.distance <= surfaceHit.distance + context.targets.occlusionTolerance,
+    const visibleAtSurface = withinSurfaceBoundary(
+      hit,
+      surfaceHit,
+      context.targets.occlusionTolerance,
     );
-    if (!withinSurfaceBoundary && !frontFacing) continue;
+    if (!visibleAtSurface && !frontFacing) continue;
 
     const pointId = context.targets.pointIds[hit.instanceId];
     if (pointId) return pointId;
