@@ -39,7 +39,8 @@ import {
 } from './Cube3DSurfaceGeometry';
 import './cube3d.css';
 
-const BASE_CAMERA_DISTANCE = 5;
+const BASE_CAMERA_DISTANCE = 5.1;
+const CAMERA_FOV_DEGREES = 39;
 const ROTATION_SENSITIVITY = 0.008;
 const ZOOM_SENSITIVITY = 0.001;
 const MARKER_THICKNESS = 0.08;
@@ -198,45 +199,75 @@ export function ThreeScene({
     if (!host) return;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x04090f);
 
-    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const camera = new THREE.PerspectiveCamera(CAMERA_FOV_DEGREES, 1, 0.1, 100);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(
       Math.min(window.devicePixelRatio, CUBE_3D_PERFORMANCE_BUDGET.maxDevicePixelRatio),
     );
+    renderer.setClearColor(0x000000, 0);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.03;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.domElement.dataset.testid = 'cube-3d-canvas';
     renderer.domElement.style.touchAction = 'none';
     host.appendChild(renderer.domElement);
 
     const surfaceGeometry = createCube3DRoundedSurfaceGeometry();
-    const surfaceMaterial = new THREE.MeshLambertMaterial({
-      color: 0x747a80,
+    const surfaceMaterial = new THREE.MeshStandardMaterial({
+      color: 0xb27c48,
+      roughness: 0.78,
+      metalness: 0,
       polygonOffset: true,
       polygonOffsetFactor: 1,
       polygonOffsetUnits: 1,
     });
     const surface = new THREE.Mesh(surfaceGeometry, surfaceMaterial);
+    surface.castShadow = true;
+    surface.receiveShadow = true;
 
-    // Stage 1's continuous adjacency geometry is now the production gameplay grid.
     const gridGeometry = createCube3DDebugGridGeometry(size);
-    const gridMaterial = new THREE.LineBasicMaterial({ color: 0xd8dde2 });
+    const gridMaterial = new THREE.LineBasicMaterial({
+      color: 0x2c2118,
+      transparent: true,
+      opacity: 0.88,
+      depthWrite: false,
+    });
     const grid = new THREE.LineSegments(gridGeometry, gridMaterial);
     grid.renderOrder = 1;
 
     const stoneGeometry = createCube3DStoneGeometry();
-    const blackMaterial = new THREE.MeshLambertMaterial({ color: 0x111315 });
-    const whiteMaterial = new THREE.MeshLambertMaterial({ color: 0xeee9df });
+    const blackMaterial = new THREE.MeshStandardMaterial({
+      color: 0x121315,
+      roughness: 0.34,
+      metalness: 0,
+    });
+    const whiteMaterial = new THREE.MeshStandardMaterial({
+      color: 0xe8e0d3,
+      roughness: 0.43,
+      metalness: 0,
+    });
     const capacity = 6 * size * size;
     const blackStones = new THREE.InstancedMesh(stoneGeometry, blackMaterial, capacity);
     const whiteStones = new THREE.InstancedMesh(stoneGeometry, whiteMaterial, capacity);
     blackStones.count = 0;
     whiteStones.count = 0;
+    blackStones.castShadow = true;
+    blackStones.receiveShadow = true;
+    whiteStones.castShadow = true;
+    whiteStones.receiveShadow = true;
     blackStones.renderOrder = 2;
     whiteStones.renderOrder = 2;
 
     const markerGeometry = new THREE.CylinderGeometry(1, 1, MARKER_THICKNESS, 20);
-    const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xe04c4c });
+    const markerMaterial = new THREE.MeshBasicMaterial({
+      color: 0xe04c4c,
+      transparent: true,
+      opacity: 0.94,
+      depthWrite: false,
+    });
     const hoverMarker = new THREE.Mesh(markerGeometry, markerMaterial);
     hoverMarker.visible = false;
     hoverMarker.renderOrder = 3;
@@ -257,10 +288,23 @@ export function ThreeScene({
     );
     scene.add(cubeRoot);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 1.15);
-    const key = new THREE.DirectionalLight(0xffffff, 1.75);
-    key.position.set(3, 4, 5);
-    scene.add(ambient, key);
+    const fill = new THREE.HemisphereLight(0xfff0dc, 0x111820, 1.08);
+    const key = new THREE.DirectionalLight(0xffe6c8, 2.8);
+    key.position.set(4.2, 5.2, 5.8);
+    key.castShadow = true;
+    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.camera.near = 0.5;
+    key.shadow.camera.far = 18;
+    key.shadow.camera.left = -3.1;
+    key.shadow.camera.right = 3.1;
+    key.shadow.camera.top = 3.1;
+    key.shadow.camera.bottom = -3.1;
+    key.shadow.bias = -0.00025;
+    key.shadow.normalBias = 0.025;
+    key.shadow.radius = 3;
+    const rim = new THREE.DirectionalLight(0xb9cad4, 0.36);
+    rim.position.set(-4, 2.4, -5);
+    scene.add(fill, key, rim);
 
     let renderFrameId: number | null = null;
     let transitionFrameId: number | null = null;
@@ -306,6 +350,8 @@ export function ThreeScene({
     host.dataset.cube3dMarkerRatio = String(CUBE_3D_MARKER_DIAMETER_PITCH_RATIO);
     host.dataset.cube3dTransitioning = 'false';
     host.dataset.cube3dRotationMode = rotationModeRef.current;
+    host.dataset.cube3dVisualStyle = 'wood-pbr';
+    host.dataset.cube3dShadows = 'soft';
 
     const finishViewTransition = (target: Cube3DViewState): void => {
       transitionFrameId = null;
