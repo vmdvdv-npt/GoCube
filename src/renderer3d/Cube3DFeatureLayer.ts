@@ -16,9 +16,12 @@ import {
 import { createCube3DFeaturePresentation } from './Cube3DFeaturePresentation';
 
 const DISC_THICKNESS = 0.08;
-const REVIEW_RING_INNER_RATIO = 0.8;
+const REVIEW_DISC_SEGMENTS = 48;
 const MOVE_LABEL_TEXTURE_SIZE = 128;
 export const CUBE_3D_REVIEW_SURFACE_LIFT_PITCH_RATIO = 0.006;
+export const CUBE_3D_REVIEW_DISC_SCALE = 1.16;
+export const CUBE_3D_REVIEW_DISC_HOVER_SCALE = 1.2;
+export const CUBE_3D_REVIEW_DISC_SELECTED_SCALE = 1.24;
 
 export interface Cube3DFeatureLayerDiagnostics {
   readonly blackTerritoryCount: number;
@@ -107,13 +110,13 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
   group.name = 'cube3d-feature-layer';
 
   const discGeometry = new THREE.CylinderGeometry(1, 1, DISC_THICKNESS, 24);
+  const reviewDiscGeometry = new THREE.CircleGeometry(1, REVIEW_DISC_SEGMENTS);
+  reviewDiscGeometry.rotateX(-Math.PI / 2);
   const blackTerritoryMaterial = new THREE.MeshBasicMaterial({ color: 0x111111 });
   const whiteTerritoryMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const blackTerritory = new THREE.InstancedMesh(discGeometry, blackTerritoryMaterial, capacity);
   const whiteTerritory = new THREE.InstancedMesh(discGeometry, whiteTerritoryMaterial, capacity);
 
-  const ringGeometry = new THREE.RingGeometry(REVIEW_RING_INNER_RATIO, 1, 32);
-  ringGeometry.rotateX(-Math.PI / 2);
   const deadColor = ENDGAME_PRESENTATION_STYLES.dead.contourColor ?? '#e52b2b';
   const unresolvedColor = ENDGAME_PRESENTATION_STYLES.unresolved.contourColor ?? '#f8cf4d';
   const deadMaterial = new THREE.MeshBasicMaterial({ color: deadColor, side: THREE.DoubleSide });
@@ -121,10 +124,10 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
     color: unresolvedColor,
     side: THREE.DoubleSide,
   });
-  const deadRings = new THREE.InstancedMesh(ringGeometry, deadMaterial, capacity);
-  const unresolvedRings = new THREE.InstancedMesh(ringGeometry, unresolvedMaterial, capacity);
-  deadRings.name = 'cube3d-endgame-dead-rings';
-  unresolvedRings.name = 'cube3d-endgame-unresolved-rings';
+  const deadDiscs = new THREE.InstancedMesh(reviewDiscGeometry, deadMaterial, capacity);
+  const unresolvedDiscs = new THREE.InstancedMesh(reviewDiscGeometry, unresolvedMaterial, capacity);
+  deadDiscs.name = 'cube3d-endgame-dead-discs';
+  unresolvedDiscs.name = 'cube3d-endgame-unresolved-discs';
 
   const sekiContourColor =
     ENDGAME_PRESENTATION_STYLES.seki.contourColor ??
@@ -132,7 +135,7 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
     '#80878f';
   const sekiMaskColor = ENDGAME_PRESENTATION_STYLES.seki.maskColor ?? sekiContourColor;
   const sekiOpacity = ENDGAME_PRESENTATION_STYLES.seki.maskOpacity;
-  const sekiRingMaterial = new THREE.MeshBasicMaterial({
+  const sekiStoneMaterial = new THREE.MeshBasicMaterial({
     color: sekiContourColor,
     side: THREE.DoubleSide,
   });
@@ -142,9 +145,9 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
     opacity: sekiOpacity,
     depthWrite: false,
   });
-  const sekiStoneRings = new THREE.InstancedMesh(ringGeometry, sekiRingMaterial, capacity);
+  const sekiStoneDiscs = new THREE.InstancedMesh(reviewDiscGeometry, sekiStoneMaterial, capacity);
   const sekiPointMasks = new THREE.InstancedMesh(discGeometry, sekiPointMaterial, capacity);
-  sekiStoneRings.name = 'cube3d-endgame-seki-stone-rings';
+  sekiStoneDiscs.name = 'cube3d-endgame-seki-stone-discs';
   sekiPointMasks.name = 'cube3d-endgame-seki-point-masks';
 
   const lastMoveMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -159,18 +162,18 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
   for (const mesh of [
     blackTerritory,
     whiteTerritory,
-    deadRings,
-    unresolvedRings,
-    sekiStoneRings,
+    deadDiscs,
+    unresolvedDiscs,
+    sekiStoneDiscs,
     sekiPointMasks,
   ]) {
     mesh.count = 0;
     mesh.renderOrder = 3;
     mesh.frustumCulled = false;
   }
-  deadRings.renderOrder = 4;
-  unresolvedRings.renderOrder = 4;
-  sekiStoneRings.renderOrder = 4;
+  deadDiscs.renderOrder = 4;
+  unresolvedDiscs.renderOrder = 4;
+  sekiStoneDiscs.renderOrder = 4;
   sekiPointMasks.renderOrder = 4;
   lastMoveMarker.renderOrder = 5;
   moveLabels.renderOrder = 6;
@@ -178,9 +181,9 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
   group.add(
     blackTerritory,
     whiteTerritory,
-    deadRings,
-    unresolvedRings,
-    sekiStoneRings,
+    deadDiscs,
+    unresolvedDiscs,
+    sekiStoneDiscs,
     sekiPointMasks,
     lastMoveMarker,
     moveLabels,
@@ -228,7 +231,11 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
         }
       }
 
-      const reviewScale = point.reviewSelected ? 1.16 : point.reviewHovered ? 1.1 : 1.04;
+      const reviewScale = point.reviewSelected
+        ? CUBE_3D_REVIEW_DISC_SELECTED_SCALE
+        : point.reviewHovered
+          ? CUBE_3D_REVIEW_DISC_HOVER_SCALE
+          : CUBE_3D_REVIEW_DISC_SCALE;
       if (point.reviewStatus === 'dead' || point.reviewStatus === 'unresolved') {
         const matrix = cube3DReviewSurfaceMatrix(
           size,
@@ -236,9 +243,9 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
           stoneRadius * reviewScale,
         );
         if (point.reviewStatus === 'dead') {
-          deadReviewCount = setInstance(deadRings, deadReviewCount, matrix);
+          deadReviewCount = setInstance(deadDiscs, deadReviewCount, matrix);
         } else {
-          unresolvedReviewCount = setInstance(unresolvedRings, unresolvedReviewCount, matrix);
+          unresolvedReviewCount = setInstance(unresolvedDiscs, unresolvedReviewCount, matrix);
         }
       }
 
@@ -249,7 +256,7 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
             point.pointId,
             stoneRadius * reviewScale,
           );
-          sekiStoneCount = setInstance(sekiStoneRings, sekiStoneCount, matrix);
+          sekiStoneCount = setInstance(sekiStoneDiscs, sekiStoneCount, matrix);
         } else {
           const matrix = cube3DReviewSurfaceMatrix(
             size,
@@ -304,9 +311,9 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
 
     finishInstances(blackTerritory, blackTerritoryCount);
     finishInstances(whiteTerritory, whiteTerritoryCount);
-    finishInstances(deadRings, deadReviewCount);
-    finishInstances(unresolvedRings, unresolvedReviewCount);
-    finishInstances(sekiStoneRings, sekiStoneCount);
+    finishInstances(deadDiscs, deadReviewCount);
+    finishInstances(unresolvedDiscs, unresolvedReviewCount);
+    finishInstances(sekiStoneDiscs, sekiStoneCount);
     finishInstances(sekiPointMasks, sekiPointCount);
 
     return Object.freeze({
@@ -325,12 +332,12 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
     for (const texture of textureCache.values()) texture.dispose();
     textureCache.clear();
     discGeometry.dispose();
-    ringGeometry.dispose();
+    reviewDiscGeometry.dispose();
     blackTerritoryMaterial.dispose();
     whiteTerritoryMaterial.dispose();
     deadMaterial.dispose();
     unresolvedMaterial.dispose();
-    sekiRingMaterial.dispose();
+    sekiStoneMaterial.dispose();
     sekiPointMaterial.dispose();
     lastMoveMaterial.dispose();
     group.clear();

@@ -6,6 +6,11 @@
   background: transparent;
 }
 
+/* Keep the inert endgame wrapper layout-transparent so the panel stays in sidebar grid row 3. */
+.cube-2d-game > div:has(> .endgame-panel) {
+  display: contents;
+}
+
 .cube-2d-game__board-shell {
   grid-column: 2;
   grid-row: 1 / 7;

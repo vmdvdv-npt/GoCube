@@ -3,10 +3,17 @@ import { describe, expect, it } from 'vitest';
 import type { EndgamePresentationModel } from '../presentation/EndgamePresentation';
 import type { GameViewModel } from '../presentation/PresentationModel';
 import {
+  CUBE_3D_REVIEW_DISC_HOVER_SCALE,
+  CUBE_3D_REVIEW_DISC_SCALE,
+  CUBE_3D_REVIEW_DISC_SELECTED_SCALE,
   CUBE_3D_REVIEW_SURFACE_LIFT_PITCH_RATIO,
   createCube3DFeatureLayer,
 } from './Cube3DFeatureLayer';
-import { cube3DGridPitch, cube3DStoneMatrix } from './Cube3DGameplayGeometry';
+import {
+  CUBE_3D_STONE_DIAMETER_PITCH_RATIO,
+  cube3DGridPitch,
+  cube3DStoneMatrix,
+} from './Cube3DGameplayGeometry';
 import { cube3DPointSample } from './Cube3DSurfaceGeometry';
 
 const size = 7 as const;
@@ -77,15 +84,23 @@ const endgamePresentation: EndgamePresentationModel = Object.freeze({
   territory: new Map(),
 });
 
+const featureMesh = (
+  layer: ReturnType<typeof createCube3DFeatureLayer>,
+  meshName: string,
+): THREE.InstancedMesh => {
+  const mesh = layer.group.getObjectByName(meshName);
+  if (!(mesh instanceof THREE.InstancedMesh)) {
+    throw new Error(`Missing Cube 3D feature mesh: ${meshName}`);
+  }
+  return mesh;
+};
+
 const instanceLift = (
   layer: ReturnType<typeof createCube3DFeatureLayer>,
   meshName: string,
   pointId: string,
 ): number => {
-  const mesh = layer.group.getObjectByName(meshName);
-  if (!(mesh instanceof THREE.InstancedMesh)) {
-    throw new Error(`Missing Cube 3D feature mesh: ${meshName}`);
-  }
+  const mesh = featureMesh(layer, meshName);
   const matrix = new THREE.Matrix4();
   mesh.getMatrixAt(0, matrix);
   const position = new THREE.Vector3().setFromMatrixPosition(matrix);
@@ -95,6 +110,18 @@ const instanceLift = (
   return position.sub(surface).dot(normal);
 };
 
+const instanceScale = (
+  layer: ReturnType<typeof createCube3DFeatureLayer>,
+  meshName: string,
+): THREE.Vector3 => {
+  const mesh = featureMesh(layer, meshName);
+  const matrix = new THREE.Matrix4();
+  mesh.getMatrixAt(0, matrix);
+  const scale = new THREE.Vector3();
+  matrix.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
+  return scale;
+};
+
 describe('Cube3DFeatureLayer endgame depth', () => {
   it('keeps dead, unresolved and seki annotations on the grid surface below stones', () => {
     const layer = createCube3DFeatureLayer(size);
@@ -102,9 +129,9 @@ describe('Cube3DFeatureLayer endgame depth', () => {
 
     const expectedLift = cube3DGridPitch(size) * CUBE_3D_REVIEW_SURFACE_LIFT_PITCH_RATIO;
     const annotations = [
-      ['cube3d-endgame-dead-rings', 'front:3:3'],
-      ['cube3d-endgame-unresolved-rings', 'front:3:4'],
-      ['cube3d-endgame-seki-stone-rings', 'front:4:3'],
+      ['cube3d-endgame-dead-discs', 'front:3:3'],
+      ['cube3d-endgame-unresolved-discs', 'front:3:4'],
+      ['cube3d-endgame-seki-stone-discs', 'front:4:3'],
       ['cube3d-endgame-seki-point-masks', 'front:4:4'],
     ] as const;
 
@@ -123,6 +150,37 @@ describe('Cube3DFeatureLayer endgame depth', () => {
 
     expect(expectedLift).toBeLessThan(cube3DGridPitch(size) * 0.01);
     expect(expectedLift).toBeLessThan(stoneLift * 0.15);
+
+    layer.dispose();
+  });
+
+  it('uses compact filled review discs that form a thin visible rim beyond the stones', () => {
+    const layer = createCube3DFeatureLayer(size);
+    layer.update(viewModel, endgamePresentation, false);
+
+    const pitch = cube3DGridPitch(size);
+    const stoneRadius = (pitch * CUBE_3D_STONE_DIAMETER_PITCH_RATIO) / 2;
+    const expectedRadius = stoneRadius * CUBE_3D_REVIEW_DISC_SCALE;
+    const reviewMeshes = [
+      'cube3d-endgame-dead-discs',
+      'cube3d-endgame-unresolved-discs',
+      'cube3d-endgame-seki-stone-discs',
+    ] as const;
+
+    for (const meshName of reviewMeshes) {
+      const mesh = featureMesh(layer, meshName);
+      expect(mesh.geometry).toBeInstanceOf(THREE.CircleGeometry);
+      const scale = instanceScale(layer, meshName);
+      expect(scale.x).toBeCloseTo(expectedRadius, 6);
+      expect(scale.y).toBeCloseTo(expectedRadius, 6);
+      expect(scale.z).toBeCloseTo(expectedRadius, 6);
+    }
+
+    expect(CUBE_3D_REVIEW_DISC_SCALE).toBeGreaterThan(1);
+    expect(CUBE_3D_REVIEW_DISC_SCALE).toBeLessThanOrEqual(1.16);
+    expect(CUBE_3D_REVIEW_DISC_HOVER_SCALE).toBeGreaterThan(CUBE_3D_REVIEW_DISC_SCALE);
+    expect(CUBE_3D_REVIEW_DISC_SELECTED_SCALE).toBeGreaterThan(CUBE_3D_REVIEW_DISC_HOVER_SCALE);
+    expect(CUBE_3D_REVIEW_DISC_SELECTED_SCALE).toBeLessThanOrEqual(1.24);
 
     layer.dispose();
   });
