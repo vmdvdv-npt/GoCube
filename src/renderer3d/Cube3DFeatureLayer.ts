@@ -19,9 +19,9 @@ const DISC_THICKNESS = 0.08;
 const REVIEW_DISC_SEGMENTS = 48;
 const MOVE_LABEL_TEXTURE_SIZE = 128;
 export const CUBE_3D_REVIEW_SURFACE_LIFT_PITCH_RATIO = 0.006;
-export const CUBE_3D_REVIEW_DISC_SCALE = 1.24;
-export const CUBE_3D_REVIEW_DISC_HOVER_SCALE = 1.28;
-export const CUBE_3D_REVIEW_DISC_SELECTED_SCALE = 1.32;
+export const CUBE_3D_REVIEW_DISC_SCALE = 1.16;
+export const CUBE_3D_REVIEW_DISC_HOVER_SCALE = 1.2;
+export const CUBE_3D_REVIEW_DISC_SELECTED_SCALE = 1.24;
 
 export interface Cube3DFeatureLayerDiagnostics {
   readonly blackTerritoryCount: number;
