@@ -1,5 +1,10 @@
 import * as THREE from 'three';
-import type { CubeSize } from '../core/topology/CubeTopology';
+import {
+  CubeTopology,
+  cubeStepPoint,
+  type CubeDirection,
+  type CubeSize,
+} from '../core/topology/CubeTopology';
 import type { PointId } from '../core/topology/Topology';
 import {
   ENDGAME_PRESENTATION_STYLES,
@@ -13,15 +18,22 @@ import {
   cube3DGridPitch,
   cube3DSurfaceAlignedMatrix,
 } from './Cube3DGameplayGeometry';
+import {
+  DEFAULT_CUBE_3D_SURFACE_PROFILE,
+  cube3DGridPath,
+} from './Cube3DSurfaceGeometry';
 import { createCube3DFeaturePresentation } from './Cube3DFeaturePresentation';
 
 const DISC_THICKNESS = 0.08;
 const REVIEW_DISC_SEGMENTS = 48;
+const REVIEW_CONNECTION_SAMPLES_PER_SIDE = 5;
 const MOVE_LABEL_TEXTURE_SIZE = 128;
+const UP = new THREE.Vector3(0, 1, 0);
+const CUBE_DIRECTIONS: readonly CubeDirection[] = ['top', 'right', 'bottom', 'left'];
 export const CUBE_3D_REVIEW_SURFACE_LIFT_PITCH_RATIO = 0.006;
-export const CUBE_3D_REVIEW_DISC_SCALE = 1.16;
-export const CUBE_3D_REVIEW_DISC_HOVER_SCALE = 1.2;
-export const CUBE_3D_REVIEW_DISC_SELECTED_SCALE = 1.24;
+export const CUBE_3D_REVIEW_DISC_SCALE = 1.22;
+export const CUBE_3D_REVIEW_DISC_HOVER_SCALE = 1.26;
+export const CUBE_3D_REVIEW_DISC_SELECTED_SCALE = 1.3;
 
 export interface Cube3DFeatureLayerDiagnostics {
   readonly blackTerritoryCount: number;
@@ -69,6 +81,83 @@ export const cube3DReviewSurfaceMatrix = (
     scale,
   );
 
+const reviewScale = (selected: boolean, hovered: boolean): number =>
+  selected
+    ? CUBE_3D_REVIEW_DISC_SELECTED_SCALE
+    : hovered
+      ? CUBE_3D_REVIEW_DISC_HOVER_SCALE
+      : CUBE_3D_REVIEW_DISC_SCALE;
+
+const roundedSurfaceNormal = (position: readonly number[]): THREE.Vector3 => {
+  const { halfExtent, roundingRadius } = DEFAULT_CUBE_3D_SURFACE_PROFILE;
+  const coreHalfExtent = halfExtent - roundingRadius;
+  const core = new THREE.Vector3(
+    THREE.MathUtils.clamp(position[0] ?? 0, -coreHalfExtent, coreHalfExtent),
+    THREE.MathUtils.clamp(position[1] ?? 0, -coreHalfExtent, coreHalfExtent),
+    THREE.MathUtils.clamp(position[2] ?? 0, -coreHalfExtent, coreHalfExtent),
+  );
+  const normal = new THREE.Vector3(...(position as readonly [number, number, number])).sub(core);
+  if (normal.lengthSq() > 1e-12) return normal.normalize();
+
+  const fallback = new THREE.Vector3(...(position as readonly [number, number, number]));
+  const components = [Math.abs(fallback.x), Math.abs(fallback.y), Math.abs(fallback.z)];
+  const axis = components.indexOf(Math.max(...components));
+  normal.set(0, 0, 0).setComponent(axis, Math.sign(fallback.getComponent(axis)) || 1);
+  return normal;
+};
+
+const reviewPathMatrix = (
+  position: readonly [number, number, number],
+  scale: number,
+  lift: number,
+): THREE.Matrix4 => {
+  const normal = roundedSurfaceNormal(position);
+  const center = new THREE.Vector3(...position).addScaledVector(normal, lift);
+  const rotation = new THREE.Quaternion().setFromUnitVectors(UP, normal);
+  return new THREE.Matrix4().compose(
+    center,
+    rotation,
+    new THREE.Vector3(scale, scale, scale),
+  );
+};
+
+const groupConnectionMatrices = (
+  size: CubeSize,
+  points: readonly PointId[],
+  radius: number,
+): readonly THREE.Matrix4[] => {
+  if (points.length < 2) return Object.freeze([]);
+
+  const pointSet = new Set(points);
+  const seen = new Set<string>();
+  const matrices: THREE.Matrix4[] = [];
+  const lift = cube3DGridPitch(size) * CUBE_3D_REVIEW_SURFACE_LIFT_PITCH_RATIO;
+
+  for (const pointId of points) {
+    for (const direction of CUBE_DIRECTIONS) {
+      const neighbour = cubeStepPoint(size, pointId, direction);
+      if (!pointSet.has(neighbour)) continue;
+      const edgeKey = [pointId, neighbour].sort().join('|');
+      if (seen.has(edgeKey)) continue;
+      seen.add(edgeKey);
+
+      const path = cube3DGridPath(
+        size,
+        pointId,
+        direction,
+        DEFAULT_CUBE_3D_SURFACE_PROFILE,
+        REVIEW_CONNECTION_SAMPLES_PER_SIDE,
+      );
+      for (let index = 1; index < path.positions.length - 1; index += 1) {
+        const position = path.positions[index]!;
+        matrices.push(reviewPathMatrix(position, radius, lift));
+      }
+    }
+  }
+
+  return Object.freeze(matrices);
+};
+
 const numberTexture = (
   cache: Map<string, THREE.CanvasTexture>,
   moveNumber: number,
@@ -102,6 +191,7 @@ const numberTexture = (
 
 export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => {
   const capacity = 6 * size * size;
+  const reviewCapacity = capacity * 24;
   const pitch = cube3DGridPitch(size);
   const stoneRadius = (pitch * CUBE_3D_STONE_DIAMETER_PITCH_RATIO) / 2;
   const stoneCenterLift = pitch * CUBE_3D_STONE_LIFT_PITCH_RATIO + stoneRadius * 0.03;
@@ -124,8 +214,12 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
     color: unresolvedColor,
     side: THREE.DoubleSide,
   });
-  const deadDiscs = new THREE.InstancedMesh(reviewDiscGeometry, deadMaterial, capacity);
-  const unresolvedDiscs = new THREE.InstancedMesh(reviewDiscGeometry, unresolvedMaterial, capacity);
+  const deadDiscs = new THREE.InstancedMesh(reviewDiscGeometry, deadMaterial, reviewCapacity);
+  const unresolvedDiscs = new THREE.InstancedMesh(
+    reviewDiscGeometry,
+    unresolvedMaterial,
+    reviewCapacity,
+  );
   deadDiscs.name = 'cube3d-endgame-dead-discs';
   unresolvedDiscs.name = 'cube3d-endgame-unresolved-discs';
 
@@ -145,7 +239,11 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
     opacity: sekiOpacity,
     depthWrite: false,
   });
-  const sekiStoneDiscs = new THREE.InstancedMesh(reviewDiscGeometry, sekiStoneMaterial, capacity);
+  const sekiStoneDiscs = new THREE.InstancedMesh(
+    reviewDiscGeometry,
+    sekiStoneMaterial,
+    reviewCapacity,
+  );
   const sekiPointMasks = new THREE.InstancedMesh(discGeometry, sekiPointMaterial, capacity);
   sekiStoneDiscs.name = 'cube3d-endgame-seki-stone-discs';
   sekiPointMasks.name = 'cube3d-endgame-seki-point-masks';
@@ -212,6 +310,9 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
     let unresolvedReviewCount = 0;
     let sekiStoneCount = 0;
     let sekiPointCount = 0;
+    let deadInstanceCount = 0;
+    let unresolvedInstanceCount = 0;
+    let sekiStoneInstanceCount = 0;
     let lastMovePointId: PointId | null = null;
 
     clearMoveLabels();
@@ -231,21 +332,19 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
         }
       }
 
-      const reviewScale = point.reviewSelected
-        ? CUBE_3D_REVIEW_DISC_SELECTED_SCALE
-        : point.reviewHovered
-          ? CUBE_3D_REVIEW_DISC_HOVER_SCALE
-          : CUBE_3D_REVIEW_DISC_SCALE;
+      const pointReviewScale = reviewScale(point.reviewSelected, point.reviewHovered);
       if (point.reviewStatus === 'dead' || point.reviewStatus === 'unresolved') {
         const matrix = cube3DReviewSurfaceMatrix(
           size,
           point.pointId,
-          stoneRadius * reviewScale,
+          stoneRadius * pointReviewScale,
         );
         if (point.reviewStatus === 'dead') {
-          deadReviewCount = setInstance(deadDiscs, deadReviewCount, matrix);
+          deadInstanceCount = setInstance(deadDiscs, deadInstanceCount, matrix);
+          deadReviewCount += 1;
         } else {
-          unresolvedReviewCount = setInstance(unresolvedDiscs, unresolvedReviewCount, matrix);
+          unresolvedInstanceCount = setInstance(unresolvedDiscs, unresolvedInstanceCount, matrix);
+          unresolvedReviewCount += 1;
         }
       }
 
@@ -254,9 +353,10 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
           const matrix = cube3DReviewSurfaceMatrix(
             size,
             point.pointId,
-            stoneRadius * reviewScale,
+            stoneRadius * pointReviewScale,
           );
-          sekiStoneCount = setInstance(sekiStoneDiscs, sekiStoneCount, matrix);
+          sekiStoneInstanceCount = setInstance(sekiStoneDiscs, sekiStoneInstanceCount, matrix);
+          sekiStoneCount += 1;
         } else {
           const matrix = cube3DReviewSurfaceMatrix(
             size,
@@ -307,13 +407,40 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
       }
     }
 
+    for (const reviewGroup of endgamePresentation?.groups ?? []) {
+      if (reviewGroup.status !== 'dead' && reviewGroup.status !== 'unresolved') continue;
+      const radius = stoneRadius * reviewScale(reviewGroup.selected, reviewGroup.hovered);
+      const connections = groupConnectionMatrices(size, reviewGroup.points, radius);
+      for (const matrix of connections) {
+        if (reviewGroup.status === 'dead') {
+          deadInstanceCount = setInstance(deadDiscs, deadInstanceCount, matrix);
+        } else {
+          unresolvedInstanceCount = setInstance(unresolvedDiscs, unresolvedInstanceCount, matrix);
+        }
+      }
+    }
+
+    const topology = new CubeTopology(size);
+    const occupiedByPoint = new Map(projection.points.map((point) => [point.pointId, point.occupancy]));
+    for (const region of endgamePresentation?.sekiRegions ?? []) {
+      const stonePoints = region.points.filter((pointId) => {
+        const occupancy = occupiedByPoint.get(pointId);
+        return occupancy === 'black' || occupancy === 'white';
+      });
+      const radius = stoneRadius * reviewScale(region.selected, region.hovered);
+      for (const matrix of groupConnectionMatrices(size, stonePoints, radius)) {
+        sekiStoneInstanceCount = setInstance(sekiStoneDiscs, sekiStoneInstanceCount, matrix);
+      }
+    }
+    void topology;
+
     if (!lastMovePointId) lastMoveMarker.visible = false;
 
     finishInstances(blackTerritory, blackTerritoryCount);
     finishInstances(whiteTerritory, whiteTerritoryCount);
-    finishInstances(deadDiscs, deadReviewCount);
-    finishInstances(unresolvedDiscs, unresolvedReviewCount);
-    finishInstances(sekiStoneDiscs, sekiStoneCount);
+    finishInstances(deadDiscs, deadInstanceCount);
+    finishInstances(unresolvedDiscs, unresolvedInstanceCount);
+    finishInstances(sekiStoneDiscs, sekiStoneInstanceCount);
     finishInstances(sekiPointMasks, sekiPointCount);
 
     return Object.freeze({
