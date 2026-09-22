@@ -24,7 +24,7 @@ import { CUBE_3D_PICK_LAYER } from './Cube3DPicking';
 const DISC_THICKNESS = 0.08;
 const MOVE_LABEL_TEXTURE_SIZE = 128;
 export const CUBE_3D_REVIEW_SURFACE_LIFT_PITCH_RATIO = 0.006;
-export const CUBE_3D_REVIEW_CONTOUR_WIDTH_PITCH_RATIO = 0.19;
+export const CUBE_3D_REVIEW_CONTOUR_WIDTH_PITCH_RATIO = 0.22;
 export const CUBE_3D_REVIEW_CONTOUR_HOVER_WIDTH_PITCH_RATIO =
   CUBE_3D_REVIEW_CONTOUR_WIDTH_PITCH_RATIO;
 export const CUBE_3D_REVIEW_CONTOUR_SELECTED_WIDTH_PITCH_RATIO = 0.23;
@@ -304,6 +304,7 @@ export const createCube3DFeatureLayer = (
           side: THREE.DoubleSide,
           depthTest: true,
           depthWrite: false,
+          toneMapped: false,
           transparent: true,
           opacity: preservedOpacity,
         });
