@@ -8,13 +8,34 @@ import {
 } from './Cube3DSurfaceGeometry';
 
 export const CUBE_3D_STONE_DIAMETER_PITCH_RATIO = 0.82;
-export const CUBE_3D_STONE_LIFT_PITCH_RATIO = 0.055;
+export const CUBE_3D_STONE_HEIGHT_RADIUS_RATIO = 0.3;
+export const CUBE_3D_STONE_LIFT_PITCH_RATIO = 0.012;
 export const CUBE_3D_MARKER_DIAMETER_PITCH_RATIO = 0.28;
 export const CUBE_3D_MARKER_LIFT_PITCH_RATIO = 0.07;
 
 const UP = new THREE.Vector3(0, 1, 0);
 
+export interface Cube3DStoneVisualMetrics {
+  readonly pitch: number;
+  readonly radius: number;
+  readonly centerLift: number;
+  readonly topLift: number;
+}
+
 export const cube3DGridPitch = (size: CubeSize): number => cube3DGridSurfacePitch(size);
+
+export const cube3DStoneVisualMetrics = (size: CubeSize): Cube3DStoneVisualMetrics => {
+  const pitch = cube3DGridPitch(size);
+  const radius = (pitch * CUBE_3D_STONE_DIAMETER_PITCH_RATIO) / 2;
+  const halfHeight = radius * CUBE_3D_STONE_HEIGHT_RADIUS_RATIO;
+  const centerLift = halfHeight + pitch * CUBE_3D_STONE_LIFT_PITCH_RATIO;
+  return Object.freeze({
+    pitch,
+    radius,
+    centerLift,
+    topLift: centerLift + halfHeight,
+  });
+};
 
 const sampleVectors = (sample: Cube3DSurfaceSample) => ({
   position: new THREE.Vector3(...sample.position),
@@ -37,23 +58,17 @@ export const cube3DSurfaceAlignedMatrix = (
   );
 };
 
-/** Shared, low-poly oblate lens. Instances are scaled to the current grid pitch. */
+/** Shared oblate Go-stone lens. Instances are scaled to the current grid pitch. */
 export const createCube3DStoneGeometry = (): THREE.BufferGeometry => {
-  const geometry = new THREE.SphereGeometry(1, 20, 12);
-  geometry.scale(1, 0.34, 1);
+  const geometry = new THREE.SphereGeometry(1, 28, 16);
+  geometry.scale(1, CUBE_3D_STONE_HEIGHT_RADIUS_RATIO, 1);
   geometry.computeVertexNormals();
   return geometry;
 };
 
 export const cube3DStoneMatrix = (size: CubeSize, pointId: PointId): THREE.Matrix4 => {
-  const pitch = cube3DGridPitch(size);
-  const radius = (pitch * CUBE_3D_STONE_DIAMETER_PITCH_RATIO) / 2;
-  return cube3DSurfaceAlignedMatrix(
-    size,
-    pointId,
-    pitch * CUBE_3D_STONE_LIFT_PITCH_RATIO + radius * 0.03,
-    radius,
-  );
+  const { radius, centerLift } = cube3DStoneVisualMetrics(size);
+  return cube3DSurfaceAlignedMatrix(size, pointId, centerLift, radius);
 };
 
 export const cube3DMarkerMatrix = (size: CubeSize, pointId: PointId): THREE.Matrix4 => {
