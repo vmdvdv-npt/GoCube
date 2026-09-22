@@ -1,6 +1,8 @@
 export const CUBE_3D_PERFORMANCE_BUDGET = Object.freeze({
   referenceViewport: Object.freeze({ width: 1920, height: 1080, browserZoomPercent: 150 }),
   maxDevicePixelRatio: 2,
+  motionMaxPixelRatio: 1,
+  motionMaxPixels: 1_500_000,
   interactionTargetFps: 55,
   interactionP95FrameMs: 25,
   benchmarkWarmupFrames: 15,
@@ -20,3 +22,8 @@ export const CUBE_3D_PERFORMANCE_BUDGET = Object.freeze({
  * later run can establish full-scene performance.
  */
 export type Cube3DPerformanceBudget = typeof CUBE_3D_PERFORMANCE_BUDGET;
+
+/** Bound fragment work during movement; the resting renderer keeps its full DPR. */
+export const cube3DMotionPixelRatio = (idleRatio: number, width: number, height: number): number =>
+  Math.min(idleRatio, CUBE_3D_PERFORMANCE_BUDGET.motionMaxPixelRatio,
+    Math.sqrt(CUBE_3D_PERFORMANCE_BUDGET.motionMaxPixels / Math.max(1, width * height)));

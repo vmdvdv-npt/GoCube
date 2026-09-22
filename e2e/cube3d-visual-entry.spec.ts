@@ -138,7 +138,7 @@ test('Three.js stays lazy until the user enters Cube 3D', async ({ page }) => {
   expect(threeRequests.length).toBeGreaterThan(0);
 });
 
-test('Cube 3D anchor, free rotation and zoom survive a temporary switch to 2D', async ({ page }) => {
+test('Cube 3D cross anchor and zoom survive switching while the face returns to frontal', async ({ page }) => {
   await startCubeGame(page);
   await enter3D(page);
 
@@ -166,7 +166,7 @@ test('Cube 3D anchor, free rotation and zoom survive a temporary switch to 2D', 
 
   await enter3D(page);
   await expect(page.getByLabel('Cube 3D scene')).toHaveAttribute('data-cube3d-anchor', anchor ?? '');
-  await expect(page.getByLabel('Cube 3D scene')).toHaveAttribute('data-cube3d-rotation', rotation ?? '');
+  await expect(page.getByLabel('Cube 3D scene')).not.toHaveAttribute('data-cube3d-rotation', rotation ?? '');
   await expect(page.getByLabel('Cube 3D scene')).toHaveAttribute('data-cube3d-zoom', zoom ?? '');
 });
 
@@ -191,6 +191,8 @@ test('Cube 2D navigation becomes the Cube 3D spatial anchor', async ({ page }) =
 });
 
 test('Cube 3D repeated mount/unmount and resize do not accumulate canvases', async ({ page }) => {
+  // Each round trip now includes two intentional 1.55-second transitions.
+  test.setTimeout(60_000);
   await startCubeGame(page);
 
   for (let cycle = 0; cycle < CUBE_3D_PERFORMANCE_BUDGET.automatedLifecycleCycles; cycle += 1) {
@@ -212,7 +214,7 @@ test('Cube 3D repeated mount/unmount and resize do not accumulate canvases', asy
 
 test('Cube 3D Chromium diagnostic records interaction metrics and enforces heap budget', async ({ page, browserName }) => {
   test.skip(browserName !== 'chromium', 'Chromium CDP is required for deterministic heap diagnostics.');
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
 
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Emulation.setDeviceMetricsOverride', {

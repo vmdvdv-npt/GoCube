@@ -58,7 +58,7 @@
   width: 100%;
   height: 100%;
   min-height: 420px;
-  background: #04090f;
+  background: radial-gradient(ellipse at 45% 38%, rgb(40 49 58 / var(--cube3d-backdrop, 1)) 0%, rgb(17 26 34 / var(--cube3d-backdrop, 1)) 48%, rgb(6 12 18 / var(--cube3d-backdrop, 1)) 100%);
 }
 
 .cube-3d-scene canvas {

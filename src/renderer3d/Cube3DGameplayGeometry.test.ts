@@ -74,6 +74,21 @@ describe('Cube3D gameplay geometry', () => {
     );
   });
 
+  it('keeps lens normals continuous across the UV seam and poles', () => {
+    const geometry = createCube3DStoneGeometry();
+    const positions = geometry.getAttribute('position');
+    const normals = geometry.getAttribute('normal');
+    for (let index = 0; index < positions.count; index += 1) {
+      // Gradient of x² + y² / 0.34² + z² = 1 gives the smooth lens normal.
+      const expected = new THREE.Vector3(
+        positions.getX(index), positions.getY(index) / 0.34 ** 2, positions.getZ(index),
+      ).normalize();
+      const actual = new THREE.Vector3().fromBufferAttribute(normals, index);
+      expect(actual.distanceTo(expected)).toBeLessThan(1e-6);
+    }
+    geometry.dispose();
+  });
+
   it('uses one reusable oblate lens geometry rather than a sphere or cylinder primitive per stone', () => {
     const geometry = createCube3DStoneGeometry();
     geometry.computeBoundingBox();
