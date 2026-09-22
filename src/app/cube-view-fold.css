@@ -1,0 +1,15 @@
+.cube-view-fold { position: fixed; inset: 0; z-index: 15; pointer-events: none; }
+.cube-view-fold__root { position: absolute; transform-style: preserve-3d; }
+.cube-view-fold__face { position: absolute; margin: 0; transform-origin: center; backface-visibility: hidden; will-change: transform; }
+.cube-view-fold__face * { animation: none !important; }
+.cube-2d-game[data-fold-ready='true'] .cube-2d-game__viewport,
+.cube-2d-game[data-folding='true'][data-cube-view='3d'] .cube-2d-game__viewport { visibility: hidden; }
+.cube-2d-game[data-folding='true'] .cube-3d-navigation,
+.cube-2d-game[data-folding='true'] .cube-3d-rotation-mode { visibility: hidden; }
+.cube-2d-game[data-folding='true'] .cube-3d-scene canvas { opacity: 0; }
+.cube-2d-game[data-folding='true'] .cube-3d-board-shell { pointer-events: none; }
+.cube-2d-game[data-folding='true'] .cube-2d-game__board-shell[aria-label='Cube 2D view'] .cube-view-switch { visibility: hidden; }
+
+/* Cold lazy imports and the loading fallback must never cover the original net. */
+.cube-2d-game[data-folding='true'][data-cube-view='2d']:not([data-fold-ready='true']) .cube-3d-board-shell { visibility: hidden; }
+.cube-2d-game[data-folding='true'][data-cube-view='2d'] .cube-3d-scene { --cube3d-backdrop: 0; }

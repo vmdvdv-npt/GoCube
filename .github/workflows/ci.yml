@@ -82,18 +82,21 @@ jobs:
         env:
           CI_MODE: ${{ steps.mode.outputs.mode }}
         run: |
-          if [[ "$CI_MODE" == "full" ]]; then
-            npm run test:e2e -- --project=chromium --project=webkit
+          mapfile -t general_specs < <(
+            find e2e -name '*.spec.ts' ! -name 'cube3d-*.spec.ts' -print | sort
+          )
 
-            mapfile -t firefox_headless_specs < <(
-              find e2e -name '*.spec.ts' ! -name 'cube3d-*.spec.ts' -print | sort
-            )
-            npx playwright test "${firefox_headless_specs[@]}" --project=firefox
+          if [[ "$CI_MODE" == "full" ]]; then
+            npx playwright test "${general_specs[@]}" --project=chromium --project=webkit
+            npx playwright test e2e/cube3d-*.spec.ts --project=chromium --workers=1
+            npx playwright test e2e/cube3d-*.spec.ts --project=webkit --workers=1
+            npx playwright test "${general_specs[@]}" --project=firefox
 
             LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a \
-              npx playwright test e2e/cube3d-*.spec.ts --project=firefox --headed
+              npx playwright test e2e/cube3d-*.spec.ts --project=firefox --headed --workers=1
           else
-            npm run test:e2e -- --project=chromium
+            npx playwright test "${general_specs[@]}" --project=chromium
+            npx playwright test e2e/cube3d-*.spec.ts --project=chromium --workers=1
           fi
 
   release_ready:
