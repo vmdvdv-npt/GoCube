@@ -249,22 +249,36 @@ const roundedLoopPath = (
   return commands.join(' ');
 };
 
-export const buildEndgameContourPath = (
-  cells: readonly EndgameContourCell[],
-  lattice: EndgameContourLattice,
-): string => {
+const validateContourLattice = (lattice: EndgameContourLattice): void => {
   if (!Number.isFinite(lattice.originX) || !Number.isFinite(lattice.originY)) {
     throw new Error('Endgame contour lattice origin must be finite');
   }
   if (!Number.isFinite(lattice.spacing) || lattice.spacing <= 0) {
     throw new Error('Endgame contour lattice spacing must be positive');
   }
-  if (cells.length === 0) return '';
-
-  return traceBoundaryLoops(boundaryEdges(cells))
-    .map((loop) => roundedLoopPath(loop, lattice))
-    .join(' ');
 };
+
+/** Individual closed loops are useful for hit testing: filling each loop separately
+ * keeps enclosed eyes/interstitial empty space interactive instead of subtracting it
+ * as a compound-path hole. */
+export const buildEndgameContourPaths = (
+  cells: readonly EndgameContourCell[],
+  lattice: EndgameContourLattice,
+): readonly string[] => {
+  validateContourLattice(lattice);
+  if (cells.length === 0) return Object.freeze([]);
+
+  return Object.freeze(
+    traceBoundaryLoops(boundaryEdges(cells))
+      .map((loop) => roundedLoopPath(loop, lattice))
+      .filter((path) => path.length > 0),
+  );
+};
+
+export const buildEndgameContourPath = (
+  cells: readonly EndgameContourCell[],
+  lattice: EndgameContourLattice,
+): string => buildEndgameContourPaths(cells, lattice).join(' ');
 
 export const endgameContourStrokeWidth = (spacing: number, stoneRadius: number): number => {
   if (!Number.isFinite(spacing) || spacing <= 0) {
