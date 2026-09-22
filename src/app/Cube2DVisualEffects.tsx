@@ -72,6 +72,29 @@ const contourPathForBoard = (
   });
 };
 
+const stoneHitHolesForBoard = (
+  shape: EndgamePresentationShape,
+  boardPoints: readonly BoardPoint[],
+  contentScale: number,
+  radius: number,
+): string => {
+  const pointIds = new Set(shape.points);
+  const center = CUBE_2D_SVG_SIZE / 2;
+  return boardPoints
+    .filter((point) => pointIds.has(point.pointId))
+    .map((point) => {
+      const x = center + (point.x - center) * contentScale;
+      const y = center + (point.y - center) * contentScale;
+      return [
+        `M ${x - radius} ${y}`,
+        `A ${radius} ${radius} 0 1 0 ${x + radius} ${y}`,
+        `A ${radius} ${radius} 0 1 0 ${x - radius} ${y}`,
+        'Z',
+      ].join(' ');
+    })
+    .join(' ');
+};
+
 export function Cube2DVisualEffects({
   layout,
   layoutCellSize = CUBE_2D_BASE_CELL_SIZE,
@@ -208,6 +231,13 @@ export function Cube2DVisualEffects({
               const path = contourPathForBoard(group, board.points, step, contentScale);
               const representativePoint = group.points[0];
               if (!path || !representativePoint) return null;
+              const stoneHoles = stoneHitHolesForBoard(
+                group,
+                board.points,
+                contentScale,
+                stoneRadius * 1.02,
+              );
+              const hitPath = stoneHoles ? `${path} ${stoneHoles}` : path;
               return (
                 <g
                   key={`interaction:${group.id}`}
@@ -245,7 +275,7 @@ export function Cube2DVisualEffects({
                   {interactiveEndgame ? (
                     <path
                       className="cube-2d-group-contour__hit-area"
-                      d={path}
+                      d={hitPath}
                       fill="transparent"
                       fillRule="evenodd"
                       stroke="none"
