@@ -154,7 +154,7 @@ describe('Cube3DFeatureLayer endgame depth', () => {
     layer.dispose();
   });
 
-  it('uses compact filled review discs that extend visibly beyond the stones', () => {
+  it('uses compact filled review discs that form a thin visible rim beyond the stones', () => {
     const layer = createCube3DFeatureLayer(size);
     layer.update(viewModel, endgamePresentation, false);
 
@@ -177,10 +177,10 @@ describe('Cube3DFeatureLayer endgame depth', () => {
     }
 
     expect(CUBE_3D_REVIEW_DISC_SCALE).toBeGreaterThan(1);
-    expect(CUBE_3D_REVIEW_DISC_SCALE).toBeLessThan(1.3);
+    expect(CUBE_3D_REVIEW_DISC_SCALE).toBeLessThanOrEqual(1.16);
     expect(CUBE_3D_REVIEW_DISC_HOVER_SCALE).toBeGreaterThan(CUBE_3D_REVIEW_DISC_SCALE);
     expect(CUBE_3D_REVIEW_DISC_SELECTED_SCALE).toBeGreaterThan(CUBE_3D_REVIEW_DISC_HOVER_SCALE);
-    expect(CUBE_3D_REVIEW_DISC_SELECTED_SCALE).toBeLessThanOrEqual(1.32);
+    expect(CUBE_3D_REVIEW_DISC_SELECTED_SCALE).toBeLessThanOrEqual(1.24);
 
     layer.dispose();
   });
