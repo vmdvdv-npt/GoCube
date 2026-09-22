@@ -21,12 +21,13 @@ const size = 7 as const;
 const viewModel: GameViewModel = Object.freeze({
   points: Object.freeze([
     Object.freeze({ logicalPointId: 'front:3:3', occupancy: 'black' as const, moveNumber: 1 }),
-    Object.freeze({ logicalPointId: 'front:3:4', occupancy: 'white' as const, moveNumber: 2 }),
-    Object.freeze({ logicalPointId: 'front:4:3', occupancy: 'black' as const, moveNumber: 3 }),
+    Object.freeze({ logicalPointId: 'front:3:2', occupancy: 'black' as const, moveNumber: 2 }),
+    Object.freeze({ logicalPointId: 'front:3:4', occupancy: 'white' as const, moveNumber: 3 }),
+    Object.freeze({ logicalPointId: 'front:4:3', occupancy: 'black' as const, moveNumber: 4 }),
     Object.freeze({ logicalPointId: 'front:4:4', occupancy: 'empty' as const, moveNumber: null }),
   ]),
   currentPlayer: 'black',
-  moveNumber: 4,
+  moveNumber: 5,
   consecutivePasses: 2,
   phase: 'endgame',
   captures: Object.freeze({ black: 0, white: 0 }),
@@ -41,7 +42,7 @@ const endgamePresentation: EndgamePresentationModel = Object.freeze({
     Object.freeze({
       id: 'dead-group',
       color: 'black' as const,
-      points: Object.freeze(['front:3:3']),
+      points: Object.freeze(['front:3:3', 'front:3:2']),
       edges: Object.freeze([]),
       status: 'dead' as const,
       selected: false,
@@ -154,7 +155,7 @@ describe('Cube3DFeatureLayer endgame depth', () => {
     layer.dispose();
   });
 
-  it('uses compact filled review discs that form a thin visible rim beyond the stones', () => {
+  it('uses touching review discs and fills the gaps between adjacent stones in one group', () => {
     const layer = createCube3DFeatureLayer(size);
     layer.update(viewModel, endgamePresentation, false);
 
@@ -176,11 +177,11 @@ describe('Cube3DFeatureLayer endgame depth', () => {
       expect(scale.z).toBeCloseTo(expectedRadius, 6);
     }
 
-    expect(CUBE_3D_REVIEW_DISC_SCALE).toBeGreaterThan(1);
-    expect(CUBE_3D_REVIEW_DISC_SCALE).toBeLessThanOrEqual(1.16);
+    expect(expectedRadius * 2).toBeGreaterThanOrEqual(pitch);
+    expect(featureMesh(layer, 'cube3d-endgame-dead-discs').count).toBeGreaterThan(2);
+    expect(CUBE_3D_REVIEW_DISC_SCALE).toBeCloseTo(1 / CUBE_3D_STONE_DIAMETER_PITCH_RATIO, 1);
     expect(CUBE_3D_REVIEW_DISC_HOVER_SCALE).toBeGreaterThan(CUBE_3D_REVIEW_DISC_SCALE);
     expect(CUBE_3D_REVIEW_DISC_SELECTED_SCALE).toBeGreaterThan(CUBE_3D_REVIEW_DISC_HOVER_SCALE);
-    expect(CUBE_3D_REVIEW_DISC_SELECTED_SCALE).toBeLessThanOrEqual(1.24);
 
     layer.dispose();
   });
