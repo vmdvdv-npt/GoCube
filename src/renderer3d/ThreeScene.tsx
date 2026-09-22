@@ -37,6 +37,7 @@ import {
   createCube3DDebugGridGeometry,
   createCube3DRoundedSurfaceGeometry,
 } from './Cube3DSurfaceGeometry';
+import { createCube3DWoodMaterial } from './Cube3DWoodMaterial';
 import './cube3d.css';
 
 const BASE_CAMERA_DISTANCE = 5;
@@ -72,6 +73,7 @@ interface DragSession {
 }
 
 export interface ThreeSceneProps {
+  readonly animationMode?: 'normal' | 'disabled';
   readonly size: CubeSize;
   readonly viewModel: GameViewModel;
   readonly endgamePresentation: EndgamePresentationModel | null;
@@ -140,6 +142,7 @@ const updateHoverMarker = (
 
 /** Gameplay Cube 3D scene. Rules and authoritative state stay outside this renderer. */
 export function ThreeScene({
+  animationMode = 'normal',
   size,
   viewModel,
   endgamePresentation,
@@ -153,6 +156,7 @@ export function ThreeScene({
   onPointHover,
   onPointActivate,
 }: ThreeSceneProps) {
+  const previousModelRef = useRef<GameViewModel | null>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const runtimeRef = useRef<SceneRuntime | null>(null);
   const viewStateRef = useRef(viewState);
@@ -198,38 +202,39 @@ export function ThreeScene({
     if (!host) return;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x04090f);
+    scene.background = null;
 
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(
       Math.min(window.devicePixelRatio, CUBE_3D_PERFORMANCE_BUDGET.maxDevicePixelRatio),
     );
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.domElement.dataset.testid = 'cube-3d-canvas';
     renderer.domElement.style.touchAction = 'none';
     host.appendChild(renderer.domElement);
 
     const surfaceGeometry = createCube3DRoundedSurfaceGeometry();
-    const surfaceMaterial = new THREE.MeshLambertMaterial({
-      color: 0x747a80,
-      polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1,
-    });
+    const surfaceMaterial = createCube3DWoodMaterial();
     const surface = new THREE.Mesh(surfaceGeometry, surfaceMaterial);
+    surface.receiveShadow = true;
 
     // Stage 1's continuous adjacency geometry is now the production gameplay grid.
     const gridGeometry = createCube3DDebugGridGeometry(size);
-    const gridMaterial = new THREE.LineBasicMaterial({ color: 0xd8dde2 });
+    const gridMaterial = new THREE.LineBasicMaterial({ color: 0x392514, transparent: true, opacity: 0.82 });
     const grid = new THREE.LineSegments(gridGeometry, gridMaterial);
     grid.renderOrder = 1;
 
     const stoneGeometry = createCube3DStoneGeometry();
-    const blackMaterial = new THREE.MeshLambertMaterial({ color: 0x111315 });
-    const whiteMaterial = new THREE.MeshLambertMaterial({ color: 0xeee9df });
+    const blackMaterial = new THREE.MeshPhysicalMaterial({ color: 0x17191c, roughness: 0.29, clearcoat: 0.3, clearcoatRoughness: 0.35 });
+    const whiteMaterial = new THREE.MeshPhysicalMaterial({ color: 0xf4efdf, roughness: 0.25, clearcoat: 0.35, clearcoatRoughness: 0.3 });
     const capacity = 6 * size * size;
     const blackStones = new THREE.InstancedMesh(stoneGeometry, blackMaterial, capacity);
     const whiteStones = new THREE.InstancedMesh(stoneGeometry, whiteMaterial, capacity);
+    blackStones.castShadow = whiteStones.castShadow = true;
     blackStones.count = 0;
     whiteStones.count = 0;
     blackStones.renderOrder = 2;
@@ -238,6 +243,12 @@ export function ThreeScene({
     const markerGeometry = new THREE.CylinderGeometry(1, 1, MARKER_THICKNESS, 20);
     const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xe04c4c });
     const hoverMarker = new THREE.Mesh(markerGeometry, markerMaterial);
+    const haloGeometry = new THREE.RingGeometry(1.35, 1.65, 48);
+    haloGeometry.rotateX(-Math.PI / 2);
+    const haloMaterial = new THREE.MeshBasicMaterial({ color: 0xffde8b, side: THREE.DoubleSide, transparent: true, opacity: 0.9 });
+    const halo = new THREE.Mesh(haloGeometry, haloMaterial);
+    halo.position.y = 0.06;
+    hoverMarker.add(halo);
     hoverMarker.visible = false;
     hoverMarker.renderOrder = 3;
 
@@ -257,10 +268,21 @@ export function ThreeScene({
     );
     scene.add(cubeRoot);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 1.15);
-    const key = new THREE.DirectionalLight(0xffffff, 1.75);
-    key.position.set(3, 4, 5);
-    scene.add(ambient, key);
+    const ambient = new THREE.HemisphereLight(0xe2edff, 0x705137, 1.8);
+    const key = new THREE.DirectionalLight(0xffe4bd, 3.2);
+    key.position.set(-3, 5, 6);
+    key.castShadow = true;
+    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.camera.left = key.shadow.camera.bottom = -2;
+    key.shadow.camera.right = key.shadow.camera.top = 2;
+    key.shadow.normalBias = 0.012;
+    key.shadow.bias = -0.0001;
+    key.shadow.radius = 3;
+    const fill = new THREE.DirectionalLight(0xc0d9ff, 1.1);
+    fill.position.set(4, 1, 2);
+    const rim = new THREE.DirectionalLight(0xffd7a1, 2.4);
+    rim.position.set(1, 3, -4);
+    scene.add(ambient, key, fill, rim);
 
     let renderFrameId: number | null = null;
     let transitionFrameId: number | null = null;
@@ -505,6 +527,7 @@ export function ThreeScene({
         transitionFrameId = null;
       }
       featureLayer.dispose();
+      key.shadow.dispose();
       surfaceGeometry.dispose();
       surfaceMaterial.dispose();
       gridGeometry.dispose();
@@ -512,6 +535,8 @@ export function ThreeScene({
       stoneGeometry.dispose();
       blackMaterial.dispose();
       whiteMaterial.dispose();
+      haloGeometry.dispose();
+      haloMaterial.dispose();
       markerGeometry.dispose();
       markerMaterial.dispose();
       disposeCube3DPickTargets(pickTargets);
@@ -551,6 +576,48 @@ export function ThreeScene({
     }
     runtime.render();
   }, [endgamePresentation, hoverStatus, hoveredPointId, showMoveNumbers, size, viewModel]);
+
+  useEffect(() => {
+    const previous = previousModelRef.current;
+    previousModelRef.current = viewModel;
+    const runtime = runtimeRef.current;
+    if (!runtime || !previous || animationMode === 'disabled' ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+      viewModel.moveNumber !== previous.moveNumber + 1) return;
+    const point = viewModel.points.find((candidate) => candidate.logicalPointId === viewModel.lastMovePointId);
+    if (!point || point.occupancy === 'empty' ||
+      previous.points.find((candidate) => candidate.logicalPointId === point.logicalPointId)?.occupancy !== 'empty') return;
+    const stones = point.occupancy === 'black' ? runtime.blackStones : runtime.whiteStones;
+    const index = viewModel.points.filter((candidate) => candidate.occupancy === point.occupancy)
+      .findIndex((candidate) => candidate.logicalPointId === point.logicalPointId);
+    const finalMatrix = cube3DStoneMatrix(size, point.logicalPointId);
+    const position = new THREE.Vector3();
+    const rotation = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+    finalMatrix.decompose(position, rotation, scale);
+    const normal = new THREE.Vector3(0, 1, 0).applyQuaternion(rotation);
+    const started = performance.now();
+    let frameId = 0;
+    const frame = (now: number) => {
+      const progress = Math.min(1, (now - started) / 180);
+      const eased = easeOutCubic(progress);
+      const matrix = new THREE.Matrix4().compose(
+        position.clone().addScaledVector(normal, (1 - eased) * cube3DGridPitch(size) * 0.22),
+        rotation, scale.clone().multiplyScalar(0.75 + eased * 0.25),
+      );
+      stones.setMatrixAt(index, matrix);
+      stones.instanceMatrix.needsUpdate = true;
+      runtime.render();
+      if (progress < 1) frameId = requestAnimationFrame(frame);
+    };
+    frameId = requestAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frameId);
+      stones.setMatrixAt(index, finalMatrix);
+      stones.instanceMatrix.needsUpdate = true;
+      runtime.render();
+    };
+  }, [animationMode, size, viewModel]);
 
   useEffect(() => {
     if (inputDisabled) {

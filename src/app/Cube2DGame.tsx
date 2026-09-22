@@ -369,6 +369,7 @@ export function Cube2DGame({
       {viewSwitch}
       <Suspense fallback={<div className="cube-3d-scene cube-3d-scene--loading">Loading 3D…</div>}>
         <LazyThreeScene
+          animationMode={animationMode}
           size={controller.size}
           viewModel={displayViewModel}
           endgamePresentation={g.vm.phase === 'endgame' ? g.endgamePresentation : null}
