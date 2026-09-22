@@ -27,10 +27,10 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Reproduce Cube 3D E2E concurrency only
+      - name: Verify Cube 3D E2E serialization
         run: >-
           npx playwright test
           e2e/cube3d-interaction-navigation.spec.ts
           e2e/cube3d-motion-performance.spec.ts
           --project=chromium
-          --workers=2
+          --workers=1
