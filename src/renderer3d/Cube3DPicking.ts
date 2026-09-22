@@ -113,9 +113,10 @@ export const pointFromCube3DClientPosition = (
     -(localY / viewport.height) * 2 + 1,
   );
   const raycaster = new THREE.Raycaster();
+  const pickRoot = context.targets.mesh.parent ?? context.targets.mesh;
   context.camera.updateMatrixWorld(true);
   context.surface.updateWorldMatrix(true, false);
-  context.targets.mesh.updateWorldMatrix(true, false);
+  pickRoot.updateWorldMatrix(true, true);
   raycaster.setFromCamera(pointer, context.camera);
 
   // The first closed-surface hit is the normal occlusion boundary. A logical
@@ -131,7 +132,6 @@ export const pointFromCube3DClientPosition = (
   // Endgame review adds filled group-interior meshes to the same non-rendered
   // picking layer. Prefer those targets so stones and empty space enclosed by a
   // review contour resolve to the same logical group representative point.
-  const pickRoot = context.targets.mesh.parent ?? context.targets.mesh;
   const targetHits = raycaster.intersectObject(pickRoot, true);
   for (const hit of targetHits) {
     const reviewPoint = hit.object.userData.endgameRepresentativePointId;
