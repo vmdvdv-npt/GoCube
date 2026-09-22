@@ -171,6 +171,11 @@ const unitDirection = (from: GridPoint, to: GridPoint): GridPoint => {
   return Object.freeze({ x: Math.sign(dx), y: Math.sign(dy) });
 };
 
+/**
+ * Match the Cube 2D contour geometry exactly: the polyomino corner is only the
+ * tangent intersection. The actual circular arc is centered one radius inward,
+ * so a single stone produces a circle and a row of stones produces a capsule.
+ */
 const roundedCorners = (loop: readonly GridPoint[]): readonly RoundedCorner[] =>
   Object.freeze(
     loop.map((point, index) => {
@@ -178,16 +183,22 @@ const roundedCorners = (loop: readonly GridPoint[]): readonly RoundedCorner[] =>
       const following = loop[(index + 1) % loop.length]!;
       const incoming = unitDirection(previous, point);
       const outgoing = unitDirection(point, following);
+      const radius = CORNER_RADIUS_GRID_UNITS;
+      const entry = Object.freeze({
+        x: point.x - incoming.x * radius,
+        y: point.y - incoming.y * radius,
+      });
+      const exit = Object.freeze({
+        x: point.x + outgoing.x * radius,
+        y: point.y + outgoing.y * radius,
+      });
 
       return Object.freeze({
-        center: point,
-        entry: Object.freeze({
-          x: point.x - incoming.x * CORNER_RADIUS_GRID_UNITS,
-          y: point.y - incoming.y * CORNER_RADIUS_GRID_UNITS,
-        }),
-        exit: Object.freeze({
-          x: point.x + outgoing.x * CORNER_RADIUS_GRID_UNITS,
-          y: point.y + outgoing.y * CORNER_RADIUS_GRID_UNITS,
+        entry,
+        exit,
+        center: Object.freeze({
+          x: point.x - incoming.x * radius + outgoing.x * radius,
+          y: point.y - incoming.y * radius + outgoing.y * radius,
         }),
       });
     }),

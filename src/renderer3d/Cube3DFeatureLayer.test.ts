@@ -190,6 +190,16 @@ describe('Cube3DFeatureLayer endgame contours', () => {
     layer.dispose();
   });
 
+  it('rounds a single-stone contour around the stone instead of producing inward spikes', () => {
+    const loops = cube3DReviewContourGridLoops(size, ['front:3:3']);
+    expect(loops).toHaveLength(1);
+    const loop = loops[0]!;
+
+    for (const point of loop.points) {
+      expect(Math.hypot(point.x - 3, point.y - 3)).toBeCloseTo(0.5, 6);
+    }
+  });
+
   it('keeps straight group sides continuous and removes the internal edge between neighbours', () => {
     const loops = cube3DReviewContourGridLoops(size, ['front:3:2', 'front:3:3']);
     expect(loops).toHaveLength(1);
