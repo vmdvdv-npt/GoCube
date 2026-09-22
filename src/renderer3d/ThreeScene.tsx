@@ -205,6 +205,7 @@ export function ThreeScene({
     const host = hostRef.current;
     if (!host) return;
 
+    host.dataset.cube3dReady = 'false';
     const scene = new THREE.Scene();
     scene.background = null;
 
@@ -222,8 +223,9 @@ export function ThreeScene({
     host.appendChild(renderer.domElement);
 
     const surfaceGeometry = createCube3DRoundedSurfaceGeometry();
+    let textureReady = false;
     const surfaceMaterial = createCube3DWoodMaterial(
-      () => runtimeRef.current?.render(),
+      () => { textureReady = true; runtimeRef.current?.render(); },
       renderer.capabilities.getMaxAnisotropy(),
     );
     const surface = new THREE.Mesh(surfaceGeometry, surfaceMaterial);
@@ -315,7 +317,7 @@ export function ThreeScene({
       renderFrameId = window.requestAnimationFrame(() => {
         renderFrameId = null;
         renderer.render(scene, camera);
-        host.dataset.cube3dReady = 'true';
+        host.dataset.cube3dReady = String(textureReady);
       });
     };
     let runtime!: SceneRuntime;

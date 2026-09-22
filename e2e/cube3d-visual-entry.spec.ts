@@ -191,7 +191,7 @@ test('Cube 2D navigation becomes the Cube 3D spatial anchor', async ({ page }) =
 });
 
 test('Cube 3D repeated mount/unmount and resize do not accumulate canvases', async ({ page }) => {
-  // Each round trip now includes two intentional 1.4-second transitions.
+  // Each round trip now includes two intentional 1.8-second transitions.
   test.setTimeout(60_000);
   await startCubeGame(page);
 

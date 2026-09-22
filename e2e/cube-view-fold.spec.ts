@@ -50,7 +50,7 @@ test('cross-fades both representations in the same moving pose and restores inpu
   await page.clock.install();
   await page.clock.pauseAt(new Date(Date.now() + 100));
   await page.getByRole('button', { name: '3D', exact: true }).click();
-  await expect(page.getByLabel('Cube 3D scene')).toBeVisible();
+  await expect(page.getByLabel('Cube 3D scene')).toHaveCount(1);
   let foundBlend = false;
   for (let frame = 0; frame < 110; frame++) {
     await page.clock.runFor(16);
@@ -66,9 +66,47 @@ test('cross-fades both representations in the same moving pose and restores inpu
   expect(canvasOpacity).toBeGreaterThan(0.3);
   expect(canvasOpacity).toBeLessThan(0.8);
   await page.clock.runFor(80);
+  expect(Number(await page.locator('.cube-view-fold').getAttribute('data-fold-yaw'))).toBeLessThan(yaw);
   await expect(scene).not.toHaveAttribute('data-cube3d-transition-rotation', rotation!);
   await page.clock.runFor(1000);
   await expect(page.locator('.cube-view-fold')).toHaveCount(0);
   await expect(scene).toHaveAttribute('data-cube3d-rotation', '0.000000,0.000000,0.000000,1.000000');
+  await expect(page.getByRole('button', { name: 'Pass', exact: true })).toBeEnabled();
+});
+
+test('cold 3D loading keeps the original net visible until the textured frame is ready', async ({ page }) => {
+  let releaseModule!: () => void;
+  let releaseTexture!: () => void;
+  const moduleGate = new Promise<void>(resolve => { releaseModule = resolve; });
+  const textureGate = new Promise<void>(resolve => { releaseTexture = resolve; });
+  await page.route('**/renderer3d/ThreeScene.tsx*', async route => { await moduleGate; await route.continue(); });
+  await page.route('**/assets/board/cube-walnut.png', async route => { await textureGate; await route.continue(); });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Cube', exact: true }).click();
+  await page.getByRole('button', { name: '3×3', exact: true }).click();
+  await page.getByRole('button', { name: 'Start game' }).click();
+  const net = page.locator('.cube-2d-game__stage .cube-2d-renderer');
+  const bounds = await net.boundingBox();
+  await page.getByRole('button', { name: '3D', exact: true }).click();
+  await expect(net).toBeVisible();
+  await expect(page.locator('.cube-3d-board-shell')).toBeHidden();
+  expect(await net.boundingBox()).toEqual(bounds);
+  releaseModule();
+  await expect(page.locator('[data-testid="cube-3d-canvas"]')).toHaveCount(1);
+  await expect(net).toBeVisible();
+  await expect(page.locator('.cube-3d-board-shell')).toBeHidden();
+  expect(await net.boundingBox()).toEqual(bounds);
+  releaseTexture();
+  await expect(page.getByRole('region', { name: 'Cube game' })).toHaveAttribute('data-cube-view-transitioning', 'false', { timeout: 30_000 });
+  await expect(page.getByLabel('Cube 3D scene')).toBeVisible();
+});
+
+test('a missing wood texture does not leave switching locked', async ({ page }) => {
+  await page.route('**/assets/board/cube-walnut.png', route => route.abort());
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Cube', exact: true }).click();
+  await page.getByRole('button', { name: 'Start game' }).click();
+  await page.getByRole('button', { name: '3D', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Cube game' })).toHaveAttribute('data-cube-view-transitioning', 'false', { timeout: 30_000 });
   await expect(page.getByRole('button', { name: 'Pass', exact: true })).toBeEnabled();
 });

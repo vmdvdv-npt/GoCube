@@ -13,23 +13,24 @@ export interface CubeViewTransitionBridge {
   reset(): void;
 }
 
-export const CUBE_VIEW_TRANSITION_MS = 1400;
+export const CUBE_VIEW_TRANSITION_MS = 1800;
 const smooth = (value: number): number => {
   const t = Math.max(0, Math.min(1, value));
   return t * t * (3 - 2 * t);
 };
 
-export function cubeViewTransitionMotion(progress: number) {
+export function cubeViewTransitionMotion(progress: number, direction: '2d' | '3d' = '3d') {
   const p = Math.max(0, Math.min(1, progress));
   const turn = Math.max(0, Math.min(1, (p - 0.12) / 0.88));
   return {
+    turn: smooth(turn),
     fold: Math.min(1, p / 0.32),
     travel: smooth(p / 0.55),
     approach: smooth((p - 0.12) / 0.88),
-    // A 200-degree excursion returns the cross face to the player. The same
-    // screen-space arc is used for every logical face and every net column.
-    yaw: -100 * Math.PI / 180 * Math.sin(Math.PI * turn) ** 2,
+    // One clockwise revolution lands on the same cross face. Reverse unfolding
+    // also runs clockwise in wall-clock time rather than reversing the spin.
+    yaw: (direction === '3d' ? -1 : 1) * 2 * Math.PI * smooth(turn),
     pitch: -0.10 * Math.sin(Math.PI * turn) ** 2,
-    blend: smooth((p - 0.60) / 0.30),
+    blend: smooth((p - 0.40) / 0.30),
   };
 }

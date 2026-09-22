@@ -74,11 +74,16 @@ export function CubeViewFold({ transitionBridgeRef, gameRef, layout, viewState, 
         return;
       }
       const ready = scene.dataset.cube3dReady === 'true' && transitionBridgeRef.current !== null;
-      if (ready) started ??= now;
+      if (!ready) {
+        frameId = requestAnimationFrame(frame);
+        return;
+      }
+      started ??= now;
       const time = started === undefined ? 0 : Math.min(1, (now - started) / CUBE_VIEW_TRANSITION_MS);
       const progress = direction === '3d' ? time : 1 - time;
-      const motion = cubeViewTransitionMotion(progress);
+      const motion = cubeViewTransitionMotion(progress, direction);
       const travel = motion.travel;
+      scene.style.setProperty('--cube3d-backdrop', String(travel));
       const rect = scene.getBoundingClientRect();
       const focal = rect.height / (2 * Math.tan(Math.PI / 8));
       const finalSide = focal * 2 * viewState.zoom / 5;
@@ -87,7 +92,7 @@ export function CubeViewFold({ transitionBridgeRef, gameRef, layout, viewState, 
       const y = bounds.y + side / 2 + (rect.y + rect.height / 2 - bounds.y - side / 2) * travel;
       fade.style.perspective = `${focal}px`;
       fade.style.perspectiveOrigin = `${x}px ${y}px`;
-      const rotation = new Quaternion().slerp(target, cubeFoldEase(progress / 0.4));
+      const rotation = new Quaternion().slerp(target, motion.turn);
       rotation.premultiply(new Quaternion().setFromEuler(new Euler(motion.pitch, motion.yaw, 0)));
       const reveal = motion.blend;
       const matrix = new Matrix4().makeTranslation(x, y, 0)
@@ -130,6 +135,7 @@ export function CubeViewFold({ transitionBridgeRef, gameRef, layout, viewState, 
     return () => {
       cancelAnimationFrame(frameId);
       transitionBridgeRef.current?.reset();
+      game.querySelector<HTMLElement>('.cube-3d-scene')?.style.removeProperty('--cube3d-backdrop');
       delete game.dataset.foldReady;
       fade.remove();
     };

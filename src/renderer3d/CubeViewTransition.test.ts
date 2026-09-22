@@ -29,14 +29,22 @@ describe('cube switching motion and cross anchor', () => {
     expect(start.blend).toBe(0);
     expect(end.blend).toBe(1);
     expect(end.approach).toBe(1);
-    expect(end.yaw).toBeCloseTo(0, 12);
-    const middle = cubeViewTransitionMotion(0.75);
+    expect(end.yaw).toBeCloseTo(-2 * Math.PI, 12);
+    const middle = cubeViewTransitionMotion(0.55);
     expect(middle.fold).toBe(1);
     expect(middle.blend).toBeCloseTo(0.5);
     const speed = (p: number) => Math.abs(cubeViewTransitionMotion(p + 0.0001).yaw - cubeViewTransitionMotion(p).yaw) / 0.0001;
-    expect(speed(0.75)).toBeGreaterThan(5);
+    expect(speed(0.55)).toBeGreaterThan(5);
     expect(speed(0)).toBeLessThan(0.01);
     expect(speed(0.9999)).toBeLessThan(0.01);
-    expect(cubeViewTransitionMotion(0.56).yaw * 180 / Math.PI).toBeCloseTo(-100);
+    for (const direction of ['2d', '3d'] as const) {
+      let previous = Infinity;
+      for (let step = 0; step <= 100; step++) {
+        const progress = direction === '3d' ? step / 100 : 1 - step / 100;
+        const yaw = cubeViewTransitionMotion(progress, direction).yaw;
+        expect(yaw).toBeLessThanOrEqual(previous);
+        previous = yaw;
+      }
+    }
   });
 });

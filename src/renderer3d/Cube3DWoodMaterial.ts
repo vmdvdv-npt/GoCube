@@ -12,6 +12,17 @@ export const createCube3DWoodMaterial = (
       return;
     }
     onTextureReady();
+  }, undefined, () => {
+    if (disposed) return;
+    // A failed image request must not hold the view switch indefinitely.
+    const fallback = document.createElement('canvas');
+    fallback.width = fallback.height = 2;
+    const context = fallback.getContext('2d')!;
+    context.fillStyle = '#a66b37';
+    context.fillRect(0, 0, 2, 2);
+    texture.image = fallback;
+    texture.needsUpdate = true;
+    onTextureReady();
   });
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearMipmapLinearFilter;

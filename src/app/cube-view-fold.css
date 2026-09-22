@@ -9,3 +9,7 @@
 .cube-2d-game[data-folding='true'] .cube-3d-scene canvas { opacity: 0; }
 .cube-2d-game[data-folding='true'] .cube-3d-board-shell { pointer-events: none; }
 .cube-2d-game[data-folding='true'] .cube-2d-game__board-shell[aria-label='Cube 2D view'] .cube-view-switch { visibility: hidden; }
+
+/* Cold lazy imports and the loading fallback must never cover the original net. */
+.cube-2d-game[data-folding='true'][data-cube-view='2d']:not([data-fold-ready='true']) .cube-3d-board-shell { visibility: hidden; }
+.cube-2d-game[data-folding='true'][data-cube-view='2d'] .cube-3d-scene { --cube3d-backdrop: 0; }
