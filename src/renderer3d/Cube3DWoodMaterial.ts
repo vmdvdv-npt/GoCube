@@ -4,11 +4,8 @@ import * as THREE from 'three';
 export const createCube3DWoodMaterial = (): THREE.MeshStandardMaterial => {
   const material = new THREE.MeshStandardMaterial({
     color: 0xffffff,
-    roughness: 0.48,
+    roughness: 0.72,
     metalness: 0,
-    polygonOffset: true,
-    polygonOffsetFactor: 1,
-    polygonOffsetUnits: 1,
   });
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
@@ -36,7 +33,7 @@ export const createCube3DWoodMaterial = (): THREE.MeshStandardMaterial => {
         float fine = woodNoise(p * vec3(145.0, 5.0, 145.0));
         float broad = woodNoise(p * vec3(6.0, 0.8, 6.0));
         float tone = clamp(0.52 + broad * 0.28 + grain * 0.12 + fine * 0.08, 0.0, 1.0);
-        diffuseColor.rgb *= mix(vec3(0.27, 0.125, 0.042), vec3(0.72, 0.47, 0.22), tone);
+        diffuseColor.rgb *= mix(vec3(0.075, 0.018, 0.006), vec3(0.34, 0.115, 0.032), tone);
       `);
   };
   material.customProgramCacheKey = () => 'cube-solid-wood-v1';

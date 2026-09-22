@@ -14,6 +14,7 @@ import {
 import {
   CUBE_3D_GRID_EDGE_MARGIN_PITCH_RATIO,
   createCube3DRoundedSurfaceGeometry,
+  createCube3DDebugGridGeometry,
   cube3DDebugGridPaths,
   cube3DFaceSurfaceSpan,
   cube3DGridEdgeInset,
@@ -177,6 +178,29 @@ describe('Cube3DSurfaceGeometry', () => {
         }
       }
     }
+  });
+
+  it.each([2, 4, 7, 8] as const)('keeps complete rendered grid segments outside the body at size %s', (size) => {
+    const geometry = createCube3DDebugGridGeometry(size);
+    const vertices = geometry.getAttribute('position');
+    const { halfExtent, roundingRadius } = DEFAULT_CUBE_3D_SURFACE_PROFILE;
+    const core = halfExtent - roundingRadius;
+    let minimumClearance = Infinity;
+    let maximumClearance = 0;
+    for (let index = 0; index < vertices.count; index += 2) {
+      for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+        const coords = [0, 1, 2].map((axis) =>
+          vertices.getComponent(index, axis) * (1 - t) + vertices.getComponent(index + 1, axis) * t,
+        );
+        const clearance = Math.hypot(...coords.map((value) => Math.max(0, Math.abs(value) - core))) - roundingRadius;
+        minimumClearance = Math.min(minimumClearance, clearance);
+        maximumClearance = Math.max(maximumClearance, clearance);
+      }
+    }
+    // Tests chord interiors too: surface endpoints alone missed the edge gaps.
+    expect(minimumClearance).toBeGreaterThan(0);
+    expect(maximumClearance).toBeLessThan(0.00101);
+    geometry.dispose();
   });
 
   it('creates one closed rounded-cube BufferGeometry with normalized vertex normals', () => {

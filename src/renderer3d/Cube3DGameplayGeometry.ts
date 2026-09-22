@@ -41,7 +41,9 @@ export const cube3DSurfaceAlignedMatrix = (
 export const createCube3DStoneGeometry = (): THREE.BufferGeometry => {
   const geometry = new THREE.SphereGeometry(1, 40, 24);
   geometry.scale(1, 0.34, 1);
-  geometry.computeVertexNormals();
+  // Sphere normals transformed by scale are the analytic ellipsoid normals.
+  // Recomputing from triangles splits the duplicated UV seam and poles,
+  // leaving a visible wedge in the specular highlight.
   return geometry;
 };
 

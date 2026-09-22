@@ -39,7 +39,7 @@ export const DEFAULT_CUBE_3D_SURFACE_PROFILE: Cube3DSurfaceProfile = Object.free
   roundingRadius: 0.1,
 });
 
-export const DEFAULT_CUBE_3D_SURFACE_SEGMENTS = 32;
+export const DEFAULT_CUBE_3D_SURFACE_SEGMENTS = 64;
 
 /**
  * Physical-face margin expressed in units of the same pitch used by the full
@@ -415,17 +415,32 @@ export const createCube3DRoundedSurfaceGeometry = (
   return geometry;
 };
 
+// The rendered polyline must stay outside the rounded body between samples,
+// not just at its vertices. Dense sampling bounds chord sag at the smallest board.
+export const CUBE_3D_GRID_SURFACE_LIFT = 0.001;
+
 export const createCube3DDebugGridGeometry = (
   size: CubeSize,
   profile: Cube3DSurfaceProfile = DEFAULT_CUBE_3D_SURFACE_PROFILE,
-  samplesPerSide = 4,
+  samplesPerSide = 64,
 ): THREE.BufferGeometry => {
   const vertices: number[] = [];
+  const lift = (point: CubeVector3): THREE.Vector3 => {
+    const core = profile.halfExtent - profile.roundingRadius;
+    const normal = new THREE.Vector3(...point).sub(
+      new THREE.Vector3(...point.map((value) => clamp(value, -core, core))),
+    );
+    if (normal.lengthSq() === 0) {
+      const axis = point.findIndex((value) => Math.abs(value) === profile.halfExtent);
+      normal.setComponent(axis < 0 ? 0 : axis, Math.sign(point[axis < 0 ? 0 : axis]));
+    }
+    return new THREE.Vector3(...point).addScaledVector(normal.normalize(), CUBE_3D_GRID_SURFACE_LIFT);
+  };
   for (const path of cube3DDebugGridPaths(size, profile, samplesPerSide)) {
     for (let index = 1; index < path.positions.length; index += 1) {
       const from = path.positions[index - 1];
       const to = path.positions[index];
-      vertices.push(from[0], from[1], from[2], to[0], to[1], to[2]);
+      vertices.push(...lift(from).toArray(), ...lift(to).toArray());
     }
   }
 

@@ -210,7 +210,7 @@ export function ThreeScene({
       Math.min(window.devicePixelRatio, CUBE_3D_PERFORMANCE_BUDGET.maxDevicePixelRatio),
     );
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
+    renderer.toneMappingExposure = 0.95;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.domElement.dataset.testid = 'cube-3d-canvas';
@@ -221,16 +221,20 @@ export function ThreeScene({
     const surfaceMaterial = createCube3DWoodMaterial();
     const surface = new THREE.Mesh(surfaceGeometry, surfaceMaterial);
     surface.receiveShadow = true;
+    surface.castShadow = true;
+    // A closed body casts from its back faces to avoid self-shadow acne.
+    surfaceMaterial.shadowSide = THREE.BackSide;
 
     // Stage 1's continuous adjacency geometry is now the production gameplay grid.
     const gridGeometry = createCube3DDebugGridGeometry(size);
-    const gridMaterial = new THREE.LineBasicMaterial({ color: 0x392514, transparent: true, opacity: 0.82 });
+    const gridMaterial = new THREE.LineBasicMaterial({ color: 0x362316, depthTest: true, depthWrite: true });
     const grid = new THREE.LineSegments(gridGeometry, gridMaterial);
     grid.renderOrder = 1;
 
     const stoneGeometry = createCube3DStoneGeometry();
     const blackMaterial = new THREE.MeshPhysicalMaterial({ color: 0x17191c, roughness: 0.29, clearcoat: 0.3, clearcoatRoughness: 0.35 });
     const whiteMaterial = new THREE.MeshPhysicalMaterial({ color: 0xf4efdf, roughness: 0.25, clearcoat: 0.35, clearcoatRoughness: 0.3 });
+    blackMaterial.shadowSide = whiteMaterial.shadowSide = THREE.FrontSide;
     const capacity = 6 * size * size;
     const blackStones = new THREE.InstancedMesh(stoneGeometry, blackMaterial, capacity);
     const whiteStones = new THREE.InstancedMesh(stoneGeometry, whiteMaterial, capacity);
@@ -268,15 +272,17 @@ export function ThreeScene({
     );
     scene.add(cubeRoot);
 
-    const ambient = new THREE.HemisphereLight(0xe2edff, 0x705137, 1.8);
-    const key = new THREE.DirectionalLight(0xffe4bd, 3.2);
+    const ambient = new THREE.HemisphereLight(0xe2edff, 0x705137, 1.4);
+    const key = new THREE.DirectionalLight(0xffe4bd, 2.6);
     key.position.set(-3, 5, 6);
     key.castShadow = true;
     key.shadow.mapSize.set(1024, 1024);
     key.shadow.camera.left = key.shadow.camera.bottom = -2;
     key.shadow.camera.right = key.shadow.camera.top = 2;
-    key.shadow.normalBias = 0.012;
-    key.shadow.bias = -0.0001;
+    key.shadow.camera.near = 4;
+    key.shadow.camera.far = 12;
+    key.shadow.normalBias = 0.002;
+    key.shadow.bias = -0.00015;
     key.shadow.radius = 3;
     const fill = new THREE.DirectionalLight(0xc0d9ff, 1.1);
     fill.position.set(4, 1, 2);
