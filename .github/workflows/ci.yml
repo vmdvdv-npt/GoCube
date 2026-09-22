@@ -26,5 +26,7 @@ jobs:
       - name: Install Firefox only
         run: npx playwright install --with-deps firefox
 
-      - name: Reproduce Cube view fold in Firefox only
-        run: npx playwright test e2e/cube-view-fold.spec.ts --project=firefox --workers=1
+      - name: Verify Cube view fold with software WebGL Firefox
+        run: |
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a \
+            npx playwright test e2e/cube-view-fold.spec.ts --project=firefox --headed --workers=1
