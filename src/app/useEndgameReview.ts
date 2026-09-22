@@ -93,6 +93,24 @@ export function useEndgameReview(
     sync(controller.viewModel());
   }, [controller, sync]);
 
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+
+    const dismissOnOutsidePointerDown = (event: PointerEvent): void => {
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest('[data-floating-endgame-control="true"]')
+      ) {
+        return;
+      }
+      setSelectedGroupId(null);
+    };
+
+    document.addEventListener('pointerdown', dismissOnOutsidePointerDown, true);
+    return () => document.removeEventListener('pointerdown', dismissOnOutsidePointerDown, true);
+  }, []);
+
   useEffect(() => controller.subscribeEndgameReviewReady(() => {
     const viewModel = controller.viewModel();
     if (viewModel.phase !== 'endgame') return;
@@ -103,7 +121,7 @@ export function useEndgameReview(
   const setDecision = useCallback(async (groupId: string, status: GroupStatus): Promise<void> => {
     await controller.setEndgameDecision(groupId, status);
     sync(controller.viewModel());
-    setSelectedGroupId(groupId);
+    setSelectedGroupId(null);
   }, [controller, sync]);
 
   const selectedGroup = useMemo(
