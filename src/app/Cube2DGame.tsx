@@ -341,6 +341,10 @@ export function Cube2DGame({
               finalClassification={g.finalClassification}
               endgamePresentation={g.vm.phase === 'endgame' ? g.endgamePresentation : null}
               capturedStones={g.capturedEffects}
+              onEndgamePointHover={g.vm.phase === 'endgame' ? g.hover : undefined}
+              onEndgamePointActivate={
+                g.vm.phase === 'endgame' ? (point) => void g.activate(point) : undefined
+              }
             />
           </div>
 
