@@ -8,10 +8,9 @@ import {
 } from '../presentation/EndgamePresentation';
 import type { GameViewModel } from '../presentation/PresentationModel';
 import {
-  CUBE_3D_STONE_DIAMETER_PITCH_RATIO,
-  CUBE_3D_STONE_LIFT_PITCH_RATIO,
   createCube3DStoneGeometry,
   cube3DGridPitch,
+  cube3DStoneVisualMetrics,
   cube3DSurfaceAlignedMatrix,
 } from './Cube3DGameplayGeometry';
 import { createCube3DFeaturePresentation } from './Cube3DFeaturePresentation';
@@ -88,9 +87,11 @@ const numberTexture = (
 export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => {
   const capacity = 6 * size * size;
   const pitch = cube3DGridPitch(size);
-  const stoneRadius = (pitch * CUBE_3D_STONE_DIAMETER_PITCH_RATIO) / 2;
-  const stoneCenterLift = pitch * CUBE_3D_STONE_LIFT_PITCH_RATIO + stoneRadius * 0.03;
-  const stoneTopLift = stoneCenterLift + stoneRadius * 0.38;
+  const {
+    radius: stoneRadius,
+    centerLift: stoneCenterLift,
+    topLift: stoneTopLift,
+  } = cube3DStoneVisualMetrics(size);
   const group = new THREE.Group();
   group.name = 'cube3d-feature-layer';
 
