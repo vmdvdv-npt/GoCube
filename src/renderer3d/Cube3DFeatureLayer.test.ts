@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import type { EndgamePresentationModel } from '../presentation/EndgamePresentation';
+import {
+  ENDGAME_GROUP_HOVER_COLOR,
+  type EndgamePresentationModel,
+} from '../presentation/EndgamePresentation';
 import type { GameViewModel } from '../presentation/PresentationModel';
 import { cube3DReviewContourGridLoops } from './Cube3DEndgameContourGeometry';
 import {
@@ -190,6 +193,26 @@ describe('Cube3DFeatureLayer endgame contours', () => {
     layer.dispose();
   });
 
+  it('keeps the hover material at the exact UI accent instead of tone-mapping it', () => {
+    const layer = createCube3DFeatureLayer(size);
+    layer.update(viewModel, endgamePresentation, false);
+
+    const hoverContour = layer.group.getObjectByName('cube3d-endgame-hover-contour-dead-group');
+    expect(hoverContour).toBeInstanceOf(THREE.Mesh);
+    if (!(hoverContour instanceof THREE.Mesh)) throw new Error('Missing hover contour mesh');
+    expect(hoverContour.material).toBeInstanceOf(THREE.MeshBasicMaterial);
+    if (!(hoverContour.material instanceof THREE.MeshBasicMaterial)) {
+      throw new Error('Unexpected hover contour material');
+    }
+
+    expect(hoverContour.material.color.getHexString()).toBe(
+      new THREE.Color(ENDGAME_GROUP_HOVER_COLOR).getHexString(),
+    );
+    expect(hoverContour.material.toneMapped).toBe(false);
+
+    layer.dispose();
+  });
+
   it('creates filled review hit targets for every logical group', () => {
     const layer = createCube3DFeatureLayer(size);
     layer.update(viewModel, endgamePresentation, false);
@@ -237,15 +260,16 @@ describe('Cube3DFeatureLayer endgame contours', () => {
     expect(topStraight.every((point) => Math.abs(point.y - 2.5) < 1e-9)).toBe(true);
   });
 
-  it('slightly overlaps the stone silhouette so no board-colored gap can appear', () => {
+  it('overlaps the stone silhouette enough to avoid board-colored slivers in 3D', () => {
     const pitch = cube3DGridPitch(size);
     const stoneRadius = (pitch * CUBE_3D_STONE_DIAMETER_PITCH_RATIO) / 2;
     const contourCenterRadius = pitch / 2;
     const baseStrokeWidth = pitch * CUBE_3D_REVIEW_CONTOUR_WIDTH_PITCH_RATIO;
     const innerContourEdge = contourCenterRadius - baseStrokeWidth / 2;
+    const inwardOverlap = stoneRadius - innerContourEdge;
 
-    expect(innerContourEdge).toBeLessThan(stoneRadius);
-    expect(stoneRadius - innerContourEdge).toBeLessThan(pitch * 0.01);
+    expect(inwardOverlap).toBeGreaterThanOrEqual(pitch * 0.015);
+    expect(inwardOverlap).toBeLessThanOrEqual(pitch * 0.025);
     expect(CUBE_3D_REVIEW_CONTOUR_HOVER_WIDTH_PITCH_RATIO).toBe(
       CUBE_3D_REVIEW_CONTOUR_WIDTH_PITCH_RATIO,
     );
