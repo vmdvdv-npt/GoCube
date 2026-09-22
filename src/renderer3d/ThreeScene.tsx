@@ -275,7 +275,10 @@ export function ThreeScene({
     hoverMarker.visible = false;
     hoverMarker.renderOrder = 3;
 
-    const featureLayer = createCube3DFeatureLayer(size);
+    const featureLayer = createCube3DFeatureLayer(
+      size,
+      () => runtimeRef.current?.render(),
+    );
     const pickTargets = createCube3DPickTargets(size);
     pickTargets.mesh.renderOrder = 7;
 

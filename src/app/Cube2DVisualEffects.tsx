@@ -1,7 +1,10 @@
 import type { CSSProperties } from 'react';
 import type { EndgameClassification } from '../core/endgame/EndgameClassifier';
 import type { FinalScore } from '../core/scoring/Scoring';
+import type { PointId } from '../core/topology/Topology';
 import {
+  ENDGAME_GROUP_HOVER_COLOR,
+  ENDGAME_GROUP_HOVER_TRANSITION_MS,
   ENDGAME_TERRITORY_MARKER_RADIUS_FRACTION,
   ENDGAME_TERRITORY_MARKER_STYLES,
   type EndgamePresentationModel,
@@ -37,6 +40,8 @@ interface Cube2DVisualEffectsProps {
   readonly finalClassification?: EndgameClassification | null;
   readonly endgamePresentation?: EndgamePresentationModel | null;
   readonly capturedStones?: readonly CapturedStoneEffect[];
+  readonly onEndgamePointHover?: (pointId: PointId | null) => void;
+  readonly onEndgamePointActivate?: (pointId: PointId) => void;
 }
 
 type EffectsStyle = CSSProperties & {
@@ -67,6 +72,29 @@ const contourPathForBoard = (
   });
 };
 
+const stoneHitHolesForBoard = (
+  shape: EndgamePresentationShape,
+  boardPoints: readonly BoardPoint[],
+  contentScale: number,
+  radius: number,
+): string => {
+  const pointIds = new Set(shape.points);
+  const center = CUBE_2D_SVG_SIZE / 2;
+  return boardPoints
+    .filter((point) => pointIds.has(point.pointId))
+    .map((point) => {
+      const x = center + (point.x - center) * contentScale;
+      const y = center + (point.y - center) * contentScale;
+      return [
+        `M ${x - radius} ${y}`,
+        `A ${radius} ${radius} 0 1 0 ${x + radius} ${y}`,
+        `A ${radius} ${radius} 0 1 0 ${x - radius} ${y}`,
+        'Z',
+      ].join(' ');
+    })
+    .join(' ');
+};
+
 export function Cube2DVisualEffects({
   layout,
   layoutCellSize = CUBE_2D_BASE_CELL_SIZE,
@@ -74,6 +102,8 @@ export function Cube2DVisualEffects({
   finalClassification = null,
   endgamePresentation = null,
   capturedStones = [],
+  onEndgamePointHover,
+  onEndgamePointActivate,
 }: Cube2DVisualEffectsProps) {
   const renderModel = createCube2DRenderModel(layout);
   const effects = createCube2DVisualEffectsModel({
@@ -94,12 +124,15 @@ export function Cube2DVisualEffects({
   );
   const effectsStyle: EffectsStyle = { '--cube-2d-cell-size': `${layoutCellSize}px` };
   const captureArtworkPrefix = 'cube-2d-capture-artwork';
+  const interactiveEndgame = Boolean(
+    endgamePresentation && onEndgamePointHover && onEndgamePointActivate,
+  );
 
   return (
     <div
       className="cube-2d-effects"
       style={effectsStyle}
-      aria-hidden="true"
+      aria-hidden={interactiveEndgame ? undefined : true}
       data-capture-count={capturedStones.length}
       data-layout-cell-size={layoutCellSize.toFixed(3)}
     >
@@ -143,7 +176,7 @@ export function Cube2DVisualEffects({
               return (
                 <g
                   key={`bundle:${contour.status}:${contour.color}`}
-                  className={`cube-2d-group-contour cube-2d-group-contour--${contour.status}${contour.selected ? ' is-selected' : ''}${contour.hovered ? ' is-hovered' : ''}`}
+                  className={`cube-2d-group-contour cube-2d-group-contour--${contour.status}${contour.selected ? ' is-selected' : ''}`}
                   data-endgame-group-ids={contour.groupIds.join(' ')}
                   data-group-status={contour.status}
                   data-group-color={contour.color}
@@ -168,7 +201,7 @@ export function Cube2DVisualEffects({
               return (
                 <g
                   key={`seki-region:${region.id}`}
-                  className={`cube-2d-group-contour cube-2d-group-contour--seki${region.selected ? ' is-selected' : ''}${region.hovered ? ' is-hovered' : ''}`}
+                  className={`cube-2d-group-contour cube-2d-group-contour--seki${region.selected ? ' is-selected' : ''}`}
                   data-endgame-seki-region-id={region.id}
                   data-endgame-group-ids={region.groupIds.join(' ')}
                   data-group-status="seki"
@@ -190,6 +223,67 @@ export function Cube2DVisualEffects({
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   />
+                </g>
+              );
+            })}
+
+            {endgamePresentation?.groups.map((group) => {
+              const path = contourPathForBoard(group, board.points, step, contentScale);
+              const representativePoint = group.points[0];
+              if (!path || !representativePoint) return null;
+              const stoneHoles = stoneHitHolesForBoard(
+                group,
+                board.points,
+                contentScale,
+                stoneRadius * 1.02,
+              );
+              const hitPath = stoneHoles ? `${path} ${stoneHoles}` : path;
+              return (
+                <g
+                  key={`interaction:${group.id}`}
+                  className="cube-2d-group-interaction"
+                  data-endgame-group-id={group.id}
+                  data-group-status={group.status}
+                  onPointerEnter={
+                    interactiveEndgame
+                      ? () => onEndgamePointHover?.(representativePoint)
+                      : undefined
+                  }
+                  onPointerLeave={
+                    interactiveEndgame ? () => onEndgamePointHover?.(null) : undefined
+                  }
+                  onClick={
+                    interactiveEndgame
+                      ? () => onEndgamePointActivate?.(representativePoint)
+                      : undefined
+                  }
+                >
+                  <path
+                    className="cube-2d-group-contour__hover-outline"
+                    d={path}
+                    fill="none"
+                    stroke={ENDGAME_GROUP_HOVER_COLOR}
+                    strokeOpacity={group.hovered ? 1 : 0}
+                    strokeWidth={contourWidth}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    pointerEvents="none"
+                    style={{
+                      transition: `stroke-opacity ${ENDGAME_GROUP_HOVER_TRANSITION_MS}ms ease-out`,
+                    }}
+                  />
+                  {interactiveEndgame ? (
+                    <path
+                      className="cube-2d-group-contour__hit-area"
+                      d={hitPath}
+                      fill="transparent"
+                      fillRule="evenodd"
+                      stroke="none"
+                      pointerEvents="fill"
+                      style={{ cursor: 'pointer' }}
+                      data-endgame-hit-group-id={group.id}
+                    />
+                  ) : null}
                 </g>
               );
             })}

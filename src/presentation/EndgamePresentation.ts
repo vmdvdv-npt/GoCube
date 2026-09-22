@@ -48,6 +48,9 @@ export const ENDGAME_PRESENTATION_STYLES: Readonly<
   }),
 });
 
+export const ENDGAME_GROUP_HOVER_COLOR = '#9af84d';
+export const ENDGAME_GROUP_HOVER_TRANSITION_MS = 90;
+
 export interface EndgameTerritoryMarkerStyle {
   readonly fill: string;
   readonly stroke: string | null;

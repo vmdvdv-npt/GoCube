@@ -190,6 +190,25 @@ describe('Cube3DFeatureLayer endgame contours', () => {
     layer.dispose();
   });
 
+  it('creates filled review hit targets for every logical group', () => {
+    const layer = createCube3DFeatureLayer(size);
+    layer.update(viewModel, endgamePresentation, false);
+
+    const hitTargets = layer.group.getObjectByName('cube3d-endgame-review-hit-targets');
+    expect(hitTargets).toBeInstanceOf(THREE.Group);
+    expect(hitTargets?.children).toHaveLength(endgamePresentation.groups.length);
+
+    for (const child of hitTargets?.children ?? []) {
+      expect(child).toBeInstanceOf(THREE.Mesh);
+      if (!(child instanceof THREE.Mesh)) continue;
+      expect(child.geometry.getAttribute('position').count).toBeGreaterThan(0);
+      expect(child.geometry.getIndex()?.count ?? 0).toBeGreaterThan(0);
+      expect(typeof child.userData.endgameRepresentativePointId).toBe('string');
+    }
+
+    layer.dispose();
+  });
+
   it('rounds a single-stone contour around the stone instead of producing inward spikes', () => {
     const loops = cube3DReviewContourGridLoops(size, ['front:3:3']);
     expect(loops).toHaveLength(1);
@@ -227,11 +246,11 @@ describe('Cube3DFeatureLayer endgame contours', () => {
 
     expect(innerContourEdge).toBeLessThan(stoneRadius);
     expect(stoneRadius - innerContourEdge).toBeLessThan(pitch * 0.01);
-    expect(CUBE_3D_REVIEW_CONTOUR_HOVER_WIDTH_PITCH_RATIO).toBeGreaterThan(
+    expect(CUBE_3D_REVIEW_CONTOUR_HOVER_WIDTH_PITCH_RATIO).toBe(
       CUBE_3D_REVIEW_CONTOUR_WIDTH_PITCH_RATIO,
     );
     expect(CUBE_3D_REVIEW_CONTOUR_SELECTED_WIDTH_PITCH_RATIO).toBeGreaterThan(
-      CUBE_3D_REVIEW_CONTOUR_HOVER_WIDTH_PITCH_RATIO,
+      CUBE_3D_REVIEW_CONTOUR_WIDTH_PITCH_RATIO,
     );
   });
 });
