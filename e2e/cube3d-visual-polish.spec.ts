@@ -84,7 +84,10 @@ test('Cube 3D visual polish remains stable on 7×7 across hover, rotation and fu
   await page.getByRole('checkbox', { name: 'Move numbers' }).check();
   await expect(scene).toHaveAttribute('data-cube3d-move-number-count', '7');
 
-  // Exercise both zoom clamps with the polished scene mounted.
+  // Exercise both zoom clamps with the pointer explicitly back over the WebGL canvas.
+  // The Move numbers checkbox click moves the browser pointer into the sidebar.
+  center = await canvasCenter(page);
+  await page.mouse.move(center.x, center.y);
   await page.mouse.wheel(0, -10_000);
   await expect(scene).toHaveAttribute('data-cube3d-zoom', '2.5000');
   await page.mouse.wheel(0, 10_000);
