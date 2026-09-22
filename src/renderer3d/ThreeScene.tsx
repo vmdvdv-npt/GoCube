@@ -218,7 +218,10 @@ export function ThreeScene({
     host.appendChild(renderer.domElement);
 
     const surfaceGeometry = createCube3DRoundedSurfaceGeometry();
-    const surfaceMaterial = createCube3DWoodMaterial();
+    const surfaceMaterial = createCube3DWoodMaterial(
+      () => runtimeRef.current?.render(),
+      renderer.capabilities.getMaxAnisotropy(),
+    );
     const surface = new THREE.Mesh(surfaceGeometry, surfaceMaterial);
     surface.receiveShadow = true;
     surface.castShadow = true;

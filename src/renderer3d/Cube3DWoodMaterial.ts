@@ -1,41 +1,56 @@
 import * as THREE from 'three';
 
-/** Solid object-space grain: continuous across all six faces and rounded seams. */
-export const createCube3DWoodMaterial = (): THREE.MeshStandardMaterial => {
+/** Reuse the 2D board's real grain, excluding its baked frame and edge lighting. */
+export const createCube3DWoodMaterial = (
+  onTextureReady: () => void,
+  maxAnisotropy: number,
+): THREE.MeshStandardMaterial => {
+  let disposed = false;
+  const texture = new THREE.TextureLoader().load('/assets/board/cube.jpg', () => {
+    if (disposed) {
+      texture.dispose();
+      return;
+    }
+    onTextureReady();
+  });
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.anisotropy = Math.min(16, maxAnisotropy);
   const material = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
+    map: texture,
     roughness: 0.72,
     metalness: 0,
   });
+  material.addEventListener('dispose', () => {
+    disposed = true;
+    texture.dispose();
+  });
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 woodPosition;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nwoodPosition = position;');
+      .replace('#include <common>', `#include <common>
+        varying vec3 woodPosition;
+        varying vec3 woodNormal;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        woodPosition = position;
+        woodNormal = normal;`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec3 woodPosition;
-        float woodHash(vec3 p) {
-          return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
-        }
-        float woodNoise(vec3 p) {
-          vec3 i = floor(p), f = fract(p);
-          f = f * f * (3.0 - 2.0 * f);
-          return mix(mix(mix(woodHash(i), woodHash(i + vec3(1,0,0)), f.x),
-                         mix(woodHash(i + vec3(0,1,0)), woodHash(i + vec3(1,1,0)), f.x), f.y),
-                     mix(mix(woodHash(i + vec3(0,0,1)), woodHash(i + vec3(1,0,1)), f.x),
-                         mix(woodHash(i + vec3(0,1,1)), woodHash(i + vec3(1,1,1)), f.x), f.y), f.z);
-        }`)
-      .replace('#include <color_fragment>', `#include <color_fragment>
-        vec3 p = woodPosition;
-        float drift = woodNoise(p * vec3(3.0, 0.65, 3.0));
-        float rings = length(p.xz + vec2(2.6, 1.8)) * 43.0 + drift * 4.0;
-        float grain = 0.5 + 0.5 * sin(rings);
-        float fine = woodNoise(p * vec3(145.0, 5.0, 145.0));
-        float broad = woodNoise(p * vec3(6.0, 0.8, 6.0));
-        float tone = clamp(0.52 + broad * 0.28 + grain * 0.12 + fine * 0.08, 0.0, 1.0);
-        diffuseColor.rgb *= mix(vec3(0.075, 0.018, 0.006), vec3(0.34, 0.115, 0.032), tone);
+        varying vec3 woodNormal;`)
+      .replace('#include <map_fragment>', `
+        // Object-space triplanar projection blends across rounded edges without
+        // stretching the grain. Sample only the unframed interior of cube.jpg.
+        // Hardware mipmaps and anisotropic filtering suppress grazing-angle aliasing.
+        vec3 p = clamp(woodPosition * 0.5 + 0.5, 0.0, 1.0);
+        vec3 weights = pow(abs(normalize(woodNormal)), vec3(8.0));
+        weights /= weights.x + weights.y + weights.z;
+        vec3 grainX = texture2D(map, vec2(0.10) + p.zy * 0.80).rgb;
+        vec3 grainY = texture2D(map, vec2(0.10) + p.xz * 0.80).rgb;
+        vec3 grainZ = texture2D(map, vec2(0.10) + p.xy * 0.80).rgb;
+        diffuseColor.rgb *= grainX * weights.x + grainY * weights.y + grainZ * weights.z;
       `);
   };
-  material.customProgramCacheKey = () => 'cube-solid-wood-v1';
+  material.customProgramCacheKey = () => 'cube-board-wood-triplanar-v2';
   return material;
 };
