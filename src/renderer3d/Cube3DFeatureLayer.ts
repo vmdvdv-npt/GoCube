@@ -2,12 +2,14 @@ import * as THREE from 'three';
 import type { CubeSize } from '../core/topology/CubeTopology';
 import type { PointId } from '../core/topology/Topology';
 import {
+  ENDGAME_GROUP_HOVER_COLOR,
   ENDGAME_PRESENTATION_STYLES,
   ENDGAME_TERRITORY_MARKER_RADIUS_FRACTION,
   type EndgamePresentationModel,
 } from '../presentation/EndgamePresentation';
 import type { GameViewModel } from '../presentation/PresentationModel';
 import { createCube3DReviewContourGeometry } from './Cube3DEndgameContourGeometry';
+import { createCube3DReviewHitGeometry } from './Cube3DEndgameHitGeometry';
 import { createCube3DFeaturePresentation } from './Cube3DFeaturePresentation';
 import {
   CUBE_3D_STONE_DIAMETER_PITCH_RATIO,
@@ -15,12 +17,14 @@ import {
   cube3DGridPitch,
   cube3DSurfaceAlignedMatrix,
 } from './Cube3DGameplayGeometry';
+import { CUBE_3D_PICK_LAYER } from './Cube3DPicking';
 
 const DISC_THICKNESS = 0.08;
 const MOVE_LABEL_TEXTURE_SIZE = 128;
 export const CUBE_3D_REVIEW_SURFACE_LIFT_PITCH_RATIO = 0.006;
 export const CUBE_3D_REVIEW_CONTOUR_WIDTH_PITCH_RATIO = 0.19;
-export const CUBE_3D_REVIEW_CONTOUR_HOVER_WIDTH_PITCH_RATIO = 0.21;
+export const CUBE_3D_REVIEW_CONTOUR_HOVER_WIDTH_PITCH_RATIO =
+  CUBE_3D_REVIEW_CONTOUR_WIDTH_PITCH_RATIO;
 export const CUBE_3D_REVIEW_CONTOUR_SELECTED_WIDTH_PITCH_RATIO = 0.23;
 
 export interface Cube3DFeatureLayerDiagnostics {
@@ -69,12 +73,10 @@ export const cube3DReviewSurfaceMatrix = (
     scale,
   );
 
-const reviewContourWidthRatio = (selected: boolean, hovered: boolean): number =>
+const reviewContourWidthRatio = (selected: boolean): number =>
   selected
     ? CUBE_3D_REVIEW_CONTOUR_SELECTED_WIDTH_PITCH_RATIO
-    : hovered
-      ? CUBE_3D_REVIEW_CONTOUR_HOVER_WIDTH_PITCH_RATIO
-      : CUBE_3D_REVIEW_CONTOUR_WIDTH_PITCH_RATIO;
+    : CUBE_3D_REVIEW_CONTOUR_WIDTH_PITCH_RATIO;
 
 const numberTexture = (
   cache: Map<string, THREE.CanvasTexture>,
@@ -142,6 +144,7 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
   const deadMaterial = contourMaterial(deadColor);
   const unresolvedMaterial = contourMaterial(unresolvedColor);
   const sekiStoneMaterial = contourMaterial(sekiContourColor);
+  const hoverMaterial = contourMaterial(ENDGAME_GROUP_HOVER_COLOR);
   const sekiPointMaterial = new THREE.MeshBasicMaterial({
     color: sekiMaskColor,
     transparent: true,
@@ -153,6 +156,16 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
 
   const reviewContours = new THREE.Group();
   reviewContours.name = 'cube3d-endgame-review-contours';
+
+  const reviewHitMaterial = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  reviewHitMaterial.colorWrite = false;
+  const reviewHitTargets = new THREE.Group();
+  reviewHitTargets.name = 'cube3d-endgame-review-hit-targets';
 
   const lastMoveMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const lastMoveMarker = new THREE.Mesh(discGeometry, lastMoveMaterial);
@@ -176,6 +189,7 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
     blackTerritory,
     whiteTerritory,
     reviewContours,
+    reviewHitTargets,
     sekiPointMasks,
     lastMoveMarker,
     moveLabels,
@@ -195,18 +209,25 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
     }
   };
 
+  const clearReviewHitTargets = (): void => {
+    for (const child of [...reviewHitTargets.children]) {
+      reviewHitTargets.remove(child);
+      if (child instanceof THREE.Mesh) child.geometry.dispose();
+    }
+  };
+
   const addReviewContour = (
     pointIds: readonly PointId[],
     material: THREE.MeshBasicMaterial,
     name: string,
     selected: boolean,
-    hovered: boolean,
+    renderOrder = 4,
   ): void => {
     if (pointIds.length === 0) return;
     const geometry = createCube3DReviewContourGeometry(
       size,
       pointIds,
-      pitch * reviewContourWidthRatio(selected, hovered),
+      pitch * reviewContourWidthRatio(selected),
       reviewLift,
     );
     const positions = geometry.getAttribute('position');
@@ -216,9 +237,30 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
     }
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = name;
-    mesh.renderOrder = 4;
+    mesh.renderOrder = renderOrder;
     mesh.frustumCulled = false;
     reviewContours.add(mesh);
+  };
+
+  const addReviewHitTarget = (
+    groupId: string,
+    pointIds: readonly PointId[],
+  ): void => {
+    const representativePointId = pointIds[0];
+    if (!representativePointId) return;
+    const geometry = createCube3DReviewHitGeometry(size, pointIds, reviewLift + pitch * 0.002);
+    const positions = geometry.getAttribute('position');
+    if (!positions || positions.count === 0) {
+      geometry.dispose();
+      return;
+    }
+    const mesh = new THREE.Mesh(geometry, reviewHitMaterial);
+    mesh.name = `cube3d-endgame-hit-${groupId}`;
+    mesh.userData.endgameRepresentativePointId = representativePointId;
+    mesh.userData.endgameGroupId = groupId;
+    mesh.layers.set(CUBE_3D_PICK_LAYER);
+    mesh.frustumCulled = false;
+    reviewHitTargets.add(mesh);
   };
 
   const update = (
@@ -241,6 +283,7 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
 
     clearMoveLabels();
     clearReviewContours();
+    clearReviewHitTargets();
 
     for (const point of projection.points) {
       if (point.territoryOwner) {
@@ -319,7 +362,6 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
         contour.status === 'dead' ? deadMaterial : unresolvedMaterial,
         `cube3d-endgame-${contour.status}-contour-${String(index)}`,
         contour.selected,
-        contour.hovered,
       );
     }
 
@@ -329,8 +371,20 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
         sekiStoneMaterial,
         `cube3d-endgame-seki-contour-${String(index)}`,
         region.selected,
-        region.hovered,
       );
+    }
+
+    for (const reviewGroup of endgamePresentation?.groups ?? []) {
+      addReviewHitTarget(reviewGroup.id, reviewGroup.points);
+      if (reviewGroup.hovered) {
+        addReviewContour(
+          reviewGroup.points,
+          hoverMaterial,
+          `cube3d-endgame-hover-contour-${reviewGroup.id}`,
+          reviewGroup.selected,
+          5,
+        );
+      }
     }
 
     if (!lastMovePointId) lastMoveMarker.visible = false;
@@ -353,6 +407,7 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
   const dispose = (): void => {
     clearMoveLabels();
     clearReviewContours();
+    clearReviewHitTargets();
     for (const texture of textureCache.values()) texture.dispose();
     textureCache.clear();
     discGeometry.dispose();
@@ -361,6 +416,8 @@ export const createCube3DFeatureLayer = (size: CubeSize): Cube3DFeatureLayer => 
     deadMaterial.dispose();
     unresolvedMaterial.dispose();
     sekiStoneMaterial.dispose();
+    hoverMaterial.dispose();
+    reviewHitMaterial.dispose();
     sekiPointMaterial.dispose();
     lastMoveMaterial.dispose();
     group.clear();
