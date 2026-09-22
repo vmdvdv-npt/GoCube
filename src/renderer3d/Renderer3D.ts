@@ -1,5 +1,6 @@
 import type { CubeSize } from '../core/topology/CubeTopology';
 import type { PointId } from '../core/topology/Topology';
+import type { EndgamePresentationModel } from '../presentation/EndgamePresentation';
 import type { GamePointHoverStatus } from '../presentation/GamePointHoverStatus';
 import type { GameViewModel } from '../presentation/PresentationModel';
 import type { Cube3DViewState } from '../presentation/cube/Cube3DViewState';
@@ -7,6 +8,8 @@ import type { Cube3DViewState } from '../presentation/cube/Cube3DViewState';
 export interface Renderer3DFrame {
   readonly size: CubeSize;
   readonly viewModel: GameViewModel;
+  readonly endgamePresentation: EndgamePresentationModel | null;
+  readonly showMoveNumbers: boolean;
   readonly viewState: Cube3DViewState;
   readonly hoveredPointId: PointId | null;
   readonly hoverStatus: GamePointHoverStatus;

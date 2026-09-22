@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { CubeSize } from '../core/topology/CubeTopology';
 import type { PointId } from '../core/topology/Topology';
+import type { EndgamePresentationModel } from '../presentation/EndgamePresentation';
 import type { GamePointHoverStatus } from '../presentation/GamePointHoverStatus';
 import type { GameViewModel } from '../presentation/PresentationModel';
 import { pointerMovementExceedsDragThreshold } from '../presentation/PointerGesture';
@@ -16,6 +17,7 @@ import {
   type Cube3DViewState,
 } from '../presentation/cube/Cube3DViewState';
 import { cube3DArcballDragRotation } from './Cube3DArcballRotation';
+import { createCube3DFeatureLayer, type Cube3DFeatureLayer } from './Cube3DFeatureLayer';
 import {
   CUBE_3D_MARKER_DIAMETER_PITCH_RATIO,
   createCube3DStoneGeometry,
@@ -55,6 +57,7 @@ interface SceneRuntime {
   readonly blackStones: THREE.InstancedMesh<THREE.BufferGeometry, THREE.Material>;
   readonly whiteStones: THREE.InstancedMesh<THREE.BufferGeometry, THREE.Material>;
   readonly hoverMarker: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+  readonly featureLayer: Cube3DFeatureLayer;
   readonly pickTargets: Cube3DPickTargets;
   readonly render: () => void;
   readonly pointFromClientPosition: (x: number, y: number) => PointId | null;
@@ -71,6 +74,8 @@ interface DragSession {
 export interface ThreeSceneProps {
   readonly size: CubeSize;
   readonly viewModel: GameViewModel;
+  readonly endgamePresentation: EndgamePresentationModel | null;
+  readonly showMoveNumbers: boolean;
   readonly viewState: Cube3DViewState;
   readonly hoveredPointId: PointId | null;
   readonly hoverStatus: GamePointHoverStatus;
@@ -91,7 +96,7 @@ const updateStoneInstances = (
   viewModel: GameViewModel,
   blackStones: THREE.InstancedMesh,
   whiteStones: THREE.InstancedMesh,
-): void => {
+): Readonly<{ black: number; white: number }> => {
   let blackIndex = 0;
   let whiteIndex = 0;
   for (const point of viewModel.points) {
@@ -107,6 +112,7 @@ const updateStoneInstances = (
   whiteStones.count = whiteIndex;
   blackStones.instanceMatrix.needsUpdate = true;
   whiteStones.instanceMatrix.needsUpdate = true;
+  return Object.freeze({ black: blackIndex, white: whiteIndex });
 };
 
 const updateHoverMarker = (
@@ -136,6 +142,8 @@ const updateHoverMarker = (
 export function ThreeScene({
   size,
   viewModel,
+  endgamePresentation,
+  showMoveNumbers,
   viewState,
   hoveredPointId,
   hoverStatus,
@@ -233,11 +241,20 @@ export function ThreeScene({
     hoverMarker.visible = false;
     hoverMarker.renderOrder = 3;
 
+    const featureLayer = createCube3DFeatureLayer(size);
     const pickTargets = createCube3DPickTargets(size);
-    pickTargets.mesh.renderOrder = 4;
+    pickTargets.mesh.renderOrder = 7;
 
     const cubeRoot = new THREE.Group();
-    cubeRoot.add(surface, grid, blackStones, whiteStones, hoverMarker, pickTargets.mesh);
+    cubeRoot.add(
+      surface,
+      grid,
+      blackStones,
+      whiteStones,
+      hoverMarker,
+      featureLayer.group,
+      pickTargets.mesh,
+    );
     scene.add(cubeRoot);
 
     const ambient = new THREE.AmbientLight(0xffffff, 1.15);
@@ -278,6 +295,7 @@ export function ThreeScene({
       blackStones,
       whiteStones,
       hoverMarker,
+      featureLayer,
       pickTargets,
       render,
       pointFromClientPosition,
@@ -486,6 +504,7 @@ export function ThreeScene({
         window.cancelAnimationFrame(transitionFrameId);
         transitionFrameId = null;
       }
+      featureLayer.dispose();
       surfaceGeometry.dispose();
       surfaceMaterial.dispose();
       gridGeometry.dispose();
@@ -512,15 +531,26 @@ export function ThreeScene({
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return;
-    updateStoneInstances(size, viewModel, runtime.blackStones, runtime.whiteStones);
+    const stoneCounts = updateStoneInstances(size, viewModel, runtime.blackStones, runtime.whiteStones);
     updateHoverMarker(size, viewModel, hoveredPointId, hoverStatus, runtime.hoverMarker);
+    const features = runtime.featureLayer.update(viewModel, endgamePresentation, showMoveNumbers);
     const host = hostRef.current;
     if (host) {
       host.dataset.cube3dHoveredPoint = hoveredPointId ?? '';
       host.dataset.cube3dHoverStatus = hoverStatus ?? '';
+      host.dataset.cube3dBlackStoneCount = String(stoneCounts.black);
+      host.dataset.cube3dWhiteStoneCount = String(stoneCounts.white);
+      host.dataset.cube3dBlackTerritoryCount = String(features.blackTerritoryCount);
+      host.dataset.cube3dWhiteTerritoryCount = String(features.whiteTerritoryCount);
+      host.dataset.cube3dDeadReviewCount = String(features.deadReviewCount);
+      host.dataset.cube3dUnresolvedReviewCount = String(features.unresolvedReviewCount);
+      host.dataset.cube3dSekiReviewCount = String(features.sekiReviewCount);
+      host.dataset.cube3dMoveNumberCount = String(features.moveNumberCount);
+      host.dataset.cube3dLastMovePoint = features.lastMovePointId ?? '';
+      host.dataset.cube3dPhase = viewModel.phase;
     }
     runtime.render();
-  }, [hoverStatus, hoveredPointId, size, viewModel]);
+  }, [endgamePresentation, hoverStatus, hoveredPointId, showMoveNumbers, size, viewModel]);
 
   useEffect(() => {
     if (inputDisabled) {
