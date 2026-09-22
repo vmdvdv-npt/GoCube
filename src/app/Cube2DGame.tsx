@@ -17,6 +17,8 @@ import {
   createCube3DViewState,
   withCube3DOrientationAnchor,
 } from '../presentation/cube/Cube3DViewState';
+import { orientationAtVerticalAnchor, recenterOrientationFromVerticalAnchor } from '../presentation/cube/Cube2DNavigation';
+import type { CubeViewTransitionBridge } from '../renderer3d/CubeViewTransition';
 import { CubeOrientation } from '../presentation/cube/CubeOrientation';
 import {
   CUBE_2D_BASE_CELL_SIZE,
@@ -109,6 +111,7 @@ export function Cube2DGame({
   ownsController = false,
 }: Cube2DGameProps) {
   useGameControllerLifecycle(ownsController ? controller : null);
+  const foldBridgeRef = useRef<CubeViewTransitionBridge | null>(null);
   const gameRef = useRef<HTMLElement>(null);
   const [foldDirection, setFoldDirection] = useState<CubeViewMode | null>(null);
   const [viewMode, setViewMode] = useState<CubeViewMode>('2d');
@@ -190,21 +193,17 @@ export function Cube2DGame({
 
   const switchTo2D = (): void => {
     if (viewMode === '2d' || switching || navigationDisabled) return;
-    g.syncOrientation(new CubeOrientation(cube3DViewState.orientationAnchor));
+    g.syncOrientation(recenterOrientationFromVerticalAnchor(
+      new CubeOrientation(cube3DViewState.orientationAnchor), g.view.verticalAnchorColumn,
+    ));
     if (animateSwitch) setFoldDirection('2d');
     else setViewMode('2d');
   };
 
   const switchTo3D = (): void => {
     if (viewMode === '3d' || switching || navigationDisabled) return;
-    const orientationAnchor = g.view.orientation.toState();
-    const currentAnchor = cube3DViewState.orientationAnchor;
-    if (
-      currentAnchor.centerFace !== orientationAnchor.centerFace ||
-      currentAnchor.upFace !== orientationAnchor.upFace
-    ) {
-      setCube3DViewState((current) => withCube3DOrientationAnchor(current, orientationAnchor));
-    }
+    const orientationAnchor = orientationAtVerticalAnchor(g.view.orientation, g.view.verticalAnchorColumn).toState();
+    setCube3DViewState((current) => withCube3DOrientationAnchor(current, orientationAnchor));
     g.hover(null);
     if (animateSwitch) setFoldDirection('3d');
     else setViewMode('3d');
@@ -382,6 +381,7 @@ export function Cube2DGame({
       {viewSwitch}
       <Suspense fallback={<div className="cube-3d-scene cube-3d-scene--loading">Loading 3D…</div>}>
         <LazyThreeScene
+          transitionBridgeRef={foldBridgeRef}
           animationMode={animationMode}
           size={controller.size}
           viewModel={displayViewModel}
@@ -448,7 +448,7 @@ export function Cube2DGame({
 
       {(viewMode === '2d' || foldDirection) && cube2dView}
       {(viewMode === '3d' || foldDirection) && cube3dView}
-      {foldDirection && <Suspense fallback={null}><LazyCubeViewFold gameRef={gameRef} layout={g.layout} viewState={cube3DViewState} direction={foldDirection} onComplete={() => {
+      {foldDirection && <Suspense fallback={null}><LazyCubeViewFold transitionBridgeRef={foldBridgeRef} gameRef={gameRef} layout={g.layout} viewState={cube3DViewState} direction={foldDirection} onComplete={() => {
         setViewMode(foldDirection);
         setFoldDirection(null);
       }} /></Suspense>}

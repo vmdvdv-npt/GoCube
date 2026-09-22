@@ -6,6 +6,6 @@
 .cube-2d-game[data-folding='true'][data-cube-view='3d'] .cube-2d-game__viewport { visibility: hidden; }
 .cube-2d-game[data-folding='true'] .cube-3d-navigation,
 .cube-2d-game[data-folding='true'] .cube-3d-rotation-mode { visibility: hidden; }
-.cube-2d-game[data-folding='true'] .cube-3d-scene { opacity: 0; }
+.cube-2d-game[data-folding='true'] .cube-3d-scene canvas { opacity: 0; }
 .cube-2d-game[data-folding='true'] .cube-3d-board-shell { pointer-events: none; }
 .cube-2d-game[data-folding='true'] .cube-2d-game__board-shell[aria-label='Cube 2D view'] .cube-view-switch { visibility: hidden; }

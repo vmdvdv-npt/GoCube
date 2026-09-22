@@ -16,7 +16,7 @@ export const DEFAULT_CUBE_2D_VERTICAL_ANCHOR_COLUMN: Cube2DLayoutColumn = 1;
 const isVerticalAnchorColumn = (column: number): column is Cube2DLayoutColumn =>
   Number.isInteger(column) && column >= 0 && column < CUBE_2D_LAYOUT_COLUMNS;
 
-const orientationAtVerticalAnchor = (
+export const orientationAtVerticalAnchor = (
   orientation: CubeOrientation,
   column: Cube2DLayoutColumn,
 ): CubeOrientation => {
@@ -32,7 +32,7 @@ const orientationAtVerticalAnchor = (
   }
 };
 
-const recenterOrientationFromVerticalAnchor = (
+export const recenterOrientationFromVerticalAnchor = (
   anchorOrientation: CubeOrientation,
   column: Cube2DLayoutColumn,
 ): CubeOrientation => {

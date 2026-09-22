@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import * as THREE from 'three';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
@@ -41,6 +41,7 @@ import {
   createCube3DRoundedSurfaceGeometry,
 } from './Cube3DSurfaceGeometry';
 import { createCube3DWoodMaterial } from './Cube3DWoodMaterial';
+import type { CubeViewTransitionBridge } from './CubeViewTransition';
 import './cube3d.css';
 
 const BASE_CAMERA_DISTANCE = 5;
@@ -75,6 +76,7 @@ interface DragSession {
 }
 
 export interface ThreeSceneProps {
+  readonly transitionBridgeRef?: RefObject<CubeViewTransitionBridge | null>;
   readonly animationMode?: 'normal' | 'disabled';
   readonly size: CubeSize;
   readonly viewModel: GameViewModel;
@@ -144,6 +146,7 @@ const updateHoverMarker = (
 
 /** Gameplay Cube 3D scene. Rules and authoritative state stay outside this renderer. */
 export function ThreeScene({
+  transitionBridgeRef,
   animationMode = 'normal',
   size,
   viewModel,
@@ -340,6 +343,28 @@ export function ThreeScene({
       pointFromClientPosition,
     };
     runtimeRef.current = runtime;
+    if (transitionBridgeRef) transitionBridgeRef.current = {
+      render: (frame) => {
+        cubeRoot.quaternion.set(frame.rotation.x, frame.rotation.y, frame.rotation.z, frame.rotation.w);
+        cubeRoot.scale.setScalar(frame.scale);
+        // Match CSS perspective's screen-space origin shift, including off-centre nets.
+        camera.setViewOffset(host.clientWidth, host.clientHeight, -frame.offsetX, -frame.offsetY, host.clientWidth, host.clientHeight);
+        cubeRoot.position.set(0, 0, 0);
+        host.dataset.cube3dTransitionScale = String(frame.scale);
+        host.dataset.cube3dTransitionRotation = [frame.rotation.x, frame.rotation.y, frame.rotation.z, frame.rotation.w].join(',');
+        renderer.domElement.style.opacity = String(frame.opacity);
+        cubeRoot.updateMatrixWorld(true);
+        if (frame.opacity > 0) renderer.render(scene, camera);
+      },
+      reset: () => {
+        cubeRoot.scale.setScalar(1);
+        cubeRoot.position.set(0, 0, 0);
+        camera.clearViewOffset();
+        renderer.domElement.style.opacity = '1';
+        applyViewState(runtime, viewStateRef.current);
+      },
+    };
+
     host.dataset.cube3dSize = String(size);
     host.dataset.cube3dGridPitch = cube3DGridPitch(size).toFixed(6);
     host.dataset.cube3dMarkerRatio = String(CUBE_3D_MARKER_DIAMETER_PITCH_RATIO);
@@ -513,6 +538,7 @@ export function ThreeScene({
     resize();
 
     return () => {
+      if (transitionBridgeRef) transitionBridgeRef.current = null;
       observer.disconnect();
       startViewTransitionRef.current = () => undefined;
       viewTransitioningRef.current = false;
@@ -550,7 +576,7 @@ export function ThreeScene({
       scene.clear();
       runtimeRef.current = null;
     };
-  }, [size]);
+  }, [size, transitionBridgeRef]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
