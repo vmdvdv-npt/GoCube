@@ -26,7 +26,7 @@ import {
   cube2DContentScale,
 } from '../renderer2d/Cube2DRenderer';
 import {
-  buildEndgameContourPaths,
+  buildEndgameContourPath,
   endgameContourStrokeWidth,
 } from '../renderer2d/EndgameContourGeometry';
 import { StoneArtworkDefs, stoneArtworkFill } from '../renderer2d/StoneArtwork';
@@ -50,22 +50,22 @@ type EffectsStyle = CSSProperties & {
 
 type BoardPoint = ReturnType<typeof createCube2DRenderModel>['boards'][number]['points'][number];
 
-const contourPathsForBoard = (
+const contourPathForBoard = (
   shape: EndgamePresentationShape,
   boardPoints: readonly BoardPoint[],
   step: number,
   contentScale: number,
-): readonly string[] => {
+): string => {
   const pointIds = new Set(shape.points);
   const cells = boardPoints.flatMap((point) =>
     pointIds.has(point.pointId) ? [{ column: point.column, row: point.row }] : [],
   );
-  if (cells.length === 0) return Object.freeze([]);
+  if (cells.length === 0) return '';
 
   const center = CUBE_2D_SVG_SIZE / 2;
   const spacing = step * contentScale;
   const origin = center + (step * 0.5 - center) * contentScale;
-  return buildEndgameContourPaths(cells, {
+  return buildEndgameContourPath(cells, {
     originX: origin,
     originY: origin,
     spacing,
@@ -148,9 +148,8 @@ export function Cube2DVisualEffects({
 
           <g className="cube-2d-effects__groups">
             {endgamePresentation?.contours.map((contour) => {
-              const paths = contourPathsForBoard(contour, board.points, step, contentScale);
-              if (paths.length === 0) return null;
-              const path = paths.join(' ');
+              const path = contourPathForBoard(contour, board.points, step, contentScale);
+              if (!path) return null;
               return (
                 <g
                   key={`bundle:${contour.status}:${contour.color}`}
@@ -174,9 +173,8 @@ export function Cube2DVisualEffects({
             })}
 
             {endgamePresentation?.sekiRegions.map((region) => {
-              const paths = contourPathsForBoard(region, board.points, step, contentScale);
-              if (paths.length === 0) return null;
-              const path = paths.join(' ');
+              const path = contourPathForBoard(region, board.points, step, contentScale);
+              if (!path) return null;
               return (
                 <g
                   key={`seki-region:${region.id}`}
@@ -207,10 +205,9 @@ export function Cube2DVisualEffects({
             })}
 
             {endgamePresentation?.groups.map((group) => {
-              const paths = contourPathsForBoard(group, board.points, step, contentScale);
+              const path = contourPathForBoard(group, board.points, step, contentScale);
               const representativePoint = group.points[0];
-              if (paths.length === 0 || !representativePoint) return null;
-              const path = paths.join(' ');
+              if (!path || !representativePoint) return null;
               return (
                 <g
                   key={`interaction:${group.id}`}
@@ -245,20 +242,18 @@ export function Cube2DVisualEffects({
                       transition: `stroke-opacity ${ENDGAME_GROUP_HOVER_TRANSITION_MS}ms ease-out`,
                     }}
                   />
-                  {interactiveEndgame
-                    ? paths.map((hitPath, index) => (
-                        <path
-                          key={`${group.id}:hit:${String(index)}`}
-                          className="cube-2d-group-contour__hit-area"
-                          d={hitPath}
-                          fill="transparent"
-                          stroke="none"
-                          pointerEvents="fill"
-                          style={{ cursor: 'pointer' }}
-                          data-endgame-hit-group-id={group.id}
-                        />
-                      ))
-                    : null}
+                  {interactiveEndgame ? (
+                    <path
+                      className="cube-2d-group-contour__hit-area"
+                      d={path}
+                      fill="transparent"
+                      fillRule="evenodd"
+                      stroke="none"
+                      pointerEvents="fill"
+                      style={{ cursor: 'pointer' }}
+                      data-endgame-hit-group-id={group.id}
+                    />
+                  ) : null}
                 </g>
               );
             })}
