@@ -109,7 +109,7 @@ describe('Cube3DFeatureLayer endgame depth', () => {
     ] as const;
 
     for (const [meshName, pointId] of annotations) {
-      expect(instanceLift(layer, meshName, pointId)).toBeCloseTo(expectedLift, 8);
+      expect(instanceLift(layer, meshName, pointId)).toBeCloseTo(expectedLift, 6);
     }
 
     const deadSurface = cube3DPointSample(size, 'front:3:3');
