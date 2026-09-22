@@ -2,10 +2,11 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import type { EndgamePresentationModel } from '../presentation/EndgamePresentation';
 import type { GameViewModel } from '../presentation/PresentationModel';
+import { cube3DReviewContourGridLoops } from './Cube3DEndgameContourGeometry';
 import {
-  CUBE_3D_REVIEW_DISC_HOVER_SCALE,
-  CUBE_3D_REVIEW_DISC_SCALE,
-  CUBE_3D_REVIEW_DISC_SELECTED_SCALE,
+  CUBE_3D_REVIEW_CONTOUR_HOVER_WIDTH_PITCH_RATIO,
+  CUBE_3D_REVIEW_CONTOUR_SELECTED_WIDTH_PITCH_RATIO,
+  CUBE_3D_REVIEW_CONTOUR_WIDTH_PITCH_RATIO,
   CUBE_3D_REVIEW_SURFACE_LIFT_PITCH_RATIO,
   createCube3DFeatureLayer,
 } from './Cube3DFeatureLayer';
@@ -67,7 +68,28 @@ const endgamePresentation: EndgamePresentationModel = Object.freeze({
       hovered: false,
     }),
   ]),
-  contours: Object.freeze([]),
+  contours: Object.freeze([
+    Object.freeze({
+      status: 'dead' as const,
+      color: 'black' as const,
+      groupIds: Object.freeze(['dead-group']),
+      points: Object.freeze(['front:3:3', 'front:3:2']),
+      edges: Object.freeze([]),
+      contourColor: '#e52b2b',
+      selected: false,
+      hovered: false,
+    }),
+    Object.freeze({
+      status: 'unresolved' as const,
+      color: 'white' as const,
+      groupIds: Object.freeze(['unresolved-group']),
+      points: Object.freeze(['front:3:4']),
+      edges: Object.freeze([]),
+      contourColor: '#f8cf4d',
+      selected: false,
+      hovered: false,
+    }),
+  ]),
   sekiRegions: Object.freeze([
     Object.freeze({
       id: 'seki:group',
@@ -111,34 +133,16 @@ const instanceLift = (
   return position.sub(surface).dot(normal);
 };
 
-const instanceScale = (
-  layer: ReturnType<typeof createCube3DFeatureLayer>,
-  meshName: string,
-): THREE.Vector3 => {
-  const mesh = featureMesh(layer, meshName);
-  const matrix = new THREE.Matrix4();
-  mesh.getMatrixAt(0, matrix);
-  const scale = new THREE.Vector3();
-  matrix.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
-  return scale;
-};
-
-describe('Cube3DFeatureLayer endgame depth', () => {
-  it('keeps dead, unresolved and seki annotations on the grid surface below stones', () => {
+describe('Cube3DFeatureLayer endgame contours', () => {
+  it('keeps review geometry below the stones so the inward overlap is occluded', () => {
     const layer = createCube3DFeatureLayer(size);
-    layer.update(viewModel, endgamePresentation, false);
+    const diagnostics = layer.update(viewModel, endgamePresentation, false);
 
     const expectedLift = cube3DGridPitch(size) * CUBE_3D_REVIEW_SURFACE_LIFT_PITCH_RATIO;
-    const annotations = [
-      ['cube3d-endgame-dead-discs', 'front:3:3'],
-      ['cube3d-endgame-unresolved-discs', 'front:3:4'],
-      ['cube3d-endgame-seki-stone-discs', 'front:4:3'],
-      ['cube3d-endgame-seki-point-masks', 'front:4:4'],
-    ] as const;
-
-    for (const [meshName, pointId] of annotations) {
-      expect(instanceLift(layer, meshName, pointId)).toBeCloseTo(expectedLift, 6);
-    }
+    expect(instanceLift(layer, 'cube3d-endgame-seki-point-masks', 'front:4:4')).toBeCloseTo(
+      expectedLift,
+      6,
+    );
 
     const deadSurface = cube3DPointSample(size, 'front:3:3');
     const deadNormal = new THREE.Vector3(...deadSurface.normal).normalize();
@@ -151,38 +155,73 @@ describe('Cube3DFeatureLayer endgame depth', () => {
 
     expect(expectedLift).toBeLessThan(cube3DGridPitch(size) * 0.01);
     expect(expectedLift).toBeLessThan(stoneLift * 0.15);
+    expect(diagnostics.deadReviewCount).toBe(2);
+    expect(diagnostics.unresolvedReviewCount).toBe(1);
+    expect(diagnostics.sekiReviewCount).toBe(2);
 
     layer.dispose();
   });
 
-  it('uses touching review discs and fills the gaps between adjacent stones in one group', () => {
+  it('renders one continuous outer ribbon instead of filled discs between group stones', () => {
     const layer = createCube3DFeatureLayer(size);
     layer.update(viewModel, endgamePresentation, false);
 
-    const pitch = cube3DGridPitch(size);
-    const stoneRadius = (pitch * CUBE_3D_STONE_DIAMETER_PITCH_RATIO) / 2;
-    const expectedRadius = stoneRadius * CUBE_3D_REVIEW_DISC_SCALE;
-    const reviewMeshes = [
-      'cube3d-endgame-dead-discs',
-      'cube3d-endgame-unresolved-discs',
-      'cube3d-endgame-seki-stone-discs',
-    ] as const;
+    const reviewContours = layer.group.getObjectByName('cube3d-endgame-review-contours');
+    expect(reviewContours).toBeInstanceOf(THREE.Group);
+    expect(reviewContours?.children).toHaveLength(3);
 
-    for (const meshName of reviewMeshes) {
-      const mesh = featureMesh(layer, meshName);
-      expect(mesh.geometry).toBeInstanceOf(THREE.CircleGeometry);
-      const scale = instanceScale(layer, meshName);
-      expect(scale.x).toBeCloseTo(expectedRadius, 6);
-      expect(scale.y).toBeCloseTo(expectedRadius, 6);
-      expect(scale.z).toBeCloseTo(expectedRadius, 6);
+    const deadContour = layer.group.getObjectByName('cube3d-endgame-dead-contour-0');
+    expect(deadContour).toBeInstanceOf(THREE.Mesh);
+    if (!(deadContour instanceof THREE.Mesh)) throw new Error('Missing dead contour mesh');
+    expect(deadContour.geometry).toBeInstanceOf(THREE.BufferGeometry);
+    expect(deadContour.geometry).not.toBeInstanceOf(THREE.CircleGeometry);
+    expect(deadContour.geometry.getAttribute('position').count).toBeGreaterThan(0);
+    expect(deadContour.material).toBeInstanceOf(THREE.MeshBasicMaterial);
+    if (!(deadContour.material instanceof THREE.MeshBasicMaterial)) {
+      throw new Error('Unexpected dead contour material');
     }
+    expect(deadContour.material.depthTest).toBe(true);
+    expect(deadContour.material.depthWrite).toBe(false);
 
-    expect(expectedRadius * 2).toBeGreaterThanOrEqual(pitch);
-    expect(featureMesh(layer, 'cube3d-endgame-dead-discs').count).toBeGreaterThan(2);
-    expect(CUBE_3D_REVIEW_DISC_SCALE).toBeCloseTo(1 / CUBE_3D_STONE_DIAMETER_PITCH_RATIO, 1);
-    expect(CUBE_3D_REVIEW_DISC_HOVER_SCALE).toBeGreaterThan(CUBE_3D_REVIEW_DISC_SCALE);
-    expect(CUBE_3D_REVIEW_DISC_SELECTED_SCALE).toBeGreaterThan(CUBE_3D_REVIEW_DISC_HOVER_SCALE);
+    expect(layer.group.getObjectByName('cube3d-endgame-dead-discs')).toBeUndefined();
+    expect(layer.group.getObjectByName('cube3d-endgame-unresolved-discs')).toBeUndefined();
+    expect(layer.group.getObjectByName('cube3d-endgame-seki-stone-discs')).toBeUndefined();
 
     layer.dispose();
+  });
+
+  it('keeps straight group sides continuous and removes the internal edge between neighbours', () => {
+    const loops = cube3DReviewContourGridLoops(size, ['front:3:2', 'front:3:3']);
+    expect(loops).toHaveLength(1);
+    const loop = loops[0]!;
+
+    const internalEdgeSamples = loop.points.filter(
+      (point) =>
+        Math.abs(point.x - 2.5) < 1e-9 && point.y > 2.5 + 1e-6 && point.y < 3.5 - 1e-6,
+    );
+    expect(internalEdgeSamples).toHaveLength(0);
+
+    const topStraight = loop.points.filter(
+      (point) => point.x > 2 && point.x < 3 && Math.abs(point.y - 2.5) < 1e-9,
+    );
+    expect(topStraight.length).toBeGreaterThan(1);
+    expect(topStraight.every((point) => Math.abs(point.y - 2.5) < 1e-9)).toBe(true);
+  });
+
+  it('slightly overlaps the stone silhouette so no board-colored gap can appear', () => {
+    const pitch = cube3DGridPitch(size);
+    const stoneRadius = (pitch * CUBE_3D_STONE_DIAMETER_PITCH_RATIO) / 2;
+    const contourCenterRadius = pitch / 2;
+    const baseStrokeWidth = pitch * CUBE_3D_REVIEW_CONTOUR_WIDTH_PITCH_RATIO;
+    const innerContourEdge = contourCenterRadius - baseStrokeWidth / 2;
+
+    expect(innerContourEdge).toBeLessThan(stoneRadius);
+    expect(stoneRadius - innerContourEdge).toBeLessThan(pitch * 0.01);
+    expect(CUBE_3D_REVIEW_CONTOUR_HOVER_WIDTH_PITCH_RATIO).toBeGreaterThan(
+      CUBE_3D_REVIEW_CONTOUR_WIDTH_PITCH_RATIO,
+    );
+    expect(CUBE_3D_REVIEW_CONTOUR_SELECTED_WIDTH_PITCH_RATIO).toBeGreaterThan(
+      CUBE_3D_REVIEW_CONTOUR_HOVER_WIDTH_PITCH_RATIO,
+    );
   });
 });
