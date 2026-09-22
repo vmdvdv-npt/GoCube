@@ -47,7 +47,6 @@ const BASE_CAMERA_DISTANCE = 5;
 const ROTATION_SENSITIVITY = 0.008;
 const ZOOM_SENSITIVITY = 0.001;
 const MARKER_THICKNESS = 0.08;
-const INITIAL_RENDER_DEFER_FALLBACK_MS = 500;
 const VIEW_TRANSITION_MS = 240;
 
 type Cube3DRotationMode = 'screen' | 'arcball';
@@ -164,7 +163,6 @@ export function ThreeScene({
   const runtimeRef = useRef<SceneRuntime | null>(null);
   const viewStateRef = useRef(viewState);
   const inputDisabledRef = useRef(inputDisabled);
-  const initialRenderDeferredRef = useRef(inputDisabled);
   const viewTransitioningRef = useRef(false);
   const rotationModeRef = useRef<Cube3DRotationMode>('screen');
   const startViewTransitionRef = useRef<(target: Cube3DViewState) => void>(() => undefined);
@@ -309,16 +307,12 @@ export function ThreeScene({
 
     let renderFrameId: number | null = null;
     let transitionFrameId: number | null = null;
-    let renderRequestedWhileDeferred = false;
     const render = (): void => {
-      if (initialRenderDeferredRef.current) {
-        renderRequestedWhileDeferred = true;
-        return;
-      }
       if (renderFrameId !== null) return;
       renderFrameId = window.requestAnimationFrame(() => {
         renderFrameId = null;
         renderer.render(scene, camera);
+        host.dataset.cube3dReady = 'true';
       });
     };
     let runtime!: SceneRuntime;
@@ -518,18 +512,6 @@ export function ThreeScene({
     applyViewState(runtime, viewStateRef.current);
     resize();
 
-    const releaseInitialRender = (): void => {
-      if (!initialRenderDeferredRef.current) return;
-      initialRenderDeferredRef.current = false;
-      if (renderRequestedWhileDeferred) {
-        renderRequestedWhileDeferred = false;
-        render();
-      }
-    };
-    const initialRenderFallbackTimer = initialRenderDeferredRef.current
-      ? window.setTimeout(releaseInitialRender, INITIAL_RENDER_DEFER_FALLBACK_MS)
-      : null;
-
     return () => {
       observer.disconnect();
       startViewTransitionRef.current = () => undefined;
@@ -540,7 +522,6 @@ export function ThreeScene({
       renderer.domElement.removeEventListener('pointercancel', pointerCancel);
       renderer.domElement.removeEventListener('pointerleave', pointerLeave);
       renderer.domElement.removeEventListener('wheel', wheel);
-      if (initialRenderFallbackTimer !== null) window.clearTimeout(initialRenderFallbackTimer);
       if (renderFrameId !== null) {
         window.cancelAnimationFrame(renderFrameId);
         renderFrameId = null;
@@ -647,9 +628,6 @@ export function ThreeScene({
       onPointHoverRef.current(null);
       return;
     }
-    if (!initialRenderDeferredRef.current) return;
-    initialRenderDeferredRef.current = false;
-    runtimeRef.current?.render();
   }, [inputDisabled]);
 
   const navigate = (direction: Cube3DNavigationDirection): void => {
