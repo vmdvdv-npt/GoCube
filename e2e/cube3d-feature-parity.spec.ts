@@ -51,6 +51,9 @@ const passTwice = async (page: Page): Promise<void> => {
   await expect(pass).toBeDisabled();
   await expect(pass).toBeEnabled({ timeout: 2_200 });
   await pass.click();
+  await expect(page.getByText(/Resolved \d+ of \d+/)).toBeVisible({
+    timeout: CUBE_VIEW_TRANSITION_EXPECT_TIMEOUT_MS,
+  });
 };
 
 const resolveGroupAt = async (
