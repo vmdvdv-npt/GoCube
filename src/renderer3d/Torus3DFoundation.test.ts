@@ -15,7 +15,7 @@ import {
   shared3DWheelZoom,
 } from './Shared3DInput';
 import { SHARED_3D_PERFORMANCE_BUDGET } from './Shared3DPerformance';
-import { torus3DSurfacePoint } from './Torus3DSurfaceMapping';
+import { torus3DSurfaceFromUv, torus3DSurfacePoint } from './Torus3DSurfaceMapping';
 import { createTorus3DSurfaceGeometry } from './Torus3DSurfaceGeometry';
 
 describe('shared 3D foundation', () => {
@@ -48,6 +48,8 @@ describe('Torus 3D unified surface mapping', () => {
           first.normal.y * first.tangent.y +
           first.normal.z * first.tangent.z,
         ).toBeCloseTo(0, 6);
+        // Logical intersections must never land on the rounded XY corner arcs.
+        expect(Math.min(Math.abs(first.tangent.x), Math.abs(first.tangent.y))).toBeCloseTo(0, 6);
         const vertical = first.normal.z;
         if (vertical > 0.99) surfaceKinds.add('top');
         else if (vertical < -0.99) surfaceKinds.add('bottom');
@@ -65,6 +67,32 @@ describe('Torus 3D unified surface mapping', () => {
       expect(surfaceKinds).toEqual(new Set(['top', 'bottom', 'outer', 'inner']));
     });
   }
+
+  it('rounds the shared XY square perimeter and stays continuous through a corner', () => {
+    const curved = torus3DSurfaceFromUv(0.1175, 0.25);
+    expect(Math.abs(curved.tangent.x)).toBeGreaterThan(0.1);
+    expect(Math.abs(curved.tangent.y)).toBeGreaterThan(0.1);
+    expect(Math.abs(curved.normal.x)).toBeGreaterThan(0.1);
+    expect(Math.abs(curved.normal.y)).toBeGreaterThan(0.1);
+
+    const arcStartBefore = torus3DSurfaceFromUv(0.109999, 0.25);
+    const arcStartAfter = torus3DSurfaceFromUv(0.110001, 0.25);
+    const edgeBefore = torus3DSurfaceFromUv(0.124999, 0.25);
+    const edgeAfter = torus3DSurfaceFromUv(0.125001, 0.25);
+    const distance = (a: typeof curved, b: typeof curved): number => Math.hypot(
+      a.position.x - b.position.x,
+      a.position.y - b.position.y,
+      a.position.z - b.position.z,
+    );
+
+    expect(distance(arcStartBefore, arcStartAfter)).toBeLessThan(0.001);
+    expect(distance(edgeBefore, edgeAfter)).toBeLessThan(0.001);
+    expect(
+      edgeBefore.tangent.x * edgeAfter.tangent.x +
+      edgeBefore.tangent.y * edgeAfter.tangent.y +
+      edgeBefore.tangent.z * edgeAfter.tangent.z,
+    ).toBeGreaterThan(0.999);
+  });
 });
 
 describe('Torus 3D cyclic grid', () => {
