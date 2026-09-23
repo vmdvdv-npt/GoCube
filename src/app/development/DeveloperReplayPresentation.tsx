@@ -72,6 +72,7 @@ export function DeveloperReplayPresentation({
       newGameDisabled
       animationMode={animationMode}
       externalAction={externalAction}
+      initialViewMode="2d"
     />
   );
 }
