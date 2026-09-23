@@ -1,39 +1,43 @@
 import * as THREE from 'three';
-import {
-  TORUS_3D_BEVEL_SIZE,
-  TORUS_3D_HALF_HEIGHT,
-  TORUS_3D_INNER_HALF_EXTENT,
-  TORUS_3D_OUTER_HALF_EXTENT,
-} from './Torus3DSurfaceMapping';
+import { torus3DSurfaceFromUv } from './Torus3DSurfaceMapping';
 
-export const createTorus3DSurfaceGeometry = (): THREE.ExtrudeGeometry => {
-  const outer = TORUS_3D_OUTER_HALF_EXTENT;
-  const inner = TORUS_3D_INNER_HALF_EXTENT;
-  const shape = new THREE.Shape();
-  shape.moveTo(-outer, -outer);
-  shape.lineTo(outer, -outer);
-  shape.lineTo(outer, outer);
-  shape.lineTo(-outer, outer);
-  shape.closePath();
+// The XY corner phase is intentionally very narrow so logical PointIds stay on
+// flat surfaces. Use enough U sampling to render that authoritative curve rather
+// than collapsing it back into a single sharp chord.
+const U_SEGMENTS = 256;
+const V_SEGMENTS = 256;
 
-  const hole = new THREE.Path();
-  hole.moveTo(-inner, -inner);
-  hole.lineTo(-inner, inner);
-  hole.lineTo(inner, inner);
-  hole.lineTo(inner, -inner);
-  hole.closePath();
-  shape.holes.push(hole);
+/** Mesh and gameplay mapping are sampled from the same authoritative Torus surface. */
+export const createTorus3DSurfaceGeometry = (): THREE.BufferGeometry => {
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const indices: number[] = [];
+  const row = V_SEGMENTS + 1;
 
-  const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth: TORUS_3D_HALF_HEIGHT * 2,
-    steps: 1,
-    curveSegments: 1,
-    bevelEnabled: true,
-    bevelSegments: 3,
-    bevelSize: TORUS_3D_BEVEL_SIZE,
-    bevelThickness: TORUS_3D_BEVEL_SIZE,
-  });
-  geometry.translate(0, 0, -TORUS_3D_HALF_HEIGHT);
+  for (let uIndex = 0; uIndex <= U_SEGMENTS; uIndex += 1) {
+    const u = uIndex / U_SEGMENTS;
+    for (let vIndex = 0; vIndex <= V_SEGMENTS; vIndex += 1) {
+      const v = vIndex / V_SEGMENTS;
+      const sample = torus3DSurfaceFromUv(u, v);
+      positions.push(sample.position.x, sample.position.y, sample.position.z);
+      normals.push(sample.normal.x, sample.normal.y, sample.normal.z);
+    }
+  }
+
+  for (let uIndex = 0; uIndex < U_SEGMENTS; uIndex += 1) {
+    for (let vIndex = 0; vIndex < V_SEGMENTS; vIndex += 1) {
+      const a = uIndex * row + vIndex;
+      const b = a + 1;
+      const c = (uIndex + 1) * row + vIndex;
+      const d = c + 1;
+      indices.push(a, c, d, a, d, b);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setIndex(indices);
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
   return geometry;

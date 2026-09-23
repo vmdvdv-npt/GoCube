@@ -11,6 +11,7 @@ import type { GameViewModel } from '../presentation/PresentationModel';
 import {
   GameSessionControllerFacade,
   type EndgameReviewReadyListener,
+  type GameViewModelListener,
   type SharedEndgameDecisions,
   type SharedEndgameGroup,
   type SharedGameActionResult,
@@ -63,6 +64,10 @@ export class TorusGameController {
 
   subscribeEndgameReviewReady(listener: EndgameReviewReadyListener): () => void {
     return this.gameplay.subscribeEndgameReviewReady(listener);
+  }
+
+  subscribeViewModel(listener: GameViewModelListener): () => void {
+    return this.gameplay.subscribeViewModel(listener);
   }
 
   resumeRestoredEndgame(): Promise<void> {

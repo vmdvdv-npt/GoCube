@@ -50,4 +50,21 @@ describe('TorusGameController result model', () => {
       score: { ruleSet: 'japanese', komi: 6.5, prisoners: { black: 0, white: 0 } },
     });
   });
+
+  it('publishes the authoritative finished phase to presentation observers', async () => {
+    const controller = new TorusGameController({ ruleSet: 'japanese', komi: 6.5 });
+    const phases: string[] = [];
+    const unsubscribe = controller.subscribeViewModel((viewModel) => {
+      phases.push(viewModel.phase);
+    });
+
+    await controller.pass();
+    await controller.pass();
+    expect(phases.at(-1)).toBe('endgame');
+
+    await controller.finishEndgame();
+    expect(phases.at(-1)).toBe('finished');
+
+    unsubscribe();
+  });
 });

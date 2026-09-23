@@ -1,5 +1,11 @@
 .torus-3d-foundation-host {
   position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.torus-3d-foundation-host[data-torus3d-foundation='open'] .torus-board {
+  pointer-events: none;
 }
 
 .torus-3d-foundation-toggle {
