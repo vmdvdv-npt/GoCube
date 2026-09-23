@@ -5,6 +5,8 @@ import {
   moveTorusSpatialAnchor,
   torus2DOffsetForSpatialAnchor,
   torusSpatialAnchorFrom2DOffset,
+  torusSpatialAnchorFromPointId,
+  torusSpatialAnchorPointId,
 } from '../presentation/TorusSpatialAnchor';
 import { createTorus3DViewState } from '../presentation/Torus3DViewState';
 import {
@@ -13,6 +15,7 @@ import {
   torus3DFrontFacingAnchor,
   torus3DNavigationTarget,
   torus3DResetTarget,
+  torus3DStandardAnchor,
   torus3DViewTargetForAnchor,
   type Torus3DNavigationDirection,
 } from './Torus3DNavigation';
@@ -38,7 +41,22 @@ describe('renderer-neutral Torus spatial anchor', () => {
         }
       }
     });
+
+    it(`round-trips logical PointIds for ${size}x${size}`, () => {
+      const anchor = createTorusSpatialAnchor(size, size - 1, Math.floor(size / 2));
+      expectSameAnchor(
+        torusSpatialAnchorFromPointId(size, torusSpatialAnchorPointId(anchor)),
+        anchor,
+      );
+    });
   }
+
+  it('rejects malformed or out-of-range logical PointIds', () => {
+    expect(() => torusSpatialAnchorFromPointId(9, '9,0')).toThrow('Unknown Torus 9x9 PointId');
+    expect(() => torusSpatialAnchorFromPointId(9, '0,9')).toThrow('Unknown Torus 9x9 PointId');
+    expect(() => torusSpatialAnchorFromPointId(9, 'x,0')).toThrow('Unknown Torus 9x9 PointId');
+    expect(() => torusSpatialAnchorFromPointId(9, '0,0,0')).toThrow('Unknown Torus 9x9 PointId');
+  });
 });
 
 describe('Torus 3D spatial mapping', () => {
@@ -129,5 +147,9 @@ describe('Torus 3D Reset View', () => {
       reset.rotation.z,
       reset.rotation.w,
     )).toBeCloseTo(1, 8);
+    expectSameAnchor(
+      torus3DStandardAnchor(9),
+      torus3DFrontFacingAnchor(9, reset.rotation),
+    );
   });
 });
