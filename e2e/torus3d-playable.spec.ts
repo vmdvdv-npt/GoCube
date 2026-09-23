@@ -1,4 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
+import * as THREE from 'three';
+import { SHARED_3D_BASE_CAMERA_DISTANCE } from '../src/renderer3d/Shared3DSceneCore';
+import { torus3DSurfacePoint } from '../src/renderer3d/Torus3DSurfaceMapping';
 
 const startTorusGame = async (page: Page): Promise<void> => {
   await page.goto('/');
@@ -26,29 +29,61 @@ const waitForTorus3DReady = async (page: Page) => {
   return scene;
 };
 
-const findAllowed3DPoint = async (
+const projected3DPoint = async (
   page: Page,
-  excluded: readonly string[] = [],
+  pointId: string,
 ): Promise<Readonly<{ pointId: string; x: number; y: number }>> => {
   const scene = await waitForTorus3DReady(page);
   const canvas = page.getByTestId('torus-3d-canvas');
   const bounds = await canvas.boundingBox();
   if (!bounds) throw new Error('Torus 3D canvas has no bounds');
 
-  for (let row = 1; row <= 8; row += 1) {
-    for (let column = 1; column <= 8; column += 1) {
-      const x = bounds.x + (bounds.width * column) / 9;
-      const y = bounds.y + (bounds.height * row) / 9;
-      await page.mouse.move(x, y);
-      await page.waitForTimeout(4);
-      const pointId = await scene.getAttribute('data-torus3d-hovered-point');
-      const status = await scene.getAttribute('data-torus3d-hover-status');
-      if (pointId && status === 'allowed' && !excluded.includes(pointId)) {
-        return Object.freeze({ pointId, x, y });
-      }
-    }
+  const rotationText = await scene.getAttribute('data-torus3d-rotation');
+  const zoomText = await scene.getAttribute('data-torus3d-zoom');
+  const rotation = rotationText?.split(',').map(Number);
+  const zoom = Number(zoomText);
+  if (
+    !rotation ||
+    rotation.length !== 4 ||
+    rotation.some((value) => !Number.isFinite(value)) ||
+    !Number.isFinite(zoom) ||
+    zoom <= 0
+  ) {
+    throw new Error('Torus 3D view diagnostics are not ready');
   }
-  throw new Error('Could not find an allowed visible Torus 3D point');
+
+  const sample = torus3DSurfacePoint(9, pointId);
+  const worldPosition = new THREE.Vector3(
+    sample.position.x,
+    sample.position.y,
+    sample.position.z,
+  ).applyQuaternion(new THREE.Quaternion(
+    rotation[0]!,
+    rotation[1]!,
+    rotation[2]!,
+    rotation[3]!,
+  ).normalize());
+  const camera = new THREE.PerspectiveCamera(45, bounds.width / bounds.height, 0.1, 100);
+  camera.position.set(0, 0, SHARED_3D_BASE_CAMERA_DISTANCE / zoom);
+  camera.lookAt(0, 0, 0);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld(true);
+  worldPosition.project(camera);
+
+  return Object.freeze({
+    pointId,
+    x: bounds.x + ((worldPosition.x + 1) / 2) * bounds.width,
+    y: bounds.y + ((1 - worldPosition.y) / 2) * bounds.height,
+  });
+};
+
+const hoverAllowed3DPoint = async (page: Page, pointId: string) => {
+  const scene = await waitForTorus3DReady(page);
+  const point = await projected3DPoint(page, pointId);
+  await page.mouse.move(point.x, point.y);
+  await expect(scene).toHaveAttribute('data-torus3d-hovered-point', pointId);
+  await expect(scene).toHaveAttribute('data-torus3d-hover-status', 'allowed');
+  return point;
 };
 
 test('Torus 3D places stones through GameSession and shares Undo/Redo/Pass state with 2D', async ({ page }) => {
@@ -61,14 +96,14 @@ test('Torus 3D places stones through GameSession and shares Undo/Redo/Pass state
   await expect(scene).toHaveAttribute('data-torus3d-black-stone-count', '0');
   await expect(scene).toHaveAttribute('data-torus3d-white-stone-count', '0');
 
-  const black = await findAllowed3DPoint(page);
+  const black = await hoverAllowed3DPoint(page, '0,0');
   await page.mouse.click(black.x, black.y);
   await expect(page.getByText('White to move')).toBeVisible();
   await expect(page.getByText('Move 1', { exact: true })).toBeVisible();
   await expect(scene).toHaveAttribute('data-torus3d-black-stone-count', '1');
   await expect(scene).toHaveAttribute('data-torus3d-last-move-point', black.pointId);
 
-  const white = await findAllowed3DPoint(page, [black.pointId]);
+  const white = await hoverAllowed3DPoint(page, '1,0');
   await page.mouse.click(white.x, white.y);
   await expect(page.getByText('Black to move')).toBeVisible();
   await expect(page.getByText('Move 2', { exact: true })).toBeVisible();
