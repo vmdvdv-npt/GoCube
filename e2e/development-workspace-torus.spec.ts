@@ -94,6 +94,14 @@ const primaryStone = (page: Page, pointId: string) =>
     `.torus-board__stone[data-logical-point-id="${pointId}"][data-copy-role="primary"]`,
   );
 
+const openDevelopmentTorusGame = async (page: Page): Promise<void> => {
+  await routeAlphaZero(page);
+  await page.goto('/');
+  await page.getByRole('link', { name: 'development', exact: true }).click();
+  await page.getByRole('button', { name: 'Generate game' }).click();
+  await expect(page.locator('.torus-game')).toBeVisible();
+};
+
 test('Development Workspace replays Torus 9x9 M17-shaped Protocol V1 game through the existing Torus view', async ({ page }) => {
   await routeAlphaZero(page);
   await page.goto('/');
@@ -130,4 +138,36 @@ test('Development Workspace replays Torus 9x9 M17-shaped Protocol V1 game throug
   await expect(primaryStone(page, '1,1')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+test('Torus 3D foundation mounts in the real shell and shares rotate/zoom input', async ({ page }) => {
+  await openDevelopmentTorusGame(page);
+
+  await page.getByRole('button', { name: 'Torus 3D prototype' }).click();
+  const scene = page.getByLabel('Torus 3D foundation scene');
+  const canvas = page.getByTestId('torus-3d-canvas');
+  await expect(scene).toBeVisible();
+  await expect(scene).toHaveAttribute('data-torus3d-size', '9');
+  await expect(scene).toHaveAttribute('data-torus3d-mapping-count', '81');
+  await expect(canvas).toBeVisible();
+
+  const rotationBefore = await scene.getAttribute('data-torus3d-rotation');
+  const bounds = await canvas.boundingBox();
+  expect(bounds).not.toBeNull();
+  const centerX = bounds!.x + bounds!.width / 2;
+  const centerY = bounds!.y + bounds!.height / 2;
+  await page.mouse.move(centerX, centerY);
+  await page.mouse.down();
+  await page.mouse.move(centerX + 70, centerY + 45, { steps: 4 });
+  await page.mouse.up();
+  await expect(scene).not.toHaveAttribute('data-torus3d-rotation', rotationBefore ?? '');
+
+  const zoomBefore = await scene.getAttribute('data-torus3d-zoom');
+  await page.mouse.move(centerX, centerY);
+  await page.mouse.wheel(0, -240);
+  await expect(scene).not.toHaveAttribute('data-torus3d-zoom', zoomBefore ?? '');
+
+  await page.getByRole('button', { name: 'Torus 2D' }).click();
+  await expect(scene).toHaveCount(0);
+  await expect(page.locator('.torus-board')).toBeVisible();
 });
