@@ -43,6 +43,15 @@ const dragBy = async (page: Page, locator: Locator, dx: number, dy: number) => {
   await page.mouse.up();
 };
 
+const selectTorus2D = async (page: Page): Promise<void> => {
+  const view2D = page
+    .getByRole('group', { name: 'Torus view' })
+    .getByRole('button', { name: '2D' });
+  await expect(view2D).toBeEnabled();
+  await view2D.click();
+  await expect(view2D).toHaveAttribute('aria-pressed', 'true');
+};
+
 const visibleCubeHitNearestViewportCenter = async (page: Page): Promise<Locator> => {
   const pointId = await page.locator('.cube-2d-hit-area').evaluateAll((elements) => {
     const viewport = document.querySelector<HTMLElement>('.cube-2d-game__viewport')!.getBoundingClientRect();
@@ -99,6 +108,7 @@ test('Torus wheel zoom scales the board and arrows while the sidebar stays fixed
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
   await page.getByRole('button', { name: 'Start game' }).click();
+  await selectTorus2D(page);
 
   const sidebar = page.locator('.game-summary');
   const shell = page.locator('.torus-board-shell');
@@ -258,6 +268,7 @@ test('Torus drag-pan moves the zoomed visual shell without placing a stone and k
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
   await page.getByRole('button', { name: 'Start game' }).click();
+  await selectTorus2D(page);
 
   const shell = page.locator('.torus-board-shell');
   const board = page.locator('.torus-board');
