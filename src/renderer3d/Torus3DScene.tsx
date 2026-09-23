@@ -7,6 +7,7 @@ import {
   TORUS_3D_ZOOM_MAX,
   TORUS_3D_ZOOM_MIN,
 } from '../presentation/Torus3DViewState';
+import { shared3DRaycasterFromClientPosition } from './Shared3DRaycasting';
 import {
   applyShared3DViewTransform,
   attachShared3DPointerInput,
@@ -69,14 +70,14 @@ const pointFromClientPosition = (
   x: number,
   y: number,
 ): PointId | null => {
-  const bounds = core.renderer.domElement.getBoundingClientRect();
-  if (bounds.width <= 0 || bounds.height <= 0) return null;
-  const pointer = new THREE.Vector2(
-    ((x - bounds.left) / bounds.width) * 2 - 1,
-    -((y - bounds.top) / bounds.height) * 2 + 1,
+  const raycaster = shared3DRaycasterFromClientPosition(
+    core.camera,
+    core.renderer.domElement.getBoundingClientRect(),
+    x,
+    y,
   );
-  const raycaster = new THREE.Raycaster();
-  raycaster.setFromCamera(pointer, core.camera);
+  if (!raycaster) return null;
+  surface.updateWorldMatrix(true, false);
   const hit = raycaster.intersectObject(surface, false)[0];
   if (!hit) return null;
   const local = surface.worldToLocal(hit.point.clone());
