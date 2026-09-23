@@ -159,6 +159,7 @@ test('0.2 production Cube flow: New Game, seam capture, history, zoom, resume an
     const selectedStatusCount = await statuses.locator('button[aria-pressed="true"]').count();
     if (selectedStatusCount > 0) continue;
     await statuses.getByRole('button', { name: 'Alive' }).click();
+    await expect(statuses).toHaveCount(0);
     await expect(progress).toContainText(
       `Resolved ${initialResolved + 1} of ${groupTotal}`,
     );
@@ -180,11 +181,10 @@ test('0.2 production Cube flow: New Game, seam capture, history, zoom, resume an
   );
   for (const pointId of visibleStonePointIds) {
     await hit(page, pointId).click();
-    const alive = page.getByRole('group', { name: 'Selected group status' })
-      .getByRole('button', { name: 'Alive' });
-    if ((await alive.getAttribute('aria-pressed')) !== 'true') {
-      await alive.click();
-      await expect(alive).toHaveAttribute('aria-pressed', 'true');
+    await expect(statuses).toHaveCount(1);
+    if ((await statuses.locator('button[aria-pressed="true"]').count()) === 0) {
+      await statuses.getByRole('button', { name: 'Alive', exact: true }).click();
+      await expect(statuses).toHaveCount(0);
     }
   }
 
