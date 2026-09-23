@@ -30,9 +30,9 @@ const expectSameAnchor = (
 
 describe('renderer-neutral Torus spatial anchor', () => {
   for (const size of TORUS_SIZES) {
-    it(`round-trips logical 2D offsets for ${size}x${size}`, () => {
-      for (const row of [0, 1, size - 1]) {
-        for (const column of [0, 1, size - 1]) {
+    it(`round-trips every logical 2D offset for ${size}x${size}`, () => {
+      for (let row = 0; row < size; row += 1) {
+        for (let column = 0; column < size; column += 1) {
           const anchor = createTorusSpatialAnchor(size, row, column);
           expectSameAnchor(
             torusSpatialAnchorFrom2DOffset(size, torus2DOffsetForSpatialAnchor(size, anchor)),
@@ -42,12 +42,16 @@ describe('renderer-neutral Torus spatial anchor', () => {
       }
     });
 
-    it(`round-trips logical PointIds for ${size}x${size}`, () => {
-      const anchor = createTorusSpatialAnchor(size, size - 1, Math.floor(size / 2));
-      expectSameAnchor(
-        torusSpatialAnchorFromPointId(size, torusSpatialAnchorPointId(anchor)),
-        anchor,
-      );
+    it(`round-trips every logical PointId for ${size}x${size}`, () => {
+      for (let row = 0; row < size; row += 1) {
+        for (let column = 0; column < size; column += 1) {
+          const anchor = createTorusSpatialAnchor(size, row, column);
+          expectSameAnchor(
+            torusSpatialAnchorFromPointId(size, torusSpatialAnchorPointId(anchor)),
+            anchor,
+          );
+        }
+      }
     });
   }
 
@@ -61,17 +65,13 @@ describe('renderer-neutral Torus spatial anchor', () => {
 
 describe('Torus 3D spatial mapping', () => {
   for (const size of TORUS_SIZES) {
-    it(`maps canonical ${size}x${size} anchors back to the same front-facing region`, () => {
-      const samples = [
-        createTorusSpatialAnchor(size, 0, 0),
-        createTorusSpatialAnchor(size, 0, size - 1),
-        createTorusSpatialAnchor(size, size - 1, 0),
-        createTorusSpatialAnchor(size, size - 1, size - 1),
-        createTorusSpatialAnchor(size, Math.floor(size / 2), Math.floor(size / 2)),
-      ];
-      for (const anchor of samples) {
-        const rotation = torus3DCanonicalRotationForAnchor(size, anchor);
-        expectSameAnchor(torus3DFrontFacingAnchor(size, rotation), anchor);
+    it(`maps every canonical ${size}x${size} anchor back to the same front-facing region`, () => {
+      for (let row = 0; row < size; row += 1) {
+        for (let column = 0; column < size; column += 1) {
+          const anchor = createTorusSpatialAnchor(size, row, column);
+          const rotation = torus3DCanonicalRotationForAnchor(size, anchor);
+          expectSameAnchor(torus3DFrontFacingAnchor(size, rotation), anchor);
+        }
       }
     });
   }
