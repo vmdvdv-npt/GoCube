@@ -352,7 +352,7 @@ export function TorusGame(props: TorusGameProps) {
         <div className="cube-view-switch torus-view-switch" role="group" aria-label="Torus view">
           <button
             type="button"
-            aria-pressed={requestedMode === '2d'}
+            aria-pressed={viewMode === '2d'}
             disabled={switchButtonDisabled}
             onClick={() => requestViewMode('2d')}
           >
@@ -360,7 +360,7 @@ export function TorusGame(props: TorusGameProps) {
           </button>
           <button
             type="button"
-            aria-pressed={requestedMode === '3d'}
+            aria-pressed={viewMode === '3d'}
             disabled={switchButtonDisabled}
             onClick={() => requestViewMode('3d')}
           >
