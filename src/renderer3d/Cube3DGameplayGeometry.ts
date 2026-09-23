@@ -2,15 +2,22 @@ import * as THREE from 'three';
 import type { CubeSize } from '../core/topology/CubeTopology';
 import type { PointId } from '../core/topology/Topology';
 import {
+  SHARED_3D_MARKER_DIAMETER_PITCH_RATIO,
+  SHARED_3D_MARKER_LIFT_PITCH_RATIO,
+  SHARED_3D_STONE_DIAMETER_PITCH_RATIO,
+  SHARED_3D_STONE_LIFT_PITCH_RATIO,
+  createShared3DStoneGeometry,
+} from './Shared3DGameplayVisuals';
+import {
   cube3DGridSurfacePitch,
   cube3DPointSample,
   type Cube3DSurfaceSample,
 } from './Cube3DSurfaceGeometry';
 
-export const CUBE_3D_STONE_DIAMETER_PITCH_RATIO = 0.82;
-export const CUBE_3D_STONE_LIFT_PITCH_RATIO = 0.055;
-export const CUBE_3D_MARKER_DIAMETER_PITCH_RATIO = 0.28;
-export const CUBE_3D_MARKER_LIFT_PITCH_RATIO = 0.07;
+export const CUBE_3D_STONE_DIAMETER_PITCH_RATIO = SHARED_3D_STONE_DIAMETER_PITCH_RATIO;
+export const CUBE_3D_STONE_LIFT_PITCH_RATIO = SHARED_3D_STONE_LIFT_PITCH_RATIO;
+export const CUBE_3D_MARKER_DIAMETER_PITCH_RATIO = SHARED_3D_MARKER_DIAMETER_PITCH_RATIO;
+export const CUBE_3D_MARKER_LIFT_PITCH_RATIO = SHARED_3D_MARKER_LIFT_PITCH_RATIO;
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -37,15 +44,8 @@ export const cube3DSurfaceAlignedMatrix = (
   );
 };
 
-/** Shared, low-poly oblate lens. Instances are scaled to the current grid pitch. */
-export const createCube3DStoneGeometry = (): THREE.BufferGeometry => {
-  const geometry = new THREE.SphereGeometry(1, 40, 24);
-  geometry.scale(1, 0.34, 1);
-  // Sphere normals transformed by scale are the analytic ellipsoid normals.
-  // Recomputing from triangles splits the duplicated UV seam and poles,
-  // leaving a visible wedge in the specular highlight.
-  return geometry;
-};
+/** Compatibility export; the primitive itself is owned by the shared 3D layer. */
+export const createCube3DStoneGeometry = createShared3DStoneGeometry;
 
 export const cube3DStoneMatrix = (size: CubeSize, pointId: PointId): THREE.Matrix4 => {
   const pitch = cube3DGridPitch(size);
