@@ -72,7 +72,8 @@ export const createTorus3DFeatureLayer = (size: TorusSize): Torus3DFeatureLayer 
   group.add(lastMoveMarker, moveLabels);
 
   const clearMoveLabels = (): void => {
-    for (const child of [...moveLabels.children]) {
+    while (moveLabels.children.length > 0) {
+      const child = moveLabels.children[moveLabels.children.length - 1]!;
       moveLabels.remove(child);
       if (child instanceof THREE.Sprite) child.material.dispose();
     }
