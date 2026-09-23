@@ -56,6 +56,7 @@ export interface SharedMoveAvailability {
 export type SharedEndgameGroup = EndgameGroupPresentation;
 export type SharedEndgameDecisions = Readonly<Partial<Record<string, GroupStatus>>>;
 export type EndgameReviewReadyListener = () => void;
+export type GameViewModelListener = (viewModel: GameViewModel) => void;
 
 const EMPTY_CAPTURED: readonly PointId[] = Object.freeze([]);
 
@@ -73,6 +74,7 @@ export class GameSessionControllerFacade {
   private readonly presentation = new PresentationModel();
   private readonly finalAnalysis = new FinalProofSearchRunController();
   private readonly endgameReviewReadyListeners = new Set<EndgameReviewReadyListener>();
+  private readonly viewModelListeners = new Set<GameViewModelListener>();
 
   constructor(private readonly options: GameSessionControllerFacadeOptions) {
     if (!Number.isInteger(options.boardSize) || options.boardSize <= 0) {
@@ -108,6 +110,14 @@ export class GameSessionControllerFacade {
     };
   }
 
+  subscribeViewModel(listener: GameViewModelListener): () => void {
+    this.viewModelListeners.add(listener);
+    this.notifyViewModelListener(listener, this.viewModel());
+    return () => {
+      this.viewModelListeners.delete(listener);
+    };
+  }
+
   async resumeRestoredEndgame(): Promise<void> {
     if (this.viewModel().phase !== 'endgame' || this.session.endgameReview() !== null) return;
 
@@ -122,6 +132,7 @@ export class GameSessionControllerFacade {
   dispose(): void {
     this.cancelFinalAnalysis();
     this.endgameReviewReadyListeners.clear();
+    this.viewModelListeners.clear();
   }
 
   viewModel(): GameViewModel {
@@ -307,16 +318,33 @@ export class GameSessionControllerFacade {
     }
   }
 
+  private publishViewModel(viewModel: GameViewModel): void {
+    for (const listener of this.viewModelListeners) {
+      this.notifyViewModelListener(listener, viewModel);
+    }
+  }
+
+  private notifyViewModelListener(listener: GameViewModelListener, viewModel: GameViewModel): void {
+    try {
+      listener(viewModel);
+    } catch {
+      // Presentation observers must never change accepted session-command semantics.
+    }
+  }
+
   private present(
     accepted: boolean,
     reason: GameSessionRejectionReason | null,
     captured: readonly PointId[] = EMPTY_CAPTURED,
   ): SharedGameActionResult {
-    return Object.freeze({
+    const viewModel = this.viewModel();
+    const result = Object.freeze({
       accepted,
       reason,
       captured: Object.freeze([...captured]),
-      viewModel: this.viewModel(),
+      viewModel,
     });
+    this.publishViewModel(viewModel);
+    return result;
   }
 }
