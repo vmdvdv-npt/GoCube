@@ -15,6 +15,11 @@ type Bounds = Readonly<{
   height: number;
 }>;
 
+type PointerAnchor = Readonly<{
+  x: number;
+  y: number;
+}>;
+
 type Placement = 'top' | 'bottom' | 'left' | 'right';
 
 type PositionedControl = Readonly<{
@@ -120,6 +125,19 @@ const visibleStoneBounds = (
     }),
   );
 
+const pointerAnchorBounds = (anchor: PointerAnchor, available: Bounds): Bounds => {
+  const x = clamp(anchor.x, available.left, Math.max(available.left, available.right - 1));
+  const y = clamp(anchor.y, available.top, Math.max(available.top, available.bottom - 1));
+  return Object.freeze({
+    left: x,
+    top: y,
+    right: x + 1,
+    bottom: y + 1,
+    width: 1,
+    height: 1,
+  });
+};
+
 const cube3DSelectionAnchorBounds = (available: Bounds): Bounds | null => {
   const canvas = document.querySelector<HTMLElement>('[data-testid="cube-3d-canvas"]');
   if (!canvas) return null;
@@ -153,10 +171,6 @@ const groupBounds = (
     rawRects.push(rectToBounds(rect));
   }
 
-  // WebGL stones intentionally do not have a per-stone DOM projection. The
-  // selected group is already highlighted inside ThreeScene, so keep the shared
-  // status control usable by anchoring it to the active 3D viewport rather than
-  // introducing a second point-to-screen projection model just for this control.
   if (rawRects.length === 0) return cube3DSelectionAnchorBounds(available);
   const visibleRects = rawRects.flatMap((rect) => {
     const clipped = intersectBounds(rect, available);
@@ -308,9 +322,9 @@ export interface EndgameGroupFloatingControlsProps {
 /**
  * Screen-space endgame controls for the currently selected logical group.
  *
- * Logical identity comes exclusively from the shared review state. DOM is used
- * only for renderer presentation: 2D/Torus measure the selected stone elements,
- * while Cube 3D uses its active WebGL viewport as the minimal control anchor.
+ * Logical identity comes exclusively from shared review state. Pointer position
+ * is presentation-only state: a group click anchors the popup next to that click,
+ * with the old group-based placement retained only as a non-pointer fallback.
  */
 export function EndgameGroupFloatingControls({
   selectedGroup,
@@ -318,6 +332,25 @@ export function EndgameGroupFloatingControls({
   onDecision,
 }: EndgameGroupFloatingControlsProps) {
   const controlRef = useRef<HTMLDivElement | null>(null);
+  const pointerAnchorRef = useRef<PointerAnchor | null>(null);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+
+    const rememberPointerAnchor = (event: PointerEvent): void => {
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest('[data-floating-endgame-control="true"]')
+      ) {
+        return;
+      }
+      pointerAnchorRef.current = Object.freeze({ x: event.clientX, y: event.clientY });
+    };
+
+    document.addEventListener('pointerdown', rememberPointerAnchor, true);
+    return () => document.removeEventListener('pointerdown', rememberPointerAnchor, true);
+  }, []);
 
   useEffect(() => {
     if (!selectedGroup) return undefined;
@@ -333,20 +366,23 @@ export function EndgameGroupFloatingControls({
         return;
       }
 
-      const group = groupBounds(selectedPointIds, available);
+      const pointerAnchor = pointerAnchorRef.current;
+      const anchor = pointerAnchor
+        ? pointerAnchorBounds(pointerAnchor, available)
+        : groupBounds(selectedPointIds, available);
       const controlRect = control.getBoundingClientRect();
-      if (!group || controlRect.width <= 0 || controlRect.height <= 0) {
+      if (!anchor || controlRect.width <= 0 || controlRect.height <= 0) {
         control.style.visibility = 'hidden';
         frame = requestAnimationFrame(syncPosition);
         return;
       }
 
       const position = positionControl(
-        group,
+        anchor,
         available,
         controlRect.width,
         controlRect.height,
-        visibleStoneBounds(available, selectedPointIds),
+        pointerAnchor ? [] : visibleStoneBounds(available, selectedPointIds),
       );
       control.style.left = `${position.left.toFixed(1)}px`;
       control.style.top = `${position.top.toFixed(1)}px`;
