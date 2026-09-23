@@ -9,11 +9,11 @@ export const TORUS_3D_BEVEL_SIZE = 0.045;
 const CENTER_HALF_EXTENT = (TORUS_3D_OUTER_HALF_EXTENT + TORUS_3D_INNER_HALF_EXTENT) / 2;
 const HALF_FRAME_WIDTH = (TORUS_3D_OUTER_HALF_EXTENT - TORUS_3D_INNER_HALF_EXTENT) / 2;
 const BEVEL_PHASE = 0.02;
-// Parameter-space allocation for each XY corner arc. The physical radius remains
-// TORUS_3D_BEVEL_SIZE; the slightly wider phase gives the static mesh/grid enough
-// samples to represent the narrow curve while all supported odd-size PointIds
-// remain on the adjacent flat edge segments.
-const XY_CORNER_PHASE = 0.06;
+// Keep the XY corner arc as narrow as the radial/z bevel. This phase is smaller
+// than the closest supported 9/13/19 logical sample to an edge endpoint, so all
+// PointIds remain on flat edge segments while arbitrary surface/grid samples
+// pass continuously through the rounded corner.
+const XY_CORNER_PHASE = 0.02;
 
 export interface Torus3DVector {
   readonly x: number;
