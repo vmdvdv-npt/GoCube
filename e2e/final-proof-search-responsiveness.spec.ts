@@ -28,6 +28,12 @@ const startFinalProofFixture = async (page: Page): Promise<void> => {
   await page.goto('/');
   await page.getByLabel('Board size').selectOption('9');
   await page.getByRole('button', { name: 'Start game' }).click();
+  const view2D = page
+    .getByRole('group', { name: 'Torus view' })
+    .getByRole('button', { name: '2D' });
+  await expect(view2D).toBeEnabled();
+  await view2D.click();
+  await expect(view2D).toHaveAttribute('aria-pressed', 'true');
 
   for (const command of placements) {
     await torusPoint(page, command.point).click();
