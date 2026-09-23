@@ -1,9 +1,19 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+const selectTorus2D = async (page: Page): Promise<void> => {
+  const view2D = page
+    .getByRole('group', { name: 'Torus view' })
+    .getByRole('button', { name: '2D' });
+  await expect(view2D).toBeEnabled();
+  await view2D.click();
+  await expect(view2D).toHaveAttribute('aria-pressed', 'true');
+};
 
 test('Torus 2D restores a partially completed assisted endgame review after reload', async ({ page }) => {
   await page.goto('/');
   await page.getByLabel('Board size').selectOption('9');
   await page.getByRole('button', { name: 'Start game' }).click();
+  await selectTorus2D(page);
 
   const black = page.locator(
     '.torus-board__hit-target[data-logical-point-id="0,0"][data-copy-role="primary"]',
@@ -30,6 +40,7 @@ test('Torus 2D restores a partially completed assisted endgame review after relo
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Continue saved game?' })).toBeVisible();
   await page.getByRole('button', { name: 'Continue' }).click();
+  await selectTorus2D(page);
 
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
   await expect(page.locator('.endgame-progress')).toHaveText('Resolved 1 of 2');
