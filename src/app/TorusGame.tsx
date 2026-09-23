@@ -53,7 +53,9 @@ export function TorusGame(props: TorusGameProps) {
   }, [props.controller]);
 
   useEffect(() => {
-    if (props.externalAction) setViewModel(props.externalAction.result.viewModel);
+    if (!props.externalAction) return;
+    setViewModel(props.externalAction.result.viewModel);
+    setLocalExternalAction(null);
   }, [props.externalAction]);
 
   // The 2D renderer already owns this display option. Mirror only that presentation
