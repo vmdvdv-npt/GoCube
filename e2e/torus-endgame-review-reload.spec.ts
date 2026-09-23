@@ -25,12 +25,7 @@ test('Torus 2D restores a partially completed assisted endgame review after relo
   await black.click();
   await statuses.getByRole('button', { name: 'Alive', exact: true }).click();
   await expect(page.locator('.endgame-progress')).toHaveText('Resolved 1 of 2');
-  // The group remains selected so the user can immediately change the decision.
-  await expect(statuses).toHaveCount(1);
-  await expect(statuses.getByRole('button', { name: 'Alive', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+  await expect(statuses).toHaveCount(0);
 
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Continue saved game?' })).toBeVisible();
@@ -40,7 +35,7 @@ test('Torus 2D restores a partially completed assisted endgame review after relo
   await expect(page.locator('.endgame-progress')).toHaveText('Resolved 1 of 2');
   await expect(statuses).toHaveCount(0);
 
-  // Session-owned decision survives reload; presentation-only selection does not.
+  // Session-owned decision survives reload; presentation-only popup selection does not.
   await black.click();
   await expect(statuses.getByRole('button', { name: 'Alive', exact: true })).toHaveAttribute(
     'aria-pressed',
@@ -49,6 +44,7 @@ test('Torus 2D restores a partially completed assisted endgame review after relo
 
   await white.click();
   await statuses.getByRole('button', { name: 'Seki', exact: true }).click();
+  await expect(statuses).toHaveCount(0);
   await expect(page.locator('.endgame-progress')).toHaveText('Resolved 2 of 2');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button', { name: 'Finish scoring' }).click();
