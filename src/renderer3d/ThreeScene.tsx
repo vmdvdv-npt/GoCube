@@ -35,6 +35,12 @@ import {
   type Cube3DPickTargets,
 } from './Cube3DPicking';
 import {
+  createShared3DHoverMarker,
+  createShared3DStoneMaterials,
+  updateShared3DHoverMarker,
+  type Shared3DHoverMarker,
+} from './Shared3DGameplayVisuals';
+import {
   applyShared3DViewTransform,
   attachShared3DPointerInput,
   createShared3DSceneCore,
@@ -43,6 +49,7 @@ import {
   type Shared3DViewTransform,
 } from './Shared3DSceneCore';
 import { shared3DScreenSpaceDragRotation } from './Shared3DInput';
+import { animateShared3DStonePlacement } from './Shared3DStonePlacementAnimation';
 import { createShared3DWoodMaterial } from './Shared3DWoodMaterial';
 import {
   createCube3DDebugGridGeometry,
@@ -51,7 +58,6 @@ import {
 import type { CubeViewTransitionBridge } from './CubeViewTransition';
 import './cube3d.css';
 
-const MARKER_THICKNESS = 0.08;
 const VIEW_TRANSITION_MS = 240;
 
 type Cube3DRotationMode = 'screen' | 'arcball';
@@ -61,7 +67,7 @@ interface SceneRuntime {
   readonly surface: THREE.Mesh<THREE.BufferGeometry, THREE.Material>;
   readonly blackStones: THREE.InstancedMesh<THREE.BufferGeometry, THREE.Material>;
   readonly whiteStones: THREE.InstancedMesh<THREE.BufferGeometry, THREE.Material>;
-  readonly hoverMarker: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+  readonly hoverMarker: Shared3DHoverMarker;
   readonly featureLayer: Cube3DFeatureLayer;
   readonly pickTargets: Cube3DPickTargets;
   readonly pointFromClientPosition: (x: number, y: number) => PointId | null;
@@ -108,29 +114,6 @@ const updateStoneInstances = (
   blackStones.instanceMatrix.needsUpdate = true;
   whiteStones.instanceMatrix.needsUpdate = true;
   return Object.freeze({ black: blackIndex, white: whiteIndex });
-};
-
-const updateHoverMarker = (
-  size: CubeSize,
-  viewModel: GameViewModel,
-  hoveredPointId: PointId | null,
-  hoverStatus: GamePointHoverStatus,
-  marker: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>,
-): void => {
-  const visible = Boolean(
-    hoveredPointId && (hoverStatus === 'allowed' || hoverStatus === 'forbidden'),
-  );
-  marker.visible = visible;
-  if (!visible || !hoveredPointId) return;
-
-  marker.matrixAutoUpdate = false;
-  marker.matrix.copy(cube3DMarkerMatrix(size, hoveredPointId));
-  marker.matrixWorldNeedsUpdate = true;
-  if (hoverStatus === 'forbidden') {
-    marker.material.color.setHex(0xe04c4c);
-  } else {
-    marker.material.color.setHex(viewModel.currentPlayer === 'black' ? 0x101214 : 0xf2f0e9);
-  }
 };
 
 /** Gameplay Cube adapter over the shared 3D renderer core. */
@@ -232,44 +215,17 @@ export function ThreeScene({
     grid.renderOrder = 1;
 
     const stoneGeometry = createCube3DStoneGeometry();
-    const blackMaterial = new THREE.MeshPhysicalMaterial({
-      color: 0x17191c,
-      roughness: 0.29,
-      clearcoat: 0.3,
-      clearcoatRoughness: 0.35,
-    });
-    const whiteMaterial = new THREE.MeshPhysicalMaterial({
-      color: 0xf4efdf,
-      roughness: 0.25,
-      clearcoat: 0.35,
-      clearcoatRoughness: 0.3,
-    });
-    blackMaterial.shadowSide = whiteMaterial.shadowSide = THREE.FrontSide;
+    const stoneMaterials = createShared3DStoneMaterials();
     const capacity = 6 * size * size;
-    const blackStones = new THREE.InstancedMesh(stoneGeometry, blackMaterial, capacity);
-    const whiteStones = new THREE.InstancedMesh(stoneGeometry, whiteMaterial, capacity);
+    const blackStones = new THREE.InstancedMesh(stoneGeometry, stoneMaterials.black, capacity);
+    const whiteStones = new THREE.InstancedMesh(stoneGeometry, stoneMaterials.white, capacity);
     blackStones.castShadow = whiteStones.castShadow = true;
     blackStones.count = 0;
     whiteStones.count = 0;
     blackStones.renderOrder = 2;
     whiteStones.renderOrder = 2;
 
-    const markerGeometry = new THREE.CylinderGeometry(1, 1, MARKER_THICKNESS, 20);
-    const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xe04c4c });
-    const hoverMarker = new THREE.Mesh(markerGeometry, markerMaterial);
-    const haloGeometry = new THREE.RingGeometry(1.35, 1.65, 48);
-    haloGeometry.rotateX(-Math.PI / 2);
-    const haloMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffde8b,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.9,
-    });
-    const halo = new THREE.Mesh(haloGeometry, haloMaterial);
-    halo.position.y = 0.06;
-    hoverMarker.add(halo);
-    hoverMarker.visible = false;
-    hoverMarker.renderOrder = 3;
+    const hoverMarker = createShared3DHoverMarker();
 
     const featureLayer = createCube3DFeatureLayer(size, () => runtimeRef.current?.core.render());
     const pickTargets = createCube3DPickTargets(size);
@@ -279,7 +235,7 @@ export function ThreeScene({
       grid,
       blackStones,
       whiteStones,
-      hoverMarker,
+      hoverMarker.mesh,
       featureLayer.group,
       pickTargets.mesh,
     );
@@ -459,12 +415,8 @@ export function ThreeScene({
       gridGeometry.dispose();
       gridMaterial.dispose();
       stoneGeometry.dispose();
-      blackMaterial.dispose();
-      whiteMaterial.dispose();
-      haloGeometry.dispose();
-      haloMaterial.dispose();
-      markerGeometry.dispose();
-      markerMaterial.dispose();
+      stoneMaterials.dispose();
+      hoverMarker.dispose();
       disposeCube3DPickTargets(pickTargets);
       core.dispose();
       runtimeRef.current = null;
@@ -480,7 +432,12 @@ export function ThreeScene({
     const runtime = runtimeRef.current;
     if (!runtime) return;
     const stoneCounts = updateStoneInstances(size, viewModel, runtime.blackStones, runtime.whiteStones);
-    updateHoverMarker(size, viewModel, hoveredPointId, hoverStatus, runtime.hoverMarker);
+    updateShared3DHoverMarker(
+      runtime.hoverMarker,
+      hoveredPointId ? cube3DMarkerMatrix(size, hoveredPointId) : null,
+      viewModel.currentPlayer,
+      hoverStatus,
+    );
     const features = runtime.featureLayer.update(viewModel, endgamePresentation, showMoveNumbers);
     const host = hostRef.current;
     if (host) {
@@ -524,34 +481,14 @@ export function ThreeScene({
     const index = viewModel.points
       .filter((candidate) => candidate.occupancy === point.occupancy)
       .findIndex((candidate) => candidate.logicalPointId === point.logicalPointId);
-    const finalMatrix = cube3DStoneMatrix(size, point.logicalPointId);
-    const position = new THREE.Vector3();
-    const rotation = new THREE.Quaternion();
-    const scale = new THREE.Vector3();
-    finalMatrix.decompose(position, rotation, scale);
-    const normal = new THREE.Vector3(0, 1, 0).applyQuaternion(rotation);
-    const started = performance.now();
-    let frameId = 0;
-    const frame = (now: number): void => {
-      const progress = Math.min(1, (now - started) / 180);
-      const eased = easeOutCubic(progress);
-      const matrix = new THREE.Matrix4().compose(
-        position.clone().addScaledVector(normal, (1 - eased) * cube3DGridPitch(size) * 0.22),
-        rotation,
-        scale.clone().multiplyScalar(0.75 + eased * 0.25),
-      );
-      stones.setMatrixAt(index, matrix);
-      stones.instanceMatrix.needsUpdate = true;
-      runtime.core.render();
-      if (progress < 1) frameId = requestAnimationFrame(frame);
-    };
-    frameId = requestAnimationFrame(frame);
-    return () => {
-      cancelAnimationFrame(frameId);
-      stones.setMatrixAt(index, finalMatrix);
-      stones.instanceMatrix.needsUpdate = true;
-      runtime.core.render();
-    };
+    if (index < 0) return;
+    return animateShared3DStonePlacement({
+      stones,
+      instanceIndex: index,
+      finalMatrix: cube3DStoneMatrix(size, point.logicalPointId),
+      pitch: cube3DGridPitch(size),
+      requestRender: runtime.core.render,
+    });
   }, [animationMode, size, viewModel]);
 
   useEffect(() => {
