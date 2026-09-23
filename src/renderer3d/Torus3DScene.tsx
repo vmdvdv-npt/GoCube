@@ -161,14 +161,14 @@ export function Torus3DScene({
     host.dataset.torus3dTransitioning = 'false';
     let textureReady = false;
     let readyReported = false;
-    let onFirstReadyFrame = (): void => undefined;
+    let onFirstReadyFrame: (() => void) | null = null;
 
     const core = createShared3DSceneCore(host, {
       canvasTestId: 'torus-3d-canvas',
       onAfterRender: () => {
         const ready = textureReady;
         host.dataset.torus3dReady = String(ready);
-        if (ready && !readyReported) {
+        if (ready && !readyReported && onFirstReadyFrame) {
           readyReported = true;
           onFirstReadyFrame();
         }
