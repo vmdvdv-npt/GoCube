@@ -52,6 +52,16 @@ export function TorusGame(props: TorusGameProps) {
     setLocalExternalAction(null);
   }, [props.controller]);
 
+  // Observe the authoritative controller projection directly as well as action
+  // results dispatched through the 3D interaction wrapper. TorusGameBase owns
+  // endgame completion and calls controller.finishEndgame() directly, so this
+  // subscription keeps 2D and 3D on the same GameSession phase without a
+  // renderer-specific endgame command path.
+  useEffect(
+    () => props.controller.subscribeViewModel(setViewModel),
+    [props.controller],
+  );
+
   useEffect(() => {
     if (!props.externalAction) return;
     setViewModel(props.externalAction.result.viewModel);
