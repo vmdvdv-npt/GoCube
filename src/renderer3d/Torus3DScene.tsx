@@ -75,6 +75,7 @@ export interface Torus3DSceneProps {
   readonly hoveredPointId: PointId | null;
   readonly hoverStatus: GamePointHoverStatus;
   readonly inputDisabled: boolean;
+  readonly viewInputDisabled: boolean;
   readonly onViewStateChange: (state: Torus3DViewState) => void;
   readonly onViewTransitioningChange: (transitioning: boolean) => void;
   readonly onReady?: () => void;
@@ -119,6 +120,7 @@ export function Torus3DScene({
   hoveredPointId,
   hoverStatus,
   inputDisabled,
+  viewInputDisabled,
   onViewStateChange,
   onViewTransitioningChange,
   onReady,
@@ -130,6 +132,7 @@ export function Torus3DScene({
   const previousModelRef = useRef<GameViewModel | null>(null);
   const viewStateRef = useRef(viewState);
   const inputDisabledRef = useRef(inputDisabled);
+  const viewInputDisabledRef = useRef(viewInputDisabled);
   const animationModeRef = useRef(animationMode);
   const startupAppearanceRef = useRef(startupAppearance);
   const onViewStateChangeRef = useRef(onViewStateChange);
@@ -146,6 +149,7 @@ export function Torus3DScene({
 
   viewStateRef.current = viewState;
   inputDisabledRef.current = inputDisabled;
+  viewInputDisabledRef.current = viewInputDisabled;
   animationModeRef.current = animationMode;
   startupAppearanceRef.current = startupAppearance;
   onViewStateChangeRef.current = onViewStateChange;
@@ -343,7 +347,8 @@ export function Torus3DScene({
       onPointHover: (pointId) => onPointHoverRef.current(pointId),
       onPointActivate: (pointId) => onPointActivateRef.current(pointId),
       inputDisabled: () => inputDisabledRef.current,
-      interactionBlocked: () => viewTransitioningRef.current,
+      interactionBlocked: () =>
+        viewTransitioningRef.current || viewInputDisabledRef.current,
       zoomMin: TORUS_3D_ZOOM_MIN,
       zoomMax: TORUS_3D_ZOOM_MAX,
     });
@@ -499,12 +504,12 @@ export function Torus3DScene({
   }, [inputDisabled]);
 
   const navigate = (direction: Torus3DNavigationDirection): void => {
-    if (viewTransitioningRef.current) return;
+    if (viewTransitioningRef.current || viewInputDisabledRef.current) return;
     startViewTransitionRef.current(torus3DNavigationTarget(size, viewStateRef.current, direction));
   };
 
   const resetView = (): void => {
-    if (viewTransitioningRef.current) return;
+    if (viewTransitioningRef.current || viewInputDisabledRef.current) return;
     startViewTransitionRef.current(torus3DResetTarget());
   };
 
@@ -520,7 +525,7 @@ export function Torus3DScene({
           className="torus-pan cube-3d-navigation__button cube-3d-navigation__button--up"
           type="button"
           aria-label="Move Torus 3D up"
-          disabled={viewTransitioning || inputDisabled}
+          disabled={viewTransitioning || viewInputDisabled}
           onClick={() => navigate('up')}
         >
           ↑
@@ -529,7 +534,7 @@ export function Torus3DScene({
           className="torus-pan cube-3d-navigation__button cube-3d-navigation__button--left"
           type="button"
           aria-label="Move Torus 3D left"
-          disabled={viewTransitioning || inputDisabled}
+          disabled={viewTransitioning || viewInputDisabled}
           onClick={() => navigate('left')}
         >
           ←
@@ -538,7 +543,7 @@ export function Torus3DScene({
           className="torus-pan cube-3d-navigation__button cube-3d-navigation__button--reset"
           type="button"
           aria-label="Reset Torus 3D view"
-          disabled={viewTransitioning || inputDisabled}
+          disabled={viewTransitioning || viewInputDisabled}
           onClick={resetView}
         >
           ●
@@ -547,7 +552,7 @@ export function Torus3DScene({
           className="torus-pan cube-3d-navigation__button cube-3d-navigation__button--right"
           type="button"
           aria-label="Move Torus 3D right"
-          disabled={viewTransitioning || inputDisabled}
+          disabled={viewTransitioning || viewInputDisabled}
           onClick={() => navigate('right')}
         >
           →
@@ -556,7 +561,7 @@ export function Torus3DScene({
           className="torus-pan cube-3d-navigation__button cube-3d-navigation__button--down"
           type="button"
           aria-label="Move Torus 3D down"
-          disabled={viewTransitioning || inputDisabled}
+          disabled={viewTransitioning || viewInputDisabled}
           onClick={() => navigate('down')}
         >
           ↓
