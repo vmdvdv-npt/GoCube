@@ -69,14 +69,14 @@ describe('Torus 3D unified surface mapping', () => {
   }
 
   it('rounds the shared XY square perimeter and stays continuous through a corner', () => {
-    const curved = torus3DSurfaceFromUv(0.1175, 0.25);
+    const curved = torus3DSurfaceFromUv(0.1225, 0.25);
     expect(Math.abs(curved.tangent.x)).toBeGreaterThan(0.1);
     expect(Math.abs(curved.tangent.y)).toBeGreaterThan(0.1);
     expect(Math.abs(curved.normal.x)).toBeGreaterThan(0.1);
     expect(Math.abs(curved.normal.y)).toBeGreaterThan(0.1);
 
-    const arcStartBefore = torus3DSurfaceFromUv(0.109999, 0.25);
-    const arcStartAfter = torus3DSurfaceFromUv(0.110001, 0.25);
+    const arcStartBefore = torus3DSurfaceFromUv(0.119999, 0.25);
+    const arcStartAfter = torus3DSurfaceFromUv(0.120001, 0.25);
     const edgeBefore = torus3DSurfaceFromUv(0.124999, 0.25);
     const edgeAfter = torus3DSurfaceFromUv(0.125001, 0.25);
     const distance = (a: typeof curved, b: typeof curved): number => Math.hypot(
