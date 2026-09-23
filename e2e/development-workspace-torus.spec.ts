@@ -102,6 +102,9 @@ const openDevelopmentTorusGame = async (page: Page): Promise<void> => {
   await expect(page.locator('.torus-game')).toBeVisible();
 };
 
+const torusViewButton = (page: Page, mode: '2D' | '3D') =>
+  page.getByRole('group', { name: 'Torus view' }).getByRole('button', { name: mode });
+
 test('Development Workspace replays Torus 9x9 M17-shaped Protocol V1 game through the existing Torus view', async ({ page }) => {
   await routeAlphaZero(page);
   await page.goto('/');
@@ -113,6 +116,7 @@ test('Development Workspace replays Torus 9x9 M17-shaped Protocol V1 game throug
 
   await page.getByRole('button', { name: 'Generate game' }).click();
   await expect(page.locator('.torus-game')).toBeVisible();
+  await expect(torusViewButton(page, '2D')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.torus-board')).toBeVisible();
   await expect(page.getByText('0 / 9', { exact: true })).toBeVisible();
 
@@ -140,13 +144,15 @@ test('Development Workspace replays Torus 9x9 M17-shaped Protocol V1 game throug
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
-test('Torus 3D foundation mounts in the real shell and shares rotate/zoom input', async ({ page }) => {
+test('Development Torus replay can switch to the production 3D view and back', async ({ page }) => {
   await openDevelopmentTorusGame(page);
 
-  await page.getByRole('button', { name: 'Torus 3D prototype' }).click();
-  const scene = page.getByLabel('Torus 3D foundation scene');
+  await expect(torusViewButton(page, '2D')).toHaveAttribute('aria-pressed', 'true');
+  await torusViewButton(page, '3D').click();
+  const scene = page.getByLabel('Torus 3D scene');
   const canvas = page.getByTestId('torus-3d-canvas');
   await expect(scene).toBeVisible();
+  await expect(scene).toHaveAttribute('data-torus3d-ready', 'true');
   await expect(scene).toHaveAttribute('data-torus3d-size', '9');
   await expect(scene).toHaveAttribute('data-torus3d-mapping-count', '81');
   await expect(canvas).toBeVisible();
@@ -167,7 +173,7 @@ test('Torus 3D foundation mounts in the real shell and shares rotate/zoom input'
   await page.mouse.wheel(0, -240);
   await expect(scene).not.toHaveAttribute('data-torus3d-zoom', zoomBefore ?? '');
 
-  await page.getByRole('button', { name: 'Torus 2D' }).click();
+  await torusViewButton(page, '2D').click();
   await expect(scene).toHaveCount(0);
   await expect(page.locator('.torus-board')).toBeVisible();
 });
