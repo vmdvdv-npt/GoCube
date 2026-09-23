@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointId } from '../core/topology/Topology';
 import type { GamePointHoverStatus } from '../presentation/GamePointHoverStatus';
-import { Torus3DScene } from '../renderer3d/Torus3DScene';
 import '../renderer3d/torus3d.css';
 import { FinalAnalysisProgressProvider } from './FinalAnalysisProgressContext';
 import type { GameInteractionBoundary } from './GameInteractionBoundary';
@@ -10,6 +9,11 @@ import {
   type TorusExternalAction,
   type TorusGameProps,
 } from './TorusGameBase';
+
+const Torus3DScene = lazy(async () => {
+  const module = await import('../renderer3d/Torus3DScene');
+  return { default: module.Torus3DScene };
+});
 
 export type { TorusGameProps };
 
@@ -136,17 +140,19 @@ export function TorusGame(props: TorusGameProps) {
         ) : null}
         {foundationEntryEnabled && show3DFoundation ? (
           <div className="torus-3d-foundation-overlay" aria-label="Torus 3D prototype view">
-            <Torus3DScene
-              animationMode={props.animationMode}
-              size={props.controller.size}
-              viewModel={viewModel}
-              showMoveNumbers={showMoveNumbers}
-              hoveredPointId={hoveredPointId}
-              hoverStatus={hoverStatus}
-              inputDisabled={Boolean(props.gameplayReadOnly) || viewModel.phase !== 'playing'}
-              onPointHover={setHoveredPointId}
-              onPointActivate={activate3DPoint}
-            />
+            <Suspense fallback={null}>
+              <Torus3DScene
+                animationMode={props.animationMode}
+                size={props.controller.size}
+                viewModel={viewModel}
+                showMoveNumbers={showMoveNumbers}
+                hoveredPointId={hoveredPointId}
+                hoverStatus={hoverStatus}
+                inputDisabled={Boolean(props.gameplayReadOnly) || viewModel.phase !== 'playing'}
+                onPointHover={setHoveredPointId}
+                onPointActivate={activate3DPoint}
+              />
+            </Suspense>
           </div>
         ) : null}
       </div>
