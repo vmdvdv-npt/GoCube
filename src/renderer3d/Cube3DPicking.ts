@@ -2,13 +2,12 @@ import * as THREE from 'three';
 import { CubeTopology, type CubeSize } from '../core/topology/CubeTopology';
 import type { PointId } from '../core/topology/Topology';
 import { cube3DGridPitch, cube3DSurfaceAlignedMatrix } from './Cube3DGameplayGeometry';
+import {
+  shared3DRaycasterFromClientPosition,
+  type Shared3DViewportBounds,
+} from './Shared3DRaycasting';
 
-export interface Cube3DViewportBounds {
-  readonly left: number;
-  readonly top: number;
-  readonly width: number;
-  readonly height: number;
-}
+export type Cube3DViewportBounds = Shared3DViewportBounds;
 
 export interface Cube3DPickTargets {
   readonly mesh: THREE.InstancedMesh<THREE.BufferGeometry, THREE.Material>;
@@ -92,32 +91,17 @@ export const pointFromCube3DClientPosition = (
   clientX: number,
   clientY: number,
 ): PointId | null => {
-  const { viewport } = context;
-  if (
-    !Number.isFinite(clientX) ||
-    !Number.isFinite(clientY) ||
-    viewport.width <= 0 ||
-    viewport.height <= 0
-  ) {
-    return null;
-  }
-
-  const localX = clientX - viewport.left;
-  const localY = clientY - viewport.top;
-  if (localX < 0 || localY < 0 || localX > viewport.width || localY > viewport.height) {
-    return null;
-  }
-
-  const pointer = new THREE.Vector2(
-    (localX / viewport.width) * 2 - 1,
-    -(localY / viewport.height) * 2 + 1,
+  const raycaster = shared3DRaycasterFromClientPosition(
+    context.camera,
+    context.viewport,
+    clientX,
+    clientY,
   );
-  const raycaster = new THREE.Raycaster();
+  if (!raycaster) return null;
+
   const pickRoot = context.targets.mesh.parent ?? context.targets.mesh;
-  context.camera.updateMatrixWorld(true);
   context.surface.updateWorldMatrix(true, false);
   pickRoot.updateWorldMatrix(true, true);
-  raycaster.setFromCamera(pointer, context.camera);
 
   // The first closed-surface hit is the normal occlusion boundary. A logical
   // proxy in a rounded edge/corner zone can sit slightly behind a neighboring

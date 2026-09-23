@@ -1,0 +1,67 @@
+.torus-3d-foundation-host {
+  position: relative;
+}
+
+.torus-3d-foundation-toggle {
+  position: absolute;
+  z-index: 30;
+  top: 12px;
+  right: 12px;
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid rgb(214 153 59 / 42%);
+  border-radius: 999px;
+  background: rgb(7 16 24 / 92%);
+  color: #e3b76d;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.torus-3d-foundation-overlay {
+  position: absolute;
+  z-index: 20;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: calc(20% + 20px);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 45% 38%, rgb(30 45 58 / 58%), transparent 42%),
+    linear-gradient(180deg, #071019, #02070b);
+}
+
+.torus-3d-foundation-scene,
+.torus-3d-scene {
+  position: absolute;
+  inset: 0;
+}
+
+.torus-3d-scene canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.torus-3d-foundation-label {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  padding: 6px 9px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 8px;
+  background: rgb(2 8 12 / 72%);
+  color: #9ba7b1;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+@media (max-width: 900px) {
+  .torus-3d-foundation-overlay {
+    left: 0;
+  }
+}
