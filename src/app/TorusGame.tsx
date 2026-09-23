@@ -1,10 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointId } from '../core/topology/Topology';
 import type { GamePointHoverStatus } from '../presentation/GamePointHoverStatus';
-import {
-  createTorus3DViewState,
-  type Torus3DViewState,
-} from '../presentation/Torus3DViewState';
+import type { Torus3DViewState } from '../presentation/Torus3DViewState';
 import {
   torus3DFrontFacingAnchor,
   torus3DResetTarget,
@@ -17,7 +14,7 @@ import {
   TorusGame as TorusGameBase,
   type Torus2DSpatialBridge,
   type TorusExternalAction,
-  type TorusGameProps,
+  type TorusGameProps as TorusGameBaseProps,
 } from './TorusGameBase';
 
 const Torus3DScene = lazy(async () => {
@@ -30,15 +27,20 @@ const TORUS_VIEW_TRANSITION_MS = 180;
 type TorusViewMode = '2d' | '3d';
 type TorusSwitchPhase = 'idle' | 'preparing-3d' | 'to-3d' | 'to-2d';
 
-export type { TorusGameProps };
+export interface TorusGameProps extends TorusGameBaseProps {
+  /** Development replay remains a deliberate 2D entry; production games default to 3D. */
+  readonly initialViewMode?: TorusViewMode;
+}
 
 export function TorusGame(props: TorusGameProps) {
-  const [viewMode, setViewMode] = useState<TorusViewMode>('3d');
-  const [requestedMode, setRequestedMode] = useState<TorusViewMode>('3d');
+  const initialViewMode = props.initialViewMode ?? '3d';
+  const startsIn3D = initialViewMode === '3d';
+  const [viewMode, setViewMode] = useState<TorusViewMode>(initialViewMode);
+  const [requestedMode, setRequestedMode] = useState<TorusViewMode>(initialViewMode);
   const [switchPhase, setSwitchPhase] = useState<TorusSwitchPhase>('idle');
-  const [mount3D, setMount3D] = useState(true);
-  const [overlayVisible, setOverlayVisible] = useState(true);
-  const [startupPending, setStartupPending] = useState(true);
+  const [mount3D, setMount3D] = useState(startsIn3D);
+  const [overlayVisible, setOverlayVisible] = useState(startsIn3D);
+  const [startupPending, setStartupPending] = useState(startsIn3D);
   const [sceneTransitioning, setSceneTransitioning] = useState(false);
   const [torus3DViewState, setTorus3DViewState] = useState<Torus3DViewState>(() =>
     torus3DResetTarget(),
@@ -55,9 +57,9 @@ export function TorusGame(props: TorusGameProps) {
   const switchTimerRef = useRef<number | null>(null);
   const switchFrameRef = useRef<number | null>(null);
   const sceneReadyRef = useRef(false);
-  const requestedModeRef = useRef<TorusViewMode>('3d');
+  const requestedModeRef = useRef<TorusViewMode>(initialViewMode);
   const switchPhaseRef = useRef<TorusSwitchPhase>('idle');
-  const startupPendingRef = useRef(true);
+  const startupPendingRef = useRef(startsIn3D);
   const sourceInteraction = props.interaction ?? props.controller;
 
   const clearScheduledSwitch = (): void => {
@@ -211,16 +213,18 @@ export function TorusGame(props: TorusGameProps) {
     setViewModel(props.controller.viewModel());
     setHoveredPointId(null);
     setLocalExternalAction(null);
-    setViewMode('3d');
-    setRequested('3d');
+    setViewMode(initialViewMode);
+    setRequested(initialViewMode);
     setPhase('idle');
-    setMount3D(true);
-    setOverlayVisible(true);
-    setStartupPending(true);
-    startupPendingRef.current = true;
+    setMount3D(startsIn3D);
+    setOverlayVisible(startsIn3D);
+    setStartupPending(startsIn3D);
+    startupPendingRef.current = startsIn3D;
     sceneReadyRef.current = false;
     setSceneTransitioning(false);
     setTorus3DViewState(torus3DResetTarget());
+    // initialViewMode is a mount-time presentation policy for this controller.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.controller]);
 
   useEffect(() => () => clearScheduledSwitch(), []);
@@ -326,6 +330,7 @@ export function TorusGame(props: TorusGameProps) {
     viewModel.phase !== 'playing';
   const switchButtonDisabled =
     startupPending || (sceneTransitioning && switchPhase === 'idle');
+  const baseProps: TorusGameBaseProps = props;
 
   return (
     <FinalAnalysisProgressProvider source={props.controller.finalAnalysisProgressSource()}>
@@ -337,7 +342,7 @@ export function TorusGame(props: TorusGameProps) {
         data-torus-view-transition={switchPhase}
       >
         <TorusGameBase
-          {...props}
+          {...baseProps}
           interaction={gameplayInteraction}
           externalAction={externalAction}
           spatialBridgeRef={spatialBridgeRef}
