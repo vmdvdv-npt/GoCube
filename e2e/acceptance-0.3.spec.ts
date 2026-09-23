@@ -8,6 +8,15 @@ const torusPoint = (page: Page, pointId: string) =>
 const cubePoint = (page: Page, pointId: string) =>
   page.locator(`.cube-2d-hit-area[data-point-id="${pointId}"]`);
 
+const selectTorus2D = async (page: Page): Promise<void> => {
+  const view2D = page
+    .getByRole('group', { name: 'Torus view' })
+    .getByRole('button', { name: '2D' });
+  await expect(view2D).toBeEnabled();
+  await view2D.click();
+  await expect(view2D).toHaveAttribute('aria-pressed', 'true');
+};
+
 const finishTwoPassSequence = async (page: Page): Promise<void> => {
   await page.getByRole('button', { name: 'Pass' }).click();
   await expect(page.getByRole('button', { name: 'Pass (1)' })).toBeDisabled();
@@ -21,6 +30,7 @@ test('0.3 acceptance: Torus assisted fallback survives reload and completes scor
   await page.getByLabel('Board size').selectOption('9');
   await page.getByLabel('Rules').selectOption('japanese');
   await page.getByRole('button', { name: 'Start game' }).click();
+  await selectTorus2D(page);
 
   await torusPoint(page, '0,0').click();
   await torusPoint(page, '4,4').click();
@@ -37,6 +47,7 @@ test('0.3 acceptance: Torus assisted fallback survives reload and completes scor
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Continue saved game?' })).toBeVisible();
   await page.getByRole('button', { name: 'Continue' }).click();
+  await selectTorus2D(page);
 
   await expect(page.getByRole('heading', { name: 'Assisted endgame review' })).toBeVisible();
   await expect(page.locator('.endgame-progress')).toHaveText('Resolved 1 of 2');
