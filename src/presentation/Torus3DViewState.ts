@@ -1,15 +1,19 @@
-import type { Shared3DQuaternionState } from '../renderer3d/Shared3DInput';
-import type { Shared3DViewTransform } from '../renderer3d/Shared3DSceneCore';
+export interface Torus3DQuaternionState {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly w: number;
+}
 
-export interface Torus3DViewState extends Shared3DViewTransform {
-  readonly rotation: Shared3DQuaternionState;
+export interface Torus3DViewState {
+  readonly rotation: Torus3DQuaternionState;
   readonly zoom: number;
 }
 
 export const TORUS_3D_ZOOM_MIN = 0.65;
 export const TORUS_3D_ZOOM_MAX = 2.5;
 
-const normalize = (rotation: Shared3DQuaternionState): Shared3DQuaternionState => {
+const normalize = (rotation: Torus3DQuaternionState): Torus3DQuaternionState => {
   const length = Math.hypot(rotation.x, rotation.y, rotation.z, rotation.w);
   if (!Number.isFinite(length) || length === 0) {
     throw new Error('Torus 3D rotation quaternion must be finite and non-zero');
