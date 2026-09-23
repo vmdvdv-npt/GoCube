@@ -112,6 +112,15 @@ const installBotService = async (
   });
 };
 
+const selectTorus2D = async (page: Page): Promise<void> => {
+  const view2D = page
+    .getByRole('group', { name: 'Torus view' })
+    .getByRole('button', { name: '2D' });
+  await expect(view2D).toBeEnabled();
+  await view2D.click();
+  await expect(view2D).toHaveAttribute('aria-pressed', 'true');
+};
+
 const startBotGame = async (
   page: Page,
   color: 'Black' | 'White' = 'Black',
@@ -133,6 +142,7 @@ const startBotGame = async (
   await dialog.getByRole('button', { name: 'OK', exact: true }).click();
   await panel.getByRole('button', { name: 'Play vs AI', exact: true }).click();
   await expect(page.getByRole('region', { name: /game/i }).or(page.locator('.torus-game'))).toBeVisible();
+  await selectTorus2D(page);
 };
 
 const primaryHit = (page: Page, pointId: string) =>
@@ -237,7 +247,6 @@ test.describe('Play vs bot acceptance', () => {
     });
 
     await startBotGame(page, 'White');
-
     await expect(turnIndicator(page)).toContainText('Computer is thinking…');
     await expect.poll(() => openingRequest?.position.moves.length ?? -1).toBe(0);
     pending.resolve({ type: 'place', pointId: '0,0' });
@@ -309,6 +318,7 @@ test.describe('Play vs bot acceptance', () => {
     await expect(page.getByRole('heading', { name: 'Play vs bot' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Start game', exact: true }).click();
+    await selectTorus2D(page);
     await expect(turnIndicator(page)).toContainText('Black to move');
     await expect(page.locator('.torus-board__stone[data-copy-role="primary"]')).toHaveCount(0);
 
