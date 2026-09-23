@@ -1,11 +1,21 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointId } from '../core/topology/Topology';
 import type { GamePointHoverStatus } from '../presentation/GamePointHoverStatus';
+import {
+  createTorus3DViewState,
+  type Torus3DViewState,
+} from '../presentation/Torus3DViewState';
+import {
+  torus3DFrontFacingAnchor,
+  torus3DResetTarget,
+  torus3DViewTargetForAnchor,
+} from '../renderer3d/Torus3DNavigation';
 import '../renderer3d/torus3d.css';
 import { FinalAnalysisProgressProvider } from './FinalAnalysisProgressContext';
 import type { GameInteractionBoundary } from './GameInteractionBoundary';
 import {
   TorusGame as TorusGameBase,
+  type Torus2DSpatialBridge,
   type TorusExternalAction,
   type TorusGameProps,
 } from './TorusGameBase';
@@ -15,10 +25,24 @@ const Torus3DScene = lazy(async () => {
   return { default: module.Torus3DScene };
 });
 
+const TORUS_VIEW_TRANSITION_MS = 180;
+
+type TorusViewMode = '2d' | '3d';
+type TorusSwitchPhase = 'idle' | 'preparing-3d' | 'to-3d' | 'to-2d';
+
 export type { TorusGameProps };
 
 export function TorusGame(props: TorusGameProps) {
-  const [show3DFoundation, setShow3DFoundation] = useState(false);
+  const [viewMode, setViewMode] = useState<TorusViewMode>('3d');
+  const [requestedMode, setRequestedMode] = useState<TorusViewMode>('3d');
+  const [switchPhase, setSwitchPhase] = useState<TorusSwitchPhase>('idle');
+  const [mount3D, setMount3D] = useState(true);
+  const [overlayVisible, setOverlayVisible] = useState(true);
+  const [startupPending, setStartupPending] = useState(true);
+  const [sceneTransitioning, setSceneTransitioning] = useState(false);
+  const [torus3DViewState, setTorus3DViewState] = useState<Torus3DViewState>(() =>
+    torus3DResetTarget(),
+  );
   const [viewModel, setViewModel] = useState(() => props.controller.viewModel());
   const [hoveredPointId, setHoveredPointId] = useState<PointId | null>(null);
   const [showMoveNumbers, setShowMoveNumbers] = useState(false);
@@ -26,9 +50,144 @@ export function TorusGame(props: TorusGameProps) {
   const localActionSequenceRef = useRef(0);
   const actionInFlightRef = useRef(false);
   const hostRef = useRef<HTMLDivElement>(null);
+  const spatialBridgeRef = useRef<Torus2DSpatialBridge | null>(null);
+  const switchGenerationRef = useRef(0);
+  const switchTimerRef = useRef<number | null>(null);
+  const switchFrameRef = useRef<number | null>(null);
+  const sceneReadyRef = useRef(false);
+  const requestedModeRef = useRef<TorusViewMode>('3d');
+  const switchPhaseRef = useRef<TorusSwitchPhase>('idle');
+  const startupPendingRef = useRef(true);
   const sourceInteraction = props.interaction ?? props.controller;
-  const foundationEntryEnabled =
-    import.meta.env.DEV || new URLSearchParams(window.location.search).has('torus3d');
+
+  const clearScheduledSwitch = (): void => {
+    if (switchTimerRef.current !== null) {
+      window.clearTimeout(switchTimerRef.current);
+      switchTimerRef.current = null;
+    }
+    if (switchFrameRef.current !== null) {
+      window.cancelAnimationFrame(switchFrameRef.current);
+      switchFrameRef.current = null;
+    }
+  };
+
+  const setPhase = (phase: TorusSwitchPhase): void => {
+    switchPhaseRef.current = phase;
+    setSwitchPhase(phase);
+  };
+
+  const setRequested = (mode: TorusViewMode): void => {
+    requestedModeRef.current = mode;
+    setRequestedMode(mode);
+  };
+
+  const animateSwitch = (): boolean =>
+    props.animationMode !== 'disabled' &&
+    !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const finishTo3D = (generation: number): void => {
+    if (
+      generation !== switchGenerationRef.current ||
+      requestedModeRef.current !== '3d'
+    ) return;
+    setViewMode('3d');
+    setOverlayVisible(true);
+    setPhase('idle');
+  };
+
+  const beginTo3D = (generation: number): void => {
+    if (
+      generation !== switchGenerationRef.current ||
+      requestedModeRef.current !== '3d'
+    ) return;
+    setPhase('to-3d');
+    if (!animateSwitch()) {
+      finishTo3D(generation);
+      return;
+    }
+    switchFrameRef.current = window.requestAnimationFrame(() => {
+      switchFrameRef.current = null;
+      if (
+        generation !== switchGenerationRef.current ||
+        requestedModeRef.current !== '3d'
+      ) return;
+      setOverlayVisible(true);
+      switchTimerRef.current = window.setTimeout(() => {
+        switchTimerRef.current = null;
+        finishTo3D(generation);
+      }, TORUS_VIEW_TRANSITION_MS);
+    });
+  };
+
+  const finishTo2D = (generation: number): void => {
+    if (
+      generation !== switchGenerationRef.current ||
+      requestedModeRef.current !== '2d'
+    ) return;
+    setViewMode('2d');
+    setOverlayVisible(false);
+    setMount3D(false);
+    sceneReadyRef.current = false;
+    setPhase('idle');
+  };
+
+  const beginTo2D = (generation: number): void => {
+    if (
+      generation !== switchGenerationRef.current ||
+      requestedModeRef.current !== '2d'
+    ) return;
+    setPhase('to-2d');
+    if (!animateSwitch()) {
+      finishTo2D(generation);
+      return;
+    }
+    switchFrameRef.current = window.requestAnimationFrame(() => {
+      switchFrameRef.current = null;
+      if (
+        generation !== switchGenerationRef.current ||
+        requestedModeRef.current !== '2d'
+      ) return;
+      setOverlayVisible(false);
+      switchTimerRef.current = window.setTimeout(() => {
+        switchTimerRef.current = null;
+        finishTo2D(generation);
+      }, TORUS_VIEW_TRANSITION_MS);
+    });
+  };
+
+  const requestViewMode = (mode: TorusViewMode): void => {
+    if (startupPendingRef.current || (sceneTransitioning && switchPhaseRef.current === 'idle')) {
+      return;
+    }
+    if (mode === requestedModeRef.current && switchPhaseRef.current === 'idle') return;
+
+    const generation = switchGenerationRef.current + 1;
+    switchGenerationRef.current = generation;
+    clearScheduledSwitch();
+    setRequested(mode);
+    setHoveredPointId(null);
+
+    if (mode === '2d') {
+      const anchor = torus3DFrontFacingAnchor(
+        props.controller.size,
+        torus3DViewState.rotation,
+      );
+      spatialBridgeRef.current?.centerOn(anchor);
+      beginTo2D(generation);
+      return;
+    }
+
+    const anchor = spatialBridgeRef.current?.currentAnchor();
+    if (anchor) {
+      setTorus3DViewState((current) =>
+        torus3DViewTargetForAnchor(props.controller.size, current, anchor),
+      );
+    }
+    setMount3D(true);
+    setOverlayVisible(false);
+    setPhase('preparing-3d');
+    if (sceneReadyRef.current) beginTo3D(generation);
+  };
 
   const gameplayInteraction = useMemo<GameInteractionBoundary>(() => {
     const sync = async <T extends { readonly viewModel: typeof viewModel }>(promise: Promise<T>): Promise<T> => {
@@ -47,16 +206,29 @@ export function TorusGame(props: TorusGameProps) {
   }, [sourceInteraction]);
 
   useEffect(() => {
+    clearScheduledSwitch();
+    switchGenerationRef.current += 1;
     setViewModel(props.controller.viewModel());
     setHoveredPointId(null);
     setLocalExternalAction(null);
+    setViewMode('3d');
+    setRequested('3d');
+    setPhase('idle');
+    setMount3D(true);
+    setOverlayVisible(true);
+    setStartupPending(true);
+    startupPendingRef.current = true;
+    sceneReadyRef.current = false;
+    setSceneTransitioning(false);
+    setTorus3DViewState(torus3DResetTarget());
   }, [props.controller]);
+
+  useEffect(() => () => clearScheduledSwitch(), []);
 
   // Observe the authoritative controller projection directly as well as action
   // results dispatched through the 3D interaction wrapper. TorusGameBase owns
   // endgame completion and calls controller.finishEndgame() directly, so this
-  // subscription keeps 2D and 3D on the same GameSession phase without a
-  // renderer-specific endgame command path.
+  // subscription keeps both renderers on the same GameSession phase.
   useEffect(
     () => props.controller.subscribeViewModel(setViewModel),
     [props.controller],
@@ -68,8 +240,8 @@ export function TorusGame(props: TorusGameProps) {
     setLocalExternalAction(null);
   }, [props.externalAction]);
 
-  // The 2D renderer already owns this display option. Mirror only that presentation
-  // bit into the development 3D view; game authority remains entirely in GameSession.
+  // The 2D renderer owns this presentation option. Mirror only the display bit
+  // into 3D; board/history authority remains entirely in GameSession.
   useEffect(() => {
     const host = hostRef.current;
     const Observer = host?.ownerDocument.defaultView?.MutationObserver;
@@ -106,6 +278,8 @@ export function TorusGame(props: TorusGameProps) {
     if (
       actionInFlightRef.current ||
       props.gameplayReadOnly ||
+      switchPhaseRef.current !== 'idle' ||
+      startupPendingRef.current ||
       viewModel.phase !== 'playing'
     ) return;
     const availability = props.controller.moveAvailability(pointId);
@@ -123,44 +297,95 @@ export function TorusGame(props: TorusGameProps) {
     });
   };
 
+  const handleSceneReady = (): void => {
+    sceneReadyRef.current = true;
+    if (
+      requestedModeRef.current === '3d' &&
+      switchPhaseRef.current === 'preparing-3d'
+    ) {
+      beginTo3D(switchGenerationRef.current);
+    }
+  };
+
+  const handleSceneTransitioningChange = (transitioning: boolean): void => {
+    setSceneTransitioning(transitioning);
+    if (!transitioning && startupPendingRef.current && sceneReadyRef.current) {
+      startupPendingRef.current = false;
+      setStartupPending(false);
+    }
+  };
+
   const externalAction = localExternalAction ?? props.externalAction ?? null;
+  const viewSwitching = switchPhase !== 'idle';
+  const boardVisible = viewMode === '2d' || viewSwitching;
+  const boardActive = viewMode === '2d' && !viewSwitching && !startupPending;
+  const sceneInputDisabled =
+    viewSwitching ||
+    startupPending ||
+    Boolean(props.gameplayReadOnly) ||
+    viewModel.phase !== 'playing';
+  const switchButtonDisabled =
+    startupPending || (sceneTransitioning && switchPhase === 'idle');
 
   return (
     <FinalAnalysisProgressProvider source={props.controller.finalAnalysisProgressSource()}>
       <div
         ref={hostRef}
-        className="torus-3d-foundation-host"
-        data-torus3d-foundation={show3DFoundation ? 'open' : 'closed'}
+        className="torus-3d-host"
+        data-torus-view={viewMode}
+        data-torus-view-requested={requestedMode}
+        data-torus-view-transition={switchPhase}
       >
         <TorusGameBase
           {...props}
           interaction={gameplayInteraction}
           externalAction={externalAction}
+          spatialBridgeRef={spatialBridgeRef}
+          viewActive={boardActive}
+          transitioning={viewSwitching || startupPending}
+          boardVisible={boardVisible}
         />
-        {foundationEntryEnabled ? (
+
+        <div className="cube-view-switch torus-view-switch" role="group" aria-label="Torus view">
           <button
-            className="torus-3d-foundation-toggle"
             type="button"
-            aria-pressed={show3DFoundation}
-            onClick={() => {
-              setHoveredPointId(null);
-              setShow3DFoundation((current) => !current);
-            }}
+            aria-pressed={requestedMode === '2d'}
+            disabled={switchButtonDisabled}
+            onClick={() => requestViewMode('2d')}
           >
-            {show3DFoundation ? 'Torus 2D' : 'Torus 3D prototype'}
+            2D
           </button>
-        ) : null}
-        {foundationEntryEnabled && show3DFoundation ? (
-          <div className="torus-3d-foundation-overlay" aria-label="Torus 3D prototype view">
+          <button
+            type="button"
+            aria-pressed={requestedMode === '3d'}
+            disabled={switchButtonDisabled}
+            onClick={() => requestViewMode('3d')}
+          >
+            3D
+          </button>
+        </div>
+
+        {mount3D ? (
+          <div
+            className="torus-3d-overlay"
+            data-visible={overlayVisible ? 'true' : 'false'}
+            aria-label="Torus 3D view"
+            aria-hidden={!overlayVisible && switchPhase === 'idle' ? true : undefined}
+          >
             <Suspense fallback={null}>
               <Torus3DScene
                 animationMode={props.animationMode}
+                startupAppearance={startupPending}
                 size={props.controller.size}
                 viewModel={viewModel}
                 showMoveNumbers={showMoveNumbers}
+                viewState={torus3DViewState}
                 hoveredPointId={hoveredPointId}
                 hoverStatus={hoverStatus}
-                inputDisabled={Boolean(props.gameplayReadOnly) || viewModel.phase !== 'playing'}
+                inputDisabled={sceneInputDisabled}
+                onViewStateChange={setTorus3DViewState}
+                onViewTransitioningChange={handleSceneTransitioningChange}
+                onReady={handleSceneReady}
                 onPointHover={setHoveredPointId}
                 onPointActivate={activate3DPoint}
               />
