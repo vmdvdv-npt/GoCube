@@ -22,7 +22,7 @@ const lifted = (sample: Torus3DSurfacePoint, lift: number): Torus3DSurfacePoint 
 /** Exactly N closed paths in each toroidal direction, sampled through the shared surface map. */
 export const createTorus3DGridPaths = (
   size: TorusSize,
-  samplesPerCycle = 256,
+  samplesPerCycle = 512,
   lift = 0,
 ): Torus3DGridPaths => {
   const firstDirection = Array.from({ length: size }, (_, y) =>
@@ -49,7 +49,9 @@ export const createTorus3DGridGeometry = (
   size: TorusSize,
   lift: number,
 ): THREE.BufferGeometry => {
-  const paths = createTorus3DGridPaths(size, 256, lift);
+  // Narrow XY corner arcs need several samples so visible grid lines follow the
+  // same rounded parameterization instead of appearing to kink at square corners.
+  const paths = createTorus3DGridPaths(size, 512, lift);
   const positions: number[] = [];
   for (const direction of [paths.firstDirection, paths.secondDirection]) {
     for (const path of direction) {
