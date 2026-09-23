@@ -28,12 +28,12 @@ const findAllowed3DPoint = async (
   const bounds = await canvas.boundingBox();
   if (!bounds) throw new Error('Torus 3D canvas has no bounds');
 
-  for (let row = 1; row <= 10; row += 1) {
-    for (let column = 1; column <= 10; column += 1) {
-      const x = bounds.x + (bounds.width * column) / 11;
-      const y = bounds.y + (bounds.height * row) / 11;
+  for (let row = 1; row <= 8; row += 1) {
+    for (let column = 1; column <= 8; column += 1) {
+      const x = bounds.x + (bounds.width * column) / 9;
+      const y = bounds.y + (bounds.height * row) / 9;
       await page.mouse.move(x, y);
-      await page.waitForTimeout(8);
+      await page.waitForTimeout(4);
       const pointId = await scene.getAttribute('data-torus3d-hovered-point');
       const status = await scene.getAttribute('data-torus3d-hover-status');
       if (pointId && status === 'allowed' && !excluded.includes(pointId)) {
@@ -49,27 +49,10 @@ test('Torus 3D places stones through GameSession and shares Undo/Redo/Pass state
   await page.getByRole('button', { name: 'Torus 3D prototype' }).click();
 
   const scene = page.getByLabel('Torus 3D foundation scene');
-  const canvas = page.getByTestId('torus-3d-canvas');
   await expect(scene).toHaveAttribute('data-torus3d-grid-lines-first', '9');
   await expect(scene).toHaveAttribute('data-torus3d-grid-lines-second', '9');
   await expect(scene).toHaveAttribute('data-torus3d-black-stone-count', '0');
   await expect(scene).toHaveAttribute('data-torus3d-white-stone-count', '0');
-
-  const dragStart = await findAllowed3DPoint(page);
-  await page.mouse.move(dragStart.x, dragStart.y);
-  await page.mouse.down();
-  await page.mouse.move(dragStart.x + 80, dragStart.y + 55, { steps: 4 });
-  await page.mouse.up();
-  await expect(page.getByText('Move 0', { exact: true })).toBeVisible();
-  await expect(scene).toHaveAttribute('data-torus3d-black-stone-count', '0');
-
-  const zoomBefore = await scene.getAttribute('data-torus3d-zoom');
-  const bounds = await canvas.boundingBox();
-  expect(bounds).not.toBeNull();
-  await page.mouse.move(bounds!.x + bounds!.width / 2, bounds!.y + bounds!.height / 2);
-  await page.mouse.wheel(0, -220);
-  await expect(scene).not.toHaveAttribute('data-torus3d-zoom', zoomBefore ?? '');
-  await expect(page.getByText('Move 0', { exact: true })).toBeVisible();
 
   const black = await findAllowed3DPoint(page);
   await page.mouse.click(black.x, black.y);
@@ -105,6 +88,34 @@ test('Torus 3D places stones through GameSession and shares Undo/Redo/Pass state
   await expect(scene).toHaveCount(0);
   await expect(primaryStone(page, black.pointId)).toHaveCount(1);
   await expect(primaryStone(page, white.pointId)).toHaveCount(1);
+});
+
+test('Torus 3D drag and wheel change only the shared view state', async ({ page }) => {
+  await startTorusGame(page);
+  await page.getByRole('button', { name: 'Torus 3D prototype' }).click();
+
+  const scene = page.getByLabel('Torus 3D foundation scene');
+  const canvas = page.getByTestId('torus-3d-canvas');
+  const bounds = await canvas.boundingBox();
+  expect(bounds).not.toBeNull();
+  const centerX = bounds!.x + bounds!.width / 2;
+  const centerY = bounds!.y + bounds!.height / 2;
+
+  const rotationBefore = await scene.getAttribute('data-torus3d-rotation');
+  await page.mouse.move(centerX, centerY);
+  await page.mouse.down();
+  await page.mouse.move(centerX + 80, centerY + 55, { steps: 4 });
+  await page.mouse.up();
+  await expect(scene).not.toHaveAttribute('data-torus3d-rotation', rotationBefore ?? '');
+  await expect(page.getByText('Move 0', { exact: true })).toBeVisible();
+  await expect(scene).toHaveAttribute('data-torus3d-black-stone-count', '0');
+
+  const zoomBefore = await scene.getAttribute('data-torus3d-zoom');
+  await page.mouse.move(centerX, centerY);
+  await page.mouse.wheel(0, -220);
+  await expect(scene).not.toHaveAttribute('data-torus3d-zoom', zoomBefore ?? '');
+  await expect(page.getByText('Move 0', { exact: true })).toBeVisible();
+  await expect(scene).toHaveAttribute('data-torus3d-white-stone-count', '0');
 });
 
 test('Torus 3D projects authoritative captures made in the shared Torus game', async ({ page }) => {
