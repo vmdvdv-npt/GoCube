@@ -19,11 +19,18 @@ const click2DPoint = async (page: Page, pointId: string): Promise<void> => {
   ).click();
 };
 
+const waitForTorus3DReady = async (page: Page) => {
+  const scene = page.getByLabel('Torus 3D foundation scene');
+  await expect(scene).toHaveAttribute('data-torus3d-ready', 'true');
+  await expect(page.getByTestId('torus-3d-canvas')).toBeVisible();
+  return scene;
+};
+
 const findAllowed3DPoint = async (
   page: Page,
   excluded: readonly string[] = [],
 ): Promise<Readonly<{ pointId: string; x: number; y: number }>> => {
-  const scene = page.getByLabel('Torus 3D foundation scene');
+  const scene = await waitForTorus3DReady(page);
   const canvas = page.getByTestId('torus-3d-canvas');
   const bounds = await canvas.boundingBox();
   if (!bounds) throw new Error('Torus 3D canvas has no bounds');
@@ -48,7 +55,7 @@ test('Torus 3D places stones through GameSession and shares Undo/Redo/Pass state
   await startTorusGame(page);
   await page.getByRole('button', { name: 'Torus 3D prototype' }).click();
 
-  const scene = page.getByLabel('Torus 3D foundation scene');
+  const scene = await waitForTorus3DReady(page);
   await expect(scene).toHaveAttribute('data-torus3d-grid-lines-first', '9');
   await expect(scene).toHaveAttribute('data-torus3d-grid-lines-second', '9');
   await expect(scene).toHaveAttribute('data-torus3d-black-stone-count', '0');
@@ -94,7 +101,7 @@ test('Torus 3D drag and wheel change only the shared view state', async ({ page 
   await startTorusGame(page);
   await page.getByRole('button', { name: 'Torus 3D prototype' }).click();
 
-  const scene = page.getByLabel('Torus 3D foundation scene');
+  const scene = await waitForTorus3DReady(page);
   const canvas = page.getByTestId('torus-3d-canvas');
   const bounds = await canvas.boundingBox();
   expect(bounds).not.toBeNull();
@@ -125,7 +132,7 @@ test('Torus 3D projects authoritative captures made in the shared Torus game', a
   }
   await expect(page.getByLabel('Black stones captured: 1')).toBeVisible();
   await page.getByRole('button', { name: 'Torus 3D prototype' }).click();
-  const scene = page.getByLabel('Torus 3D foundation scene');
+  const scene = await waitForTorus3DReady(page);
   await expect(scene).toHaveAttribute('data-torus3d-black-stone-count', '3');
   await expect(scene).toHaveAttribute('data-torus3d-white-stone-count', '4');
   await expect(scene).toHaveAttribute('data-torus3d-phase', 'playing');
