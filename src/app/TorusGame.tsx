@@ -323,11 +323,9 @@ export function TorusGame(props: TorusGameProps) {
   const viewSwitching = switchPhase !== 'idle';
   const boardVisible = viewMode === '2d' || viewSwitching;
   const boardActive = viewMode === '2d' && !viewSwitching && !startupPending;
-  const sceneInputDisabled =
-    viewSwitching ||
-    startupPending ||
-    Boolean(props.gameplayReadOnly) ||
-    viewModel.phase !== 'playing';
+  const sceneGameplayInputDisabled =
+    Boolean(props.gameplayReadOnly) || viewModel.phase !== 'playing';
+  const sceneViewInputDisabled = viewSwitching || startupPending;
   const switchButtonDisabled =
     startupPending || (sceneTransitioning && switchPhase === 'idle');
   const baseProps: TorusGameBaseProps = props;
@@ -387,7 +385,8 @@ export function TorusGame(props: TorusGameProps) {
                 viewState={torus3DViewState}
                 hoveredPointId={hoveredPointId}
                 hoverStatus={hoverStatus}
-                inputDisabled={sceneInputDisabled}
+                inputDisabled={sceneGameplayInputDisabled}
+                viewInputDisabled={sceneViewInputDisabled}
                 onViewStateChange={setTorus3DViewState}
                 onViewTransitioningChange={handleSceneTransitioningChange}
                 onReady={handleSceneReady}
