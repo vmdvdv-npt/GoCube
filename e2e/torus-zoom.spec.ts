@@ -6,6 +6,13 @@ const start19x19Game = async (page: Page): Promise<void> => {
   await page.getByLabel('Board size').selectOption('19');
   await page.getByRole('button', { name: 'Start game' }).click();
   await expect(page.locator('.torus-game')).toBeVisible();
+  const view2D = page
+    .getByRole('group', { name: 'Torus view' })
+    .getByRole('button', { name: '2D' });
+  await expect(view2D).toBeEnabled();
+  await view2D.click();
+  await expect(view2D).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('Torus 3D scene')).toHaveCount(0);
 };
 
 const zoomValue = async (page: Page): Promise<number> =>
