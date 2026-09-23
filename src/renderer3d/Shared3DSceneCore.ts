@@ -155,6 +155,17 @@ export const createShared3DSceneCore = (
   });
 };
 
+export interface Shared3DDragRotationContext {
+  readonly startRotation: THREE.Quaternion;
+  readonly cameraRotation: THREE.Quaternion;
+  readonly startPointer: Readonly<{ x: number; y: number }>;
+  readonly currentPointer: Readonly<{ x: number; y: number }>;
+  readonly viewport: DOMRect;
+  readonly deltaX: number;
+  readonly deltaY: number;
+  readonly sensitivity: number;
+}
+
 export interface Shared3DPointerInputOptions {
   readonly core: Shared3DSceneCore;
   readonly getViewTransform: () => Shared3DViewTransform;
@@ -164,13 +175,14 @@ export interface Shared3DPointerInputOptions {
   readonly onPointActivate?: (pointId: PointId) => void;
   readonly inputDisabled: () => boolean;
   readonly interactionBlocked?: () => boolean;
+  readonly dragRotation?: (context: Shared3DDragRotationContext) => THREE.Quaternion;
   readonly zoomMin: number;
   readonly zoomMax: number;
   readonly rotationSensitivity?: number;
   readonly zoomSensitivity?: number;
 }
 
-/** Shared pointer capture, click-vs-drag, screen rotation, hover/pick and wheel lifecycle. */
+/** Shared pointer capture, click-vs-drag, rotation, hover/pick and wheel lifecycle. */
 export const attachShared3DPointerInput = (
   options: Shared3DPointerInputOptions,
 ): (() => void) => {
@@ -222,13 +234,26 @@ export const attachShared3DPointerInput = (
     }
     event.preventDefault();
     core.beginMotion();
-    const rotation = shared3DScreenSpaceDragRotation(
-      drag.rotation,
-      core.camera.quaternion,
+    const sensitivity = options.rotationSensitivity ?? SHARED_3D_ROTATION_SENSITIVITY;
+    const context: Shared3DDragRotationContext = {
+      startRotation: drag.rotation,
+      cameraRotation: core.camera.quaternion,
+      startPointer: Object.freeze({ x: drag.x, y: drag.y }),
+      currentPointer: Object.freeze({ x: event.clientX, y: event.clientY }),
+      viewport: canvas.getBoundingClientRect(),
       deltaX,
       deltaY,
-      options.rotationSensitivity ?? SHARED_3D_ROTATION_SENSITIVITY,
-    );
+      sensitivity,
+    };
+    const rotation = options.dragRotation
+      ? options.dragRotation(context)
+      : shared3DScreenSpaceDragRotation(
+          context.startRotation,
+          context.cameraRotation,
+          context.deltaX,
+          context.deltaY,
+          context.sensitivity,
+        );
     const accepted = options.commitViewTransform({
       rotation: quaternionState(rotation),
       zoom: options.getViewTransform().zoom,
