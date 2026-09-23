@@ -4,6 +4,10 @@
   height: 100%;
 }
 
+.torus-3d-foundation-host[data-torus3d-foundation='open'] .torus-board {
+  pointer-events: none;
+}
+
 .torus-3d-foundation-toggle {
   position: absolute;
   z-index: 30;
