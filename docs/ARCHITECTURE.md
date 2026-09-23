@@ -61,6 +61,7 @@
 38. Lifetime обычного игрового controller определяется application-owned identity текущего `activeGame`, а не mount/unmount конкретного React/renderer view; временное исчезновение Game view не уничтожает controller и не отменяет его активный Final Proof Search.
 39. Persistence trust boundary охватывает **весь** `GameSessionSnapshot`, а не только отдельные `GameState`: persisted `History` становится trusted только после structural runtime-validation каждого state и transition-semantic replay всей past/current/redo timeline через authoritative `GameEngine` с корректным `SimpleKoContext`; session-level endgame/result metadata после чтения storage остаётся недоверенной до проверки относительно соответствующего authoritative `GameState`/`Topology`; persisted `FinalScore` является derived data и принимается только после доказательства эквивалентности свежему результату выбранной `ScoringStrategy` для проверенной classification/state.
 40. Human-vs-bot lifecycle остаётся application-level orchestration: `BotGameOrchestrator` владеет turn ownership, bot-aware координацией Undo/Redo, single-flight, retry/error и lifecycle state, но сами history mutations выполняет только через существующие controller/`GameSession` Undo/Redo над authoritative `History`/redo-future; для одного stateless AlphaZero хода он переиспользует `BotTurnCoordinator` и никогда не создаёт параллельную board/history/game-state/undo-stack модель.
+41. `Cube3DRenderer` и `Torus3DRenderer` являются topology-specific adapters над **одним shared 3D renderer core**. Torus 3D обязан максимально переиспользовать уже созданную Cube 3D scene/camera/input/picking/material/stone/animation/performance инфраструктуру; отдельный параллельный Torus 3D engine или скопированный 3D stack запрещён. Различия допускаются только в topology-specific geometry, spatial mapping, grid continuity, navigation/reset target mapping и 2D↔3D spatial anchor.
 
 Стрелка `A → B` в этом документе означает: `A` использует контракт `B` или передаёт ему данные/команду. Она не означает наследование.
 
@@ -410,6 +411,7 @@ Cross-game preferences не входят в `GameSessionSnapshot`.
 - Cube orientation anchor;
 - Cube 2D presentation layout state, включая выбранное положение vertical pair;
 - Torus visual offset;
+- Torus 3D spatial/orientation anchor;
 - session-local display state;
 - transition/interaction state, если он нужен Renderer;
 - presentation animation mode `normal | disabled`.
@@ -573,6 +575,28 @@ Spatial mapping **не заменяет** `Topology.getNeighbors(pointId)` ка�
 
 `PointId` запрещено выводить из этих renderer-specific значений.
 
+## 9.1. Shared 3D Surface Mapping Contract
+
+Cube 3D и Torus 3D используют общий renderer-facing spatial contract. Он не меняет `Topology` и не переносит Three.js types в domain core.
+
+Для любой logical `PointId`, отображаемой в 3D, topology-specific mapping обязан детерминированно предоставить renderer-neutral surface sample, функционально эквивалентный набору:
+
+- surface position;
+- outward normal;
+- согласованный local tangent basis/orientation для stone/grid/overlay placement;
+- стабильную topology-local identity/coordinate, достаточную для round-trip back to the same `PointId`.
+
+Конкретная форма DTO и числовое представление являются implementation detail, но общий 3D renderer не должен знать Cube face rules или Torus wrap formulas. Он получает geometry/mapping через adapter.
+
+Обязанности topology-specific 3D adapters:
+
+- Cube: `PointId ↔ Cube face/local surface` mapping, face/edge continuity, Cube navigation/reset targets и Cube 2D↔3D anchor;
+- Torus: `PointId ↔ toroidal surface` mapping, обе cyclic grid directions, Torus navigation/reset targets и Torus 2D↔3D anchor.
+
+Shared 3D core использует этот contract для размещения stones/markers/overlays, picking-to-`PointId`, общих interaction primitives и presentation effects. Spatial mapping не становится источником rules: соседство по-прежнему определяется только `Topology`.
+
+Three.js mesh/object UUID, triangle index, raycast face index или screen coordinate не являются logical identity. Picking может использовать их только как промежуточные renderer data и обязан завершаться проверенным canonical `PointId` через topology-specific mapping.
+
 # 10. SimpleKoPolicy
 
 `SimpleKoPolicy` — единственное repetition rule во всём проекте для всех topology, размеров и scoring modes.
@@ -588,7 +612,7 @@ Spatial mapping **не заменяет** `Topology.getNeighbors(pointId)` ка�
 Архитектурные правила:
 
 - других repetition policy implementations нет;
-- runtime/config switch для выбора repetition policy отсутствует;
+- runtime/config switch для выбора другой repetition policy отсутствует;
 - positional/situational superko не являются скрытым fallback или future-ready branch;
 - `GameSession` получает минимальный Simple Ko context из `History` и передаёт его в доменный вызов;
 - ни `SimpleKoPolicy`, ни `GameEngine` не получают объект `History` во владение.
@@ -819,6 +843,7 @@ Renderer запрещено:
 - `Torus2DRenderer`;
 - `Cube2DRenderer`;
 - `Cube3DRenderer`;
+- `Torus3DRenderer`;
 - возможные будущие Renderer.
 
 Их доступность по версиям определяет `ROADMAP.md`.
@@ -858,6 +883,39 @@ Presentation-only empty slots vertical-pair interaction не являются du
 ## 14.3. Torus renderer-only copies
 
 Пассивные Torus duplicate regions, когда они включены продуктовым presentation state, являются renderer-only projections исходных `PointId`. Они не расширяют `TorusTopology` и не создают duplicate game state или hit targets.
+
+## 14.4. Shared 3D renderer core
+
+Cube 3D является существующей базой для общего 3D renderer stack. При добавлении Torus 3D сначала выделяется либо подтверждается shared core из уже работающего Cube 3D кода; Cube behavior сохраняется regression baseline.
+
+Shared 3D core является единственным владельцем общих механизмов 3D presentation, включая:
+
+- Three.js scene/renderer/camera lifecycle и disposal;
+- render loop и resize/device-pixel-ratio handling;
+- общую light/environment setup boundary и shared board/stone material infrastructure;
+- pointer lifecycle и click-vs-drag discrimination;
+- screen-space/camera-relative free rotation mapping;
+- wheel zoom и общую camera/scene scale orchestration;
+- raycasting/picking plumbing до topology adapter boundary;
+- общие stone meshes/instancing/resource reuse;
+- common allowed/forbidden marker presentation;
+- last-move/move-number и общие gameplay/endgame overlay primitives, где они topology-independent;
+- common stone-placement/capture/view animation hooks;
+- adaptive render-quality/resolution behavior во время движения и восстановление качества после stabilization;
+- loading/first-frame readiness и resource cleanup.
+
+`Cube3DRenderer` и `Torus3DRenderer` являются тонкими adapters/configurations этого core. Они поставляют только то, что реально определяется формой topology:
+
+- surface geometry;
+- `PointId ↔ surface` mapping через §9.1;
+- grid geometry/continuity;
+- topology-specific navigation target/orientation mapping;
+- topology-specific standard/reset orientation;
+- 2D↔3D spatial anchor conversion.
+
+Если Torus требует capability, которой нет в shared core, предпочтительный путь — расширить узкий shared contract либо добавить topology adapter hook. Копировать существующий Cube camera/input/picking/stone/animation/performance код в независимую Torus implementation запрещено.
+
+Отдельного `Torus3DEngine`, Torus-specific `GameState`, Torus-specific scoring/history или второго application lifecycle для 3D нет. Torus 2D и Torus 3D показывают ту же `GameSession` и тот же authoritative `GameState`, как Cube 2D и Cube 3D.
 
 # 15. Animation / Effects
 
@@ -1120,6 +1178,8 @@ Renderer не реконструирует историю самостоятел
 
 `GameEngine`, scoring и history не должны замечать факт смены Renderer.
 
+Для Cube и Torus используется один и тот же application-level switching principle; topology-specific adapters меняют только пространственный anchor/mapping, а не session/domain lifecycle.
+
 ## 18.6. Cube 2D empty-slot interaction
 
 1. Renderer/presentation control определяет пустой разрешённый Cube 2D slot.
@@ -1236,6 +1296,21 @@ Headless tests обязаны проверять без SVG/DOM/Three.js:
 
 Перед подключением 3D должна существовать diagnostic/headless функция, способная для любой cube `PointId` получить её каноническую surface/orientation информацию без Renderer2D.
 
+### 19.3.1. Torus 3D spatial/shared-core tests
+
+Torus 3D добавляет headless проверки topology-specific spatial adapter без создания второго game engine:
+
+- каждая Torus `PointId` имеет ровно один canonical surface mapping;
+- `PointId → surface sample → PointId` round-trip стабилен для 9×9, 13×13 и 19×19;
+- обе toroidal grid directions остаются циклически непрерывными через соответствующие surface transitions;
+- mapping не создаёт duplicate logical points на seams;
+- surface normals/tangent basis достаточны для детерминированной ориентации stone/marker/grid primitives;
+- Torus 2D↔3D anchor и navigation/reset targets изменяют только `ViewState`;
+- Torus 3D и Cube 3D используют тот же shared 3D input/picking/render lifecycle contract;
+- добавление Torus adapter не меняет Cube spatial mapping и существующий Cube 3D regression baseline.
+
+Renderer-level tests отдельно доказывают, что raycast/picking в обоих 3D adapters завершается canonical `PointId`, а не renderer mesh identity.
+
 ## 19.4. History tests
 
 Покрывают:
@@ -1327,7 +1402,9 @@ Storage adapter должен заменяться без изменения `Gam
 - Cube empty slots не являются stone hit targets и сохраняют разрешённую view interaction capability;
 - temporary animation-only elements не участвуют в game-point hit-testing;
 - Torus passive copies ссылаются на source `PointId` и остаются non-interactive;
-- shared BoardTheme/assets действительно переиспользуются, а не дублируются независимыми реализациями.
+- shared BoardTheme/assets действительно переиспользуются, а не дублируются независимыми реализациями;
+- Cube 3D и Torus 3D используют общий 3D core для общих input/picking/camera/stone/animation lifecycle primitives;
+- topology-specific 3D adapters не создают отдельный authoritative board state и возвращают canonical `PointId` через общий renderer interaction boundary.
 
 ## 19.8. Property-based / fuzz testing
 
@@ -1394,7 +1471,8 @@ Fixture может содержать:
 - territory/debug classification;
 - Cube face/layout/orientation mapping;
 - Cube presentation slot/view-intent mapping;
-- Torus passive-copy → source `PointId` mapping.
+- Torus passive-copy → source `PointId` mapping;
+- Torus/Cube 3D surface mapping diagnostics.
 
 Debug renderer сам по себе не является пользовательской функцией и не определяет correctness. Он не публикует внутренние Test Case generators, Test ID или corpus loading API. Постоянный Development Workspace является отдельной application capability и может использовать этот или обычный production Renderer через разрешённые presentation contracts.
 
@@ -1585,47 +1663,56 @@ MIT JavaScript engine с Toroidal Go особенно полезен как не
 
 Дополнительный canvas/framework подключается только если реально уменьшает сложность mapping, hit-testing, interactions и animation. Visual scene не становится источником `PointId` или game rules.
 
-## 20.7. Cube 3D candidates
+## 20.7. Shared 3D renderer candidates
 
-Перед написанием собственного 3D infrastructure следует проверять:
+Cube 3D и Torus 3D используют один общий library/runtime stack. Перед написанием собственного 3D infrastructure следует проверять и переиспользовать:
 
 - Three.js;
 - `@react-three/fiber`;
 - Drei и актуальные аналоги;
 - `RoundedBoxGeometry` или эквивалентные готовые geometry primitives;
-- OrbitControls/аналог для camera controls;
+- OrbitControls/аналог для camera/control primitives там, где они соответствуют product interaction;
 - Raycaster/аналог для picking;
 - InstancedMesh/аналог для repeated stones;
 - LineSegments/line primitives для grid;
 - готовые animation/control helpers.
 
-Для production `Renderer3D` Three.js подключается как локальная, lockfile-controlled npm dependency; при отсутствии встроенных declarations рядом фиксируются совместимые TypeScript definitions. Runtime import Three.js с публичных CDN/ESM gateways (`esm.sh` и аналоги) в renderer path не допускается: Vite/production build разрешает библиотеку из `node_modules` по зафиксированному lockfile. Внешний runtime import допустим только как краткоживущий visual POC до принятия библиотеки; после выбора Three.js renderer core использует локальную dependency.
+Для production shared 3D core Three.js подключается как локальная, lockfile-controlled npm dependency; при отсутствии встроенных declarations рядом фиксируются совместимые TypeScript definitions. Runtime import Three.js с публичных CDN/ESM gateways (`esm.sh` и аналоги) в renderer path не допускается: Vite/production build разрешает библиотеку из `node_modules` по зафиксированному lockfile. Внешний runtime import допустим только как краткоживущий visual POC до принятия библиотеки; после выбора Three.js renderer core использует локальную dependency.
 
-Собственный WebGL renderer, picking engine или базовый cube mesh generator не создаётся, пока не доказано, что зрелые primitives не подходят.
+Собственный WebGL renderer или отдельный topology-specific picking engine не создаётся, пока не доказано, что зрелые primitives/shared core не подходят.
 
 Независимо от библиотеки нашими остаются:
 
-- `PointId → surface position` mapping;
-- cube face/orientation semantics;
-- перевод picking в `PointId`;
-- continuity/meaning grid across face transitions;
-- 2D↔3D orientation anchor;
+- topology-specific `PointId → surface` mappings;
+- Cube face/orientation semantics;
+- Torus surface/toroidal direction semantics;
+- перевод picking в canonical `PointId`;
+- continuity/meaning grid across topology-specific surface transitions;
+- 2D↔3D orientation/spatial anchors;
 - отсутствие влияния Renderer3D на `GameState`.
 
-Замена 3D-библиотеки должна требовать переписать Renderer3D/adapters и visual details, но не `CubeTopology`, `GameState`, rules, scoring, history или public domain commands.
+Замена 3D-библиотеки должна требовать переписать shared 3D renderer core/adapters и visual details, но не `TorusTopology`, `CubeTopology`, `GameState`, rules, scoring, history или public domain commands.
 
-## 20.8. Future 3D Torus candidates
+## 20.8. Torus 3D geometry/mapping
 
-Product-defined 3D Torus имеет нестандартную форму, поэтому стандартный круглый `TorusGeometry` не считается автоматически подходящей моделью.
+Product-defined Torus 3D имеет нестандартную форму, поэтому стандартный круглый `TorusGeometry` не считается автоматически подходящей моделью.
 
-Для geometry spike сначала следует проверить стандартные composable primitives, например:
+Для topology-specific geometry adapter сначала следует проверить composable primitives, например:
 
 - Three.js `Shape` с inner hole + `ExtrudeGeometry` + bevel;
 - mature CSG solutions как fallback после проверки стабильности/лицензии.
 
-Camera, controls, picking, instancing, line rendering и animation по возможности повторно используют зрелые 3D primitives.
+Эти решения относятся только к созданию Torus surface geometry/mapping. Camera, controls/input, screen-space rotation, zoom, picking plumbing, stone rendering/instancing, common materials/lights, markers, animations, adaptive quality и renderer lifecycle **обязаны переиспользовать shared 3D core, уже используемый Cube 3D**, а не реализовываться второй раз.
 
-Уникальными остаются Torus topology → surface mapping, continuity двух торических направлений grid и spatial anchor между 2D/3D представлениями.
+Уникальными для Torus остаются только:
+
+- square-ring surface geometry;
+- `TorusTopology PointId ↔ surface sample` mapping;
+- continuity двух toroidal grid directions;
+- Torus-specific navigation/reset target transform;
+- spatial anchor между Torus 2D и Torus 3D.
+
+Если одна из этих задач требует новой общей capability, сначала расширяется shared 3D adapter contract; fork общего Cube-derived renderer stack считается последним недопустимым shortcut, а не нормальным путём.
 
 ## 20.9. Future online candidates
 
@@ -1680,6 +1767,9 @@ Oracle disagreement не означает автоматически bug GoCube.
 
 - Cube-specific branches в базовом `GameEngine`;
 - отдельный `GameEngine` для Torus и Cube;
+- отдельный `Torus3DEngine` или отдельная Torus 3D domain/session model;
+- дублировать общий Cube-derived 3D scene/camera/input/picking/stone/material/animation/performance stack внутри `Torus3DRenderer` вместо shared 3D core;
+- обходить shared 3D adapter contract прямым выводом `PointId` из Three.js mesh UUID/face index/triangle index;
 - дублировать общий `GameSession`/scoring/endgame/Final Proof/disposal lifecycle в отдельных Torus/Cube controllers вместо shared application facade;
 - привязывать `dispose()` application-owned gameplay controller к unmount конкретного Torus/Cube/renderer view или отменять активный Final Proof из-за временного перехода на другой application screen;
 - трактовать `phase = endgame` при `endgameReview = null` как пустой/полностью resolved review или разрешать на этом основании `Finish scoring`;
@@ -1770,6 +1860,7 @@ Oracle disagreement не означает автоматически bug GoCube.
 25. Lifetime controller привязан к реальному application owner, а не к временно смонтированному view, и pending async review явно отличается от отсутствующего/пустого resolved review?
 26. После чтения storage проверен ли весь `GameSessionSnapshot`: structural validity каждого past/current/redo `GameState`, transition-semantic достижимость всей `History`/Redo timeline через `GameEngine` с корректным Simple Ko context, exact group identity review/classification и независимая проверка persisted `FinalScore` через configured scorer — всё до создания restored session и передачи данных presentation layer?
 27. Human-vs-Bot orchestration хранит только lifecycle/error/current-attempt state, берёт turn/history/redo-future из authoritative `GameSession`, выполняет bot-aware Undo/Redo только существующими history commands и переиспользует `BotTurnCoordinator`, а не создаёт второй bot engine/history/undo stack?
+28. Новый 3D topology adapter переиспользует shared 3D core и ограничивает собственный код geometry/spatial mapping/navigation-anchor configuration вместо копирования camera/input/picking/stone/animation stack?
 
 Если ответ показывает нарушение границы, сначала исправляется architecture/adapter contract, затем реализуется функция.
 
@@ -1807,6 +1898,7 @@ Oracle disagreement не означает автоматически bug GoCube.
 - `PreferencesStorage` отдельно хранит только product-approved cross-game preferences;
 - `PresentationModel` строит данные для показа и управляет presentation animation mode независимо от domain state;
 - Renderer отображает их, переводит game points в `PointId`, а presentation-only controls — в `ViewIntent`;
+- Cube 3D и Torus 3D используют один shared 3D renderer core; topology-specific adapters поставляют только geometry/surface mapping/grid/navigation/reset/spatial-anchor semantics;
 - Animation визуализирует события, не меняя правила;
 - `NetworkTransport` в будущем только переносит commands/state через внешний authority boundary.
 
