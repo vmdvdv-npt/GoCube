@@ -1,7 +1,10 @@
 import * as THREE from 'three';
 import { torus3DSurfaceFromUv } from './Torus3DSurfaceMapping';
 
-const U_SEGMENTS = 128;
+// The XY corner phase is intentionally very narrow so logical PointIds stay on
+// flat surfaces. Use enough U sampling to render that authoritative curve rather
+// than collapsing it back into a single sharp chord.
+const U_SEGMENTS = 256;
 const V_SEGMENTS = 256;
 
 /** Mesh and gameplay mapping are sampled from the same authoritative Torus surface. */
