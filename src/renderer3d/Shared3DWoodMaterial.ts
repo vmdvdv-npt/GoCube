@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 
+const WOOD_TEXTURE_READY_FALLBACK_MS = 3000;
+
 const configureWoodTexture = (
   texture: THREE.Texture,
   maxAnisotropy: number,
@@ -29,6 +31,8 @@ export const createShared3DWoodMaterial = (
   maxAnisotropy: number,
 ): THREE.MeshPhysicalMaterial => {
   let disposed = false;
+  let readinessReported = false;
+  let readinessTimer: number | null = null;
   const fallbackTexture = createWoodFallbackTexture(maxAnisotropy);
   const material = new THREE.MeshPhysicalMaterial({
     map: fallbackTexture,
@@ -38,6 +42,22 @@ export const createShared3DWoodMaterial = (
     specularIntensity: 0.75,
     metalness: 0,
   });
+
+  const reportReady = (): void => {
+    if (disposed || readinessReported) return;
+    readinessReported = true;
+    if (readinessTimer !== null) {
+      window.clearTimeout(readinessTimer);
+      readinessTimer = null;
+    }
+    onTextureReady();
+  };
+
+  // TextureLoader can occasionally emit neither load nor error in headless WebGL.
+  // Keep the renderable DataTexture fallback, but do not publish readiness early:
+  // normal cold-loading still waits for the walnut asset. The bounded fallback only
+  // prevents an otherwise permanent transition lock when the loader becomes silent.
+  readinessTimer = window.setTimeout(reportReady, WOOD_TEXTURE_READY_FALLBACK_MS);
 
   let walnutTexture: THREE.Texture | null = null;
   walnutTexture = new THREE.TextureLoader().load(
@@ -51,12 +71,22 @@ export const createShared3DWoodMaterial = (
       material.map = loadedTexture;
       material.needsUpdate = true;
       fallbackTexture.dispose();
-      onTextureReady();
+      reportReady();
+    },
+    undefined,
+    () => {
+      // The DataTexture is already a complete renderable fallback, so an explicit
+      // asset failure can safely unlock the first textured frame immediately.
+      reportReady();
     },
   );
 
   material.addEventListener('dispose', () => {
     disposed = true;
+    if (readinessTimer !== null) {
+      window.clearTimeout(readinessTimer);
+      readinessTimer = null;
+    }
     fallbackTexture.dispose();
     walnutTexture?.dispose();
   });
@@ -72,8 +102,5 @@ export const createShared3DWoodMaterial = (
   };
   material.customProgramCacheKey = () => 'shared-walnut-balanced-v4';
 
-  // The fallback is a complete renderable texture, so the scene can publish
-  // readiness immediately. The real walnut texture upgrades it asynchronously.
-  onTextureReady();
   return material;
 };
