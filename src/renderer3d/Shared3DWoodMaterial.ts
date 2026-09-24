@@ -1,6 +1,27 @@
 import * as THREE from 'three';
 
-const WOOD_TEXTURE_READY_FALLBACK_MS = 1000;
+const configureWoodTexture = (
+  texture: THREE.Texture,
+  maxAnisotropy: number,
+): void => {
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.anisotropy = Math.min(16, maxAnisotropy);
+};
+
+const createWoodFallbackTexture = (maxAnisotropy: number): THREE.DataTexture => {
+  const pixels = new Uint8Array([
+    166, 107, 55, 255,
+    160, 101, 50, 255,
+    171, 112, 59, 255,
+    164, 104, 52, 255,
+  ]);
+  const texture = new THREE.DataTexture(pixels, 2, 2, THREE.RGBAFormat);
+  configureWoodTexture(texture, maxAnisotropy);
+  texture.needsUpdate = true;
+  return texture;
+};
 
 /** Shared walnut board material with a satin finish and stable triplanar grain. */
 export const createShared3DWoodMaterial = (
@@ -8,42 +29,36 @@ export const createShared3DWoodMaterial = (
   maxAnisotropy: number,
 ): THREE.MeshPhysicalMaterial => {
   let disposed = false;
-  const readinessTimer = window.setTimeout(onTextureReady, WOOD_TEXTURE_READY_FALLBACK_MS);
-  const texture = new THREE.TextureLoader().load('/assets/board/cube-walnut.png', () => {
-    if (disposed) {
-      texture.dispose();
-      return;
-    }
-    window.clearTimeout(readinessTimer);
-    onTextureReady();
-  }, undefined, () => {
-    if (disposed) return;
-    window.clearTimeout(readinessTimer);
-    const fallback = document.createElement('canvas');
-    fallback.width = fallback.height = 2;
-    const context = fallback.getContext('2d')!;
-    context.fillStyle = '#a66b37';
-    context.fillRect(0, 0, 2, 2);
-    texture.image = fallback;
-    texture.needsUpdate = true;
-    onTextureReady();
-  });
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.anisotropy = Math.min(16, maxAnisotropy);
+  const fallbackTexture = createWoodFallbackTexture(maxAnisotropy);
   const material = new THREE.MeshPhysicalMaterial({
-    map: texture,
+    map: fallbackTexture,
     roughness: 0.46,
     clearcoat: 0.28,
     clearcoatRoughness: 0.32,
     specularIntensity: 0.75,
     metalness: 0,
   });
+
+  let walnutTexture: THREE.Texture | null = null;
+  walnutTexture = new THREE.TextureLoader().load(
+    '/assets/board/cube-walnut.png',
+    (loadedTexture) => {
+      configureWoodTexture(loadedTexture, maxAnisotropy);
+      if (disposed) {
+        loadedTexture.dispose();
+        return;
+      }
+      material.map = loadedTexture;
+      material.needsUpdate = true;
+      fallbackTexture.dispose();
+      onTextureReady();
+    },
+  );
+
   material.addEventListener('dispose', () => {
     disposed = true;
-    window.clearTimeout(readinessTimer);
-    texture.dispose();
+    fallbackTexture.dispose();
+    walnutTexture?.dispose();
   });
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
@@ -56,5 +71,9 @@ export const createShared3DWoodMaterial = (
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n        float grainLuminance = dot(woodGrain, vec3(0.2126, 0.7152, 0.0722));\n        roughnessFactor = clamp(roughnessFactor + (0.18 - grainLuminance) * 0.3, 0.38, 0.54);\n      `);
   };
   material.customProgramCacheKey = () => 'shared-walnut-balanced-v4';
+
+  // The fallback is a complete renderable texture, so the scene can publish
+  // readiness immediately. The real walnut texture upgrades it asynchronously.
+  onTextureReady();
   return material;
 };
