@@ -183,7 +183,7 @@ export function Torus3DScene({
     const surfaceMaterial = createShared3DWoodMaterial(
       () => {
         textureReady = true;
-        core.render();
+        core.renderNow();
       },
       core.renderer.capabilities.getMaxAnisotropy(),
     );
