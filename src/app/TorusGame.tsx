@@ -158,9 +158,7 @@ export function TorusGame(props: TorusGameProps) {
   };
 
   const requestViewMode = (mode: TorusViewMode): void => {
-    if (startupPendingRef.current || (sceneTransitioning && switchPhaseRef.current === 'idle')) {
-      return;
-    }
+    if (startupPendingRef.current) return;
     if (mode === requestedModeRef.current && switchPhaseRef.current === 'idle') return;
 
     const generation = switchGenerationRef.current + 1;
@@ -303,6 +301,10 @@ export function TorusGame(props: TorusGameProps) {
 
   const handleSceneReady = (): void => {
     sceneReadyRef.current = true;
+    if (startupPendingRef.current) {
+      startupPendingRef.current = false;
+      setStartupPending(false);
+    }
     if (
       requestedModeRef.current === '3d' &&
       switchPhaseRef.current === 'preparing-3d'
@@ -313,10 +315,6 @@ export function TorusGame(props: TorusGameProps) {
 
   const handleSceneTransitioningChange = (transitioning: boolean): void => {
     setSceneTransitioning(transitioning);
-    if (!transitioning && startupPendingRef.current && sceneReadyRef.current) {
-      startupPendingRef.current = false;
-      setStartupPending(false);
-    }
   };
 
   const externalAction = localExternalAction ?? props.externalAction ?? null;
@@ -326,8 +324,7 @@ export function TorusGame(props: TorusGameProps) {
   const sceneGameplayInputDisabled =
     Boolean(props.gameplayReadOnly) || viewModel.phase !== 'playing';
   const sceneViewInputDisabled = viewSwitching || startupPending;
-  const switchButtonDisabled =
-    startupPending || (sceneTransitioning && switchPhase === 'idle');
+  const switchButtonDisabled = startupPending;
   const baseProps: TorusGameBaseProps = props;
 
   return (
