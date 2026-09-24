@@ -1,17 +1,28 @@
 import * as THREE from 'three';
 
+const WOOD_TEXTURE_READY_FALLBACK_MS = 1000;
+
 /** Shared walnut board material with a satin finish and stable triplanar grain. */
 export const createShared3DWoodMaterial = (
   onTextureReady: () => void,
   maxAnisotropy: number,
 ): THREE.MeshPhysicalMaterial => {
   let disposed = false;
-  const texture = new THREE.TextureLoader().load('/assets/board/cube-walnut.png', () => {
-    if (disposed) {
-      texture.dispose();
-      return;
+  let readyReported = false;
+  let readyTimer: number | null = null;
+
+  const reportReady = (): void => {
+    if (disposed || readyReported) return;
+    readyReported = true;
+    if (readyTimer !== null) {
+      window.clearTimeout(readyTimer);
+      readyTimer = null;
     }
     onTextureReady();
+  };
+
+  const texture = new THREE.TextureLoader().load('/assets/board/cube-walnut.png', () => {
+    reportReady();
   }, undefined, () => {
     if (disposed) return;
     const fallback = document.createElement('canvas');
@@ -21,8 +32,25 @@ export const createShared3DWoodMaterial = (
     context.fillRect(0, 0, 2, 2);
     texture.image = fallback;
     texture.needsUpdate = true;
-    onTextureReady();
+    reportReady();
   });
+
+  // Image decode/load can remain pending indefinitely in software/headless WebGL
+  // environments. Keep renderer readiness bounded with the same neutral wood
+  // fallback; a later successful TextureLoader completion still replaces the
+  // texture image and marks it for upload.
+  readyTimer = window.setTimeout(() => {
+    if (disposed || readyReported) return;
+    const fallback = document.createElement('canvas');
+    fallback.width = fallback.height = 2;
+    const context = fallback.getContext('2d')!;
+    context.fillStyle = '#a66b37';
+    context.fillRect(0, 0, 2, 2);
+    texture.image = fallback;
+    texture.needsUpdate = true;
+    reportReady();
+  }, WOOD_TEXTURE_READY_FALLBACK_MS);
+
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.magFilter = THREE.LinearFilter;
@@ -37,6 +65,10 @@ export const createShared3DWoodMaterial = (
   });
   material.addEventListener('dispose', () => {
     disposed = true;
+    if (readyTimer !== null) {
+      window.clearTimeout(readyTimer);
+      readyTimer = null;
+    }
     texture.dispose();
   });
   material.onBeforeCompile = (shader) => {
