@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointId } from '../core/topology/Topology';
 import type { GamePointHoverStatus } from '../presentation/GamePointHoverStatus';
 import type { Torus3DViewState } from '../presentation/Torus3DViewState';
@@ -126,10 +126,13 @@ export function TorusGame(props: TorusGameProps) {
       generation !== switchGenerationRef.current ||
       requestedModeRef.current !== '2d'
     ) return;
+    startupPendingRef.current = false;
+    setStartupPending(false);
     setViewMode('2d');
     setOverlayVisible(false);
     setMount3D(false);
     sceneReadyRef.current = false;
+    setSceneTransitioning(false);
     setPhase('idle');
   };
 
@@ -158,7 +161,12 @@ export function TorusGame(props: TorusGameProps) {
   };
 
   const requestViewMode = (mode: TorusViewMode): void => {
-    if (startupPendingRef.current) return;
+    if (startupPendingRef.current && mode !== '2d') return;
+    if (
+      sceneTransitioning &&
+      !startupPendingRef.current &&
+      switchPhaseRef.current === 'idle'
+    ) return;
     if (mode === requestedModeRef.current && switchPhaseRef.current === 'idle') return;
 
     const generation = switchGenerationRef.current + 1;
@@ -205,7 +213,7 @@ export function TorusGame(props: TorusGameProps) {
     });
   }, [sourceInteraction]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     clearScheduledSwitch();
     switchGenerationRef.current += 1;
     setViewModel(props.controller.viewModel());
@@ -218,7 +226,6 @@ export function TorusGame(props: TorusGameProps) {
     setOverlayVisible(startsIn3D);
     setStartupPending(startsIn3D);
     startupPendingRef.current = startsIn3D;
-    sceneReadyRef.current = false;
     setSceneTransitioning(false);
     setTorus3DViewState(torus3DResetTarget());
     // initialViewMode is a mount-time presentation policy for this controller.
@@ -301,10 +308,6 @@ export function TorusGame(props: TorusGameProps) {
 
   const handleSceneReady = (): void => {
     sceneReadyRef.current = true;
-    if (startupPendingRef.current) {
-      startupPendingRef.current = false;
-      setStartupPending(false);
-    }
     if (
       requestedModeRef.current === '3d' &&
       switchPhaseRef.current === 'preparing-3d'
@@ -315,6 +318,10 @@ export function TorusGame(props: TorusGameProps) {
 
   const handleSceneTransitioningChange = (transitioning: boolean): void => {
     setSceneTransitioning(transitioning);
+    if (!transitioning && startupPendingRef.current && sceneReadyRef.current) {
+      startupPendingRef.current = false;
+      setStartupPending(false);
+    }
   };
 
   const externalAction = localExternalAction ?? props.externalAction ?? null;
@@ -324,7 +331,10 @@ export function TorusGame(props: TorusGameProps) {
   const sceneGameplayInputDisabled =
     Boolean(props.gameplayReadOnly) || viewModel.phase !== 'playing';
   const sceneViewInputDisabled = viewSwitching || startupPending;
-  const switchButtonDisabled = startupPending;
+  const sceneTransitionLocksSwitch =
+    sceneTransitioning && !startupPending && switchPhase === 'idle';
+  const switchTo2DDisabled = sceneTransitionLocksSwitch;
+  const switchTo3DDisabled = startupPending || sceneTransitionLocksSwitch;
   const baseProps: TorusGameBaseProps = props;
 
   return (
@@ -350,7 +360,7 @@ export function TorusGame(props: TorusGameProps) {
           <button
             type="button"
             aria-pressed={viewMode === '2d'}
-            disabled={switchButtonDisabled}
+            disabled={switchTo2DDisabled}
             onClick={() => requestViewMode('2d')}
           >
             2D
@@ -358,7 +368,7 @@ export function TorusGame(props: TorusGameProps) {
           <button
             type="button"
             aria-pressed={viewMode === '3d'}
-            disabled={switchButtonDisabled}
+            disabled={switchTo3DDisabled}
             onClick={() => requestViewMode('3d')}
           >
             3D
