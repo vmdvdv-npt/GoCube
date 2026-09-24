@@ -1,0 +1,155 @@
+import { describe, expect, it } from 'vitest';
+import { TORUS_SIZES, type TorusSize } from '../core/topology/TorusTopology';
+import {
+  createTorusSpatialAnchor,
+  moveTorusSpatialAnchor,
+  torus2DOffsetForSpatialAnchor,
+  torusSpatialAnchorFrom2DOffset,
+  torusSpatialAnchorFromPointId,
+  torusSpatialAnchorPointId,
+} from '../presentation/TorusSpatialAnchor';
+import { createTorus3DViewState } from '../presentation/Torus3DViewState';
+import {
+  TORUS_3D_STANDARD_ZOOM,
+  torus3DCanonicalRotationForAnchor,
+  torus3DFrontFacingAnchor,
+  torus3DNavigationTarget,
+  torus3DResetTarget,
+  torus3DStandardAnchor,
+  torus3DViewTargetForAnchor,
+  type Torus3DNavigationDirection,
+} from './Torus3DNavigation';
+
+const expectSameAnchor = (
+  actual: Readonly<{ row: number; column: number }>,
+  expected: Readonly<{ row: number; column: number }>,
+): void => {
+  expect(actual.row).toBe(expected.row);
+  expect(actual.column).toBe(expected.column);
+};
+
+describe('renderer-neutral Torus spatial anchor', () => {
+  for (const size of TORUS_SIZES) {
+    it(`round-trips every logical 2D offset for ${size}x${size}`, () => {
+      for (let row = 0; row < size; row += 1) {
+        for (let column = 0; column < size; column += 1) {
+          const anchor = createTorusSpatialAnchor(size, row, column);
+          expectSameAnchor(
+            torusSpatialAnchorFrom2DOffset(size, torus2DOffsetForSpatialAnchor(size, anchor)),
+            anchor,
+          );
+        }
+      }
+    });
+
+    it(`round-trips every logical PointId for ${size}x${size}`, () => {
+      for (let row = 0; row < size; row += 1) {
+        for (let column = 0; column < size; column += 1) {
+          const anchor = createTorusSpatialAnchor(size, row, column);
+          expectSameAnchor(
+            torusSpatialAnchorFromPointId(size, torusSpatialAnchorPointId(anchor)),
+            anchor,
+          );
+        }
+      }
+    });
+  }
+
+  it('rejects malformed or out-of-range logical PointIds', () => {
+    expect(() => torusSpatialAnchorFromPointId(9, '9,0')).toThrow('Unknown Torus 9x9 PointId');
+    expect(() => torusSpatialAnchorFromPointId(9, '0,9')).toThrow('Unknown Torus 9x9 PointId');
+    expect(() => torusSpatialAnchorFromPointId(9, 'x,0')).toThrow('Unknown Torus 9x9 PointId');
+    expect(() => torusSpatialAnchorFromPointId(9, '0,0,0')).toThrow('Unknown Torus 9x9 PointId');
+  });
+});
+
+describe('Torus 3D spatial mapping', () => {
+  for (const size of TORUS_SIZES) {
+    it(`maps every canonical ${size}x${size} anchor back to the same front-facing region`, () => {
+      for (let row = 0; row < size; row += 1) {
+        for (let column = 0; column < size; column += 1) {
+          const anchor = createTorusSpatialAnchor(size, row, column);
+          const rotation = torus3DCanonicalRotationForAnchor(size, anchor);
+          expectSameAnchor(torus3DFrontFacingAnchor(size, rotation), anchor);
+        }
+      }
+    });
+  }
+
+  it('preserves manual zoom when targeting a 2D logical region', () => {
+    const state = createTorus3DViewState({ zoom: 1.73 });
+    const anchor = createTorusSpatialAnchor(9, 7, 3);
+    const target = torus3DViewTargetForAnchor(9, state, anchor);
+    expect(target.zoom).toBeCloseTo(1.73, 8);
+    expectSameAnchor(torus3DFrontFacingAnchor(9, target.rotation), anchor);
+  });
+});
+
+describe('Torus 3D navigation', () => {
+  const directions: readonly Torus3DNavigationDirection[] = ['left', 'right', 'up', 'down'];
+
+  for (const size of TORUS_SIZES) {
+    for (const direction of directions) {
+      it(`${direction} moves exactly one logical coordinate on ${size}x${size}`, () => {
+        const startAnchor = createTorusSpatialAnchor(size, 0, 0);
+        const start = torus3DViewTargetForAnchor(
+          size,
+          createTorus3DViewState({ zoom: 1.4 }),
+          startAnchor,
+        );
+        const target = torus3DNavigationTarget(size, start, direction);
+        expectSameAnchor(
+          torus3DFrontFacingAnchor(size, target.rotation),
+          moveTorusSpatialAnchor(size, startAnchor, direction),
+        );
+        expect(target.zoom).toBeCloseTo(start.zoom, 8);
+      });
+
+      it(`${size} x ${direction} returns to the equivalent starting anchor`, () => {
+        const startAnchor = createTorusSpatialAnchor(size, size - 1, 0);
+        let state = torus3DViewTargetForAnchor(size, createTorus3DViewState(), startAnchor);
+        for (let index = 0; index < size; index += 1) {
+          state = torus3DNavigationTarget(size, state, direction);
+        }
+        expectSameAnchor(torus3DFrontFacingAnchor(size, state.rotation), startAnchor);
+      });
+    }
+  }
+
+  it('resolves the next target from the actual arbitrary quaternion, not a stale anchor', () => {
+    const size: TorusSize = 13;
+    const arbitrary = createTorus3DViewState({
+      rotation: { x: 0.41, y: -0.23, z: 0.36, w: 0.79 },
+      zoom: 1.22,
+    });
+    const current = torus3DFrontFacingAnchor(size, arbitrary.rotation);
+    const target = torus3DNavigationTarget(size, arbitrary, 'right');
+    expectSameAnchor(
+      torus3DFrontFacingAnchor(size, target.rotation),
+      moveTorusSpatialAnchor(size, current, 'right'),
+    );
+  });
+});
+
+describe('Torus 3D Reset View', () => {
+  it('returns a finite normalized standard quaternion and standard zoom', () => {
+    const reset = torus3DResetTarget();
+    expect(reset.zoom).toBe(TORUS_3D_STANDARD_ZOOM);
+    expect([
+      reset.rotation.x,
+      reset.rotation.y,
+      reset.rotation.z,
+      reset.rotation.w,
+    ].every(Number.isFinite)).toBe(true);
+    expect(Math.hypot(
+      reset.rotation.x,
+      reset.rotation.y,
+      reset.rotation.z,
+      reset.rotation.w,
+    )).toBeCloseTo(1, 8);
+    expectSameAnchor(
+      torus3DStandardAnchor(9),
+      torus3DFrontFacingAnchor(9, reset.rotation),
+    );
+  });
+});

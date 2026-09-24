@@ -1,43 +1,67 @@
 import * as THREE from 'three';
 
+const configureWoodTexture = (
+  texture: THREE.Texture,
+  maxAnisotropy: number,
+): void => {
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.anisotropy = Math.min(16, maxAnisotropy);
+};
+
 /** Shared walnut board material with a satin finish and stable triplanar grain. */
 export const createShared3DWoodMaterial = (
   onTextureReady: () => void,
   maxAnisotropy: number,
 ): THREE.MeshPhysicalMaterial => {
   let disposed = false;
-  const texture = new THREE.TextureLoader().load('/assets/board/cube-walnut.png', () => {
-    if (disposed) {
-      texture.dispose();
-      return;
-    }
-    onTextureReady();
-  }, undefined, () => {
-    if (disposed) return;
-    const fallback = document.createElement('canvas');
-    fallback.width = fallback.height = 2;
-    const context = fallback.getContext('2d')!;
-    context.fillStyle = '#a66b37';
-    context.fillRect(0, 0, 2, 2);
-    texture.image = fallback;
-    texture.needsUpdate = true;
-    onTextureReady();
-  });
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.anisotropy = Math.min(16, maxAnisotropy);
+  let ready = false;
+  const fallback = new THREE.DataTexture(
+    new Uint8Array([166, 107, 55, 255]),
+    1,
+    1,
+    THREE.RGBAFormat,
+  );
+  configureWoodTexture(fallback, maxAnisotropy);
+  fallback.needsUpdate = true;
   const material = new THREE.MeshPhysicalMaterial({
-    map: texture,
+    map: fallback,
     roughness: 0.46,
     clearcoat: 0.28,
     clearcoatRoughness: 0.32,
     specularIntensity: 0.75,
     metalness: 0,
   });
+  const finishReady = (): void => {
+    if (disposed || ready) return;
+    ready = true;
+    window.clearTimeout(readyTimer);
+    onTextureReady();
+  };
+  const readyTimer = window.setTimeout(finishReady, 3000);
+  const walnut = new THREE.TextureLoader().load(
+    '/assets/board/cube-walnut.png',
+    (texture) => {
+      configureWoodTexture(texture, maxAnisotropy);
+      if (disposed) {
+        texture.dispose();
+        return;
+      }
+      material.map = texture;
+      material.needsUpdate = true;
+      fallback.dispose();
+      finishReady();
+    },
+    undefined,
+    finishReady,
+  );
+
   material.addEventListener('dispose', () => {
     disposed = true;
-    texture.dispose();
+    window.clearTimeout(readyTimer);
+    fallback.dispose();
+    walnut.dispose();
   });
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader

@@ -43,6 +43,15 @@ const dragBy = async (page: Page, locator: Locator, dx: number, dy: number) => {
   await page.mouse.up();
 };
 
+const selectTorus2D = async (page: Page): Promise<void> => {
+  const view2D = page
+    .getByRole('group', { name: 'Torus view' })
+    .getByRole('button', { name: '2D' });
+  await expect(view2D).toBeEnabled();
+  await view2D.click();
+  await expect(view2D).toHaveAttribute('aria-pressed', 'true');
+};
+
 const visibleCubeHitNearestViewportCenter = async (page: Page): Promise<Locator> => {
   const pointId = await page.locator('.cube-2d-hit-area').evaluateAll((elements) => {
     const viewport = document.querySelector<HTMLElement>('.cube-2d-game__viewport')!.getBoundingClientRect();
@@ -75,6 +84,44 @@ const visibleCubeHitNearestViewportCenter = async (page: Page): Promise<Locator>
   return page.locator(`.cube-2d-hit-area[data-point-id="${pointId}"]`);
 };
 
+const visibleTorusHitNearestViewportCenter = async (page: Page): Promise<Locator> => {
+  const pointId = await page
+    .locator('.torus-board__hit-target[data-copy-role="primary"]')
+    .evaluateAll((elements) => {
+      const game = document.querySelector<HTMLElement>('.torus-game')!.getBoundingClientRect();
+      const sidebar = document.querySelector<HTMLElement>('.game-summary')?.getBoundingClientRect();
+      const visibleLeft = sidebar?.right ?? game.left;
+      const centerX = (visibleLeft + game.right) / 2;
+      const centerY = (game.top + game.bottom) / 2;
+      const candidates = elements
+        .map((element) => {
+          const rect = element.getBoundingClientRect();
+          const x = rect.left + rect.width / 2;
+          const y = rect.top + rect.height / 2;
+          return {
+            pointId: element.getAttribute('data-logical-point-id'),
+            x,
+            y,
+            distance: Math.hypot(x - centerX, y - centerY),
+          };
+        })
+        .filter(
+          (candidate) =>
+            candidate.pointId &&
+            candidate.x >= visibleLeft &&
+            candidate.x <= game.right &&
+            candidate.y >= game.top &&
+            candidate.y <= game.bottom,
+        )
+        .sort((a, b) => a.distance - b.distance);
+      return candidates[0]?.pointId ?? null;
+    });
+  if (!pointId) throw new Error('Expected a visible Torus hit target');
+  return page.locator(
+    `.torus-board__hit-target[data-logical-point-id="${pointId}"][data-copy-role="primary"]`,
+  ).first();
+};
+
 const expectCubeNavigationAnchored = async (page: Page) => {
   const leftBoard = await requiredBox(
     page.locator('.cube-2d-board[data-layout-row="1"][data-layout-column="0"]'),
@@ -99,6 +146,7 @@ test('Torus wheel zoom scales the board and arrows while the sidebar stays fixed
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
   await page.getByRole('button', { name: 'Start game' }).click();
+  await selectTorus2D(page);
 
   const sidebar = page.locator('.game-summary');
   const shell = page.locator('.torus-board-shell');
@@ -258,18 +306,17 @@ test('Torus drag-pan moves the zoomed visual shell without placing a stone and k
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
   await page.getByRole('button', { name: 'Start game' }).click();
+  await selectTorus2D(page);
 
   const shell = page.locator('.torus-board-shell');
   const board = page.locator('.torus-board');
-  const target = page.locator(
-    '.torus-board__hit-target[data-logical-point-id="4,4"][data-copy-role="primary"]',
-  ).first();
   const turn = page.locator('.turn-indicator strong');
 
   await board.hover();
   await page.mouse.wheel(0, -450);
   await expect(shell).not.toHaveAttribute('data-view-zoom', '1.000');
 
+  const target = await visibleTorusHitNearestViewportCenter(page);
   const targetBefore = await requiredBox(target);
   const startX = targetBefore.x + targetBefore.width / 2;
   const startY = targetBefore.y + targetBefore.height / 2;

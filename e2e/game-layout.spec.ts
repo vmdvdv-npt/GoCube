@@ -5,6 +5,12 @@ test('game screen uses compact statistics and uniform history controls', async (
   await page.goto('/');
   await page.getByLabel('Board size').selectOption('9');
   await page.getByRole('button', { name: 'Start game' }).click();
+  const view2D = page
+    .getByRole('group', { name: 'Torus view' })
+    .getByRole('button', { name: '2D' });
+  await expect(view2D).toBeEnabled();
+  await view2D.click();
+  await expect(view2D).toHaveAttribute('aria-pressed', 'true');
 
   await expect(page.locator('.app-header')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Shift torus view up' })).toBeVisible();

@@ -14,6 +14,12 @@ const startGame = async (page: Page, options: StartOptions): Promise<void> => {
   await page.getByLabel('Komi').fill(options.komi);
   await page.getByRole('button', { name: 'Start game' }).click();
   await expect(page.locator('.torus-game')).toBeVisible();
+  const view2D = page
+    .getByRole('group', { name: 'Torus view' })
+    .getByRole('button', { name: '2D' });
+  await expect(view2D).toBeEnabled();
+  await view2D.click();
+  await expect(view2D).toHaveAttribute('aria-pressed', 'true');
 };
 
 const clickPoint = async (page: Page, logicalPointId: string): Promise<void> => {

@@ -1,10 +1,20 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+const selectTorus2D = async (page: Page): Promise<void> => {
+  const view2D = page
+    .getByRole('group', { name: 'Torus view' })
+    .getByRole('button', { name: '2D' });
+  await expect(view2D).toBeEnabled();
+  await view2D.click();
+  await expect(view2D).toHaveAttribute('aria-pressed', 'true');
+};
 
 test('Show duplicate regions persists between Torus games while Move numbers stays game-local', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByLabel('Komi')).toHaveValue('0.5');
   await page.getByLabel('Board size').selectOption('9');
   await page.getByRole('button', { name: 'Start game' }).click();
+  await selectTorus2D(page);
 
   const moveNumbers = page.getByLabel('Move numbers', { exact: true });
   const duplicateRegions = page.getByLabel('Show duplicate regions', { exact: true });
@@ -34,6 +44,7 @@ test('Show duplicate regions persists between Torus games while Move numbers sta
   await page.getByRole('button', { name: 'New Game', exact: true }).click();
   await expect(page.getByTestId('new-game-settings-grid')).toBeVisible();
   await page.getByRole('button', { name: 'Start game' }).click();
+  await selectTorus2D(page);
 
   await expect(page.locator('.torus-game')).toBeVisible();
   await expect(page.getByLabel('Move numbers', { exact: true })).not.toBeChecked();

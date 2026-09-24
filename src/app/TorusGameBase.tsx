@@ -4,11 +4,18 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
+  type RefObject,
 } from 'react';
 import type { GroupStatus } from '../core/endgame/EndgameClassifier';
 import type { AnimationMode } from '../presentation/AnimationMode';
 import { endgameGroupForPoint } from '../presentation/EndgameGroupPresentation';
 import { finalBoardViewModel } from '../presentation/EndgameTerritoryPresentation';
+import {
+  torus2DOffsetForSpatialAnchor,
+  torusSpatialAnchorFrom2DOffset,
+  torusSpatialAnchorFromPointId,
+  type TorusSpatialAnchor,
+} from '../presentation/TorusSpatialAnchor';
 import {
   isTorus2DPrimaryBoardClientPosition,
   renderTorus2DEdgeDuplicates,
@@ -119,6 +126,11 @@ export interface TorusExternalAction {
   readonly result: TorusGameActionResult;
 }
 
+export interface Torus2DSpatialBridge {
+  currentAnchor(): TorusSpatialAnchor;
+  centerOn(anchor: TorusSpatialAnchor): void;
+}
+
 export interface TorusGameProps {
   readonly controller: TorusGameController;
   readonly onRequestNewGame: () => void;
@@ -131,6 +143,10 @@ export interface TorusGameProps {
   readonly interaction?: GameInteractionBoundary;
   readonly turnLabelOverride?: string | null;
   readonly retryBotTurn?: (() => void) | null;
+  readonly viewActive?: boolean;
+  readonly transitioning?: boolean;
+  readonly boardVisible?: boolean;
+  readonly spatialBridgeRef?: RefObject<Torus2DSpatialBridge | null>;
 }
 
 export function TorusGame({
@@ -145,6 +161,10 @@ export function TorusGame({
   interaction = controller,
   turnLabelOverride = null,
   retryBotTurn = null,
+  viewActive = true,
+  transitioning = false,
+  boardVisible = true,
+  spatialBridgeRef,
 }: TorusGameProps) {
   const initialViewModel = controller.viewModel();
   const [viewModel, setViewModel] = useState(() => initialViewModel);
@@ -280,6 +300,7 @@ export function TorusGame({
     if (!game) return;
 
     const handleWheel = (event: WheelEvent): void => {
+      if (!viewActive || transitioning) return;
       const sidebar = game.querySelector<HTMLElement>('.game-summary');
       const sidebarBounds = sidebar?.getBoundingClientRect();
       if (sidebarBounds && event.clientX <= sidebarBounds.right) return;
@@ -321,7 +342,7 @@ export function TorusGame({
 
     game.addEventListener('wheel', handleWheel, { passive: false });
     return () => game.removeEventListener('wheel', handleWheel);
-  }, [constrainViewPan, dragPan.setOffset]);
+  }, [constrainViewPan, dragPan.setOffset, transitioning, viewActive]);
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -384,6 +405,71 @@ export function TorusGame({
     return () => observer.disconnect();
   }, [controller, showDuplicateRegions, showMoveNumbers, viewModel]);
 
+  const currentSpatialAnchor = useCallback((): TorusSpatialAnchor => {
+    const renderer = rendererRef.current;
+    const svg = svgRef.current;
+    const game = gameRef.current;
+    if (renderer && svg && game) {
+      const gameBounds = game.getBoundingClientRect();
+      const sidebarBounds = game.querySelector<HTMLElement>('.game-summary')?.getBoundingClientRect();
+      const visibleLeft = sidebarBounds?.right ?? gameBounds.left;
+      const centerX = (visibleLeft + gameBounds.right) / 2;
+      const centerY = (gameBounds.top + gameBounds.bottom) / 2;
+      const client = rendererClientPosition(svg, centerX, centerY);
+      const hit = renderer.hoverVisualPointFromClientPosition(client.x, client.y);
+      if (hit) return torusSpatialAnchorFromPointId(controller.size, hit.logicalPointId);
+    }
+
+    return torusSpatialAnchorFrom2DOffset(
+      controller.size,
+      renderer?.viewState() ?? Object.freeze({ offsetX: 0, offsetY: 0 }),
+    );
+  }, [controller.size]);
+
+  const centerOnSpatialAnchor = useCallback((anchor: TorusSpatialAnchor): void => {
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    // A fresh renderer has no current model, so logical pan steps are applied
+    // synchronously without the normal 2D navigation animation. This keeps the
+    // renderer's own ViewState authoritative instead of mutating SVG transforms.
+    const renderer = new Torus2DRenderer(svg, controller.size);
+    const targetOffset = torus2DOffsetForSpatialAnchor(controller.size, anchor);
+    for (let index = 0; index < targetOffset.offsetX; index += 1) renderer.pan('right');
+    for (let index = 0; index < targetOffset.offsetY; index += 1) renderer.pan('down');
+    rendererRef.current = renderer;
+
+    const displayViewModel = finalBoardViewModel(viewModel);
+    renderer.setDuplicateRegionsVisible(false);
+    renderer.setEndgamePresentation(
+      viewModel.phase === 'endgame' ? endgame.presentation : null,
+    );
+    renderer.render(displayViewModel);
+    renderTorus2DEdgeDuplicates(
+      svg,
+      displayViewModel,
+      controller.size,
+      renderer.viewState(),
+      showDuplicateRegions,
+    );
+    renderTorus2DStoneAnnotations(svg, viewModel, showMoveNumbers);
+    applyTorusVectorCamera(svg, controller.size, showDuplicateRegions);
+
+    panOffsetRef.current = Object.freeze({ x: 0, y: 0 });
+    dragPan.reset();
+  }, [controller.size, dragPan.reset, endgame.presentation, showDuplicateRegions, showMoveNumbers, viewModel]);
+
+  useEffect(() => {
+    if (!spatialBridgeRef) return;
+    spatialBridgeRef.current = Object.freeze({
+      currentAnchor: currentSpatialAnchor,
+      centerOn: centerOnSpatialAnchor,
+    });
+    return () => {
+      spatialBridgeRef.current = null;
+    };
+  }, [centerOnSpatialAnchor, currentSpatialAnchor, spatialBridgeRef]);
+
   const groupAtClientPosition = (
     event: ReactMouseEvent<SVGSVGElement>,
   ): TorusEndgameGroup | null => {
@@ -422,7 +508,7 @@ export function TorusGame({
   const handleBoardClick = async (
     event: ReactMouseEvent<SVGSVGElement>,
   ): Promise<void> => {
-    if (actionInFlight.current) return;
+    if (!viewActive || transitioning || actionInFlight.current) return;
 
     const svg = svgRef.current;
     const client = svg
@@ -476,7 +562,7 @@ export function TorusGame({
 
   const handleBoardMouseMove = (event: ReactMouseEvent<SVGSVGElement>): void => {
     const renderer = rendererRef.current;
-    if (dragPan.dragging) {
+    if (!viewActive || transitioning || dragPan.dragging) {
       previewedMovePointRef.current = null;
       renderer?.setMovePreview(null);
       if (endgame.hoveredGroupId !== null) endgame.setHoveredGroupId(null);
@@ -560,6 +646,7 @@ export function TorusGame({
   };
 
   const handlePan = (direction: Torus2DPanDirection): void => {
+    if (!viewActive || transitioning) return;
     const renderer = rendererRef.current;
     previewedMovePointRef.current = null;
     renderer?.setMovePreview(null);
@@ -568,6 +655,7 @@ export function TorusGame({
 
   const handlePass = async (): Promise<void> => {
     if (
+      transitioning ||
       gameplayReadOnly ||
       actionInFlight.current ||
       viewModel.phase !== 'playing' ||
@@ -594,7 +682,7 @@ export function TorusGame({
   };
 
   const handleUndo = async (): Promise<void> => {
-    if (actionInFlight.current) return;
+    if (transitioning || actionInFlight.current) return;
 
     actionInFlight.current = true;
     try {
@@ -605,7 +693,7 @@ export function TorusGame({
   };
 
   const handleRedo = async (): Promise<void> => {
-    if (actionInFlight.current) return;
+    if (transitioning || actionInFlight.current) return;
 
     actionInFlight.current = true;
     try {
@@ -619,7 +707,7 @@ export function TorusGame({
     groupId: string,
     status: GroupStatus,
   ): Promise<void> => {
-    if (actionInFlight.current || viewModel.phase !== 'endgame') return;
+    if (transitioning || actionInFlight.current || viewModel.phase !== 'endgame') return;
 
     actionInFlight.current = true;
     try {
@@ -637,7 +725,7 @@ export function TorusGame({
   };
 
   const finishEndgame = async (): Promise<void> => {
-    if (actionInFlight.current || !endgame.canFinish) return;
+    if (transitioning || actionInFlight.current || !endgame.canFinish) return;
     actionInFlight.current = true;
     try {
       applyResult(await controller.finishEndgame());
@@ -674,13 +762,15 @@ export function TorusGame({
 
   const hasVisualTransform =
     viewZoom !== 1 || dragPan.offset.x !== 0 || dragPan.offset.y !== 0;
+  const boardInputDisabled = !viewActive || transitioning;
 
   return (
     <section
       ref={gameRef}
       className="torus-game"
-      aria-label="Torus 2D game"
+      aria-label="Torus game"
       data-animation-mode={animationMode}
+      data-torus2d-active={viewActive ? 'true' : 'false'}
     >
       <GameSidebar
         size={controller.size}
@@ -689,9 +779,9 @@ export function TorusGame({
         onShowMoveNumbersChange={setShowMoveNumbers}
         showDuplicateRegions={showDuplicateRegions}
         onShowDuplicateRegionsChange={handleShowDuplicateRegionsChange}
-        passDisabled={gameplayReadOnly || viewModel.phase !== 'playing' || passGuardActive}
-        canRedo={interaction.canRedo()}
-        canUndo={interaction.canUndo()}
+        passDisabled={transitioning || gameplayReadOnly || viewModel.phase !== 'playing' || passGuardActive}
+        canRedo={!transitioning && interaction.canRedo()}
+        canUndo={!transitioning && interaction.canUndo()}
         onPass={() => void handlePass()}
         onRedo={() => void handleRedo()}
         onUndo={() => void handleUndo()}
@@ -699,7 +789,7 @@ export function TorusGame({
         onOpenGameResult={() => setResultOpen(true)}
         onRequestNewGame={onRequestNewGame}
         newGameDisabled={newGameDisabled}
-        endgame={endgamePanel}
+        endgame={endgamePanel ? <div inert={transitioning}>{endgamePanel}</div> : null}
         feedback={feedback}
         turnLabelOverride={turnLabelOverride}
         retryBotTurn={retryBotTurn}
@@ -708,7 +798,9 @@ export function TorusGame({
       <div
         ref={shellRef}
         className="torus-board-shell"
-        aria-label="Infinite torus view"
+        aria-label="Torus 2D view"
+        aria-hidden={boardVisible ? undefined : true}
+        inert={boardInputDisabled}
         data-view-zoom={viewZoom.toFixed(3)}
         data-pan-x={dragPan.offset.x.toFixed(1)}
         data-pan-y={dragPan.offset.y.toFixed(1)}
@@ -719,6 +811,8 @@ export function TorusGame({
             : undefined,
           transition: dragPan.dragging ? 'none' : undefined,
           touchAction: 'none',
+          visibility: boardVisible ? 'visible' : 'hidden',
+          pointerEvents: boardInputDisabled ? 'none' : undefined,
         }}
         onPointerDown={dragPan.onPointerDown}
         onPointerMove={dragPan.onPointerMove}
@@ -731,6 +825,7 @@ export function TorusGame({
           className="torus-pan torus-pan--up"
           type="button"
           aria-label="Shift torus view up"
+          disabled={boardInputDisabled}
           onClick={() => handlePan('up')}
         >
           ↑
@@ -739,6 +834,7 @@ export function TorusGame({
           className="torus-pan torus-pan--left"
           type="button"
           aria-label="Shift torus view left"
+          disabled={boardInputDisabled}
           onClick={() => handlePan('left')}
         >
           ←
@@ -765,6 +861,7 @@ export function TorusGame({
           className="torus-pan torus-pan--right"
           type="button"
           aria-label="Shift torus view right"
+          disabled={boardInputDisabled}
           onClick={() => handlePan('right')}
         >
           →
@@ -773,6 +870,7 @@ export function TorusGame({
           className="torus-pan torus-pan--down"
           type="button"
           aria-label="Shift torus view down"
+          disabled={boardInputDisabled}
           onClick={() => handlePan('down')}
         >
           ↓

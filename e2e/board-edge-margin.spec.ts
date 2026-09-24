@@ -4,6 +4,12 @@ const startGame = async (page: Page, size: '9' | '13' | '19'): Promise<void> => 
   await page.goto('/');
   await page.getByLabel('Board size').selectOption(size);
   await page.getByRole('button', { name: 'Start game' }).click();
+  const view2D = page
+    .getByRole('group', { name: 'Torus view' })
+    .getByRole('button', { name: '2D' });
+  await expect(view2D).toBeEnabled();
+  await view2D.click();
+  await expect(view2D).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.torus-board')).toHaveAttribute(
     'aria-label',
     `${size} by ${size} repeating torus Go board`,

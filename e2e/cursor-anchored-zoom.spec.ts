@@ -28,6 +28,15 @@ const startCube = async (page: Page) => {
   await page.getByRole('button', { name: 'Start game' }).click();
 };
 
+const selectTorus2D = async (page: Page): Promise<void> => {
+  const view2D = page
+    .getByRole('group', { name: 'Torus view' })
+    .getByRole('button', { name: '2D' });
+  await expect(view2D).toBeEnabled();
+  await view2D.click();
+  await expect(view2D).toHaveAttribute('aria-pressed', 'true');
+};
+
 test('Cube wheel zoom works on black playfield space and keeps the pointer as the zoom anchor', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await startCube(page);
@@ -200,6 +209,7 @@ test('Torus wheel zoom works on black playfield space, anchors to the pointer, a
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
   await page.getByRole('button', { name: 'Start game' }).click();
+  await selectTorus2D(page);
 
   const game = page.locator('.torus-game');
   const shell = page.locator('.torus-board-shell');
