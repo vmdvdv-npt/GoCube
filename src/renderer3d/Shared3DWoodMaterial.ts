@@ -1,7 +1,5 @@
 import * as THREE from 'three';
 
-const WOOD_TEXTURE_READY_FALLBACK_MS = 3000;
-
 const configureWoodTexture = (
   texture: THREE.Texture,
   maxAnisotropy: number,
@@ -12,83 +10,58 @@ const configureWoodTexture = (
   texture.anisotropy = Math.min(16, maxAnisotropy);
 };
 
-const createWoodFallbackTexture = (maxAnisotropy: number): THREE.DataTexture => {
-  const pixels = new Uint8Array([
-    166, 107, 55, 255,
-    160, 101, 50, 255,
-    171, 112, 59, 255,
-    164, 104, 52, 255,
-  ]);
-  const texture = new THREE.DataTexture(pixels, 2, 2, THREE.RGBAFormat);
-  configureWoodTexture(texture, maxAnisotropy);
-  texture.needsUpdate = true;
-  return texture;
-};
-
 /** Shared walnut board material with a satin finish and stable triplanar grain. */
 export const createShared3DWoodMaterial = (
   onTextureReady: () => void,
   maxAnisotropy: number,
 ): THREE.MeshPhysicalMaterial => {
   let disposed = false;
-  let readinessReported = false;
-  let readinessTimer: number | null = null;
-  const fallbackTexture = createWoodFallbackTexture(maxAnisotropy);
+  let ready = false;
+  const fallback = new THREE.DataTexture(
+    new Uint8Array([166, 107, 55, 255]),
+    1,
+    1,
+    THREE.RGBAFormat,
+  );
+  configureWoodTexture(fallback, maxAnisotropy);
+  fallback.needsUpdate = true;
   const material = new THREE.MeshPhysicalMaterial({
-    map: fallbackTexture,
+    map: fallback,
     roughness: 0.46,
     clearcoat: 0.28,
     clearcoatRoughness: 0.32,
     specularIntensity: 0.75,
     metalness: 0,
   });
-
-  const reportReady = (): void => {
-    if (disposed || readinessReported) return;
-    readinessReported = true;
-    if (readinessTimer !== null) {
-      window.clearTimeout(readinessTimer);
-      readinessTimer = null;
-    }
+  const finishReady = (): void => {
+    if (disposed || ready) return;
+    ready = true;
+    window.clearTimeout(readyTimer);
     onTextureReady();
   };
-
-  // TextureLoader can occasionally emit neither load nor error in headless WebGL.
-  // Keep the renderable DataTexture fallback, but do not publish readiness early:
-  // normal cold-loading still waits for the walnut asset. The bounded fallback only
-  // prevents an otherwise permanent transition lock when the loader becomes silent.
-  readinessTimer = window.setTimeout(reportReady, WOOD_TEXTURE_READY_FALLBACK_MS);
-
-  let walnutTexture: THREE.Texture | null = null;
-  walnutTexture = new THREE.TextureLoader().load(
+  const readyTimer = window.setTimeout(finishReady, 3000);
+  const walnut = new THREE.TextureLoader().load(
     '/assets/board/cube-walnut.png',
-    (loadedTexture) => {
-      configureWoodTexture(loadedTexture, maxAnisotropy);
+    (texture) => {
+      configureWoodTexture(texture, maxAnisotropy);
       if (disposed) {
-        loadedTexture.dispose();
+        texture.dispose();
         return;
       }
-      material.map = loadedTexture;
+      material.map = texture;
       material.needsUpdate = true;
-      fallbackTexture.dispose();
-      reportReady();
+      fallback.dispose();
+      finishReady();
     },
     undefined,
-    () => {
-      // The DataTexture is already a complete renderable fallback, so an explicit
-      // asset failure can safely unlock the first textured frame immediately.
-      reportReady();
-    },
+    finishReady,
   );
 
   material.addEventListener('dispose', () => {
     disposed = true;
-    if (readinessTimer !== null) {
-      window.clearTimeout(readinessTimer);
-      readinessTimer = null;
-    }
-    fallbackTexture.dispose();
-    walnutTexture?.dispose();
+    window.clearTimeout(readyTimer);
+    fallback.dispose();
+    walnut.dispose();
   });
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
@@ -101,6 +74,5 @@ export const createShared3DWoodMaterial = (
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n        float grainLuminance = dot(woodGrain, vec3(0.2126, 0.7152, 0.0722));\n        roughnessFactor = clamp(roughnessFactor + (0.18 - grainLuminance) * 0.3, 0.38, 0.54);\n      `);
   };
   material.customProgramCacheKey = () => 'shared-walnut-balanced-v4';
-
   return material;
 };
