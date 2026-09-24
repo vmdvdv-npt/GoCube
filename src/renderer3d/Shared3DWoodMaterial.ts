@@ -8,31 +8,17 @@ export const createShared3DWoodMaterial = (
   maxAnisotropy: number,
 ): THREE.MeshPhysicalMaterial => {
   let disposed = false;
-  let readyReported = false;
-  let readyTimer: number | null = null;
-
-  const reportReady = (): boolean => {
-    if (disposed || readyReported) return false;
-    readyReported = true;
-    if (readyTimer !== null) {
-      window.clearTimeout(readyTimer);
-      readyTimer = null;
-    }
-    onTextureReady();
-    return true;
-  };
-
+  const readinessTimer = window.setTimeout(onTextureReady, WOOD_TEXTURE_READY_FALLBACK_MS);
   const texture = new THREE.TextureLoader().load('/assets/board/cube-walnut.png', () => {
     if (disposed) {
       texture.dispose();
       return;
     }
-    // If the bounded fallback already made the scene presentable, render once
-    // more so the late real walnut texture replaces it without waiting for a
-    // later user interaction.
-    if (!reportReady()) onTextureReady();
+    window.clearTimeout(readinessTimer);
+    onTextureReady();
   }, undefined, () => {
     if (disposed) return;
+    window.clearTimeout(readinessTimer);
     const fallback = document.createElement('canvas');
     fallback.width = fallback.height = 2;
     const context = fallback.getContext('2d')!;
@@ -40,25 +26,8 @@ export const createShared3DWoodMaterial = (
     context.fillRect(0, 0, 2, 2);
     texture.image = fallback;
     texture.needsUpdate = true;
-    reportReady();
+    onTextureReady();
   });
-
-  // Image decode/load can remain pending indefinitely in software/headless WebGL
-  // environments. Keep renderer readiness bounded with the same neutral wood
-  // fallback; a later successful TextureLoader completion still replaces the
-  // texture image and requests a fresh render through onTextureReady.
-  readyTimer = window.setTimeout(() => {
-    if (disposed || readyReported) return;
-    const fallback = document.createElement('canvas');
-    fallback.width = fallback.height = 2;
-    const context = fallback.getContext('2d')!;
-    context.fillStyle = '#a66b37';
-    context.fillRect(0, 0, 2, 2);
-    texture.image = fallback;
-    texture.needsUpdate = true;
-    reportReady();
-  }, WOOD_TEXTURE_READY_FALLBACK_MS);
-
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.magFilter = THREE.LinearFilter;
@@ -73,10 +42,7 @@ export const createShared3DWoodMaterial = (
   });
   material.addEventListener('dispose', () => {
     disposed = true;
-    if (readyTimer !== null) {
-      window.clearTimeout(readyTimer);
-      readyTimer = null;
-    }
+    window.clearTimeout(readinessTimer);
     texture.dispose();
   });
   material.onBeforeCompile = (shader) => {
