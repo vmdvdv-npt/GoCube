@@ -1,29 +1,33 @@
 import * as THREE from 'three';
 
+const WOOD_TEXTURE_READY_FALLBACK_MS = 1000;
+
 /** Shared walnut board material with a satin finish and stable triplanar grain. */
 export const createShared3DWoodMaterial = (
   onTextureReady: () => void,
   maxAnisotropy: number,
 ): THREE.MeshPhysicalMaterial => {
   let disposed = false;
-  const fallback = document.createElement('canvas');
-  fallback.width = fallback.height = 2;
-  const context = fallback.getContext('2d')!;
-  context.fillStyle = '#a66b37';
-  context.fillRect(0, 0, 2, 2);
-
+  const readinessTimer = window.setTimeout(onTextureReady, WOOD_TEXTURE_READY_FALLBACK_MS);
   const texture = new THREE.TextureLoader().load('/assets/board/cube-walnut.png', () => {
     if (disposed) {
       texture.dispose();
       return;
     }
+    window.clearTimeout(readinessTimer);
     onTextureReady();
   }, undefined, () => {
     if (disposed) return;
+    window.clearTimeout(readinessTimer);
+    const fallback = document.createElement('canvas');
+    fallback.width = fallback.height = 2;
+    const context = fallback.getContext('2d')!;
+    context.fillStyle = '#a66b37';
+    context.fillRect(0, 0, 2, 2);
+    texture.image = fallback;
+    texture.needsUpdate = true;
     onTextureReady();
   });
-  texture.image = fallback;
-  texture.needsUpdate = true;
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.magFilter = THREE.LinearFilter;
@@ -38,9 +42,9 @@ export const createShared3DWoodMaterial = (
   });
   material.addEventListener('dispose', () => {
     disposed = true;
+    window.clearTimeout(readinessTimer);
     texture.dispose();
   });
-  onTextureReady();
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\n        varying vec3 woodPosition;\n        varying vec3 woodNormal;`)
