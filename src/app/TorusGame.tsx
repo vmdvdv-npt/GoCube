@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { PointId } from '../core/topology/Topology';
 import type { GamePointHoverStatus } from '../presentation/GamePointHoverStatus';
 import type { Torus3DViewState } from '../presentation/Torus3DViewState';
@@ -205,7 +205,7 @@ export function TorusGame(props: TorusGameProps) {
     });
   }, [sourceInteraction]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     clearScheduledSwitch();
     switchGenerationRef.current += 1;
     setViewModel(props.controller.viewModel());
