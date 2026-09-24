@@ -15,11 +15,22 @@ const start9x9Game = async (page: Page): Promise<void> => {
   await expect(page.getByLabel('Torus 3D scene')).toHaveCount(0);
 };
 
+const wrap9 = (value: number): number => ((value % 9) + 9) % 9;
+
+const currentOffsets = async (page: Page): Promise<Readonly<{ x: number; y: number }>> => {
+  const board = page.locator('.torus-board');
+  return Object.freeze({
+    x: Number(await board.getAttribute('data-view-offset-x')),
+    y: Number(await board.getAttribute('data-view-offset-y')),
+  });
+};
+
 const captureShiftStart = async (
   page: Page,
   direction: 'left' | 'right' | 'up' | 'down',
+  stonePointId: string,
 ) =>
-  page.evaluate((panDirection) => {
+  page.evaluate(({ panDirection, logicalPointId }) => {
     const board = document.querySelector<SVGSVGElement>('.torus-board');
     const button = document.querySelector<HTMLButtonElement>(
       `[aria-label="Shift torus view ${panDirection}"]`,
@@ -39,18 +50,19 @@ const captureShiftStart = async (
       gridOpacity: grid?.getAttribute('opacity') ?? null,
       piecesOpacity: pieces?.getAttribute('opacity') ?? null,
       stoneCopies: board.querySelectorAll(
-        '.torus-board__stone[data-logical-point-id="0,0"]',
+        `.torus-board__stone[data-logical-point-id="${logicalPointId}"]`,
       ).length,
     };
-  }, direction);
+  }, { panDirection: direction, logicalPointId: stonePointId });
 
 const expectShift = async (
   page: Page,
   direction: 'left' | 'right' | 'up' | 'down',
   expectedOffsetX: number,
   expectedOffsetY: number,
+  stonePointId: string,
 ): Promise<void> => {
-  const snapshot = await captureShiftStart(page, direction);
+  const snapshot = await captureShiftStart(page, direction, stonePointId);
 
   expect(snapshot.animating).toBe('true');
   expect(snapshot.panDirection).toBe(direction);
@@ -74,20 +86,23 @@ const expectShift = async (
 test('Torus 2D arrows physically slide grid and stones with seamless wrap', async ({ page }) => {
   await start9x9Game(page);
 
+  const baseline = await currentOffsets(page);
+  const firstPointId = `${baseline.x},${baseline.y}`;
   const firstPoint = page.locator(
-    '.torus-board__hit-target[data-logical-point-id="0,0"][data-copy-role="primary"]',
+    `.torus-board__hit-target[data-logical-point-id="${firstPointId}"][data-copy-role="primary"]`,
   );
   await firstPoint.click();
   await expect(page.getByText('White to move')).toBeVisible();
   await expect(page.locator('.torus-board__edge-duplicates')).toHaveCount(0);
 
-  await expectShift(page, 'right', 1, 0);
-  await expectShift(page, 'left', 0, 0);
-  await expectShift(page, 'down', 0, 1);
-  await expectShift(page, 'up', 0, 0);
+  await expectShift(page, 'right', wrap9(baseline.x + 1), baseline.y, firstPointId);
+  await expectShift(page, 'left', baseline.x, baseline.y, firstPointId);
+  await expectShift(page, 'down', baseline.x, wrap9(baseline.y + 1), firstPointId);
+  await expectShift(page, 'up', baseline.x, baseline.y, firstPointId);
 
+  const secondPointId = `${wrap9(baseline.x + 4)},${wrap9(baseline.y + 4)}`;
   const secondPoint = page.locator(
-    '.torus-board__hit-target[data-logical-point-id="4,4"][data-copy-role="primary"]',
+    `.torus-board__hit-target[data-logical-point-id="${secondPointId}"][data-copy-role="primary"]`,
   );
   await secondPoint.click();
   await expect(page.getByText('Black to move')).toBeVisible();
@@ -97,8 +112,9 @@ test('Torus 2D arrows physically slide grid and stones with seamless wrap', asyn
 test('rapid Torus navigation ignores extra arrows and keeps sidebar actions available', async ({ page }) => {
   await start9x9Game(page);
 
+  const baseline = await currentOffsets(page);
   await page.locator(
-    '.torus-board__hit-target[data-logical-point-id="0,0"][data-copy-role="primary"]',
+    `.torus-board__hit-target[data-logical-point-id="${baseline.x},${baseline.y}"][data-copy-role="primary"]`,
   ).click();
   await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
 
@@ -148,21 +164,23 @@ test('rapid Torus navigation ignores extra arrows and keeps sidebar actions avai
   await expect(duplicateRegions).toBeEnabled();
   await expect(duplicateRegions).not.toBeChecked();
 
+  const afterRightX = wrap9(baseline.x + 1);
   await expect(board).toHaveAttribute('data-pan-animating', 'false', { timeout: 2_000 });
-  await expect(board).toHaveAttribute('data-view-offset-x', '1');
-  await expect(board).toHaveAttribute('data-view-offset-y', '0');
+  await expect(board).toHaveAttribute('data-view-offset-x', String(afterRightX));
+  await expect(board).toHaveAttribute('data-view-offset-y', String(baseline.y));
 
   // Once the active animation ends, the same command is accepted normally.
   await shiftDown.click();
   await expect(board).toHaveAttribute('data-pan-animating', 'true');
   await expect(board).toHaveAttribute('data-pan-animating', 'false', { timeout: 2_000 });
-  await expect(board).toHaveAttribute('data-view-offset-x', '1');
-  await expect(board).toHaveAttribute('data-view-offset-y', '1');
+  await expect(board).toHaveAttribute('data-view-offset-x', String(afterRightX));
+  await expect(board).toHaveAttribute('data-view-offset-y', String(wrap9(baseline.y + 1)));
 });
 
 test('Torus 2D drag-pan moves the board view without changing logical torus offsets', async ({ page }) => {
   await start9x9Game(page);
 
+  const baseline = await currentOffsets(page);
   const shell = page.locator('.torus-board-shell');
   const bounds = await shell.boundingBox();
   expect(bounds).not.toBeNull();
@@ -181,7 +199,7 @@ test('Torus 2D drag-pan moves the board view without changing logical torus offs
   }));
   expect(Math.abs(pan.x)).toBeGreaterThan(30);
   expect(Math.abs(pan.y)).toBeGreaterThan(20);
-  await expect(page.locator('.torus-board')).toHaveAttribute('data-view-offset-x', '0');
-  await expect(page.locator('.torus-board')).toHaveAttribute('data-view-offset-y', '0');
+  await expect(page.locator('.torus-board')).toHaveAttribute('data-view-offset-x', String(baseline.x));
+  await expect(page.locator('.torus-board')).toHaveAttribute('data-view-offset-y', String(baseline.y));
   await expect(page.getByText('Move 0')).toBeVisible();
 });
