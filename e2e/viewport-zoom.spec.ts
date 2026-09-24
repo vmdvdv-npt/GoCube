@@ -84,6 +84,44 @@ const visibleCubeHitNearestViewportCenter = async (page: Page): Promise<Locator>
   return page.locator(`.cube-2d-hit-area[data-point-id="${pointId}"]`);
 };
 
+const visibleTorusHitNearestViewportCenter = async (page: Page): Promise<Locator> => {
+  const pointId = await page
+    .locator('.torus-board__hit-target[data-copy-role="primary"]')
+    .evaluateAll((elements) => {
+      const game = document.querySelector<HTMLElement>('.torus-game')!.getBoundingClientRect();
+      const sidebar = document.querySelector<HTMLElement>('.game-summary')?.getBoundingClientRect();
+      const visibleLeft = sidebar?.right ?? game.left;
+      const centerX = (visibleLeft + game.right) / 2;
+      const centerY = (game.top + game.bottom) / 2;
+      const candidates = elements
+        .map((element) => {
+          const rect = element.getBoundingClientRect();
+          const x = rect.left + rect.width / 2;
+          const y = rect.top + rect.height / 2;
+          return {
+            pointId: element.getAttribute('data-logical-point-id'),
+            x,
+            y,
+            distance: Math.hypot(x - centerX, y - centerY),
+          };
+        })
+        .filter(
+          (candidate) =>
+            candidate.pointId &&
+            candidate.x >= visibleLeft &&
+            candidate.x <= game.right &&
+            candidate.y >= game.top &&
+            candidate.y <= game.bottom,
+        )
+        .sort((a, b) => a.distance - b.distance);
+      return candidates[0]?.pointId ?? null;
+    });
+  if (!pointId) throw new Error('Expected a visible Torus hit target');
+  return page.locator(
+    `.torus-board__hit-target[data-logical-point-id="${pointId}"][data-copy-role="primary"]`,
+  ).first();
+};
+
 const expectCubeNavigationAnchored = async (page: Page) => {
   const leftBoard = await requiredBox(
     page.locator('.cube-2d-board[data-layout-row="1"][data-layout-column="0"]'),
@@ -272,15 +310,13 @@ test('Torus drag-pan moves the zoomed visual shell without placing a stone and k
 
   const shell = page.locator('.torus-board-shell');
   const board = page.locator('.torus-board');
-  const target = page.locator(
-    '.torus-board__hit-target[data-logical-point-id="4,4"][data-copy-role="primary"]',
-  ).first();
   const turn = page.locator('.turn-indicator strong');
 
   await board.hover();
   await page.mouse.wheel(0, -450);
   await expect(shell).not.toHaveAttribute('data-view-zoom', '1.000');
 
+  const target = await visibleTorusHitNearestViewportCenter(page);
   const targetBefore = await requiredBox(target);
   const startX = targetBefore.x + targetBefore.width / 2;
   const startY = targetBefore.y + targetBefore.height / 2;
