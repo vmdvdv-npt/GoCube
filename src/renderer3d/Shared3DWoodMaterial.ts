@@ -11,18 +11,26 @@ export const createShared3DWoodMaterial = (
   let readyReported = false;
   let readyTimer: number | null = null;
 
-  const reportReady = (): void => {
-    if (disposed || readyReported) return;
+  const reportReady = (): boolean => {
+    if (disposed || readyReported) return false;
     readyReported = true;
     if (readyTimer !== null) {
       window.clearTimeout(readyTimer);
       readyTimer = null;
     }
     onTextureReady();
+    return true;
   };
 
   const texture = new THREE.TextureLoader().load('/assets/board/cube-walnut.png', () => {
-    reportReady();
+    if (disposed) {
+      texture.dispose();
+      return;
+    }
+    // If the bounded fallback already made the scene presentable, render once
+    // more so the late real walnut texture replaces it without waiting for a
+    // later user interaction.
+    if (!reportReady()) onTextureReady();
   }, undefined, () => {
     if (disposed) return;
     const fallback = document.createElement('canvas');
@@ -38,7 +46,7 @@ export const createShared3DWoodMaterial = (
   // Image decode/load can remain pending indefinitely in software/headless WebGL
   // environments. Keep renderer readiness bounded with the same neutral wood
   // fallback; a later successful TextureLoader completion still replaces the
-  // texture image and marks it for upload.
+  // texture image and requests a fresh render through onTextureReady.
   readyTimer = window.setTimeout(() => {
     if (disposed || readyReported) return;
     const fallback = document.createElement('canvas');
