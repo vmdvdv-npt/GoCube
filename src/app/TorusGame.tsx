@@ -161,7 +161,8 @@ export function TorusGame(props: TorusGameProps) {
   };
 
   const requestViewMode = (mode: TorusViewMode): void => {
-    if (startupPendingRef.current && mode !== '2d') return;
+    const cancelingStartup = startupPendingRef.current && mode === '2d';
+    if (startupPendingRef.current && !cancelingStartup) return;
     if (
       sceneTransitioning &&
       !startupPendingRef.current &&
@@ -181,7 +182,11 @@ export function TorusGame(props: TorusGameProps) {
         torus3DViewState.rotation,
       );
       spatialBridgeRef.current?.centerOn(anchor);
-      beginTo2D(generation);
+      if (cancelingStartup) {
+        finishTo2D(generation);
+      } else {
+        beginTo2D(generation);
+      }
       return;
     }
 
