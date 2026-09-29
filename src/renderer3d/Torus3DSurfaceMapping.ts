@@ -22,9 +22,9 @@ const LOGICAL_SNAP_EPSILON = 1e-9;
 const CROSS_SECTION_INTERVALS: Readonly<
   Record<TorusSize, readonly [number, number, number, number]>
 > = Object.freeze({
-  9: Object.freeze([3, 2, 3, 1]),
-  13: Object.freeze([4, 3, 4, 2]),
-  19: Object.freeze([6, 5, 6, 2]),
+  9: Object.freeze([3, 2, 3, 1] as const),
+  13: Object.freeze([4, 3, 4, 2] as const),
+  19: Object.freeze([6, 5, 6, 2] as const),
 });
 
 export type Torus3DSurfaceRegion = 'top' | 'outer' | 'bottom' | 'inner';
