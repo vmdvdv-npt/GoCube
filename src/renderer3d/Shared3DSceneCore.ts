@@ -2,9 +2,14 @@ import * as THREE from 'three';
 import type { PointId } from '../core/topology/Topology';
 import { pointerMovementExceedsDragThreshold } from '../presentation/PointerGesture';
 import {
+  advanceShared3DInertia,
   quaternionState,
+  SHARED_3D_INERTIA_SAMPLE_WINDOW_MS,
+  SHARED_3D_INERTIA_STOP_SPEED_RAD_PER_SECOND,
+  shared3DReleaseInertia,
   shared3DScreenSpaceDragRotation,
   shared3DWheelZoom,
+  type Shared3DAngularInertia,
   type Shared3DQuaternionState,
 } from './Shared3DInput';
 import {
@@ -15,6 +20,8 @@ import {
 export const SHARED_3D_BASE_CAMERA_DISTANCE = 5;
 export const SHARED_3D_ROTATION_SENSITIVITY = 0.008;
 export const SHARED_3D_ZOOM_SENSITIVITY = 0.001;
+
+const SHARED_3D_INERTIA_MAX_FRAME_GAP_MS = 120;
 
 export interface Shared3DViewTransform {
   readonly rotation: Shared3DQuaternionState;
@@ -182,6 +189,11 @@ export interface Shared3DPointerInputOptions {
   readonly zoomSensitivity?: number;
 }
 
+interface Shared3DRotationSample {
+  readonly atMs: number;
+  readonly rotation: THREE.Quaternion;
+}
+
 /** Shared pointer capture, click-vs-drag, rotation, hover/pick and wheel lifecycle. */
 export const attachShared3DPointerInput = (
   options: Shared3DPointerInputOptions,
@@ -189,28 +201,111 @@ export const attachShared3DPointerInput = (
   const { core } = options;
   const canvas = core.renderer.domElement;
   let wheelSettleTimer: number | null = null;
+  let inertiaFrameId: number | null = null;
+  let activeInertia: Shared3DAngularInertia | null = null;
   let drag: null | {
     readonly pointerId: number;
     readonly x: number;
     readonly y: number;
     readonly rotation: THREE.Quaternion;
+    readonly motionSamples: Shared3DRotationSample[];
     dragging: boolean;
   } = null;
 
   const blocked = (): boolean => options.interactionBlocked?.() ?? false;
-  const pointerDown = (event: PointerEvent): void => {
-    if (event.button !== 0 || blocked()) return;
-    const current = options.getViewTransform();
-    drag = {
-      pointerId: event.pointerId,
-      x: event.clientX,
-      y: event.clientY,
-      rotation: new THREE.Quaternion(
+
+  const settleMotion = (): void => {
+    core.restoreResolution();
+    core.renderNow();
+  };
+
+  const cancelInertia = (settle: boolean): void => {
+    const hadInertia = inertiaFrameId !== null || activeInertia !== null;
+    if (inertiaFrameId !== null) window.cancelAnimationFrame(inertiaFrameId);
+    inertiaFrameId = null;
+    activeInertia = null;
+    if (settle && hadInertia) settleMotion();
+  };
+
+  const startInertia = (inertia: Shared3DAngularInertia): void => {
+    cancelInertia(false);
+    activeInertia = inertia;
+    core.beginMotion();
+    let previousFrameAt = performance.now();
+
+    const frame = (now: number): void => {
+      if (!activeInertia) {
+        inertiaFrameId = null;
+        return;
+      }
+      if (blocked()) {
+        inertiaFrameId = null;
+        activeInertia = null;
+        return;
+      }
+
+      const frameGapMs = now - previousFrameAt;
+      previousFrameAt = now;
+      if (!Number.isFinite(frameGapMs) || frameGapMs <= 0) {
+        inertiaFrameId = window.requestAnimationFrame(frame);
+        return;
+      }
+      if (frameGapMs > SHARED_3D_INERTIA_MAX_FRAME_GAP_MS) {
+        inertiaFrameId = null;
+        activeInertia = null;
+        settleMotion();
+        return;
+      }
+
+      const current = options.getViewTransform();
+      const currentRotation = new THREE.Quaternion(
         current.rotation.x,
         current.rotation.y,
         current.rotation.z,
         current.rotation.w,
-      ),
+      );
+      const advanced = advanceShared3DInertia(
+        currentRotation,
+        activeInertia,
+        frameGapMs / 1000,
+      );
+      activeInertia = advanced.inertia;
+      const accepted = options.commitViewTransform({
+        rotation: quaternionState(advanced.rotation),
+        zoom: current.zoom,
+      });
+      applyShared3DViewTransform(core, accepted);
+
+      if (
+        activeInertia.speedRadPerSecond <= SHARED_3D_INERTIA_STOP_SPEED_RAD_PER_SECOND
+      ) {
+        inertiaFrameId = null;
+        activeInertia = null;
+        settleMotion();
+        return;
+      }
+      inertiaFrameId = window.requestAnimationFrame(frame);
+    };
+
+    inertiaFrameId = window.requestAnimationFrame(frame);
+  };
+
+  const pointerDown = (event: PointerEvent): void => {
+    if (event.button !== 0 || blocked()) return;
+    cancelInertia(true);
+    const current = options.getViewTransform();
+    const rotation = new THREE.Quaternion(
+      current.rotation.x,
+      current.rotation.y,
+      current.rotation.z,
+      current.rotation.w,
+    ).normalize();
+    drag = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      rotation,
+      motionSamples: [{ atMs: performance.now(), rotation: rotation.clone() }],
       dragging: false,
     };
     canvas.setPointerCapture(event.pointerId);
@@ -259,16 +354,44 @@ export const attachShared3DPointerInput = (
       zoom: options.getViewTransform().zoom,
     });
     applyShared3DViewTransform(core, accepted);
+
+    const sampleAtMs = performance.now();
+    drag.motionSamples.push({
+      atMs: sampleAtMs,
+      rotation: new THREE.Quaternion(
+        accepted.rotation.x,
+        accepted.rotation.y,
+        accepted.rotation.z,
+        accepted.rotation.w,
+      ).normalize(),
+    });
+    const sampleCutoffMs = sampleAtMs - SHARED_3D_INERTIA_SAMPLE_WINDOW_MS;
+    while (drag.motionSamples.length > 1 && drag.motionSamples[0]!.atMs < sampleCutoffMs) {
+      drag.motionSamples.shift();
+    }
   };
 
   const finishPointer = (event: PointerEvent, activate: boolean): void => {
     if (!drag || drag.pointerId !== event.pointerId) return;
-    const wasDragging = drag.dragging;
+    const finishedDrag = drag;
+    const wasDragging = finishedDrag.dragging;
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
     drag = null;
     if (wasDragging) {
-      core.restoreResolution();
-      core.renderNow();
+      let inertia: Shared3DAngularInertia | null = null;
+      if (activate && finishedDrag.motionSamples.length >= 2) {
+        const previousSample = finishedDrag.motionSamples[0]!;
+        const currentSample = finishedDrag.motionSamples[finishedDrag.motionSamples.length - 1]!;
+        inertia = shared3DReleaseInertia(
+          previousSample.rotation,
+          previousSample.atMs,
+          currentSample.rotation,
+          currentSample.atMs,
+          performance.now(),
+        );
+      }
+      if (inertia) startInertia(inertia);
+      else settleMotion();
     }
     if (wasDragging || !activate || options.inputDisabled() || blocked()) return;
     const pointId = options.pointFromClientPosition(event.clientX, event.clientY);
@@ -284,6 +407,7 @@ export const attachShared3DPointerInput = (
   const wheel = (event: WheelEvent): void => {
     event.preventDefault();
     if (blocked()) return;
+    cancelInertia(false);
     core.beginMotion();
     if (wheelSettleTimer !== null) window.clearTimeout(wheelSettleTimer);
     wheelSettleTimer = window.setTimeout(() => {
@@ -313,6 +437,7 @@ export const attachShared3DPointerInput = (
   canvas.addEventListener('wheel', wheel, { passive: false });
 
   return () => {
+    cancelInertia(false);
     if (wheelSettleTimer !== null) window.clearTimeout(wheelSettleTimer);
     canvas.removeEventListener('pointerdown', pointerDown);
     canvas.removeEventListener('pointermove', pointerMove);
