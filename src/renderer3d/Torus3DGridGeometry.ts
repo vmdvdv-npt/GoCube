@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import type { TorusSize } from '../core/topology/TorusTopology';
-import { torus3DSurfaceFromUv, type Torus3DSurfacePoint } from './Torus3DSurfaceMapping';
+import {
+  torus3DGridSurfaceFromLogicalUv,
+  type Torus3DSurfacePoint,
+} from './Torus3DSurfaceMapping';
 
 export interface Torus3DGridPaths {
   /** Cycles around the square central hole. */
@@ -19,7 +22,10 @@ const lifted = (sample: Torus3DSurfacePoint, lift: number): Torus3DSurfacePoint 
     }),
   });
 
-/** Exactly N closed paths in each toroidal direction, sampled through the shared surface map. */
+/**
+ * Exactly N closed paths in each toroidal direction. Grid lines and logical
+ * intersections share the same layout parameterization used by stones/picking.
+ */
 export const createTorus3DGridPaths = (
   size: TorusSize,
   samplesPerCycle = 512,
@@ -28,14 +34,20 @@ export const createTorus3DGridPaths = (
   const firstDirection = Array.from({ length: size }, (_, y) =>
     Object.freeze(
       Array.from({ length: samplesPerCycle + 1 }, (_, sampleIndex) =>
-        lifted(torus3DSurfaceFromUv(sampleIndex / samplesPerCycle, y / size), lift),
+        lifted(
+          torus3DGridSurfaceFromLogicalUv(size, sampleIndex / samplesPerCycle, y / size),
+          lift,
+        ),
       ),
     ),
   );
   const secondDirection = Array.from({ length: size }, (_, x) =>
     Object.freeze(
       Array.from({ length: samplesPerCycle + 1 }, (_, sampleIndex) =>
-        lifted(torus3DSurfaceFromUv(x / size, sampleIndex / samplesPerCycle), lift),
+        lifted(
+          torus3DGridSurfaceFromLogicalUv(size, x / size, sampleIndex / samplesPerCycle),
+          lift,
+        ),
       ),
     ),
   );
@@ -49,8 +61,6 @@ export const createTorus3DGridGeometry = (
   size: TorusSize,
   lift: number,
 ): THREE.BufferGeometry => {
-  // Narrow XY corner arcs need several samples so visible grid lines follow the
-  // same rounded parameterization instead of appearing to kink at square corners.
   const paths = createTorus3DGridPaths(size, 512, lift);
   const positions: number[] = [];
   for (const direction of [paths.firstDirection, paths.secondDirection]) {
