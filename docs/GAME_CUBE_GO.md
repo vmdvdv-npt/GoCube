@@ -1098,6 +1098,7 @@ Captures остаются statistics и не прибавляются повто
 ## Japanese breakdown
 
 Отдельно показываются:
+
 - territory;
 - captured stones;
 - dead opponent stones, добавленные к prisoners;
@@ -1213,9 +1214,11 @@ Torus 3D является полноценным игровым представ
 - квадратный внешний contour;
 - квадратное центральное отверстие;
 - преимущественно плоские surfaces;
-- очень узкие rounded transitions только на edges/corners.
+- очень узкие физические rounded transitions только на edges/corners.
 
 Основная игровая геометрия не имеет глобальной кривизны.
+
+Текущая деревянная геометрия Torus, включая silhouette, толщину, размер и форму центрального отверстия, внешний/внутренний contour и существующий физический radius edges/corners, не должна изменяться только ради раскладки grid. Grid layout должен оставаться совместимым с будущим увеличением физических радиусов без изменения logical topology или PointId.
 
 ## 41.2. Основные surfaces
 
@@ -1228,32 +1231,53 @@ Torus 3D является полноценным игровым представ
 
 Техническое деление на mesh segments не должно быть заметно пользователю: каждая такая часть визуально воспринимается как единая непрерывная игровая surface.
 
-## 41.3. Rounded transitions
+## 41.3. Grid layout и физические transitions
 
-- Rounded zones очень узкие.
-- Они только аккуратно соединяют плоскости.
-- Они не должны заметно изгибать основные игровые surfaces.
-- Игровые intersection points располагаются только на плоских surfaces.
-- На rounded edge/corner zones stones не ставятся.
-- Grid lines проходят через rounded zones и непрерывно соединяют соседние flat surfaces.
+Логическая доска остаётся тем же `N × N` Torus: количество PointId, их logical identity, соседства и wraparound-связи не меняются. Меняется только spatial layout grid на поверхности Torus 3D.
 
-## 41.4. Размеры
+Игровые intersection points располагаются на плоских surfaces; stones на физических rounded edge/corner zones не ставятся. Основные участки grid также должны находиться на плоскостях, а corners/edges используются преимущественно как короткие связующие переходы между соседними flat regions.
 
-Одна и та же 3D geometry используется для Torus 9×9, 13×13 и 19×19.
+Grid transition визуально строится как согласованный мотив `straight → large smooth rounded transition → straight` без резких ломаных. Одинаковые параллельные transitions должны начинать и заканчивать изгиб синхронно и использовать один параметрический характер кривизны, а не отдельные вручную подобранные curves.
 
-При смене размера меняются grid density и stone spacing/size; форма самого 3D Torus и число основных visual surfaces не меняются.
+Визуальный radius grid transition должен быть существенно крупнее прежнего там, где текущая деревянная surface позволяет это сделать без изменения wood geometry. Если существующий физический cross-section ограничивает возможный radius, приоритет имеет сохранение wood geometry и topology; layout должен оставаться построенным через semantic flat/transition regions так, чтобы дальнейшее увеличение физического radius не требовало переразложения PointId.
 
-## 41.5. Два toroidal направления grid
+## 41.4. Размеры и распределение cross-section
 
-Одно направление grid циклически идёт вокруг центрального square hole.
+Одна и та же 3D geometry используется для Torus 9×9, 13×13 и 19×19. При смене размера меняются grid density и stone spacing/size; форма самого 3D Torus и число основных visual surfaces не меняются.
 
-Второе идёт поперёк cross-section через цикл:
+Поперечный toroidal cycle распределяется по четырём типам surfaces строго так:
+
+| Board | Top | Outer wall | Bottom | Inner wall | Total |
+|---|---:|---:|---:|---:|---:|
+| 9×9 | 3 | 2 | 3 | 1 | 9 |
+| 13×13 | 4 | 3 | 4 | 2 | 13 |
+| 19×19 | 6 | 5 | 6 | 2 | 19 |
+
+Эти распределения являются точным product requirement, а не ориентиром.
+
+## 41.5. Квадратная grid и margins
+
+На основных плоских игровых участках используется один physical `gridStep` по обоим toroidal направлениям. В surface-space ширина и высота локальной cell должны восприниматься как одинаковые; явно вытянутые прямоугольные cells на flat regions запрещены.
+
+Grid не растягивается до краёв только ради заполнения поверхности. Для каждой плоской region расстояние от physical edge до ближайшей основной параллельной grid line должно быть больше одного `gridStep`. Внутри конкретной surface и конкретной оси противоположные margins равны, чтобы grid area была локально центрирована; глобально одинаковый margin для top/outer/bottom/inner не требуется.
+
+Возле центрального отверстия используется увеличенный visual margin. В частности, `inner = 1` на 9×9 и `inner = 2` на 13×13/19×19 не растягиваются на всю внутреннюю wall. Значительное количество свободного дерева возле inner hole является правильным результатом, а центральное отверстие должно визуально оставаться крупным.
+
+При конфликте требований приоритет: правильное количество интервалов и topology → квадратный gridStep → большие margins → аккуратные transitions → заполнение свободной поверхности.
+
+## 41.6. Два toroidal направления и единая spatial model
+
+Одно направление grid циклически идёт вокруг центрального square hole. Второе идёт поперёк cross-section через цикл:
 
 `top → outer wall → bottom → corresponding inner wall → top`
 
-Grid непрерывно проходит этот cycle через узкие rounded transitions и визуально не обрывается на переходах.
+Каждое направление содержит ровно `N` intervals и остаётся непрерывным. Оба направления используют одну согласованную surface parameterization; их нельзя подгонять независимо так, чтобы intersections перестали совпадать.
 
-## 41.6. Interaction
+Grid intersections, stone placement, hover, picking/raycasting, last-move marker, allowed/forbidden markers и endgame overlays должны использовать один и тот же spatial mapping от logical PointId к 3D position. Отдельная визуальная grid, расходящаяся с gameplay positions, запрещена.
+
+Для разных board sizes допускается только таблица распределения intervals выше. Остальные positions выводятся алгоритмически из общих параметров вроде `gridStep`, surface region, margin и transition radius/length; три независимых набора вручную подобранных координат не используются.
+
+## 41.7. Interaction
 
 Torus 3D наследует Cube 3D interaction полностью, кроме геометрически обусловленного mapping поверхности:
 
@@ -1267,7 +1291,7 @@ Torus 3D наследует Cube 3D interaction полностью, кроме �
 
 Stone можно поставить на любую видимую и доступную допустимую игровую точку плоской surface, включая top, outer, inner и bottom parts.
 
-## 41.7. Navigation arrows и Reset View
+## 41.8. Navigation arrows и Reset View
 
 В Torus 3D используется тот же активный cross-shaped control `← ↑ • ↓ →`, что в Cube 3D. Кнопки не становятся серыми или disabled только из-за topology Torus.
 
@@ -1285,7 +1309,7 @@ Stone можно поставить на любую видимую и досту
 - одновременно хорошо читаются central hole, top, inner и outer surfaces;
 - zoom возвращается к стандартному значению Torus 3D.
 
-## 41.8. Torus 2D ↔ Torus 3D spatial anchor
+## 41.9. Torus 2D ↔ Torus 3D spatial anchor
 
 При Torus 2D → 3D:
 
@@ -1302,7 +1326,7 @@ Stone можно поставить на любую видимую и досту
 
 Физически точная fold/unfold animation, подобная сборке Cube, для Torus не требуется. Переход должен быть коротким, мягким и пространственно понятным.
 
-## 41.9. Стартовая animation Torus 3D
+## 41.10. Стартовая animation Torus 3D
 
 Новая Torus-партия использует тот же характер короткой appearance animation, что Cube 3D:
 
@@ -1310,7 +1334,7 @@ Stone можно поставить на любую видимую и досту
 - плавно приближается;
 - выполняет небольшой спокойный rotation;
 - не делает несколько оборотов и не превращается в заставку;
-- заканчивает движение точно в standard Torus view из §41.7;
+- заканчивает движение точно в standard Torus view из §41.8;
 - во время appearance stone placement/manual rotation/zoom временно недоступны;
 - после остановки управление сразу доступно.
 
