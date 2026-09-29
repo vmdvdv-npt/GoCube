@@ -52,7 +52,7 @@ export class TorusGameController {
       topology: this.topology,
       boardSize: this.size,
       ruleSet: snapshot?.ruleSet ?? options.ruleSet ?? 'chinese',
-      komi: snapshot?.komi ?? options.komi ?? 0.5,
+      komi: snapshot?.komi ?? options.komi ?? 1.5,
       persistence: options.persistence,
       snapshot,
     });
