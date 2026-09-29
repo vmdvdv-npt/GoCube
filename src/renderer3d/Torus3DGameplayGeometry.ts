@@ -1,42 +1,22 @@
 import * as THREE from 'three';
 import type { PointId } from '../core/topology/Topology';
-import { TorusTopology, type TorusSize } from '../core/topology/TorusTopology';
+import type { TorusSize } from '../core/topology/TorusTopology';
 import {
   SHARED_3D_MARKER_DIAMETER_PITCH_RATIO,
   SHARED_3D_MARKER_LIFT_PITCH_RATIO,
   SHARED_3D_STONE_DIAMETER_PITCH_RATIO,
   SHARED_3D_STONE_LIFT_PITCH_RATIO,
 } from './Shared3DGameplayVisuals';
-import { torus3DSurfacePoint } from './Torus3DSurfaceMapping';
-
-const pitchCache = new Map<TorusSize, number>();
+import {
+  createTorus3DGridLayout,
+  torus3DSurfacePoint,
+} from './Torus3DSurfaceMapping';
 
 const vector = (value: Readonly<{ x: number; y: number; z: number }>): THREE.Vector3 =>
   new THREE.Vector3(value.x, value.y, value.z);
 
-export const torus3DGridPitch = (size: TorusSize): number => {
-  const cached = pitchCache.get(size);
-  if (cached !== undefined) return cached;
-  let minimum = Number.POSITIVE_INFINITY;
-  const topology = new TorusTopology(size);
-  for (const pointId of topology.points()) {
-    const [xText, yText] = pointId.split(',');
-    const x = Number(xText);
-    const y = Number(yText);
-    const source = vector(torus3DSurfacePoint(size, pointId).position);
-    for (const neighbor of [`${(x + 1) % size},${y}`, `${x},${(y + 1) % size}`]) {
-      minimum = Math.min(
-        minimum,
-        source.distanceTo(vector(torus3DSurfacePoint(size, neighbor).position)),
-      );
-    }
-  }
-  if (!Number.isFinite(minimum) || minimum <= 0) {
-    throw new Error(`Could not derive Torus 3D grid pitch for ${size}x${size}`);
-  }
-  pitchCache.set(size, minimum);
-  return minimum;
-};
+export const torus3DGridPitch = (size: TorusSize): number =>
+  createTorus3DGridLayout(size).gridStep;
 
 /** Stable local frame: local X=tangent, local Y=surface normal, local Z=bitangent. */
 export const torus3DSurfaceAlignedMatrix = (
