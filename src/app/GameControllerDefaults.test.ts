@@ -3,12 +3,12 @@ import { Cube2DGameController } from './Cube2DGameController';
 import { TorusGameController } from './TorusGameController';
 
 describe('game controller defaults', () => {
-  it('defaults new Cube and Torus sessions to komi 0.5', () => {
+  it('defaults new Cube and Torus sessions to komi 1.5', () => {
     const cube = new Cube2DGameController();
     const torus = new TorusGameController();
 
-    expect(cube.snapshot().komi).toBe(0.5);
-    expect(torus.snapshot().komi).toBe(0.5);
+    expect(cube.snapshot().komi).toBe(1.5);
+    expect(torus.snapshot().komi).toBe(1.5);
 
     cube.dispose();
     torus.dispose();
