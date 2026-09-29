@@ -15,8 +15,37 @@ import {
   shared3DWheelZoom,
 } from './Shared3DInput';
 import { SHARED_3D_PERFORMANCE_BUDGET } from './Shared3DPerformance';
-import { torus3DSurfaceFromUv, torus3DSurfacePoint } from './Torus3DSurfaceMapping';
+import {
+  createTorus3DGridLayout,
+  TORUS_3D_BEVEL_SIZE,
+  torus3DSurfaceFromUv,
+  torus3DSurfacePoint,
+  type Torus3DSurfacePoint,
+  type Torus3DSurfaceRegion,
+} from './Torus3DSurfaceMapping';
 import { createTorus3DSurfaceGeometry } from './Torus3DSurfaceGeometry';
+
+const EXPECTED_CROSS_SECTION_INTERVALS: Record<
+  TorusSize,
+  readonly [number, number, number, number]
+> = {
+  9: [3, 2, 3, 1],
+  13: [4, 3, 4, 2],
+  19: [6, 5, 6, 2],
+};
+
+const surfaceRegion = (sample: Torus3DSurfacePoint): Torus3DSurfaceRegion => {
+  if (sample.normal.z > 0.99) return 'top';
+  if (sample.normal.z < -0.99) return 'bottom';
+  const radialDot = sample.position.x * sample.normal.x + sample.position.y * sample.normal.y;
+  return radialDot > 0 ? 'outer' : 'inner';
+};
+
+const pointDistance = (a: Torus3DSurfacePoint, b: Torus3DSurfacePoint): number => Math.hypot(
+  a.position.x - b.position.x,
+  a.position.y - b.position.y,
+  a.position.z - b.position.z,
+);
 
 describe('shared 3D foundation', () => {
   it('keeps Cube screen rotation and performance on shared implementations', () => {
@@ -28,6 +57,94 @@ describe('shared 3D foundation', () => {
     expect(shared3DWheelZoom(1, -10000, 0.001, 0.65, 2.5)).toBe(2.5);
     expect(shared3DWheelZoom(1, 10000, 0.001, 0.65, 2.5)).toBe(0.65);
   });
+});
+
+describe('Torus 3D square grid layout', () => {
+  for (const size of TORUS_SIZES) {
+    it(`uses the required ${size}x${size} cross-section interval distribution and margins`, () => {
+      const layout = createTorus3DGridLayout(size);
+      expect([
+        layout.topIntervals,
+        layout.outerIntervals,
+        layout.bottomIntervals,
+        layout.innerIntervals,
+      ]).toEqual(EXPECTED_CROSS_SECTION_INTERVALS[size]);
+      expect(layout.regions.map((region) => region.intervals)).toEqual(
+        EXPECTED_CROSS_SECTION_INTERVALS[size],
+      );
+      expect(layout.regions.reduce((total, region) => total + region.intervals, 0)).toBe(size);
+      expect(layout.perimeterIntervals.reduce((total, count) => total + count, 0)).toBe(size);
+      expect(layout.gridStep).toBeGreaterThan(0);
+      expect(layout.outerMargin).toBeGreaterThan(layout.gridStep);
+      expect(layout.innerMargin).toBeGreaterThan(layout.gridStep);
+      expect(layout.innerMargin).toBeGreaterThan(layout.outerMargin);
+      expect(layout.transitionRadius).toBeGreaterThan(TORUS_3D_BEVEL_SIZE * 3);
+    });
+
+    it(`places ${size}x${size} logical intersections on the required flat surface regions`, () => {
+      const counts: Record<Torus3DSurfaceRegion, number> = {
+        top: 0,
+        outer: 0,
+        bottom: 0,
+        inner: 0,
+      };
+      const topology = new TorusTopology(size);
+      expect(topology.points()).toHaveLength(size * size);
+      for (const pointId of topology.points()) {
+        counts[surfaceRegion(torus3DSurfacePoint(size, pointId))] += 1;
+      }
+      const [top, outer, bottom, inner] = EXPECTED_CROSS_SECTION_INTERVALS[size];
+      expect(counts).toEqual({
+        top: top * size,
+        outer: outer * size,
+        bottom: bottom * size,
+        inner: inner * size,
+      });
+      expect(topology.neighbors('0,0')).toContain(`${size - 1},0`);
+      expect(topology.neighbors('0,0')).toContain(`0,${size - 1}`);
+    });
+
+    it(`keeps ${size}x${size} flat grid pitch square in both toroidal directions`, () => {
+      const layout = createTorus3DGridLayout(size);
+      const topology = new TorusTopology(size);
+      let checkedPairs = 0;
+      for (const pointId of topology.points()) {
+        const [xText, yText] = pointId.split(',');
+        const x = Number(xText);
+        const y = Number(yText);
+        const source = torus3DSurfacePoint(size, pointId);
+        for (const neighborId of [`${(x + 1) % size},${y}`, `${x},${(y + 1) % size}`]) {
+          const target = torus3DSurfacePoint(size, neighborId);
+          const normalDot =
+            source.normal.x * target.normal.x +
+            source.normal.y * target.normal.y +
+            source.normal.z * target.normal.z;
+          const tangentDot =
+            source.tangent.x * target.tangent.x +
+            source.tangent.y * target.tangent.y +
+            source.tangent.z * target.tangent.z;
+          if (normalDot < 0.999999 || tangentDot < 0.999999) continue;
+          expect(pointDistance(source, target)).toBeCloseTo(layout.gridStep, 6);
+          checkedPairs += 1;
+        }
+      }
+      expect(checkedPairs).toBeGreaterThan(size);
+      expect(torus3DGridPitch(size)).toBeCloseTo(layout.gridStep, 6);
+    });
+
+    it(`uses one ${size}x${size} spatial model for grid intersections and gameplay points`, () => {
+      const paths = createTorus3DGridPaths(size, size);
+      for (let y = 0; y < size; y += 1) {
+        for (let x = 0; x < size; x += 1) {
+          const point = torus3DSurfacePoint(size, `${x},${y}`);
+          const firstDirectionPoint = paths.firstDirection[y]![x]!;
+          const secondDirectionPoint = paths.secondDirection[x]![y]!;
+          expect(firstDirectionPoint.position).toEqual(point.position);
+          expect(secondDirectionPoint.position).toEqual(point.position);
+        }
+      }
+    });
+  }
 });
 
 describe('Torus 3D unified surface mapping', () => {
@@ -48,15 +165,10 @@ describe('Torus 3D unified surface mapping', () => {
           first.normal.y * first.tangent.y +
           first.normal.z * first.tangent.z,
         ).toBeCloseTo(0, 6);
-        // Logical intersections must never land on the rounded XY corner arcs.
+        // Logical intersections remain on straight XY edge segments; rounded
+        // transitions are connector geometry between gameplay intersections.
         expect(Math.min(Math.abs(first.tangent.x), Math.abs(first.tangent.y))).toBeCloseTo(0, 6);
-        const vertical = first.normal.z;
-        if (vertical > 0.99) surfaceKinds.add('top');
-        else if (vertical < -0.99) surfaceKinds.add('bottom');
-        else {
-          const radialDot = first.position.x * first.normal.x + first.position.y * first.normal.y;
-          surfaceKinds.add(radialDot > 0 ? 'outer' : 'inner');
-        }
+        surfaceKinds.add(surfaceRegion(first));
         positions.add([
           first.position.x.toFixed(9),
           first.position.y.toFixed(9),
@@ -68,7 +180,7 @@ describe('Torus 3D unified surface mapping', () => {
     });
   }
 
-  it('rounds the shared XY square perimeter and stays continuous through a corner', () => {
+  it('keeps the physical wood mapping unchanged and continuous through its existing corner', () => {
     const curved = torus3DSurfaceFromUv(0.1225, 0.25);
     expect(Math.abs(curved.tangent.x)).toBeGreaterThan(0.1);
     expect(Math.abs(curved.tangent.y)).toBeGreaterThan(0.1);
@@ -79,11 +191,7 @@ describe('Torus 3D unified surface mapping', () => {
     const arcStartAfter = torus3DSurfaceFromUv(0.120001, 0.25);
     const edgeBefore = torus3DSurfaceFromUv(0.124999, 0.25);
     const edgeAfter = torus3DSurfaceFromUv(0.125001, 0.25);
-    const distance = (a: typeof curved, b: typeof curved): number => Math.hypot(
-      a.position.x - b.position.x,
-      a.position.y - b.position.y,
-      a.position.z - b.position.z,
-    );
+    const distance = (a: typeof curved, b: typeof curved): number => pointDistance(a, b);
 
     expect(distance(arcStartBefore, arcStartAfter)).toBeLessThan(0.001);
     expect(distance(edgeBefore, edgeAfter)).toBeLessThan(0.001);
@@ -134,16 +242,9 @@ describe('Torus 3D gameplay transforms', () => {
 });
 
 describe('Torus 3D production picking', () => {
-  const representativePoint = (size: TorusSize, kind: 'top' | 'bottom' | 'outer' | 'inner'): string => {
+  const representativePoint = (size: TorusSize, kind: Torus3DSurfaceRegion): string => {
     for (const pointId of new TorusTopology(size).points()) {
-      const sample = torus3DSurfacePoint(size, pointId);
-      if (kind === 'top' && sample.normal.z > 0.99) return pointId;
-      if (kind === 'bottom' && sample.normal.z < -0.99) return pointId;
-      if (Math.abs(sample.normal.z) < 0.01) {
-        const dot = sample.position.x * sample.normal.x + sample.position.y * sample.normal.y;
-        if (kind === 'outer' && dot > 0) return pointId;
-        if (kind === 'inner' && dot < 0) return pointId;
-      }
+      if (surfaceRegion(torus3DSurfacePoint(size, pointId)) === kind) return pointId;
     }
     throw new Error(`Missing representative ${kind} point`);
   };
