@@ -1,3 +1,4 @@
+import type { RuleSet } from '../../core/game/types';
 import { TORUS_SIZES, type TorusSize } from '../../core/topology/TorusTopology';
 import { isCubeUiSize, type CubeUiSize } from '../CubeGameConfig';
 import {
@@ -16,7 +17,10 @@ interface StoredPreferences {
   readonly lastGameMode: UserPreferences['lastGameMode'];
   readonly lastCubeSize: CubeUiSize | null;
   readonly lastTorusSize: TorusSize | null;
+  readonly lastRuleSet: RuleSet | null;
   readonly lastKomi: number | null;
+  readonly lastBotCheckpointId: string | null;
+  readonly lastBotMctsSimulations: number | null;
   readonly showTorusDuplicateRegions: boolean;
 }
 
@@ -29,10 +33,19 @@ const isGameMode = (value: unknown): value is NonNullable<UserPreferences['lastG
 const isTorusSize = (value: unknown): value is TorusSize =>
   typeof value === 'number' && TORUS_SIZES.some((size) => size === value);
 
+const isRuleSet = (value: unknown): value is RuleSet =>
+  value === 'japanese' || value === 'chinese';
+
 const isNormalizedKomi = (value: unknown): value is number =>
   typeof value === 'number' &&
   Number.isFinite(value) &&
   value === Math.floor(value) + 0.5;
+
+const isCheckpointId = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim().length > 0;
+
+const isMctsSimulations = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 
 const parsePreferences = (value: unknown): UserPreferences | null => {
   if (!isRecord(value) || value.version !== PREFERENCES_VERSION) return null;
@@ -40,18 +53,27 @@ const parsePreferences = (value: unknown): UserPreferences | null => {
   const gameMode = value.lastGameMode ?? null;
   const cubeSize = value.lastCubeSize;
   const torusSize = value.lastTorusSize;
+  const ruleSet = value.lastRuleSet ?? null;
   const komi = value.lastKomi ?? null;
+  const botCheckpointId = value.lastBotCheckpointId ?? null;
+  const botMctsSimulations = value.lastBotMctsSimulations ?? null;
   if (gameMode !== null && !isGameMode(gameMode)) return null;
   if (cubeSize !== null && !isCubeUiSize(cubeSize)) return null;
   if (torusSize !== null && !isTorusSize(torusSize)) return null;
+  if (ruleSet !== null && !isRuleSet(ruleSet)) return null;
   if (komi !== null && !isNormalizedKomi(komi)) return null;
+  if (botCheckpointId !== null && !isCheckpointId(botCheckpointId)) return null;
+  if (botMctsSimulations !== null && !isMctsSimulations(botMctsSimulations)) return null;
   if (typeof value.showTorusDuplicateRegions !== 'boolean') return null;
 
   return Object.freeze({
     lastGameMode: gameMode,
     lastCubeSize: cubeSize,
     lastTorusSize: torusSize,
+    lastRuleSet: ruleSet,
     lastKomi: komi,
+    lastBotCheckpointId: botCheckpointId,
+    lastBotMctsSimulations: botMctsSimulations,
     showTorusDuplicateRegions: value.showTorusDuplicateRegions,
   });
 };
@@ -101,7 +123,10 @@ export class LocalStoragePreferencesStorage implements PreferencesStorage {
       lastGameMode: preferences.lastGameMode,
       lastCubeSize: preferences.lastCubeSize,
       lastTorusSize: preferences.lastTorusSize,
+      lastRuleSet: preferences.lastRuleSet,
       lastKomi: preferences.lastKomi,
+      lastBotCheckpointId: preferences.lastBotCheckpointId,
+      lastBotMctsSimulations: preferences.lastBotMctsSimulations,
       showTorusDuplicateRegions: preferences.showTorusDuplicateRegions,
     });
     this.storage.setItem(this.key, JSON.stringify(stored));
