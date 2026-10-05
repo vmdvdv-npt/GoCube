@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { StoneColor } from '../core/game/types';
 import type { NewGameSettings } from './GameApplication';
 import type {
@@ -33,6 +33,8 @@ const modelSummary = (checkpoint: AlphaZeroCheckpointDescriptor): string => {
 export interface PlayVsBotLauncherProps {
   readonly settings: NewGameSettings;
   readonly gateway: AlphaZeroGateway;
+  readonly initialCheckpointId?: string | null;
+  readonly initialMctsSimulations?: number | null;
   readonly onStart: (options: {
     humanColor: StoneColor;
     checkpoint: AlphaZeroCheckpointDescriptor;
@@ -43,10 +45,12 @@ export interface PlayVsBotLauncherProps {
 export function PlayVsBotLauncher({
   settings,
   gateway,
+  initialCheckpointId = null,
+  initialMctsSimulations = null,
   onStart,
 }: PlayVsBotLauncherProps) {
   const [humanColor, setHumanColor] = useState<HumanColorChoice>('black');
-  const [mcts, setMcts] = useState('128');
+  const [mcts, setMcts] = useState(() => String(initialMctsSimulations ?? 128));
   const [selectedCheckpoint, setSelectedCheckpoint] =
     useState<AlphaZeroCheckpointDescriptor | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -61,6 +65,30 @@ export function PlayVsBotLauncher({
     }) === null
       ? selectedCheckpoint
       : null;
+
+  useEffect(() => {
+    if (!initialCheckpointId) {
+      setSelectedCheckpoint(null);
+      return;
+    }
+
+    let cancelled = false;
+    void gateway
+      .listCheckpoints()
+      .then((checkpoints) => {
+        if (cancelled) return;
+        setSelectedCheckpoint(
+          checkpoints.find((checkpoint) => checkpoint.id === initialCheckpointId) ?? null,
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setSelectedCheckpoint(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [gateway, initialCheckpointId]);
 
   const startBotGame = (checkpoint: AlphaZeroCheckpointDescriptor): void => {
     if (parsedMcts === null) return;
@@ -160,7 +188,7 @@ export function PlayVsBotLauncher({
           size={settings.size}
           ruleSet={settings.ruleSet}
           komi={settings.komi}
-          initialCheckpointId={selectedCheckpoint?.id}
+          initialCheckpointId={selectedCheckpoint?.id ?? initialCheckpointId ?? undefined}
           onCancel={() => setDialogOpen(false)}
           onConfirm={(checkpoint) => {
             setSelectedCheckpoint(checkpoint);
