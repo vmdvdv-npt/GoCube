@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('new game uses board-size buttons and keeps Japanese rules as the default', async ({ page }) => {
+test('new game uses Japanese fallback and remembers the last started rules', async ({ page }) => {
   await page.goto('/');
 
   const sizes = page.locator('.board-size-options');
@@ -78,7 +78,10 @@ test('new game uses board-size buttons and keeps Japanese rules as the default',
 
   await expect(page.getByTestId('new-game-settings-grid')).toBeVisible();
   await expect(page.getByLabel('Rules').locator('option')).toHaveText(['Japanese', 'Chinese']);
-  await expect(page.getByLabel('Rules')).toHaveValue('japanese');
+  await expect(page.getByLabel('Rules')).toHaveValue('chinese');
+
+  await page.reload();
+  await expect(page.getByLabel('Rules')).toHaveValue('chinese');
 });
 
 test('new game uses a compact two-column layout with animated topology preview', async ({ page }) => {

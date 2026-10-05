@@ -43,6 +43,10 @@ type BotPresentationAction = Readonly<{
   sequence: number;
   result: SharedGameActionResult;
 }>;
+type BotPreferenceUpdate = Readonly<{
+  checkpointId: string;
+  mctsSimulations: number;
+}>;
 
 export interface AppProps {
   readonly alphaZeroGateway?: AlphaZeroGateway;
@@ -63,6 +67,8 @@ const preferredSizeForMode = (
   mode === 'cube-2d'
     ? preferences.lastCubeSize ?? defaultSizeForMode(mode)
     : preferences.lastTorusSize ?? defaultSizeForMode(mode);
+const preferredRuleSet = (preferences: UserPreferences): RuleSet =>
+  preferences.lastRuleSet ?? 'japanese';
 const preferredKomi = (preferences: UserPreferences): number =>
   preferences.lastKomi ?? DEFAULT_KOMI;
 const modeLabel = (mode: GameMode): string =>
@@ -126,6 +132,7 @@ export function App({ alphaZeroGateway, gameApplication }: AppProps = {}) {
       topologyPreviewTargetRef.current = initialMode;
       setGameMode(initialMode);
       setSize(preferredSizeForMode(initialMode, hydrated));
+      setRuleSet(preferredRuleSet(hydrated));
       setKomi(String(preferredKomi(hydrated)));
       setSavedGame(summary);
       setScreen(summary ? 'resume' : 'settings');
@@ -170,7 +177,7 @@ export function App({ alphaZeroGateway, gameApplication }: AppProps = {}) {
       setTopologyPreviewTransition(null);
       setGameMode(nextMode);
       setSize(preferredSizeForMode(nextMode, preferences));
-      setRuleSet('japanese');
+      setRuleSet(preferredRuleSet(preferences));
       setKomi(String(preferredKomi(preferences)));
       setScreen('settings');
     } catch (caught) {
@@ -202,20 +209,26 @@ export function App({ alphaZeroGateway, gameApplication }: AppProps = {}) {
     return { gameMode, size, ruleSet, komi: normalizeKomi(parsed) };
   };
 
-  const savePreferences = async (normalizedKomi: number): Promise<void> => {
+  const savePreferences = async (
+    nextSettings: NewGameSettings,
+    botUpdate?: BotPreferenceUpdate,
+  ): Promise<void> => {
     const stored = await preferencesStorage.loadPreferences().catch(() => preferences);
     const next: UserPreferences = Object.freeze({
       ...stored,
-      lastGameMode: gameMode,
+      lastGameMode: nextSettings.gameMode,
       lastCubeSize:
-        gameMode === 'cube-2d'
-          ? (size as UserPreferences['lastCubeSize'])
+        nextSettings.gameMode === 'cube-2d'
+          ? (nextSettings.size as UserPreferences['lastCubeSize'])
           : stored.lastCubeSize,
       lastTorusSize:
-        gameMode === 'torus-2d'
-          ? (size as UserPreferences['lastTorusSize'])
+        nextSettings.gameMode === 'torus-2d'
+          ? (nextSettings.size as UserPreferences['lastTorusSize'])
           : stored.lastTorusSize,
-      lastKomi: normalizedKomi,
+      lastRuleSet: nextSettings.ruleSet,
+      lastKomi: nextSettings.komi,
+      lastBotCheckpointId: botUpdate?.checkpointId ?? stored.lastBotCheckpointId,
+      lastBotMctsSimulations: botUpdate?.mctsSimulations ?? stored.lastBotMctsSimulations,
     });
     setPreferences(next);
     try {
@@ -236,7 +249,7 @@ export function App({ alphaZeroGateway, gameApplication }: AppProps = {}) {
     }
     try {
       const next = await application.createNewGame(nextSettings);
-      await savePreferences(nextSettings.komi);
+      await savePreferences(nextSettings);
       setActiveGame(next);
       setGameInstanceKey((value) => value + 1);
       setScreen('game');
@@ -295,7 +308,10 @@ export function App({ alphaZeroGateway, gameApplication }: AppProps = {}) {
     setExternalAction(null);
     setGameInstanceKey((value) => value + 1);
     setScreen('game');
-    await savePreferences(nextSettings.komi);
+    await savePreferences(nextSettings, {
+      checkpointId: checkpoint.id,
+      mctsSimulations,
+    });
 
     if (humanColor === 'white') {
       void runtime.orchestrator.start().catch(() => {
@@ -532,6 +548,8 @@ export function App({ alphaZeroGateway, gameApplication }: AppProps = {}) {
               <PlayVsBotLauncher
                 settings={currentSettings}
                 gateway={gateway}
+                initialCheckpointId={preferences.lastBotCheckpointId}
+                initialMctsSimulations={preferences.lastBotMctsSimulations}
                 onStart={(options) => void launchBotGame(options)}
               />
             ) : null}
