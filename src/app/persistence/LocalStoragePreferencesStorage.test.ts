@@ -19,7 +19,7 @@ class MemoryStorage {
 }
 
 describe('LocalStoragePreferencesStorage', () => {
-  it('defaults to no remembered board type, size, or komi and duplicate regions off', async () => {
+  it('defaults to no remembered game, rules, or bot settings and duplicate regions off', async () => {
     const storage = new MemoryStorage();
     const preferences = new LocalStoragePreferencesStorage(storage, 'test:preferences');
 
@@ -33,7 +33,10 @@ describe('LocalStoragePreferencesStorage', () => {
       lastGameMode: 'cube-2d' as const,
       lastCubeSize: 6 as const,
       lastTorusSize: 13 as const,
+      lastRuleSet: 'chinese' as const,
       lastKomi: 6.5,
+      lastBotCheckpointId: 'torus9-M0246',
+      lastBotMctsSimulations: 500,
       showTorusDuplicateRegions: true,
     });
 
@@ -42,7 +45,7 @@ describe('LocalStoragePreferencesStorage', () => {
     await expect(preferences.loadPreferences()).resolves.toEqual(expected);
   });
 
-  it('loads older preference payloads without board type or komi', async () => {
+  it('loads older preference payloads without rules or bot settings', async () => {
     const storage = new MemoryStorage();
     storage.values.set(
       'test:preferences',
@@ -59,7 +62,10 @@ describe('LocalStoragePreferencesStorage', () => {
       lastGameMode: null,
       lastCubeSize: 5,
       lastTorusSize: 19,
+      lastRuleSet: null,
       lastKomi: null,
+      lastBotCheckpointId: null,
+      lastBotMctsSimulations: null,
       showTorusDuplicateRegions: true,
     });
   });
@@ -73,7 +79,10 @@ describe('LocalStoragePreferencesStorage', () => {
         lastGameMode: 'torus-2d',
         lastCubeSize: 99,
         lastTorusSize: 13,
+        lastRuleSet: 'japanese',
         lastKomi: 6.5,
+        lastBotCheckpointId: 'checkpoint',
+        lastBotMctsSimulations: 200,
         showTorusDuplicateRegions: true,
       }),
     );
@@ -92,7 +101,10 @@ describe('LocalStoragePreferencesStorage', () => {
         lastGameMode: 'sphere-3d',
         lastCubeSize: 6,
         lastTorusSize: 13,
+        lastRuleSet: 'japanese',
         lastKomi: 6.5,
+        lastBotCheckpointId: null,
+        lastBotMctsSimulations: null,
         showTorusDuplicateRegions: false,
       }),
     );
@@ -111,7 +123,10 @@ describe('LocalStoragePreferencesStorage', () => {
         lastGameMode: 'cube-2d',
         lastCubeSize: 6,
         lastTorusSize: 13,
+        lastRuleSet: 'japanese',
         lastKomi: 6.9,
+        lastBotCheckpointId: null,
+        lastBotMctsSimulations: null,
         showTorusDuplicateRegions: false,
       }),
     );
@@ -119,5 +134,34 @@ describe('LocalStoragePreferencesStorage', () => {
 
     await expect(preferences.loadPreferences()).resolves.toEqual(DEFAULT_USER_PREFERENCES);
     expect(storage.values.has('test:preferences')).toBe(false);
+  });
+
+  it('rejects unsupported rules or malformed bot preferences', async () => {
+    const invalidPayloads = [
+      { lastRuleSet: 'aga', lastBotCheckpointId: 'checkpoint', lastBotMctsSimulations: 200 },
+      { lastRuleSet: 'japanese', lastBotCheckpointId: '', lastBotMctsSimulations: 200 },
+      { lastRuleSet: 'japanese', lastBotCheckpointId: 'checkpoint', lastBotMctsSimulations: 0 },
+      { lastRuleSet: 'japanese', lastBotCheckpointId: 'checkpoint', lastBotMctsSimulations: 1.5 },
+    ];
+
+    for (const invalid of invalidPayloads) {
+      const storage = new MemoryStorage();
+      storage.values.set(
+        'test:preferences',
+        JSON.stringify({
+          version: 1,
+          lastGameMode: 'torus-2d',
+          lastCubeSize: 6,
+          lastTorusSize: 9,
+          lastKomi: 1.5,
+          showTorusDuplicateRegions: false,
+          ...invalid,
+        }),
+      );
+      const preferences = new LocalStoragePreferencesStorage(storage, 'test:preferences');
+
+      await expect(preferences.loadPreferences()).resolves.toEqual(DEFAULT_USER_PREFERENCES);
+      expect(storage.values.has('test:preferences')).toBe(false);
+    }
   });
 });
